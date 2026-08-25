@@ -32,6 +32,7 @@ PROFILE_INPUTS = {
     / "testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
+    "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
 }
 
 
@@ -44,6 +45,7 @@ class GeneratorSpec:
     extra_inputs: tuple[str, ...] = ()
     generator_dependencies: tuple[str, ...] = ()
     deterministic_shards: int | None = None
+    profiles: frozenset[str] | None = None
 
 
 def spec(
@@ -55,6 +57,7 @@ def spec(
     extra_inputs: tuple[str, ...] = (),
     generator_dependencies: tuple[str, ...] = (),
     deterministic_shards: int | None = None,
+    profiles: set[str] | None = None,
 ) -> GeneratorSpec:
     return GeneratorSpec(
         script=f"_generate_{script}.py",
@@ -64,6 +67,7 @@ def spec(
         extra_inputs=extra_inputs,
         generator_dependencies=generator_dependencies,
         deterministic_shards=deterministic_shards,
+        profiles=None if profiles is None else frozenset(profiles),
     )
 
 
@@ -104,6 +108,13 @@ GENERATOR_SPECS = [
         "delete_substructs_onlyfrags_chirality.jsonl",
         "substructure",
         {"default", "strict-corpus", "delete-substructs"},
+    ),
+    spec(
+        "smarts_golden",
+        "smarts.jsonl",
+        "smarts",
+        {"smarts"},
+        profiles={"smarts_source"},
     ),
     spec(
         "tetrahedral_stereo_geometry",
@@ -575,12 +586,18 @@ def main() -> None:
     args = parse_args()
     selected_suite = SUITE_ALIASES.get(args.suite, args.suite)
     if args.only is None:
-        selected = [item for item in GENERATOR_SPECS if selected_suite in item.suites]
+        selected = [
+            item
+            for item in GENERATOR_SPECS
+            if selected_suite in item.suites
+            and (item.profiles is None or args.profile in item.profiles)
+        ]
     else:
         selected = [
             item
             for item in GENERATOR_SPECS
-            if args.only
+            if (item.profiles is None or args.profile in item.profiles)
+            and args.only
             in {
                 item.domain,
                 Path(item.output).stem,

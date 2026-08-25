@@ -1,0 +1,68 @@
+# RDKit SMARTS Source Provenance
+
+- RDKit release: `2026.03.1`
+- Source revision: `351f8f378f8ad6bbd517980c38896e66bf907af8`
+- Official archive URL: `https://codeload.github.com/rdkit/rdkit/tar.gz/351f8f378f8ad6bbd517980c38896e66bf907af8`
+- Official archive SHA-256: `cc2e3f5da0f4510754914f63b3f6fa75936ca25be576f58af5c5024fd56f147a`
+- Restored source root: `third_party/rdkit/`
+- Restoration method: downloaded the official GitHub archive for the exact
+  revision and extracted it with one leading archive component removed; no git
+  operation was used.
+
+The following manifest pins the complete ordinary-molecule SMARTS source and
+test closure selected by
+`dev/gap_reports/rdkit_smarts_full_call_path_and_single_core_audit.md`.
+
+```text
+9e18ddffc0d402ca528c98a7b3338a02543fbf3598ba3336c47af06e07cf8bf7  third_party/rdkit/Code/Query/Query.h
+525dc63ef9ad63554b4e7b9ec7245454dec1a9fc1f816d03f490aea97cd34312  third_party/rdkit/Code/Query/AndQuery.h
+12849add09199c8ba091198d030b57e35a7421695e453798a659e32c7a458e3d  third_party/rdkit/Code/Query/OrQuery.h
+53d2d415ad4cd76581d0749daa8d018fae020b9eea74d9f42046efe7bfe629cb  third_party/rdkit/Code/Query/XOrQuery.h
+1ec886e8160ce4058e4a8af75b5859d5b09256c8f94383a01466e55cb6325c26  third_party/rdkit/Code/Query/EqualityQuery.h
+1815c68fcf4b89cfe758cf18e08f9caf5b6e0aeca9995efc5476d544b71637bc  third_party/rdkit/Code/Query/GreaterQuery.h
+3ec58ec2c6e840c0e587884c6e9e2c072cc4d224295f6d9affc474b1068cc15d  third_party/rdkit/Code/Query/GreaterEqualQuery.h
+bbca8831da31d79b818e3fc41ecfc026a97f067699305d1cf2fbb12718eda6fa  third_party/rdkit/Code/Query/LessQuery.h
+fc8951cac85e08ed16ef4fa3839afbc4c1065970a89dbff0c9ee7a86d8d7907c  third_party/rdkit/Code/Query/LessEqualQuery.h
+7da5e83d2bbff16f5990f4721b62f13b92cd25ee1f8855673b67fc400295af58  third_party/rdkit/Code/Query/RangeQuery.h
+916bb5ff971149b55fa86c0dcc28de74a91e158bda0a95a88e7591bf97938373  third_party/rdkit/Code/Query/SetQuery.h
+8b2811a86fc7de58a65cc295e404d413fd237ba4ec4bcf0761958d9d19dbae52  third_party/rdkit/Code/Query/NullQueryAlgebra.h
+ebd525c5b5d930e05382b0832e10aae7253482ec2f4ffbebc8094a4cd6069e79  third_party/rdkit/Code/GraphMol/QueryOps.h
+c02dd9c6b2e80adbd6b55622a9a2242dbeb2ca15e3832b9f0b398bc4d28bef86  third_party/rdkit/Code/GraphMol/QueryOps.cpp
+3240bdfba5a9bc41bf7ba6b295548a452c5a1c73da939c1e341047d97148ce2e  third_party/rdkit/Code/GraphMol/QueryAtom.h
+566bb559a94a54638bc1d2949767a3419b4cff75ae30de7279d34e0ed950bd40  third_party/rdkit/Code/GraphMol/QueryAtom.cpp
+45c4523f3fb6be23b392251e235f536bd249b9b0e2b853bd76a15d97b5e6efbc  third_party/rdkit/Code/GraphMol/QueryBond.h
+282168d0b4c851938d5e935c8d6f58c2854e1c55cdfa853133e0dfc8f06f99ea  third_party/rdkit/Code/GraphMol/QueryBond.cpp
+eaa087e002fb99da2429ba27f8636c68a460f88806b8bf27d7633c673356d165  third_party/rdkit/Code/GraphMol/AddHs.cpp
+8edcc1185b0ff6073aa10dd399544519b6b2e6adede83b431e810bac8005dabb  third_party/rdkit/Code/GraphMol/Chirality.cpp
+92f64c82b70b8c452bfd70acb7fd6d12c787929f316bdef72b902312ed2c046b  third_party/rdkit/Code/GraphMol/SmilesParse/SmilesParse.h
+270b0457fbee294a9a1a1d7ada856538d4faec96fd782ffff9d2c5bb9ec0ca59  third_party/rdkit/Code/GraphMol/SmilesParse/SmilesParse.cpp
+05ac243c546220a379fc4522cc31340a3b278a66b4f893d0655fa46170213a13  third_party/rdkit/Code/GraphMol/SmilesParse/SmilesParseOps.h
+777f134a499db29a7d4f7d16683f2c229919686b149a936ac0470c90818923cd  third_party/rdkit/Code/GraphMol/SmilesParse/SmilesParseOps.cpp
+7a6faa3f88fcd13db76fbe4f82e60f525c0f033db730c2d1612a5dfcaeeede58  third_party/rdkit/Code/GraphMol/SmilesParse/smarts.ll
+c768a76d5e6f7edb88b0bbfaa7147c026cd1c77254fdbfaa6f5dbd85f6168c90  third_party/rdkit/Code/GraphMol/SmilesParse/smarts.yy
+0202633ab8151a2786e013b544c369d51dff290abcc042d3ac8789a97d3f754e  third_party/rdkit/Code/GraphMol/SmilesParse/SmartsWrite.h
+fc72e33f5d2bcfb646c30308e7f26ad8d06598e2f5aab33724493899e22a121f  third_party/rdkit/Code/GraphMol/SmilesParse/SmartsWrite.cpp
+542315e415203765c163cf5dc9eafcde239e9fb95760c18d6c636645a1fc9906  third_party/rdkit/Code/GraphMol/SmilesParse/smatest.cpp
+c42497a5a60fc84a860b9ebab78f78d42f7f4f9ba9d121f08eb69aa1c20b16ee  third_party/rdkit/Code/GraphMol/SmilesParse/smarts_catch_tests.cpp
+9c0a6d4c56f8fcbc8b4c3144ffd2893547780ebba5602858b2c5415beaaca1cc  third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.h
+a9c2829c484c98df285fa503870351d1ac8d947cfe46ad38f3cb6664f1c9ede2  third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.cpp
+83c02d957957466c2dce306a102796adfd19e46521a1da38b2dfb727fe43a8eb  third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.h
+76dbf84efc3b628f206de39b213373d55031e2762b116026c2fd05581af95c5f  third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp
+3533e6884322501b360705a26462ea5c1d2a5118955cd4c4b5751c3dabcfe932  third_party/rdkit/Code/GraphMol/Substruct/vf2.hpp
+675d5df3855fec64fd7c2b3e56a9189fee5ce61314d242410149cca87ac255e5  third_party/rdkit/Code/GraphMol/Substruct/testSubstructMatch.cpp
+d25166c3ecb29f9985f5ceb8db22efb16b6a9b0e416ab92eba80753d85553411  third_party/rdkit/Code/GraphMol/Substruct/catch_tests.cpp
+5c81d3c61b06ced2c25f841c1c5f567cf377f8a6549f571ba93e1c4c133ac15d  third_party/rdkit/Code/GraphMol/GenericGroups/GenericGroups.h
+d933c85e2c067e53e6190d1df2e45356dd01653f943a2afcbcd44df528b5dc2f  third_party/rdkit/Code/GraphMol/GenericGroups/GenericGroups.cpp
+27a0b60933145889f899b746600fbcde8ad5fdbcdec876db41c013454362a976  third_party/rdkit/Code/GraphMol/GenericGroups/generic_tests.cpp
+3c95568c7b2285f868c396bb3a8abb359c415841ca82c6d097c786eb1d5d4626  third_party/rdkit/Code/GraphMol/Wrap/rdmolfiles.cpp
+2f9c00547799e0b81d65df7edf17975d8aae50d66662857cc7513630ff1c569b  third_party/rdkit/Code/GraphMol/Wrap/substructmethods.h
+8309eec1a58d9e118aad4429e16e0b5903775b1e899e9ef928a6c6895132e673  third_party/rdkit/Code/GraphMol/Wrap/testSubstructureMatch.py
+```
+
+Verification command:
+
+```bash
+sed -n '/^```text$/,/^```$/p' dev/source_provenance/rdkit_smarts_2026_03_1.md \
+  | sed '1d;$d' \
+  | sha256sum --check
+```

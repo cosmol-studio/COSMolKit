@@ -26,21 +26,20 @@ SMARTS/query path. Matcher construction is fallible. A parse failure is
 returned as `FingerprintError::InvalidSmartsPattern`; an empty matcher is not
 silently skipped; no local element/degree/ring heuristic is used as fallback.
 
-## Deliberately Unfinished Boundaries
+## Canonical SMARTS Boundary
 
-The following are separate from the validated fingerprint branch and remain
-unfinished:
+All ordinary-molecule consumers now compile through `mol_from_smarts` into the
+same query-bearing `Molecule` model. Fingerprints, descriptors, force fields,
+coordinate templates, Marvin SMARTS lines, and SMARTSQ SGroups do not retain a
+consumer-local parser, fallback decoder, or compatibility query graph.
 
-- the full public SMARTS-query API
-- every `SubstructMatchParams` branch, including marker-open stereo/query
-  behavior
-- recursive SMARTS/query primitives not covered by the fingerprint pattern
-  matrix
-- user-supplied Morgan feature SMARTS generator patterns
+The following remain deliberately outside this port:
 
-Those branches must remain explicitly unsupported or marker-open. Passing the
-Morgan/MACCS fingerprint matrix does not upgrade them to general substructure
-parity.
+- reaction SMARTS parsing and reaction-container matching
+- cartridge/database query containers and serialization
+- any `SubstructMatchParams` branch not proven by the pinned SMARTS corpus
+
+Those excluded surfaces require separate source inventories and parity claims.
 
 ## Policy
 

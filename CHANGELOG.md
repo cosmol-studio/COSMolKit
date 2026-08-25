@@ -21,9 +21,10 @@ empty.
 
 ## [Unreleased]
 
-This release adds the public modern RDKit CIPLabeler capability through one
-source-backed Rust implementation, with explicit state lifecycle and exact
-large-corpus validation across full and selected assignment.
+This release adds the public modern RDKit CIPLabeler and completes the
+ordinary-molecule SMARTS parser, query, writer, and substructure-matching path
+through source-backed Rust implementations with explicit state lifecycle and
+pinned parity validation.
 
 ### Added
 
@@ -39,6 +40,12 @@ large-corpus validation across full and selected assignment.
 - Added source-backed Rust SMILES parser options so sanitization and hydrogen
   removal can be selected independently when constructing exact intermediate
   states.
+- Added the canonical query-bearing `Molecule` SMARTS parser/compiler and
+  source-backed atom, bond, molecule, fragment, and CXSMARTS writers in Rust
+  and Python.
+- Added ordinary-molecule substructure matching with recursive queries,
+  query-query and generic matching, callbacks, source ordering, uniqueness and
+  match limits, and typed matching parameters.
 
 ### Changed
 
@@ -52,6 +59,10 @@ large-corpus validation across full and selected assignment.
 - Advanced molecule binary state encoding while retaining reads of earlier
   archive and legacy payloads, so CIP values and computed-property
   classification survive clone and serialization roundtrips.
+- Consolidated every descriptor, fingerprint, force-field, coordinate, SDF,
+  and public SMARTS consumer onto one typed query model, parser, writer, and
+  matcher, removing the parallel `SmartsMolecule` representation and
+  consumer-local conversion paths.
 
 ### Fixed
 
@@ -80,6 +91,15 @@ large-corpus validation across full and selected assignment.
   configuration construction outside pinned `findConfigs` remain separately
   identified capabilities; no mismatch inside the supported dispatcher is
   classified as unsupported.
+- The pinned RDKit 2026.03.1 SMARTS corpus covers 162 source rows: 91 accepted
+  parser inputs, nine expected rejects, and 62 ordered matcher inputs. Exact
+  parse acceptance, SMARTS output, graph size, and atom mappings match the
+  reference; strict Rust, Python, consumer-composition, and architecture tests
+  cover parameters, callbacks, recursive queries, fragments, and CXSMARTS.
+- Reaction SMARTS and database/container SMARTS are separate source closures
+  and remain outside the ordinary-molecule boundary. The Bison diagnostic
+  stream requested by `debug_parse` is explicitly unsupported rather than
+  silently ignored.
 
 ## [0.2.13] - 2026-08-24
 

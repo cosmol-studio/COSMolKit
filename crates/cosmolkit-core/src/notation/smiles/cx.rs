@@ -4,7 +4,7 @@ pub(super) fn handle_cx_part_and_name(
     state: &mut SmilesBuildState,
     params: &SmilesParseParams,
     cx_part: &str,
-    name: &str,
+    name: &mut String,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION handleCXPartAndName
     // RDKit✔️✔️: template <typename T>
@@ -39,9 +39,6 @@ pub(super) fn handle_cx_part_and_name(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION handleCXPartAndName
     if cx_part.is_empty() {
-        if !name.is_empty() {
-            state.set_name(name);
-        }
         return Ok(());
     }
 
@@ -52,7 +49,7 @@ pub(super) fn handle_cx_part_and_name(
                 if params.parse_name && consumed < cx_part.len() {
                     let name_part = cx_part[consumed..].trim();
                     if !name_part.is_empty() {
-                        state.set_name(name_part);
+                        *name = name_part.to_string();
                     }
                 }
                 return Ok(());
@@ -74,7 +71,7 @@ pub(super) fn handle_cx_part_and_name(
     }
 
     if params.parse_name {
-        state.set_name(cx_part.trim());
+        *name = cx_part.trim().to_string();
         return Ok(());
     }
 
@@ -1056,12 +1053,16 @@ pub(super) fn parse_cx_ring_bonds(
             *pos += 1;
             if state.builder.atom_mut(AtomId::new(atom_idx)).is_some() {
                 state.set_property("_NeedsQueryScan", "1");
-                expand_cx_atom_query(state, atom_idx, AtomQueryPredicate::RingBondCountNeedsScan);
+                expand_cx_atom_query(
+                    state,
+                    atom_idx,
+                    AtomQueryPredicate::RingBondCount(crate::search::query::QUERY_SCAN_MAGIC_VALUE),
+                );
             }
         } else {
             let ring_bonds = read_cx_usize(ext_text, pos)?;
             let predicate = match ring_bonds {
-                0 | 2 | 3 => AtomQueryPredicate::RingBondCount(ring_bonds as u8),
+                0 | 2 | 3 => AtomQueryPredicate::RingBondCount(ring_bonds as u32),
                 4 => AtomQueryPredicate::RingBondCountLessEqual(4),
                 _ => return Err(cx_parse_failure()),
             };
@@ -1788,7 +1789,7 @@ pub(super) fn parse_cx_substitution(
             if state.builder.atom_mut(AtomId::new(atom_idx)).is_some() {
                 state.set_property("_NeedsQueryScan", "1");
             }
-            0xDEADBEEF
+            crate::search::query::QUERY_SCAN_MAGIC_VALUE
         } else {
             read_cx_usize(ext_text, pos)? as u32
         };

@@ -50,6 +50,9 @@ SCHEMAS = {
     "delete_substructs_onlyfrags_chirality.jsonl": _schema(
         "case:string,error:null,num_atoms:integer,num_bonds:integer,only_frags:boolean,rdkit_ok:boolean,result_smiles:string,smarts:string,smiles:string,use_chirality:boolean"
     ),
+    "smarts.jsonl": _schema(
+        "atom_mappings:null|array,case_id:string,kind:string,num_atoms:null|integer,num_bonds:null|integer,parse_ok:boolean,smarts:string,source:string,target_smiles:null|string,written_smarts:null|string"
+    ),
     "smiles_writer.jsonl": _schema(
         "branches:object,error:null|string,rdkit_ok:boolean,smiles:string"
     ),

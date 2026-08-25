@@ -1610,17 +1610,21 @@ M  END
 }
 
 #[test]
-fn set_bond_stereo_from_directions_assigns_cis_for_same_side_neighbors() {
+fn smarts_set_bond_stereo_from_directions() {
     let mut molecule = stereogenic_double_bond_3d_molecule(true);
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
+    molecule
+        .properties_mut()
+        .set_prop("_needsDetectBondStereo", "1");
 
-    set_bond_stereo_from_directions(&mut molecule).unwrap();
+    apply_bond_stereo_from_directions_to_molecule(&mut molecule).unwrap();
 
     assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Cis);
     assert_eq!(
         molecule.bonds()[0].stereo_atoms(),
         Some([AtomId::new(2), AtomId::new(3)])
     );
+    assert_eq!(molecule.prop("_needsDetectBondStereo"), None);
 }
 
 #[test]
@@ -4478,4 +4482,187 @@ fn parse_cx_variable_attachments_rejects_multi_degree_source_like_rdkit() {
         error,
         SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string())
     );
+}
+
+#[test]
+fn smarts_parse_ops_clear_atom_chemical_props() {
+    smiles_parse_ops_clear_atom_chemical_props_resets_query_atom_state_like_rdkit();
+}
+
+#[test]
+fn smarts_parse_ops_check_ring_closure_branch_status() {
+    smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like_rdkit();
+    smiles_parse_ops_check_ring_closure_branch_status_leaves_nonmatching_cases_unchanged();
+}
+
+#[test]
+fn smarts_parse_ops_report_parse_error() {
+    smiles_parse_ops_report_parse_error_throws_when_requested_like_rdkit();
+    assert!(report_parse_error("logged only", false).is_ok());
+}
+
+#[test]
+fn smarts_parse_ops_cleanup_after_parse_error() {
+    smiles_parse_ops_cleanup_after_parse_error_clears_unmatched_ring_state_like_rdkit();
+}
+
+#[test]
+fn smarts_parse_ops_could_be_ring_closure() {
+    assert!(!could_be_ring_closure(-1));
+    assert!(could_be_ring_closure(0));
+    assert!(could_be_ring_closure(99_999));
+    assert!(!could_be_ring_closure(100_000));
+}
+
+#[test]
+fn smarts_parse_ops_add_frag_to_mol() {
+    smiles_parse_ops_add_frag_to_mol_merges_disconnected_fragment_like_rdkit();
+    smiles_parse_ops_add_frag_to_mol_connects_first_fragment_atom_in_insert_order_like_rdkit();
+    smiles_parse_ops_add_frag_to_mol_remaps_fragment_atom_and_bond_state_like_rdkit();
+}
+
+#[test]
+fn smarts_parse_ops_get_bond_ordering() {
+    let state = to_mol("CC(C)C").unwrap();
+    let (ordering, closures) = state.get_bond_ordering(AtomId::new(1)).unwrap();
+    assert_eq!(ordering, vec![0, 1, 2]);
+    assert_eq!(closures, 0);
+}
+
+#[test]
+fn smarts_parse_ops_adjust_atom_chirality_flags() {
+    let mut state = SmilesBuildState::new();
+    state.builder.add_atom(AtomSpec::new(Element::C));
+    state.adjust_atom_chirality_flags().unwrap();
+    assert_eq!(
+        state.builder.atoms()[0].chiral_tag(),
+        ChiralTag::Unspecified
+    );
+}
+
+#[test]
+fn smarts_parse_ops_get_unspecified_bond_type() {
+    get_unspecified_bond_type_for_atoms_matches_rdkit_aromatic_rule();
+}
+
+#[test]
+fn smarts_parse_ops_set_unspecified_bond_types() {
+    let mut state = SmilesBuildState::new();
+    let first = state
+        .builder
+        .add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+    let second = state
+        .builder
+        .add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+    state.atom_aromatic.extend([true, true]);
+    let bond = state
+        .builder
+        .add_bond(
+            BondSpec::new(first, second, BondOrder::Unspecified)
+                .with_prop(UNSPECIFIED_ORDER_PROP, "1"),
+        )
+        .unwrap();
+    state.explicit_unspecified_bonds.push(bond);
+    state.set_unspecified_bond_types().unwrap();
+    assert_eq!(
+        state.builder.bond(bond).unwrap().order(),
+        BondOrder::Aromatic
+    );
+    assert!(state.builder.bond(bond).unwrap().is_aromatic());
+}
+
+#[test]
+fn smarts_parse_ops_swap_bond_dir_if_needed() {
+    assert_eq!(
+        swap_bond_direction_if_needed(
+            BondDirection::None,
+            BondDirection::EndDownRight,
+            AtomId::new(0),
+            AtomId::new(0),
+        ),
+        BondDirection::EndDownRight,
+    );
+    assert_eq!(
+        swap_bond_direction_if_needed(
+            BondDirection::None,
+            BondDirection::EndDownRight,
+            AtomId::new(0),
+            AtomId::new(1),
+        ),
+        BondDirection::EndUpRight,
+    );
+    assert_eq!(
+        swap_bond_direction_if_needed(
+            BondDirection::BeginWedge,
+            BondDirection::EndDownRight,
+            AtomId::new(0),
+            AtomId::new(1),
+        ),
+        BondDirection::BeginWedge,
+    );
+}
+
+#[test]
+fn smarts_parse_ops_check_chiral_permutation() {
+    assert!(check_chiral_permutation(ChiralTag::Tetrahedral, 0));
+    assert!(check_chiral_permutation(ChiralTag::Tetrahedral, 2));
+    assert!(!check_chiral_permutation(ChiralTag::Tetrahedral, -1));
+    assert!(!check_chiral_permutation(ChiralTag::Tetrahedral, 3));
+    assert!(check_chiral_permutation(ChiralTag::Unspecified, -1));
+}
+
+#[test]
+fn smarts_parse_ops_check_chirality_specifications() {
+    let mut state = SmilesBuildState::new();
+    state.builder.add_atom(
+        AtomSpec::new(Element::C)
+            .with_chiral_tag(ChiralTag::Tetrahedral)
+            .with_chiral_permutation(3),
+    );
+    assert_eq!(
+        state.check_chirality_specifications().unwrap_err(),
+        SmilesParseError::ParseError("Invalid chiral specification on atom 0".to_string()),
+    );
+}
+
+#[test]
+fn smarts_parse_ops_close_mol_rings() {
+    close_mol_rings_accepts_empty_pending_state_like_rdkit();
+    close_mol_rings_reports_unclosed_ring_for_remaining_opening_like_rdkit();
+}
+
+#[test]
+fn smarts_parse_ops_cleanup_after_parsing() {
+    cleanup_after_parsing_marks_ap1_ap2_atom_labels_like_rdkit();
+    cleanup_after_parsing_clears_parser_temporary_props_like_rdkit();
+}
+
+#[test]
+fn smarts_parse_ops_get_unspecified_query_bond() {
+    let (order, query) = get_unspecified_query_bond(false, None);
+    assert_eq!(order, BondOrder::Single);
+    assert_eq!(
+        query,
+        crate::search::query::make_single_or_aromatic_bond_query()
+    );
+    assert_eq!(
+        get_unspecified_query_bond(true, None).0,
+        BondOrder::Aromatic
+    );
+    assert_eq!(
+        get_unspecified_query_bond(true, Some(false)).0,
+        BondOrder::Single
+    );
+}
+
+#[test]
+fn smarts_parse_ops_print_syntax_error_message() {
+    let input = "01234567890123456789012345678901234567890123456789";
+    let message = print_syntax_error_message(input, "syntax error", 26, "SMARTS");
+    assert!(message.starts_with(
+        "SMARTS Parse Error: syntax error while parsing: 01234567890123456789012345678901234567890123456789"
+    ));
+    assert!(message.contains("check for mistakes around position 26:"));
+    assert!(message.contains("56789012345678901234567890123456789012345"));
+    assert!(message.ends_with("~~~~~~~~~~~~~~~~~~~~^"));
 }

@@ -30,7 +30,7 @@ use self::{cx::*, stereo::*};
 // the corresponding RDKit source line and the local Rust code.
 
 const SMILES_START_PROP: &str = "_SmilesStart";
-const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
+pub(crate) const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
 const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
 static YYSMILES_DEBUG: AtomicBool = AtomicBool::new(false);
 
@@ -114,6 +114,105 @@ fn report_parse_error(message: &str, throw_it: bool) -> Result<(), SmilesParseEr
         eprintln!("SMILES Parse Error: {message}");
         Ok(())
     }
+}
+
+fn could_be_ring_closure(value: i32) -> bool {
+    // RDKit✔️✔️: bool couldBeRingClosure(int val) { return val < 100000 && val >= 0; }
+    // Local complexity review: both perform two O(1) signed comparisons with
+    // no allocation, lookup, traversal, cloning, or temporary state.
+    (0..100_000).contains(&value)
+}
+
+pub(crate) fn get_unspecified_query_bond(
+    atom1_aromatic: bool,
+    atom2_aromatic: Option<bool>,
+) -> (BondOrder, QueryNode<BondQueryPredicate>) {
+    // RDKit✔️🔝: RDKit::QueryBond *getUnspecifiedQueryBond(const RDKit::Atom *a1,
+    // RDKit✔️🔝:                                           const RDKit::Atom *a2) {
+    // RDKit✔️🔝:   PRECONDITION(a1, "bad atom pointer");
+    // RDKit✔️🔝:   QueryBond *newB;
+    // RDKit✔️🔝:   if (!a1->getIsAromatic() || (a2 && !a2->getIsAromatic())) {
+    // RDKit✔️🔝:     newB = new QueryBond(Bond::SINGLE);
+    // RDKit✔️🔝:     newB->setQuery(makeSingleOrAromaticBondQuery());
+    // RDKit✔️🔝:   } else {
+    // RDKit✔️🔝:     newB = new QueryBond(Bond::AROMATIC);
+    // RDKit✔️🔝:     newB->setQuery(makeSingleOrAromaticBondQuery());
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   newB->setProp(RDKit::common_properties::_unspecifiedOrder, 1);
+    // RDKit✔️🔝:   return newB;
+    // RDKit✔️🔝: }
+    // Local complexity review: both choose the nominal order and build the
+    // same shared query in O(1). Rust returns typed parts, removes the owning
+    // QueryBond allocation, and callers retain the single unspecified marker.
+    let order = if !atom1_aromatic || atom2_aromatic == Some(false) {
+        BondOrder::Single
+    } else {
+        BondOrder::Aromatic
+    };
+    (
+        order,
+        crate::search::query::make_single_or_aromatic_bond_query(),
+    )
+}
+
+fn print_syntax_error_message(
+    input: &str,
+    error_message: &str,
+    bad_token_position: usize,
+    input_type: &str,
+) -> String {
+    // RDKit✔️✔️: static constexpr unsigned int error_size{41};
+    // RDKit✔️✔️: static constexpr unsigned int prefix_size{error_size / 2};
+    // RDKit✔️✔️: static auto truncate_input = [=](const auto &input, const unsigned int pos) {
+    // RDKit✔️✔️:   if ((pos >= prefix_size) && (pos + prefix_size) < input.size()) {
+    // RDKit✔️✔️:     return input.substr(pos - prefix_size, error_size);
+    // RDKit✔️✔️:   } else if (pos >= prefix_size) {
+    // RDKit✔️✔️:     return input.substr(pos - prefix_size);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return input.substr(0, std::min(input.size(), static_cast<size_t>(error_size)));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: };
+    // RDKit✔️✔️: size_t num_dashes =
+    // RDKit✔️✔️:     (bad_token_position >= prefix_size ? prefix_size
+    // RDKit✔️✔️:                                        : bad_token_position - 1);
+    // RDKit✔️✔️: BOOST_LOG(rdErrorLog) << input_type << " Parse Error: " << err_message
+    // RDKit✔️✔️:                       << " while parsing: " << input << std::endl;
+    // RDKit✔️✔️: BOOST_LOG(rdErrorLog)
+    // RDKit✔️✔️:     << input_type << " Parse Error: check for mistakes around position "
+    // RDKit✔️✔️:     << bad_token_position << ":" << std::endl;
+    // RDKit✔️✔️: BOOST_LOG(rdErrorLog) << truncate_input(input, bad_token_position - 1)
+    // RDKit✔️✔️:                       << std::endl;
+    // RDKit✔️✔️: BOOST_LOG(rdErrorLog) << std::string(num_dashes, '~') << "^" << std::endl;
+    // Local complexity review: both copy at most 41 input bytes plus four log
+    // lines, O(min(n,41)) time/space. Rust uses byte slicing because SMARTS and
+    // SMILES grammar positions are byte offsets, matching std::string_view.
+    const ERROR_SIZE: usize = 41;
+    const PREFIX_SIZE: usize = ERROR_SIZE / 2;
+    let position = bad_token_position.saturating_sub(1).min(input.len());
+    let (start, end) = if position >= PREFIX_SIZE && position + PREFIX_SIZE < input.len() {
+        (
+            position - PREFIX_SIZE,
+            (position - PREFIX_SIZE + ERROR_SIZE).min(input.len()),
+        )
+    } else if position >= PREFIX_SIZE {
+        (position - PREFIX_SIZE, input.len())
+    } else {
+        (0, input.len().min(ERROR_SIZE))
+    };
+    let snippet = input.get(start..end).unwrap_or_default();
+    let num_dashes = if bad_token_position >= PREFIX_SIZE {
+        PREFIX_SIZE
+    } else {
+        bad_token_position.saturating_sub(1)
+    };
+    let message = format!(
+        "{input_type} Parse Error: {error_message} while parsing: {input}\n\
+{input_type} Parse Error: check for mistakes around position {bad_token_position}:\n\
+{snippet}\n{}^",
+        "~".repeat(num_dashes),
+    );
+    eprintln!("{message}");
+    message
 }
 
 /// Source-backed SMILES parser options.
@@ -1838,6 +1937,21 @@ fn chiral_permutation_limit(chiral_tag: ChiralTag) -> Option<i32> {
     }
 }
 
+pub(crate) fn check_chiral_permutation(chiral_tag: ChiralTag, permutation: i32) -> bool {
+    // RDKit✔️✔️: bool checkChiralPermutation(int chiralTag, int permutation) {
+    // RDKit✔️✔️:   if (chiralTag > RDKit::Atom::ChiralType::CHI_OTHER &&
+    // RDKit✔️✔️:       permutationLimits.find(chiralTag) != permutationLimits.end() &&
+    // RDKit✔️✔️:       (permutation < 0 || permutation > permutationLimits.at(chiralTag))) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // Local complexity review: enum matching replaces the O(log 5) map lookup
+    // with O(1) dispatch and performs the same two signed comparisons.
+    chiral_permutation_limit(chiral_tag)
+        .is_none_or(|limit| permutation >= 0 && permutation <= limit)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BranchPoint {
     atom: AtomId,
@@ -1907,6 +2021,40 @@ impl SmilesBuildState {
             smiles_start_atoms: BTreeSet::new(),
             cx_bond_order: Vec::new(),
             next_cx_smiles_bond_idx: 0,
+            temporary_chiral_permutations: BTreeMap::new(),
+            cx_stereo_group_tracker: BTreeMap::new(),
+        }
+    }
+
+    fn from_molecule(molecule: &Molecule) -> Self {
+        let atom_aromatic = molecule
+            .atoms()
+            .iter()
+            .map(crate::Atom::is_aromatic)
+            .collect();
+        let bond_pairs = molecule
+            .bonds()
+            .iter()
+            .map(|bond| {
+                let begin = bond.begin().index();
+                let end = bond.end().index();
+                (begin.min(end), begin.max(end))
+            })
+            .collect();
+        let cx_bond_order = molecule.bonds().iter().map(crate::Bond::id).collect();
+        Self {
+            builder: molecule.to_builder(),
+            active_atom: None,
+            atom_aromatic,
+            bond_pairs,
+            explicit_unspecified_bonds: Vec::new(),
+            branch_stack: Vec::new(),
+            ring_openings: BTreeMap::new(),
+            ring_closures_by_atom: BTreeMap::new(),
+            pending_ring_closures: Vec::new(),
+            smiles_start_atoms: BTreeSet::new(),
+            cx_bond_order,
+            next_cx_smiles_bond_idx: molecule.num_bonds(),
             temporary_chiral_permutations: BTreeMap::new(),
             cx_stereo_group_tracker: BTreeMap::new(),
         }
@@ -2772,9 +2920,7 @@ impl SmilesBuildState {
             // keeps the modeled state as `u32`, so the negative branch of the
             // source check is unrepresentable here and the upper-bound check is
             // the only reachable validation path.
-            if let Some(limit) = chiral_permutation_limit(atom.chiral_tag())
-                && permutation > u32::try_from(limit).expect("chiral permutation limit is positive")
-            {
+            if !check_chiral_permutation(atom.chiral_tag(), permutation as i32) {
                 return Err(SmilesParseError::ParseError(format!(
                     "Invalid chiral specification on atom {}",
                     atom.id().index()
@@ -3426,12 +3572,11 @@ pub(crate) fn mol_from_smiles(
 
     let preprocessed = preprocess_smiles(smiles, params)?;
     let mut state = to_mol(&preprocessed.smiles)?;
-    handle_cx_part_and_name(
-        &mut state,
-        params,
-        &preprocessed.cx_part,
-        &preprocessed.name,
-    )?;
+    let mut name = preprocessed.name;
+    handle_cx_part_and_name(&mut state, params, &preprocessed.cx_part, &mut name)?;
+    if !name.is_empty() {
+        state.set_name(&name);
+    }
     apply_smiles_postprocessing(&mut state, params)?;
     let _requires_full_sanitize_postprocess = state.should_run_full_sanitize_postprocess(params);
     let mut mol = state.into_molecule()?;
@@ -3590,9 +3735,8 @@ pub(crate) fn mol_from_smiles(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   QueryOps::completeMolQueries(*res, 0xDEADBEEF);
     // RDKit✔️✔️: }
-    // COSMolKit: for the currently modeled SMILES CX query-scan inputs, this
-    // completes both `rb:*` and `s:*` sentinel placeholders and clears
-    // `_NeedsQueryScan` once no unresolved scan work remains.
+    // COSMolKit uses the same ordering as RDKit: clear `_NeedsQueryScan`, then
+    // complete both `rb:*` and `s:*` sentinels through the canonical query core.
     if mol.prop("_NeedsQueryScan").is_some() {
         if !params.sanitize {
             // RDKit runs fastFindRings() here before query completion. This
@@ -3600,10 +3744,52 @@ pub(crate) fn mol_from_smiles(
             // extra ring-cache mutation is required for the modeled `rb:*`
             // SMILES queries.
         }
-        complete_smiles_query_scan_subset(&mut mol);
+        mol.properties_mut().clear_prop("_NeedsQueryScan");
+        crate::search::query::complete_mol_queries(
+            &mut mol,
+            crate::search::query::QUERY_SCAN_MAGIC_VALUE,
+        );
     }
 
     Ok(mol)
+}
+
+pub(crate) fn apply_cx_part_and_name_to_molecule(
+    molecule: &mut Molecule,
+    allow_cxsmiles: bool,
+    strict_cxsmiles: bool,
+    parse_name: bool,
+    cx_part: &str,
+    name: &mut String,
+) -> Result<(), SmilesParseError> {
+    if cx_part.is_empty() {
+        return Ok(());
+    }
+    let params = SmilesParseParams {
+        allow_cxsmiles,
+        strict_cxsmiles,
+        parse_name,
+        ..SmilesParseParams::default()
+    };
+    let mut state = SmilesBuildState::from_molecule(molecule);
+    handle_cx_part_and_name(&mut state, &params, cx_part, name)?;
+    *molecule = state.into_molecule()?;
+    Ok(())
+}
+
+pub(crate) fn cleanup_after_parsing_molecule(
+    molecule: &mut Molecule,
+) -> Result<(), SmilesParseError> {
+    let mut state = SmilesBuildState::from_molecule(molecule);
+    state.cleanup_after_parsing();
+    *molecule = state.into_molecule()?;
+    Ok(())
+}
+
+pub(crate) fn apply_bond_stereo_from_directions_to_molecule(
+    molecule: &mut Molecule,
+) -> Result<(), crate::StereoError> {
+    set_bond_stereo_from_directions(molecule)
 }
 
 fn to_mol(inp: &str) -> Result<SmilesBuildState, SmilesParseError> {

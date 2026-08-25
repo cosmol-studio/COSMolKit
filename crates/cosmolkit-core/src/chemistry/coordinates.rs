@@ -56,7 +56,7 @@ use crate::Molecule;
 use crate::atom::Atom;
 use crate::bond::{Bond, BondDirection, BondOrder, BondStereo};
 use crate::builder::MoleculeBuilder;
-use crate::search::smarts_parse::parse_smarts;
+use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
 use crate::search::substruct::get_substruct_match;
 use crate::valence::periodic_table_outer_electrons;
 use crate::{AtomQueryPredicate, QueryNode};
@@ -84,8 +84,9 @@ struct TemplateGraphBond {
     query: crate::QueryNode<crate::BondQueryPredicate>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct RdkitTemplateGraphModel {
+    compiled_query: Molecule,
     atom_queries: Vec<crate::QueryNode<crate::AtomQueryPredicate>>,
     bonds: Vec<TemplateGraphBond>,
 }
@@ -230,25 +231,27 @@ fn parse_rdkit_template_line(line: &str) -> Result<RdkitTemplateLineParts, Coord
 fn parse_rdkit_template_graph_model(
     smarts: &str,
 ) -> Result<RdkitTemplateGraphModel, Coordinate2DError> {
-    let parsed = parse_smarts(smarts).map_err(|error| {
+    let parsed = mol_from_smarts(smarts, &SmartsParseParams::default()).map_err(|error| {
         Coordinate2DError::UnsupportedFeature(format!(
             "RDKit template SMARTS graph parsing failed: {error}"
         ))
     })?;
-    let bonds = expand_template_smarts_bonds(smarts)?;
-    let atom_count_from_topology = bonds
+    let atom_queries = parsed
+        .atoms()
         .iter()
-        .flat_map(|bond| [bond.begin_atom_idx, bond.end_atom_idx])
-        .max()
-        .map_or(parsed.num_atoms(), |max_idx| max_idx + 1);
-    if atom_count_from_topology != parsed.num_atoms() {
-        return Err(Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit template SMARTS graph atom count mismatch: query parser={}, topology parser={atom_count_from_topology}",
-            parsed.num_atoms(),
-        )));
-    }
+        .map(|atom| {
+            atom.query().cloned().ok_or_else(|| {
+                Coordinate2DError::UnsupportedFeature(format!(
+                    "compiled RDKit template SMARTS atom {} has no query",
+                    atom.id()
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let bonds = expand_template_smarts_bonds(&parsed)?;
     Ok(RdkitTemplateGraphModel {
-        atom_queries: parsed.atom_queries,
+        compiled_query: parsed,
+        atom_queries,
         bonds,
     })
 }
@@ -689,275 +692,26 @@ fn bond_order_for_template_probe(query: &crate::QueryNode<crate::BondQueryPredic
     }
 }
 
-fn expand_template_smarts_bonds(smarts: &str) -> Result<Vec<TemplateGraphBond>, Coordinate2DError> {
-    #[derive(Clone)]
-    struct ParserState<'a> {
-        chars: &'a [char],
-        pos: usize,
-        next_atom_idx: usize,
-        bonds: Vec<TemplateGraphBond>,
-        ring_open: BTreeMap<u8, (usize, crate::QueryNode<crate::BondQueryPredicate>)>,
-    }
-
-    fn bond_query_for_char(ch: char) -> crate::QueryNode<crate::BondQueryPredicate> {
-        match ch {
-            '-' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Order(BondOrder::Single)),
-            '=' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Order(BondOrder::Double)),
-            '#' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Order(BondOrder::Triple)),
-            ':' => crate::QueryNode::Predicate(crate::BondQueryPredicate::IsAromatic(true)),
-            '~' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
-            // RDKit source: SMARTS `/` and `\` preserve directional stereo on
-            // the query bond but do not contribute an extra graph-level bond
-            // predicate during default substructure matching.
-            '/' | '\\' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
-            _ => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
-        }
-    }
-
-    fn is_bond_char(ch: char) -> bool {
-        matches!(ch, '-' | '=' | '#' | ':' | '~' | '/' | '\\')
-    }
-
-    fn is_organic_subset_symbol(chars: &[char], pos: usize) -> Option<usize> {
-        let tail = chars.get(pos..)?;
-        let two_char = if tail.len() >= 2 {
-            match (tail[0], tail[1]) {
-                ('C', 'l') | ('B', 'r') | ('S', 'i') | ('A', 's') | ('S', 'e') | ('T', 'e') => {
-                    Some(2)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-        two_char.or_else(|| {
-            matches!(
-                tail[0],
-                '*' | 'B'
-                    | 'C'
-                    | 'N'
-                    | 'O'
-                    | 'S'
-                    | 'P'
-                    | 'F'
-                    | 'I'
-                    | 'H'
-                    | 'R'
-                    | 'X'
-                    | 'D'
-                    | 'v'
-                    | 'V'
-                    | 'r'
-                    | 'u'
-                    | 'A'
-                    | 'T'
-                    | 'Z'
-                    | 'K'
-                    | 'W'
-                    | 'U'
-                    | 'Y'
-                    | 'G'
-                    | 'L'
-                    | 'J'
-                    | 'E'
-                    | 'M'
-                    | 'Q'
-                    | 'c'
-                    | 'n'
-                    | 'o'
-                    | 's'
-                    | 'p'
-                    | 'a'
-                    | 'b'
-            )
-            .then_some(1)
+fn expand_template_smarts_bonds(
+    compiled_query: &Molecule,
+) -> Result<Vec<TemplateGraphBond>, Coordinate2DError> {
+    compiled_query
+        .bonds()
+        .iter()
+        .map(|bond| {
+            let query = bond.query().cloned().ok_or_else(|| {
+                Coordinate2DError::UnsupportedFeature(format!(
+                    "compiled RDKit template SMARTS bond {} has no query",
+                    bond.id()
+                ))
+            })?;
+            Ok(TemplateGraphBond {
+                begin_atom_idx: bond.begin().index(),
+                end_atom_idx: bond.end().index(),
+                query,
+            })
         })
-    }
-
-    fn parse_ring_number(chars: &[char], pos: &mut usize) -> Result<u8, Coordinate2DError> {
-        if chars.get(*pos) == Some(&'%') {
-            let d1 = chars.get(*pos + 1).copied();
-            let d2 = chars.get(*pos + 2).copied();
-            match (d1, d2) {
-                (Some(c1), Some(c2)) if c1.is_ascii_digit() && c2.is_ascii_digit() => {
-                    *pos += 3;
-                    Ok(((c1 as u8 - b'0') * 10) + (c2 as u8 - b'0'))
-                }
-                _ => Err(Coordinate2DError::UnsupportedFeature(
-                    "RDKit template SMARTS topology parser expected two digits after '%'"
-                        .to_string(),
-                )),
-            }
-        } else if let Some(ch) = chars.get(*pos).copied() {
-            if ch.is_ascii_digit() {
-                *pos += 1;
-                Ok(ch as u8 - b'0')
-            } else {
-                Err(Coordinate2DError::UnsupportedFeature(
-                    "RDKit template SMARTS topology parser expected a ring-closure digit"
-                        .to_string(),
-                ))
-            }
-        } else {
-            Err(Coordinate2DError::UnsupportedFeature(
-                "RDKit template SMARTS topology parser reached end while reading ring closure"
-                    .to_string(),
-            ))
-        }
-    }
-
-    fn skip_atom(chars: &[char], pos: &mut usize) -> Result<(), Coordinate2DError> {
-        match chars.get(*pos).copied() {
-            Some('[') => {
-                let mut depth = 1usize;
-                *pos += 1;
-                while let Some(ch) = chars.get(*pos).copied() {
-                    *pos += 1;
-                    match ch {
-                        '[' => depth += 1,
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                return Ok(());
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                Err(Coordinate2DError::UnsupportedFeature(
-                    "RDKit template SMARTS topology parser found an unclosed bracket atom"
-                        .to_string(),
-                ))
-            }
-            Some(_) => {
-                let Some(consumed) = is_organic_subset_symbol(chars, *pos) else {
-                    return Err(Coordinate2DError::UnsupportedFeature(
-                        "RDKit template SMARTS topology parser encountered an unsupported atom token"
-                            .to_string(),
-                    ));
-                };
-                *pos += consumed;
-                Ok(())
-            }
-            None => Err(Coordinate2DError::UnsupportedFeature(
-                "RDKit template SMARTS topology parser expected an atom token".to_string(),
-            )),
-        }
-    }
-
-    fn parse_atom(state: &mut ParserState<'_>) -> Result<usize, Coordinate2DError> {
-        skip_atom(state.chars, &mut state.pos)?;
-        let atom_idx = state.next_atom_idx;
-        state.next_atom_idx += 1;
-        Ok(atom_idx)
-    }
-
-    fn add_bond(
-        state: &mut ParserState<'_>,
-        begin_atom_idx: usize,
-        end_atom_idx: usize,
-        query: crate::QueryNode<crate::BondQueryPredicate>,
-    ) {
-        state.bonds.push(TemplateGraphBond {
-            begin_atom_idx,
-            end_atom_idx,
-            query,
-        });
-    }
-
-    fn parse_chain(
-        state: &mut ParserState<'_>,
-        mut current_atom_idx: usize,
-    ) -> Result<usize, Coordinate2DError> {
-        while state.pos < state.chars.len() {
-            match state.chars[state.pos] {
-                ')' => break,
-                '(' => {
-                    state.pos += 1;
-                    let _ = parse_chain(state, current_atom_idx)?;
-                    if state.chars.get(state.pos) != Some(&')') {
-                        return Err(Coordinate2DError::UnsupportedFeature(
-                            "RDKit template SMARTS topology parser expected ')' to close a branch"
-                                .to_string(),
-                        ));
-                    }
-                    state.pos += 1;
-                }
-                '.' => {
-                    state.pos += 1;
-                    current_atom_idx = parse_atom(state)?;
-                }
-                _ => {
-                    let mut query = crate::QueryNode::Predicate(crate::BondQueryPredicate::Any);
-                    if is_bond_char(state.chars[state.pos]) {
-                        query = bond_query_for_char(state.chars[state.pos]);
-                        state.pos += 1;
-                    }
-                    if state.pos >= state.chars.len() {
-                        return Err(Coordinate2DError::UnsupportedFeature(
-                            "RDKit template SMARTS topology parser ended after a bond token"
-                                .to_string(),
-                        ));
-                    }
-                    if state.chars[state.pos].is_ascii_digit() || state.chars[state.pos] == '%' {
-                        let ring_number = parse_ring_number(state.chars, &mut state.pos)?;
-                        if let Some((open_atom_idx, open_query)) =
-                            state.ring_open.remove(&ring_number)
-                        {
-                            if open_query
-                                != crate::QueryNode::Predicate(crate::BondQueryPredicate::Any)
-                                && query
-                                    != crate::QueryNode::Predicate(crate::BondQueryPredicate::Any)
-                                && open_query != query
-                            {
-                                return Err(Coordinate2DError::UnsupportedFeature(
-                                    "RDKit template SMARTS topology parser does not support mismatched explicit ring-closure bond queries"
-                                        .to_string(),
-                                ));
-                            }
-                            let resolved_query = if query
-                                == crate::QueryNode::Predicate(crate::BondQueryPredicate::Any)
-                            {
-                                open_query
-                            } else {
-                                query
-                            };
-                            add_bond(state, open_atom_idx, current_atom_idx, resolved_query);
-                        } else {
-                            state
-                                .ring_open
-                                .insert(ring_number, (current_atom_idx, query));
-                        }
-                    } else {
-                        let next_atom_idx = parse_atom(state)?;
-                        add_bond(state, current_atom_idx, next_atom_idx, query);
-                        current_atom_idx = next_atom_idx;
-                    }
-                }
-            }
-        }
-        Ok(current_atom_idx)
-    }
-
-    let chars: Vec<char> = smarts.chars().collect();
-    if chars.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut state = ParserState {
-        chars: &chars,
-        pos: 0,
-        next_atom_idx: 0,
-        bonds: Vec::new(),
-        ring_open: BTreeMap::new(),
-    };
-    let first_atom_idx = parse_atom(&mut state)?;
-    let _ = parse_chain(&mut state, first_atom_idx)?;
-    if !state.ring_open.is_empty() {
-        return Err(Coordinate2DError::UnsupportedFeature(
-            "RDKit template SMARTS topology parser found an unbalanced ring closure".to_string(),
-        ));
-    }
-    Ok(state.bonds)
+        .collect()
 }
 
 static PREFER_COORD_GEN: AtomicBool = AtomicBool::new(false);
@@ -3599,47 +3353,19 @@ impl RdkitEmbeddedFrag {
 fn build_rdkit_template_query_molecule(
     template: &RdkitTemplateRuntimeModel,
 ) -> Result<Molecule, Coordinate2DError> {
-    let mut builder = MoleculeBuilder::new();
-    let atom_ids: Vec<_> = template
-        .graph
-        .atom_queries
-        .iter()
-        .map(|query| {
-            builder.add_atom(
-                AtomSpec::new(Element::from_atomic_number(0).unwrap()).with_query(query.clone()),
-            )
-        })
-        .collect();
-    for bond in &template.graph.bonds {
-        builder
-            .add_bond(
-                BondSpec::new(
-                    atom_ids[bond.begin_atom_idx],
-                    atom_ids[bond.end_atom_idx],
-                    bond_order_for_template_probe(&bond.query),
-                )
-                .with_query(bond.query.clone()),
-            )
-            .map_err(|error| {
-                Coordinate2DError::UnsupportedFeature(format!(
-                    "RDKit template query build failed: {error}"
-                ))
-            })?;
-    }
     if let Some(coords) = &template.coords_2d {
-        builder
-            .set_2d_coordinates(coords.clone())
+        template
+            .graph
+            .compiled_query
+            .with_2d_coordinate_block(coords.clone())
             .map_err(|error| {
                 Coordinate2DError::UnsupportedFeature(format!(
                     "RDKit template query coordinate build failed: {error}"
                 ))
-            })?;
+            })
+    } else {
+        Ok(template.graph.compiled_query.clone())
     }
-    builder.build().map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit template query molecule build failed: {error}"
-        ))
-    })
 }
 
 fn build_rdkit_ring_system_molecule(
@@ -5212,7 +4938,7 @@ fn rdkit_query_contains_atomic_number(
     match query {
         QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(n)) => *n == atomic_number,
         QueryNode::Predicate(_) => false,
-        QueryNode::And(children) | QueryNode::Or(children) => children
+        QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => children
             .iter()
             .any(|child| rdkit_query_contains_atomic_number(child, atomic_number)),
         QueryNode::Not(child) => rdkit_query_contains_atomic_number(child, atomic_number),
@@ -6087,6 +5813,7 @@ fn rdkit_substruct_matches_unordered(mol: &Molecule, query: &Molecule) -> Vec<Ve
         uniquify: false,
         use_chirality: false,
         specified_stereo_query_matches_unspecified: false,
+        ..Default::default()
     };
     crate::get_substruct_matches_with_params(mol, query, &params)
         .into_iter()
@@ -11127,6 +10854,53 @@ mod tests {
             }
             other => panic!("expected UnsupportedFeature, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn smarts_consumer_coordinate_template_graph() {
+        let model = parse_rdkit_template_graph_model("[#6]1(-[#8])-[#7]-1").unwrap();
+        assert_eq!(model.atom_queries.len(), 3);
+        assert_eq!(model.bonds.len(), 3);
+        assert!(
+            model
+                .atom_queries
+                .iter()
+                .all(|query| matches!(query, QueryNode::Predicate(_)))
+        );
+        assert_eq!(
+            model
+                .bonds
+                .iter()
+                .map(|bond| (bond.begin_atom_idx, bond.end_atom_idx))
+                .collect::<Vec<_>>(),
+            vec![(0, 1), (0, 2), (0, 2)]
+        );
+    }
+
+    #[test]
+    fn smarts_consumer_coordinate_template_bonds() {
+        let query = mol_from_smarts("[#6]1~[#7]=[#8]-1", &SmartsParseParams::default()).unwrap();
+        let bonds = expand_template_smarts_bonds(&query).unwrap();
+        assert_eq!(bonds.len(), query.num_bonds());
+        assert_eq!(
+            bonds.iter().map(|bond| &bond.query).collect::<Vec<_>>(),
+            query
+                .bonds()
+                .iter()
+                .map(|bond| bond.query().unwrap())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn smarts_consumer_coordinate_template_query() {
+        let template = build_rdkit_template_runtime_model("[#6:7]~[#8] |(0,0,;1.5,0,)|").unwrap();
+        let query = build_rdkit_template_query_molecule(&template).unwrap();
+        assert_eq!(query.atoms(), template.graph.compiled_query.atoms());
+        assert_eq!(query.bonds(), template.graph.compiled_query.bonds());
+        assert_eq!(query.atoms()[0].atom_map(), Some(7));
+        assert_eq!(query.coordinates_2d(), Some(&[[0.0, 0.0], [1.5, 0.0]][..]));
+        assert!(template.graph.compiled_query.coordinates_2d().is_none());
     }
 
     #[test]

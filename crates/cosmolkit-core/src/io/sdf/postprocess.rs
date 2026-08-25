@@ -128,7 +128,11 @@ pub(super) fn finish_mol_processing(
         molecule = detect_bond_stereochemistry(molecule, params)?;
     }
     if molecule.prop("_NeedsQueryScan").is_some() {
-        complete_mol_queries(&mut molecule);
+        molecule.properties_mut().clear_prop("_NeedsQueryScan");
+        crate::search::query::complete_mol_queries(
+            &mut molecule,
+            crate::search::query::QUERY_SCAN_MAGIC_VALUE,
+        );
     }
     Ok(molecule)
 }
@@ -413,117 +417,10 @@ pub(super) fn merge_atom_query(
 }
 
 pub(super) fn atom_query_needs_scan(query: &QueryNode<AtomQueryPredicate>) -> bool {
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCountNeedsScan) => true,
-        QueryNode::Predicate(_) => false,
-        QueryNode::And(children) | QueryNode::Or(children) => {
-            children.iter().any(atom_query_needs_scan)
-        }
-        QueryNode::Not(child) => atom_query_needs_scan(child),
-    }
-}
-
-fn complete_query_scan_predicates(query: &mut QueryNode<AtomQueryPredicate>, ring_bond_count: u8) {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: completeQueryAndChildren
-    // RDKit✔️❌: void completeQueryAndChildren(Atom::QUERYATOM_QUERY *query, Atom *tgt,
-    // RDKit✔️❌:                               unsigned int magicVal) {
-    // RDKit✔️❌:   PRECONDITION(query, "no query");
-    // RDKit✔️❌:   PRECONDITION(tgt, "no atom");
-    // RDKit✔️❌:   auto eqQuery = dynamic_cast<ATOM_EQUALS_QUERY *>(query);
-    // RDKit✔️❌:   if (eqQuery) {
-    // RDKit✔️❌:     if (static_cast<unsigned int>(eqQuery->getVal()) == magicVal) {
-    // RDKit✔️❌:       int tgtVal = eqQuery->getDataFunc()(tgt);
-    // RDKit✔️❌:       eqQuery->setVal(tgtVal);
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   for (auto childIt = query->beginChildren(); childIt != query->endChildren();
-    // RDKit✔️❌:        ++childIt) {
-    // RDKit✔️❌:     completeQueryAndChildren(childIt->get(), tgt, magicVal);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: completeQueryAndChildren
-    //
-    // COSMolKit does not model RDKit query data-function pointers. The only
-    // current magic-value query produced by MolBlock/SDF parsing is
-    // RingBondCountNeedsScan, corresponding to RDKit's AtomRingBondCount query
-    // with value 0xDEADBEEF.
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCountNeedsScan) => {
-            *query = QueryNode::predicate(AtomQueryPredicate::RingBondCount(ring_bond_count));
-        }
-        QueryNode::Predicate(_) => {}
-        QueryNode::And(children) | QueryNode::Or(children) => {
-            for child in children {
-                complete_query_scan_predicates(child, ring_bond_count);
-            }
-        }
-        QueryNode::Not(child) => complete_query_scan_predicates(child, ring_bond_count),
-    }
-}
-
-fn atom_ring_bond_counts(molecule: &Molecule) -> Vec<u8> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: queryAtomRingBondCount
-    // RDKit✔️❌: int queryAtomRingBondCount(const Atom *at) {
-    // RDKit✔️❌:   PRECONDITION(at, "bad atom");
-    // RDKit✔️❌:   PRECONDITION(at->getOwningMol(), "no owning molecule");
-    // RDKit✔️❌:   int res = 0;
-    // RDKit✔️❌:   ROMol::OEDGE_ITER beg, end;
-    // RDKit✔️❌:   boost::tie(beg, end) = at->getOwningMol().getAtomBonds(at);
-    // RDKit✔️❌:   while (beg != end) {
-    // RDKit✔️❌:     if (at->getOwningMol().getRingInfo()->numBondRings((*beg)->getIdx())) {
-    // RDKit✔️❌:       ++res;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     ++beg;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return res;
-    // RDKit✔️❌: };
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: queryAtomRingBondCount
-    let rings = molecule
-        .derived_cache()
-        .rings
-        .clone()
-        .or_else(|| molecule.derived_cache().ring_families.clone())
-        .or_else(|| crate::rings::find_sssr(molecule).ok());
-    let mut counts = vec![0_u8; molecule.num_atoms()];
-    let Some(rings) = rings else {
-        return counts;
-    };
-    for bond in molecule.bonds() {
-        if rings.num_bond_rings(bond.id()) > 0 {
-            let begin = bond.begin().index();
-            let end = bond.end().index();
-            counts[begin] = counts[begin].saturating_add(1);
-            counts[end] = counts[end].saturating_add(1);
-        }
-    }
-    counts
-}
-
-fn complete_mol_queries(molecule: &mut Molecule) {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: completeMolQueries
-    // RDKit✔️❌: void completeMolQueries(RWMol *mol, unsigned int magicVal) {
-    // RDKit✔️❌:   PRECONDITION(mol, "bad molecule");
-    // RDKit✔️❌:   for (auto atom : mol->atoms()) {
-    // RDKit✔️❌:     if (atom->hasQuery()) {
-    // RDKit✔️❌:       completeQueryAndChildren(atom->getQuery(), atom, magicVal);
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: completeMolQueries
-    //
-    // RDKit clears _NeedsQueryScan before calling completeMolQueries from
-    // finishMolProcessing. COSMolKit keeps the clear here because this helper
-    // owns the mutable molecule property map and is called only from that branch.
-    let ring_counts = atom_ring_bond_counts(molecule);
-    let topology = molecule.topology_block_mut();
-    for (atom_idx, atom) in topology.atoms.iter_mut().enumerate() {
-        let Some(mut query) = atom.query().cloned() else {
-            continue;
-        };
-        complete_query_scan_predicates(&mut query, ring_counts[atom_idx]);
-        atom.set_query(Some(query));
-    }
-    molecule.properties_mut().clear_prop("_NeedsQueryScan");
+    crate::search::query::atom_query_has_magic_value(
+        query,
+        crate::search::query::QUERY_SCAN_MAGIC_VALUE,
+    )
 }
 
 fn sgroup_data_values(sgroup: &SubstanceGroup) -> Vec<&str> {
@@ -664,7 +561,6 @@ fn process_smartsq(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void processSMARTSQ
     // END RDKIT CPP BODY: process_smartsq
 
-    let _ = molecule;
     if sgroup
         .data()
         .and_then(|data| data.query_op.as_deref())
@@ -679,8 +575,27 @@ fn process_smartsq(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(
     if smarts.is_empty() {
         return Ok(());
     }
-    // SMARTS string is preserved on the sgroup data (already available via data_fields).
-    // Query atoms are not converted since COSMolKit lacks a SMARTS parser.
+    // Local complexity review: compile the SMARTS once, then cheaply clone the
+    // Arc-backed canonical query molecule for each SGroup atom. This removes
+    // RDKit's repeated per-atom parse while preserving identical query data.
+    let Ok(query_molecule) = crate::mol_from_smarts(smarts, &crate::SmartsParseParams::default())
+    else {
+        return Ok(());
+    };
+    for atom_id in sgroup.atoms() {
+        let Some(atom) = molecule.topology_block_mut().atoms.get_mut(atom_id.index()) else {
+            continue;
+        };
+        atom.set_query(Some(QueryNode::predicate(
+            AtomQueryPredicate::RecursiveSmarts(
+                crate::search::query::RecursiveStructureQuery::from_smarts(
+                    smarts,
+                    query_molecule.clone(),
+                    0,
+                ),
+            ),
+        )));
+    }
     Ok(())
 }
 

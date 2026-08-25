@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use crate::chemistry::ciplabeler::assign_cip_labels;
 use crate::chemistry::valence::rdkit_atomic_mass;
-use crate::search::smarts_parse::build_query_molecule;
+use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
 use crate::{AdjacencyList, AtomId, BondOrder, ChiralTag, Molecule};
 use serde_json::Value;
 
@@ -265,10 +265,15 @@ pub(crate) struct SsMatcher {
 impl SsMatcher {
     #[must_use]
     pub fn try_new(pattern: &str) -> Result<Self, FingerprintError> {
-        let matcher = build_query_molecule(pattern).map_err(|reason| {
+        // RDKit✔️✔️:   RDKit::RWMol *p = RDKit::SmartsToMol(pattern);
+        // RDKit✔️✔️:   TEST_ASSERT(p);
+        // RDKit✔️✔️:   m_matcher.reset(p);
+        // Local complexity review: one canonical linear SMARTS compilation
+        // replaces the transitional conversion and stores its query graph.
+        let matcher = mol_from_smarts(pattern, &SmartsParseParams::default()).map_err(|error| {
             FingerprintError::InvalidSmartsPattern {
                 pattern: pattern.to_string(),
-                reason,
+                reason: error.to_string(),
             }
         })?;
         Ok(Self { matcher })
@@ -7783,7 +7788,7 @@ mod tests {
     #[test]
     fn rdkit_fp_query_bond_path_is_rejected_at_hash_input_boundary() {
         let query =
-            crate::search::smarts_parse::build_query_molecule("[#6]~[#6]").expect("query fixture");
+            crate::search::smarts_parse::compile_query_fixture("[#6]~[#6]").expect("query fixture");
         let invariants = rdkit_fp_atom_invariants(&query);
         let inputs = rdkit_fp_generate_bond_hash_inputs(&query, &[0], true, &invariants)
             .expect("query path result");
@@ -10967,7 +10972,7 @@ mod tests {
     }
 
     #[test]
-    fn default_feature_smarts_matchers_parse_source_patterns() {
+    fn smarts_consumer_fingerprint_patterns() {
         assert_eq!(
             default_feature_smarts(),
             &[

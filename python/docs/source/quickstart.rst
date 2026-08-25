@@ -277,8 +277,8 @@ Parse SMARTS metadata:
    print(query.num_atoms())
    print(query.num_bonds())
 
-``parse_smarts()`` returns a ``SmartsMolecule`` parse tree value. Direct SMARTS
-query matching is not yet a Python API.
+``parse_smarts()`` returns an ordinary ``Molecule`` carrying the compiled query
+graph, ready for the substructure matching APIs.
 
 Batch Processing
 ----------------

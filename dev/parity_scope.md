@@ -373,9 +373,18 @@ unrelated properties. This covers `assignChiralTypesFrom3D`, not
 or distinct-substituent validation.
 
 Tetrahedral stereo geometry separately checks ordered-ligand orientation and
-signed volume against seeded RDKit ETKDG geometries. Substructure matching
-currently compares molecule-query atom mappings; direct SMARTS-query parity is
-outside that specific claim.
+signed volume against seeded RDKit ETKDG geometries. SMARTS parsing, writing,
+and direct query matching use one canonical ordinary-molecule query graph;
+the pinned RDKit 2026.03.1 source corpus contains 91 distinct accepted parser
+inputs, nine rejected inputs, and 62 matcher rows. It compares parser
+acceptance, atom/bond counts, exact molecule SMARTS output, and exact ordered
+atom mappings. Separate strict tests exercise atom/bond/fragment/CXSMARTS
+composition, parser parameters, matcher parameters and callbacks, Python
+conversion, and existing consumers; those tests are not conflated with the
+162-row golden corpus. Reaction and database/container SMARTS remain outside
+the claim. The Bison-specific `debug_parse=true` diagnostic stream is an
+explicitly unsupported diagnostic mode, not a chemistry result inside this
+parity boundary.
 
 ## Interpretation Rules
 

@@ -4929,6 +4929,7 @@ fn symmetrize_terminal_atoms_for_pruning_matches_rdkit_terminal_group_query() {
             uniquify: false,
             use_chirality: false,
             specified_stereo_query_matches_unspecified: false,
+            ..Default::default()
         },
     );
     let atom_mappings: Vec<_> = matches.into_iter().map(|m| m.atom_mapping).collect();

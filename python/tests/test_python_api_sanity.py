@@ -610,16 +610,229 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     chiral.perceive_stereochemistry()
 
 
-def test_smarts_parser_is_exposed_as_python_metadata():
+def test_python_mol_from_smarts():
     query = cosmolkit.parse_smarts("[#6]-O")
 
+    assert isinstance(query, cosmolkit.Molecule)
     assert query.num_atoms() == 2
     assert query.num_bonds() == 1
-    assert query.ring_closures() == []
-    assert "SmartsMolecule" in repr(query)
+    target = cosmolkit.Molecule.from_smiles("CCO")
+    assert cosmolkit.has_substruct_match(target, query) is True
+
+    replaced = cosmolkit.parse_smarts("{carbon}-O", replacements={"{carbon}": "[#6]"})
+    assert replaced.num_atoms() == 2
+
+    merged = cosmolkit.parse_smarts("[H]C", merge_hs=True)
+    assert merged.num_atoms() == 1
 
     with pytest.raises(ValueError, match="SMARTS|smarts|bracket"):
         _ = cosmolkit.parse_smarts("[#6")
+
+
+def test_python_mol_from_smarts_params():
+    params = cosmolkit.SmartsParserParams()
+    assert params.allow_cxsmiles is True
+    assert params.strict_cxsmiles is True
+    assert params.parse_name is True
+    assert params.merge_hs is False
+
+    params.merge_hs = True
+    params.replacements = {"{carbon}": "[#6]"}
+    query = cosmolkit.parse_smarts_with_params("[H]{carbon}", params)
+    assert isinstance(query, cosmolkit.Molecule)
+    assert query.num_atoms() == 1
+
+    params.debug_parse = True
+    with pytest.raises(ValueError, match="debug_parse"):
+        cosmolkit.parse_smarts_with_params("C", params)
+
+
+def test_python_smarts_parser_registrations():
+    assert not hasattr(cosmolkit, "SmartsMolecule")
+    assert cosmolkit.SmartsParserParams.__module__ == "cosmolkit"
+    params = cosmolkit.SmartsParserParams()
+    assert callable(cosmolkit.parse_smarts)
+    assert callable(cosmolkit.parse_smarts_with_params)
+    assert isinstance(cosmolkit.parse_smarts("C"), cosmolkit.Molecule)
+    assert isinstance(
+        cosmolkit.parse_smarts_with_params("C", params), cosmolkit.Molecule
+    )
+
+
+def test_python_smarts_writer_registrations():
+    assert not hasattr(cosmolkit, "mol_to_smarts")
+    assert not hasattr(cosmolkit, "mol_to_cx_smarts")
+
+    query = cosmolkit.parse_smarts("[#6]=[#8]")
+    assert query.to_smarts() == "[#6]=[#8]"
+    assert query.to_smarts(rooted_at_atom=1) == "[#8]=[#6]"
+
+    labeled = cosmolkit.parse_smarts("[#6] |$site$|")
+    assert labeled.to_cx_smarts() == "[#6] |$site$|"
+
+
+def test_python_substruct_final_callback():
+    target = cosmolkit.Molecule.from_smiles("CCC")
+    query = cosmolkit.parse_smarts("CC")
+    seen = []
+
+    def accept_only_last(molecule, atom_ids):
+        assert isinstance(molecule, cosmolkit.Molecule)
+        seen.append(tuple(atom_ids))
+        return tuple(atom_ids) == (1, 2)
+
+    matches = cosmolkit.get_substruct_matches_with_params(
+        target, query, uniquify=False, final_match=accept_only_last
+    )
+    assert [tuple(match.atom_mapping()) for match in matches] == [(1, 2)]
+    assert seen
+
+    def fail(_molecule, _atom_ids):
+        raise RuntimeError("final callback failed")
+
+    with pytest.raises(RuntimeError, match="final callback failed"):
+        cosmolkit.get_substruct_matches_with_params(target, query, final_match=fail)
+
+
+def test_python_substruct_atom_bond_callback():
+    atom_target = cosmolkit.Molecule.from_smiles("CO")
+    atom_query = cosmolkit.parse_smarts("[#6,#8]")
+    atom_calls = []
+
+    def oxygen_only(query_atom, target_atom):
+        assert isinstance(query_atom, cosmolkit.Atom)
+        assert isinstance(target_atom, cosmolkit.Atom)
+        atom_calls.append((query_atom.idx(), target_atom.idx()))
+        return target_atom.atomic_num() == 8
+
+    atom_matches = cosmolkit.get_substruct_matches_with_params(
+        atom_target, atom_query, uniquify=False, atom_match=oxygen_only
+    )
+    assert [tuple(match.atom_mapping()) for match in atom_matches] == [(1,)]
+    assert atom_calls
+
+    bond_target = cosmolkit.Molecule.from_smiles("CC=C")
+    bond_query = cosmolkit.parse_smarts("C~C")
+    bond_calls = []
+
+    def double_only(query_bond, target_bond):
+        assert isinstance(query_bond, cosmolkit.Bond)
+        assert isinstance(target_bond, cosmolkit.Bond)
+        bond_calls.append((query_bond.idx(), target_bond.idx()))
+        return target_bond.bond_type_name() == "DOUBLE"
+
+    bond_matches = cosmolkit.get_substruct_matches_with_params(
+        bond_target, bond_query, uniquify=False, bond_match=double_only
+    )
+    assert {tuple(match.atom_mapping()) for match in bond_matches} == {(1, 2), (2, 1)}
+    assert bond_calls
+
+    def fail(_query_atom, _target_atom):
+        raise RuntimeError("atom callback failed")
+
+    with pytest.raises(RuntimeError, match="atom callback failed"):
+        cosmolkit.get_substruct_matches_with_params(
+            atom_target, atom_query, atom_match=fail
+        )
+
+
+def test_python_substruct_convert_matches():
+    target = cosmolkit.Molecule.from_smiles("OCC")
+    query = cosmolkit.parse_smarts("CC")
+    match = cosmolkit.get_substruct_match(target, query)
+    assert isinstance(match, cosmolkit.SubstructMatchResult)
+    assert match.atom_mapping() == [1, 2]
+
+    no_match = cosmolkit.get_substruct_match(
+        target, cosmolkit.parse_smarts("N#N")
+    )
+    assert no_match is None
+
+
+def test_python_substruct_convert_pairs():
+    target = cosmolkit.Molecule.from_smiles("OCC")
+    query = cosmolkit.parse_smarts("CC")
+    match = cosmolkit.get_substruct_match(target, query)
+    assert match is not None
+    assert match.atom_pairs() == [(0, 1), (1, 2)]
+
+
+def test_python_has_substruct_match():
+    target = cosmolkit.Molecule.from_smiles("CCO")
+    assert cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("CO"))
+    assert not cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("N"))
+    assert cosmolkit.has_substruct_match(
+        target,
+        cosmolkit.parse_smarts("CO"),
+        recursion_possible=True,
+        use_chirality=False,
+        use_query_query_matches=False,
+    )
+
+
+def test_python_get_substruct_match():
+    target = cosmolkit.Molecule.from_smiles("OCC")
+    match = cosmolkit.get_substruct_match(
+        target,
+        cosmolkit.parse_smarts("CC"),
+        use_chirality=False,
+        use_query_query_matches=False,
+    )
+    assert match is not None
+    assert match.atom_mapping() == [1, 2]
+    assert cosmolkit.get_substruct_match(target, cosmolkit.parse_smarts("N")) is None
+
+
+def test_python_get_substruct_matches():
+    target = cosmolkit.Molecule.from_smiles("CCC")
+    query = cosmolkit.parse_smarts("CC")
+    matches = cosmolkit.get_substruct_matches(
+        target,
+        query,
+        uniquify=False,
+        use_chirality=False,
+        use_query_query_matches=False,
+        max_matches=3,
+    )
+    assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0], [1, 2]]
+    assert len(cosmolkit.get_substruct_matches(target, query)) == 2
+
+
+def test_python_substruct_helper():
+    target = cosmolkit.Molecule.from_smiles("CCC")
+    query = cosmolkit.parse_smarts("CC")
+    callback_threads = []
+
+    def accept(_molecule, atom_ids):
+        callback_threads.append(tuple(atom_ids))
+        return True
+
+    matches = cosmolkit.get_substruct_matches_with_params(
+        target, query, max_matches=2, uniquify=False, final_match=accept
+    )
+    assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0]]
+    assert callback_threads == [(0, 1), (1, 0)]
+
+
+def test_python_help_has_substruct():
+    target = cosmolkit.Molecule.from_smiles("CCC")
+    assert cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("CC"))
+    assert not cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("N"))
+
+
+def test_python_help_get_substruct():
+    target = cosmolkit.Molecule.from_smiles("OCC")
+    match = cosmolkit.get_substruct_match(target, cosmolkit.parse_smarts("CC"))
+    assert match is not None
+    assert match.atom_mapping() == [1, 2]
+
+
+def test_python_help_get_substructs():
+    target = cosmolkit.Molecule.from_smiles("CCC")
+    matches = cosmolkit.get_substruct_matches(
+        target, cosmolkit.parse_smarts("CC"), uniquify=False, max_matches=2
+    )
+    assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0]]
 
 
 def test_fragment_hash_pickle_and_scaffold_bindings_are_available():

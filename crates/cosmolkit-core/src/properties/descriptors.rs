@@ -864,6 +864,7 @@ fn rdkit_crippen_atom_contribs(mol: &Molecule) -> DescriptorResult<CrippenAtomCo
         uniquify: false,
         use_chirality: false,
         specified_stereo_query_matches_unspecified: false,
+        ..Default::default()
     };
     for param in params {
         let query = rdkit_count_smarts_matches("calc_crippen_descriptors", param.smarts)?;
@@ -2438,7 +2439,10 @@ fn rdkit_count_smarts_matches(function: &'static str, pattern: &str) -> Descript
     // RDKit✔️✔️:   m_matcher = p;
     // RDKit✔️✔️:   POSTCONDITION(m_matcher, "no matcher");
     // RDKit✔️✔️: };
-    crate::search::smarts_parse::build_query_molecule(pattern).map_err(|_| {
+    // Local complexity review: canonical SMARTS compilation remains linear in
+    // the pattern and directly returns the query-bearing Molecule consumed by
+    // the matcher, with no intermediate graph conversion.
+    crate::mol_from_smarts(pattern, &crate::SmartsParseParams::default()).map_err(|_| {
         DescriptorError::Unsupported {
             function,
             rdkit_function: "RDKit::SmartsToMol",
@@ -2550,7 +2554,7 @@ mod qed_tests {
     }
 
     #[test]
-    fn qed_structural_alert_hits_match_rdkit_simple_smoke_rows() {
+    fn smarts_consumer_descriptor_patterns() {
         assert_eq!(structural_alert_hits("C=C"), vec![19]);
         assert_eq!(structural_alert_hits("N#C"), Vec::<usize>::new());
         assert_eq!(structural_alert_hits("c1ccsc1"), Vec::<usize>::new());

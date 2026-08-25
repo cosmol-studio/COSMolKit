@@ -2087,6 +2087,87 @@ struct Bond {
     cip_neighbor_order: Option<Vec<usize>>,
 }
 
+fn atom_snapshots(molecule: &cosmolkit_core::Molecule) -> Vec<Atom> {
+    let assignment = cosmolkit_core::cached_valence_assignment(molecule)
+        .cloned()
+        .or_else(|| {
+            cosmolkit_core::assign_valence(molecule, cosmolkit_core::ValenceModel::RdkitLike).ok()
+        });
+    let mut degrees = vec![0usize; molecule.atoms().len()];
+    for bond in molecule.bonds() {
+        degrees[bond.begin().index()] += 1;
+        degrees[bond.end().index()] += 1;
+    }
+    molecule
+        .atoms()
+        .iter()
+        .map(|atom| Atom {
+            idx: atom.id().index(),
+            atomic_num: atom.atomic_number() as usize,
+            formal_charge: atom.formal_charge(),
+            chiral_tag_name: atom.chiral_tag().rdkit_name().to_string(),
+            chiral_tag_code: atom.chiral_tag().python_code(),
+            isotope: atom.isotope(),
+            atom_map_num: atom.atom_map(),
+            is_aromatic: atom.is_aromatic(),
+            explicit_hydrogens: atom.explicit_hydrogens() as usize,
+            no_implicit: atom.no_implicit(),
+            num_radical_electrons: atom.radical_electrons() as usize,
+            degree: degrees[atom.id().index()],
+            explicit_valence: assignment
+                .as_ref()
+                .map(|v| v.explicit_valence[atom.id().index()] as usize),
+            implicit_hydrogens: assignment
+                .as_ref()
+                .map(|v| v.implicit_hydrogens[atom.id().index()] as usize),
+            total_num_hs: assignment.as_ref().map(|v| {
+                atom.explicit_hydrogens() as usize
+                    + v.implicit_hydrogens[atom.id().index()] as usize
+            }),
+            total_valence: assignment.as_ref().map(|v| {
+                v.explicit_valence[atom.id().index()] as usize
+                    + v.implicit_hydrogens[atom.id().index()] as usize
+            }),
+            cip_code: atom.prop("_CIPCode").map(str::to_owned),
+            cip_neighbor_order: atom
+                .prop("_CIPNeighborOrder")
+                .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
+                .map(|values| values.into_iter().map(|value| value as usize).collect()),
+            cip_rank: atom
+                .prop("_CIPRank")
+                .and_then(|value| value.parse::<u32>().ok()),
+        })
+        .collect()
+}
+
+fn bond_snapshots(molecule: &cosmolkit_core::Molecule) -> Vec<Bond> {
+    molecule
+        .bonds()
+        .iter()
+        .map(|bond| Bond {
+            idx: bond.id().index(),
+            begin_atom_idx: bond.begin().index(),
+            end_atom_idx: bond.end().index(),
+            bond_type_name: bond.order().rdkit_name().to_string(),
+            bond_type_code: bond.order().python_code(),
+            bond_dir_name: bond.direction().rdkit_name().to_string(),
+            bond_dir_code: bond.direction().python_code(),
+            stereo_name: bond.stereo().rdkit_name().to_string(),
+            stereo_code: bond.stereo().python_code(),
+            stereo_atoms: bond
+                .stereo_atoms()
+                .map(|refs| refs.map(|id| id.index()).to_vec())
+                .unwrap_or_default(),
+            is_aromatic: bond.is_aromatic(),
+            cip_code: bond.prop("_CIPCode").map(str::to_owned),
+            cip_neighbor_order: bond
+                .prop("_CIPNeighborOrder")
+                .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
+                .map(|values| values.into_iter().map(|value| value as usize).collect()),
+        })
+        .collect()
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "BatchError", skip_from_py_object)]
 #[derive(Clone)]
@@ -4931,88 +5012,14 @@ remains complete and the error is raised to Python.
 Return read-only atom feature records.
 "#]
     fn atoms(&self) -> Vec<Atom> {
-        let assignment = cosmolkit_core::cached_valence_assignment(&self.inner)
-            .cloned()
-            .or_else(|| {
-                cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
-                    .ok()
-            });
-        let mut degrees = vec![0usize; self.inner.atoms().len()];
-        for bond in self.inner.bonds() {
-            degrees[bond.begin().index()] += 1;
-            degrees[bond.end().index()] += 1;
-        }
-        self.inner
-            .atoms()
-            .iter()
-            .map(|atom| Atom {
-                idx: atom.id().index(),
-                atomic_num: atom.atomic_number() as usize,
-                formal_charge: atom.formal_charge(),
-                chiral_tag_name: atom.chiral_tag().rdkit_name().to_string(),
-                chiral_tag_code: atom.chiral_tag().python_code(),
-                isotope: atom.isotope(),
-                atom_map_num: atom.atom_map(),
-                is_aromatic: atom.is_aromatic(),
-                explicit_hydrogens: atom.explicit_hydrogens() as usize,
-                no_implicit: atom.no_implicit(),
-                num_radical_electrons: atom.radical_electrons() as usize,
-                degree: degrees[atom.id().index()],
-                explicit_valence: assignment
-                    .as_ref()
-                    .map(|v| v.explicit_valence[atom.id().index()] as usize),
-                implicit_hydrogens: assignment
-                    .as_ref()
-                    .map(|v| v.implicit_hydrogens[atom.id().index()] as usize),
-                total_num_hs: assignment.as_ref().map(|v| {
-                    atom.explicit_hydrogens() as usize
-                        + v.implicit_hydrogens[atom.id().index()] as usize
-                }),
-                total_valence: assignment.as_ref().map(|v| {
-                    v.explicit_valence[atom.id().index()] as usize
-                        + v.implicit_hydrogens[atom.id().index()] as usize
-                }),
-                cip_code: atom.prop("_CIPCode").map(str::to_owned),
-                cip_neighbor_order: atom
-                    .prop("_CIPNeighborOrder")
-                    .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
-                    .map(|values| values.into_iter().map(|value| value as usize).collect()),
-                cip_rank: atom
-                    .prop("_CIPRank")
-                    .and_then(|value| value.parse::<u32>().ok()),
-            })
-            .collect()
+        atom_snapshots(&self.inner)
     }
 
     #[doc = r#"
 Return read-only bond feature records.
 "#]
     fn bonds(&self) -> Vec<Bond> {
-        self.inner
-            .bonds()
-            .iter()
-            .map(|bond| Bond {
-                idx: bond.id().index(),
-                begin_atom_idx: bond.begin().index(),
-                end_atom_idx: bond.end().index(),
-                bond_type_name: bond.order().rdkit_name().to_string(),
-                bond_type_code: bond.order().python_code(),
-                bond_dir_name: bond.direction().rdkit_name().to_string(),
-                bond_dir_code: bond.direction().python_code(),
-                stereo_name: bond.stereo().rdkit_name().to_string(),
-                stereo_code: bond.stereo().python_code(),
-                stereo_atoms: bond
-                    .stereo_atoms()
-                    .map(|refs| refs.map(|id| id.index()).to_vec())
-                    .unwrap_or_default(),
-                is_aromatic: bond.is_aromatic(),
-                cip_code: bond.prop("_CIPCode").map(str::to_owned),
-                cip_neighbor_order: bond
-                    .prop("_CIPNeighborOrder")
-                    .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
-                    .map(|values| values.into_iter().map(|value| value as usize).collect()),
-            })
-            .collect()
+        bond_snapshots(&self.inner)
     }
 
     #[pyo3(signature = (include_unassigned=true))]
@@ -5715,6 +5722,48 @@ rooted_at_atom : int, optional
                 "Molecule.to_smiles(...) is not implemented for these parameters yet: {err}"
             ))
         })
+    }
+
+    #[pyo3(signature = (isomeric_smarts=true, rooted_at_atom=None))]
+    #[doc = r#"
+Return a SMARTS string for this molecule or compiled query.
+
+``rooted_at_atom`` selects the traversal root when provided.
+"#]
+    fn to_smarts(&self, isomeric_smarts: bool, rooted_at_atom: Option<usize>) -> PyResult<String> {
+        // RDKit✔️✔️:   python::def("MolToSmarts",
+        // RDKit✔️✔️:               (std::string(*)(const ROMol &, bool, int))RDKit::MolToSmarts,
+        // RDKit✔️✔️:               (python::arg("mol"), python::arg("isomericSmiles") = true,
+        // RDKit✔️✔️:                python::arg("rootedAtAtom") = -1),
+        // RDKit✔️✔️:               docString.c_str());
+        // Complexity review: this method builds one constant-size parameter
+        // value and invokes the sole core writer without Python-side traversal.
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: isomeric_smarts,
+            rooted_at_atom,
+            ..Default::default()
+        };
+        cosmolkit_core::mol_to_smarts(&self.inner, &params)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    }
+
+    #[pyo3(signature = (isomeric_smarts=true))]
+    #[doc = r#"
+Return a CXSMARTS string for this molecule or compiled query.
+"#]
+    fn to_cx_smarts(&self, isomeric_smarts: bool) -> PyResult<String> {
+        // RDKit✔️✔️:   python::def("MolToCXSmarts",
+        // RDKit✔️✔️:               (std::string(*)(const ROMol &, bool))RDKit::MolToCXSmarts,
+        // RDKit✔️✔️:               (python::arg("mol"), python::arg("isomericSmiles") = true),
+        // RDKit✔️✔️:               docString.c_str());
+        // Complexity review: this method invokes the canonical SMARTS and CX
+        // serializers once each and performs no conversion or reparsing.
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: isomeric_smarts,
+            ..Default::default()
+        };
+        cosmolkit_core::mol_to_cx_smarts(&self.inner, &params)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
     }
 
     #[pyo3(signature = (options = ""))]
@@ -7854,7 +7903,7 @@ impl Bond {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 #[doc = r#"
 An explicit molecule editing context.
 
@@ -9351,41 +9400,6 @@ impl MmffOptimizeMoleculeConfsResult {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(name = "SmartsMolecule", skip_from_py_object)]
-#[derive(Clone)]
-struct PySmartsMolecule {
-    inner: cosmolkit_core::smarts_parse::SmartsMolecule,
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl PySmartsMolecule {
-    /// Return the number of atom query nodes in the SMARTS pattern.
-    fn num_atoms(&self) -> usize {
-        self.inner.num_atoms()
-    }
-
-    /// Return the number of bond query nodes in the SMARTS pattern.
-    fn num_bonds(&self) -> usize {
-        self.inner.bond_queries.len()
-    }
-
-    /// Return ring-closure records as ``(closure_number, atom_index)`` tuples.
-    fn ring_closures(&self) -> Vec<(u8, usize)> {
-        self.inner.ring_closures.clone()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "SmartsMolecule(num_atoms={}, num_bonds={}, ring_closures={})",
-            self.num_atoms(),
-            self.num_bonds(),
-            self.inner.ring_closures.len()
-        )
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
 struct SubstructMatchResult {
@@ -9393,13 +9407,153 @@ struct SubstructMatchResult {
     bond_mapping: Vec<usize>,
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[derive(Clone)]
+struct SmartsParserParams {
+    inner: cosmolkit_core::smarts_parse::SmartsParseParams,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl SmartsParserParams {
+    // RDKit✔️✔️:   python::class_<RDKit::SmartsParserParams, boost::noncopyable>(
+    // RDKit✔️✔️:       "SmartsParserParams", "Parameters controlling SMARTS Parsing")
+    // RDKit✔️✔️:       .def_readwrite("debugParse", &RDKit::SmartsParserParams::debugParse,
+    // RDKit✔️✔️:                      "controls the amount of debugging information produced")
+    // RDKit✔️✔️:       .def_readwrite("parseName", &RDKit::SmartsParserParams::parseName,
+    // RDKit✔️✔️:                      "controls whether or not the molecule name is also parsed")
+    // RDKit✔️✔️:       .def_readwrite(
+    // RDKit✔️✔️:           "allowCXSMILES", &RDKit::SmartsParserParams::allowCXSMILES,
+    // RDKit✔️✔️:           "controls whether or not the CXSMILES extensions are parsed")
+    // RDKit✔️✔️:       .def_readwrite("strictCXSMILES",
+    // RDKit✔️✔️:                      &RDKit::SmartsParserParams::strictCXSMILES,
+    // RDKit✔️✔️:                      "controls whether or not problems in CXSMILES parsing "
+    // RDKit✔️✔️:                      "causes molecule parsing to fail")
+    // RDKit✔️✔️:       .def_readwrite(
+    // RDKit✔️✔️:           "mergeHs", &RDKit::SmartsParserParams::mergeHs,
+    // RDKit✔️✔️:           "toggles merging H atoms in the SMARTS into neighboring atoms")
+    // RDKit✔️✔️:       .def("__setattr__", &safeSetattr);
+    // Complexity review: registration creates one Python type with constant
+    // field descriptors. Snake-case names follow the COSMolKit Python API and
+    // every field maps directly onto the sole core parameter value.
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: cosmolkit_core::smarts_parse::SmartsParseParams::default(),
+        }
+    }
+
+    #[getter]
+    fn debug_parse(&self) -> bool {
+        self.inner.debug_parse
+    }
+
+    #[setter]
+    fn set_debug_parse(&mut self, value: bool) {
+        self.inner.debug_parse = value;
+    }
+
+    #[getter]
+    fn parse_name(&self) -> bool {
+        self.inner.parse_name
+    }
+
+    #[setter]
+    fn set_parse_name(&mut self, value: bool) {
+        self.inner.parse_name = value;
+    }
+
+    #[getter]
+    fn allow_cxsmiles(&self) -> bool {
+        self.inner.allow_cxsmiles
+    }
+
+    #[setter]
+    fn set_allow_cxsmiles(&mut self, value: bool) {
+        self.inner.allow_cxsmiles = value;
+    }
+
+    #[getter]
+    fn strict_cxsmiles(&self) -> bool {
+        self.inner.strict_cxsmiles
+    }
+
+    #[setter]
+    fn set_strict_cxsmiles(&mut self, value: bool) {
+        self.inner.strict_cxsmiles = value;
+    }
+
+    #[getter]
+    fn merge_hs(&self) -> bool {
+        self.inner.merge_hs
+    }
+
+    #[setter]
+    fn set_merge_hs(&mut self, value: bool) {
+        self.inner.merge_hs = value;
+    }
+
+    #[getter]
+    fn skip_cleanup(&self) -> bool {
+        self.inner.skip_cleanup
+    }
+
+    #[setter]
+    fn set_skip_cleanup(&mut self, value: bool) {
+        self.inner.skip_cleanup = value;
+    }
+
+    #[getter]
+    fn replacements(&self) -> BTreeMap<String, String> {
+        self.inner.replacements.clone()
+    }
+
+    #[setter]
+    fn set_replacements(&mut self, value: BTreeMap<String, String>) {
+        self.inner.replacements = value;
+    }
+}
+
 impl From<cosmolkit_core::SubstructMatchResult> for SubstructMatchResult {
     fn from(value: cosmolkit_core::SubstructMatchResult) -> Self {
         Self {
-            atom_mapping: value.atom_mapping,
+            atom_mapping: convert_matches(value.atom_mapping),
             bond_mapping: value.bond_mapping,
         }
     }
+}
+
+fn convert_matches(matches: Vec<usize>) -> Vec<usize> {
+    // RDKit✔️🔝: inline PyObject *convertMatches(const MatchVectType &matches) {
+    // RDKit✔️🔝:   PyObject *res = PyTuple_New(matches.size());
+    // RDKit✔️🔝:   std::for_each(matches.begin(), matches.end(), [res](const auto &pair) {
+    // RDKit✔️🔝:     PyTuple_SetItem(res, pair.first, PyInt_FromLong(pair.second));
+    // RDKit✔️🔝:   });
+    // RDKit✔️🔝:   return res;
+    // RDKit✔️🔝: }
+    // COSMolKit's core match result already stores the target atom ids as a
+    // dense query-indexed vector, which is exactly the source function's
+    // output representation. Moving that vector preserves all ordering and
+    // empty-result semantics while avoiding RDKit's O(query atoms) tuple fill.
+    matches
+}
+
+fn convert_matches_to_tuple_of_pairs(matches: &[usize]) -> Vec<(usize, usize)> {
+    // RDKit✔️✔️: inline PyObject *convertMatchesToTupleOfPairs(const MatchVectType &matches) {
+    // RDKit✔️✔️:   PyObject *res = PyTuple_New(matches.size());
+    // RDKit✔️✔️:   std::for_each(matches.begin(), matches.end(),
+    // RDKit✔️✔️:                 [res, &matches](const auto &pair) {
+    // RDKit✔️✔️:                   PyObject *pyPair = PyTuple_New(2);
+    // RDKit✔️✔️:                   PyTuple_SetItem(pyPair, 0, PyInt_FromLong(pair.first));
+    // RDKit✔️✔️:                   PyTuple_SetItem(pyPair, 1, PyInt_FromLong(pair.second));
+    // RDKit✔️✔️:                   PyTuple_SetItem(res, &pair - &matches.front(), pyPair);
+    // RDKit✔️✔️:                 });
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Complexity review: one O(query atoms) pass allocates one pair per atom,
+    // matching the source tuple-of-pairs construction and preserving order.
+    matches.iter().copied().enumerate().collect()
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -9410,6 +9564,9 @@ impl SubstructMatchResult {
     }
     fn bond_mapping(&self) -> Vec<usize> {
         self.bond_mapping.clone()
+    }
+    fn atom_pairs(&self) -> Vec<(usize, usize)> {
+        convert_matches_to_tuple_of_pairs(&self.atom_mapping)
     }
 }
 
@@ -9493,14 +9650,65 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
-Parse SMARTS text into a ``SmartsMolecule`` query-tree value.
-
-This exposes SMARTS parse metadata in Python. Direct SMARTS query matching is
-not yet a Python API.
+Compile SMARTS text into a query-bearing ``Molecule``.
 "#]
-fn parse_smarts(smarts: &str) -> PyResult<PySmartsMolecule> {
-    let inner = cosmolkit_core::smarts_parse::parse_smarts(smarts).map_err(smarts_parse_pyerr)?;
-    Ok(PySmartsMolecule { inner })
+#[pyo3(signature = (smarts, merge_hs=false, replacements=None))]
+fn parse_smarts(
+    smarts: &str,
+    merge_hs: bool,
+    replacements: Option<BTreeMap<String, String>>,
+) -> PyResult<Molecule> {
+    // RDKit✔️✔️: ROMol *MolFromSmarts(python::object ismarts, bool mergeHs,
+    // RDKit✔️✔️:                      python::dict replDict) {
+    // RDKit✔️✔️:   std::map<std::string, std::string> replacements;
+    // RDKit✔️✔️:   const auto items = replDict.items();
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < python::len(items); ++i) {
+    // RDKit✔️✔️:     const auto item = items[i];
+    // RDKit✔️✔️:     replacements[python::extract<std::string>(item[0])] =
+    // RDKit✔️✔️:         python::extract<std::string>(item[1]);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::string smarts = pyObjectToString(ismarts);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RWMol *newM;
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     newM = SmartsToMol(smarts, 0, mergeHs, &replacements);
+    // RDKit✔️✔️:   } catch (...) {
+    // RDKit✔️✔️:     newM = nullptr;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return static_cast<ROMol *>(newM);
+    // RDKit✔️✔️: }
+    // Complexity review: dictionary extraction is linear in replacements and
+    // the canonical compiler is linear in SMARTS plus graph size. Rust returns
+    // a structured parse error instead of RDKit's Python nullptr convention.
+    let params = cosmolkit_core::smarts_parse::SmartsParseParams {
+        merge_hs,
+        replacements: replacements.unwrap_or_default(),
+        ..Default::default()
+    };
+    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params)
+        .map_err(smarts_parse_pyerr)?;
+    Ok(Molecule { inner })
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+fn parse_smarts_with_params(smarts: &str, params: &SmartsParserParams) -> PyResult<Molecule> {
+    // RDKit✔️✔️: ROMol *MolFromSmartsHelper(python::object ismiles,
+    // RDKit✔️✔️:                            const SmartsParserParams &params) {
+    // RDKit✔️✔️:   std::string smiles = pyObjectToString(ismiles);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     return SmartsToMol(smiles, params);
+    // RDKit✔️✔️:   } catch (...) {
+    // RDKit✔️✔️:     return nullptr;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Complexity review: both convert one Python string and invoke the same
+    // canonical compiler once. The cloned parameter value is bounded by the
+    // replacements map and introduces no query graph copy or alternate parser.
+    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params.inner)
+        .map_err(smarts_parse_pyerr)?;
+    Ok(Molecule { inner })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -9631,38 +9839,231 @@ fn mmff_optimize_molecule_confs(
     .map_err(forcefield_pyerr)
 }
 
+fn py_substruct_helper(
+    mol: &cosmolkit_core::Molecule,
+    query: &cosmolkit_core::Molecule,
+    params: &cosmolkit_core::SubstructMatchParams,
+) -> Vec<cosmolkit_core::SubstructMatchResult> {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: void pySubstructHelper(T1 &mol, T2 &query,
+    // RDKit✔️✔️:                        const SubstructMatchParameters &params,
+    // RDKit✔️✔️:                        std::vector<MatchVectType> &matches) {
+    // RDKit✔️✔️:   // it's safe to release the GIL here since the functors wrapping the python
+    // RDKit✔️✔️:   // callbacks will reacquire it as needed
+    // RDKit✔️✔️:   NOGIL gil;
+    // RDKit✔️✔️:   matches = SubstructMatch(mol, query, params);
+    // RDKit✔️✔️: }
+    // Complexity review: GIL release and one core matcher call add constant
+    // overhead; result allocation and callback dispatch match the source path.
+    Python::attach(|py| {
+        py.detach(|| cosmolkit_core::get_substruct_matches_with_params(mol, query, params))
+    })
+}
+
+fn help_has_substruct_match(
+    mol: &cosmolkit_core::Molecule,
+    query: &cosmolkit_core::Molecule,
+    params: &cosmolkit_core::SubstructMatchParams,
+) -> bool {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: bool helpHasSubstructMatch(T1 &mol, T2 &query,
+    // RDKit✔️✔️:                            const SubstructMatchParameters &params) {
+    // RDKit✔️✔️:   SubstructMatchParameters ps = params;
+    // RDKit✔️✔️:   ps.maxMatches = 1;
+    // RDKit✔️✔️:   std::vector<MatchVectType> matches;
+    // RDKit✔️✔️:   pySubstructHelper(mol, query, params, matches);
+    // RDKit✔️✔️:   return matches.size() != 0;
+    // RDKit✔️✔️: }
+    // Complexity review: this intentionally preserves RDKit's use of the
+    // original params after preparing `ps`; search cost therefore follows the
+    // caller's max_matches instead of being forcibly bounded to one.
+    let mut _ps = params.clone();
+    _ps.max_matches = 1;
+    !py_substruct_helper(mol, query, params).is_empty()
+}
+
+fn help_get_substruct_match(
+    mol: &cosmolkit_core::Molecule,
+    query: &cosmolkit_core::Molecule,
+    params: &cosmolkit_core::SubstructMatchParams,
+) -> Option<cosmolkit_core::SubstructMatchResult> {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: PyObject *helpGetSubstructMatch(T1 &mol, T2 &query,
+    // RDKit✔️✔️:                                 const SubstructMatchParameters &params) {
+    // RDKit✔️✔️:   SubstructMatchParameters ps = params;
+    // RDKit✔️✔️:   ps.maxMatches = 1;
+    // RDKit✔️✔️:   std::vector<MatchVectType> matches;
+    // RDKit✔️✔️:   pySubstructHelper(mol, query, params, matches);
+    // RDKit✔️✔️:   MatchVectType match;
+    // RDKit✔️✔️:   if (matches.size()) {
+    // RDKit✔️✔️:     match = matches[0];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return convertMatches(match);
+    // RDKit✔️✔️: }
+    // Complexity review: preserves the source's original-params call and
+    // returns the first already-allocated result without an extra scan.
+    let mut _ps = params.clone();
+    _ps.max_matches = 1;
+    py_substruct_helper(mol, query, params).into_iter().next()
+}
+
+fn help_get_substruct_matches(
+    mol: &cosmolkit_core::Molecule,
+    query: &cosmolkit_core::Molecule,
+    params: &cosmolkit_core::SubstructMatchParams,
+) -> Vec<cosmolkit_core::SubstructMatchResult> {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: PyObject *helpGetSubstructMatches(T1 &mol, T2 &query,
+    // RDKit✔️✔️:                                   const SubstructMatchParameters &params) {
+    // RDKit✔️✔️:   std::vector<MatchVectType> matches;
+    // RDKit✔️✔️:   pySubstructHelper(mol, query, params, matches);
+    // RDKit✔️✔️:   PyObject *res = PyTuple_New(matches.size());
+    // RDKit✔️✔️:   for (size_t idx = 0; idx < matches.size(); idx++) {
+    // RDKit✔️✔️:     PyTuple_SetItem(res, idx, convertMatches(matches[idx]));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Complexity review: delegates one search and moves each result once,
+    // matching the source's linear result conversion.
+    py_substruct_helper(mol, query, params)
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
+#[pyo3(signature = (
+    mol,
+    query,
+    recursion_possible=true,
+    use_chirality=false,
+    use_query_query_matches=false
+))]
 #[doc = r#"
 Return whether a molecule contains a molecule-query substructure.
 
-This surface is unfinished until strict RDKit molecule-query parity tests pass.
-Direct SMARTS query matching is not yet exposed as a Python API.
+The query must be the canonical query-bearing ``Molecule`` returned by
+``parse_smarts``. The ordinary-molecule SMARTS and substructure boundary is
+covered by the pinned RDKit parity corpus; reaction and database/container
+SMARTS remain outside this API.
 "#]
-fn has_substruct_match(mol: &Molecule, query: &Molecule) -> bool {
-    cosmolkit_core::has_substruct_match(&mol.inner, &query.inner)
+fn has_substruct_match(
+    mol: &Molecule,
+    query: &Molecule,
+    recursion_possible: bool,
+    use_chirality: bool,
+    use_query_query_matches: bool,
+) -> bool {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: bool HasSubstructMatch(T1 &mol, T2 &query, bool recursionPossible = true,
+    // RDKit✔️✔️:                        bool useChirality = false,
+    // RDKit✔️✔️:                        bool useQueryQueryMatches = false) {
+    // RDKit✔️✔️:   NOGIL gil;
+    // RDKit✔️✔️:   MatchVectType res;
+    // RDKit✔️✔️:   return SubstructMatch(mol, query, res, recursionPossible, useChirality,
+    // RDKit✔️✔️:                         useQueryQueryMatches);
+    // RDKit✔️✔️: }
+    // Complexity review: both paths run one bounded substructure search and
+    // stop after the first match. Parameter construction is constant-space.
+    let params = cosmolkit_core::SubstructMatchParams {
+        max_matches: 1,
+        recursion_possible,
+        use_chirality,
+        use_query_query_matches,
+        ..Default::default()
+    };
+    help_has_substruct_match(&mol.inner, &query.inner, &params)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
+#[pyo3(signature = (mol, query, use_chirality=false, use_query_query_matches=false))]
 #[doc = r#"
 Return the first molecule-query substructure match, if present.
 
-This surface is unfinished until strict RDKit molecule-query parity tests pass.
+The ordinary-molecule SMARTS and substructure boundary is covered by the
+pinned RDKit parity corpus. Reaction and database/container SMARTS remain
+outside this API.
 "#]
-fn get_substruct_match(mol: &Molecule, query: &Molecule) -> Option<SubstructMatchResult> {
-    cosmolkit_core::get_substruct_match(&mol.inner, &query.inner).map(Into::into)
+fn get_substruct_match(
+    mol: &Molecule,
+    query: &Molecule,
+    use_chirality: bool,
+    use_query_query_matches: bool,
+) -> Option<SubstructMatchResult> {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: PyObject *GetSubstructMatch(T1 &mol, T2 &query, bool useChirality = false,
+    // RDKit✔️✔️:                             bool useQueryQueryMatches = false) {
+    // RDKit✔️✔️:   MatchVectType matches;
+    // RDKit✔️✔️:   {
+    // RDKit✔️✔️:     NOGIL gil;
+    // RDKit✔️✔️:     SubstructMatch(mol, query, matches, true, useChirality,
+    // RDKit✔️✔️:                    useQueryQueryMatches);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return convertMatches(matches);
+    // RDKit✔️✔️: }
+    // Complexity review: both paths bound the search to one result and then
+    // move its dense mapping into the Python result in O(1) auxiliary work.
+    let params = cosmolkit_core::SubstructMatchParams {
+        max_matches: 1,
+        use_chirality,
+        use_query_query_matches,
+        ..Default::default()
+    };
+    help_get_substruct_match(&mol.inner, &query.inner, &params).map(Into::into)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
+#[pyo3(signature = (
+    mol,
+    query,
+    uniquify=true,
+    use_chirality=false,
+    use_query_query_matches=false,
+    max_matches=1000
+))]
 #[doc = r#"
 Return molecule-query substructure matches.
 
-This surface is unfinished until strict RDKit molecule-query parity tests pass.
+The ordinary-molecule SMARTS and substructure boundary is covered by the
+pinned RDKit parity corpus. Reaction and database/container SMARTS remain
+outside this API.
 "#]
-fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatchResult> {
-    cosmolkit_core::get_substruct_matches(&mol.inner, &query.inner)
+fn get_substruct_matches(
+    mol: &Molecule,
+    query: &Molecule,
+    uniquify: bool,
+    use_chirality: bool,
+    use_query_query_matches: bool,
+    max_matches: usize,
+) -> Vec<SubstructMatchResult> {
+    // RDKit✔️✔️: template <typename T1, typename T2>
+    // RDKit✔️✔️: PyObject *GetSubstructMatches(T1 &mol, T2 &query, bool uniquify = true,
+    // RDKit✔️✔️:                               bool useChirality = false,
+    // RDKit✔️✔️:                               bool useQueryQueryMatches = false,
+    // RDKit✔️✔️:                               unsigned int maxMatches = 1000) {
+    // RDKit✔️✔️:   std::vector<MatchVectType> matches;
+    // RDKit✔️✔️:   int matched;
+    // RDKit✔️✔️:   {
+    // RDKit✔️✔️:     NOGIL gil;
+    // RDKit✔️✔️:     matched = SubstructMatch(mol, query, matches, uniquify, true, useChirality,
+    // RDKit✔️✔️:                              useQueryQueryMatches, maxMatches);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   PyObject *res = PyTuple_New(matched);
+    // RDKit✔️✔️:   for (int idx = 0; idx < matched; idx++) {
+    // RDKit✔️✔️:     PyTuple_SetItem(res, idx, convertMatches(matches[idx]));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Complexity review: the core search has the same match limit and
+    // uniquification shape; converting each result is linear in result count.
+    let params = cosmolkit_core::SubstructMatchParams {
+        max_matches,
+        uniquify,
+        use_chirality,
+        use_query_query_matches,
+        ..Default::default()
+    };
+    help_get_substruct_matches(&mol.inner, &query.inner, &params)
         .into_iter()
         .map(Into::into)
         .collect()
@@ -9670,28 +10071,194 @@ fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatch
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
-#[pyo3(signature = (mol, query, max_matches=1000, uniquify=true))]
+#[pyo3(signature = (
+    mol,
+    query,
+    max_matches=1000,
+    uniquify=true,
+    final_match=None,
+    atom_match=None,
+    bond_match=None
+))]
 #[doc = r#"
 Return molecule-query substructure matches with explicit limits.
 
-This surface is unfinished until strict RDKit molecule-query parity tests pass.
+The ordinary-molecule SMARTS and substructure boundary is covered by the
+pinned RDKit parity corpus. Reaction and database/container SMARTS remain
+outside this API.
 "#]
 fn get_substruct_matches_with_params(
     mol: &Molecule,
     query: &Molecule,
     max_matches: usize,
     uniquify: bool,
-) -> Vec<SubstructMatchResult> {
+    final_match: Option<Py<PyAny>>,
+    atom_match: Option<Py<PyAny>>,
+    bond_match: Option<Py<PyAny>>,
+) -> PyResult<Vec<SubstructMatchResult>> {
+    let callback_error = Arc::new(Mutex::new(None::<PyErr>));
+    let extra_final_check = final_match.map(|callback| {
+        // RDKit✔️✔️: class pyFinalMatchFunctor : public pyFunctor {
+        // RDKit✔️✔️:  public:
+        // RDKit✔️✔️:   pyFinalMatchFunctor(python::object obj) : dp_obj(std::move(obj)) {}
+        // RDKit✔️✔️:   ~pyFinalMatchFunctor() = default;
+        // RDKit✔️✔️:   bool operator()(const ROMol &m, std::span<const unsigned int> match) {
+        // RDKit✔️✔️:     // grab the GIL
+        // RDKit✔️✔️:     PyGILStateHolder h;
+        // RDKit✔️✔️:     // boost::python doesn't handle std::span, so we need to convert the span to
+        // RDKit✔️✔️:     // a vector before calling into python:
+        // RDKit✔️✔️:     std::vector<unsigned int> matchVec(match.begin(), match.end());
+        // RDKit✔️✔️:     return python::extract<bool>(dp_obj(boost::ref(m), boost::ref(matchVec)));
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:  private:
+        // RDKit✔️✔️:   python::object dp_obj;
+        // RDKit✔️✔️: };
+        // Complexity review: both copy the O(query atoms) match span once and
+        // call Python once per completed candidate. Rust clones Molecule's
+        // Arc-backed blocks cheaply and preserves callback exceptions.
+        let callback_error = Arc::clone(&callback_error);
+        Arc::new(
+            move |matched: &cosmolkit_core::Molecule, atom_ids: &[usize]| {
+                Python::attach(|py| {
+                    let result = Py::new(
+                        py,
+                        Molecule {
+                            inner: matched.clone(),
+                        },
+                    )
+                    .and_then(|py_molecule| {
+                        callback
+                            .call1(py, (py_molecule, atom_ids.to_vec()))
+                            .and_then(|value| value.extract::<bool>(py))
+                    });
+                    match result {
+                        Ok(accepted) => accepted,
+                        Err(error) => {
+                            *callback_error
+                                .lock()
+                                .expect("callback error mutex poisoned") = Some(error);
+                            false
+                        }
+                    }
+                })
+            },
+        ) as cosmolkit_core::ExtraFinalCheck
+    });
+    let extra_atom_check = atom_match.map(|callback| {
+        // RDKit✔️❌: template <typename T>
+        // RDKit✔️❌: class pyMatchFunctor : public pyFunctor {
+        // RDKit✔️❌:  public:
+        // RDKit✔️❌:   pyMatchFunctor(python::object obj) : dp_obj(std::move(obj)) {}
+        // RDKit✔️❌:   ~pyMatchFunctor() = default;
+        // RDKit✔️❌:   bool operator()(const T &a1, const T &a2) {
+        // RDKit✔️❌:     // grab the GIL
+        // RDKit✔️❌:     PyGILStateHolder h;
+        // RDKit✔️❌:     return python::extract<bool>(dp_obj(boost::ref(a1), boost::ref(a2)));
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:  private:
+        // RDKit✔️❌:   python::object dp_obj;
+        // RDKit✔️❌: };
+        // Complexity review: callback dispatch remains O(1), but the Python
+        // binding owns read-only Atom snapshots instead of zero-copy borrowed
+        // wrappers. Snapshots are built once per match invocation and cloned
+        // once per callback, adding allocation relative to Boost.Python.
+        let callback_error = Arc::clone(&callback_error);
+        let query_atoms = Arc::new(atom_snapshots(&query.inner));
+        let target_atoms = Arc::new(atom_snapshots(&mol.inner));
+        Arc::new(
+            move |_query_molecule: &cosmolkit_core::Molecule,
+                  query_atom: &cosmolkit_core::Atom,
+                  _target_molecule: &cosmolkit_core::Molecule,
+                  target_atom: &cosmolkit_core::Atom| {
+                Python::attach(|py| {
+                    let result = Py::new(py, query_atoms[query_atom.id().index()].clone())
+                        .and_then(|py_query_atom| {
+                            Py::new(py, target_atoms[target_atom.id().index()].clone()).and_then(
+                                |py_target_atom| {
+                                    callback
+                                        .call1(py, (py_query_atom, py_target_atom))
+                                        .and_then(|value| value.extract::<bool>(py))
+                                },
+                            )
+                        });
+                    match result {
+                        Ok(accepted) => accepted,
+                        Err(error) => {
+                            let mut stored = callback_error
+                                .lock()
+                                .expect("callback error mutex poisoned");
+                            if stored.is_none() {
+                                *stored = Some(error);
+                            }
+                            false
+                        }
+                    }
+                })
+            },
+        ) as cosmolkit_core::ExtraAtomCheck
+    });
+    let extra_bond_check = bond_match.map(|callback| {
+        // The verbatim pyMatchFunctor source body is anchored in the atom
+        // specialization immediately above; this is its Bond specialization.
+        // Complexity review: the same O(1) dispatch and one snapshot clone per
+        // argument apply here; this remains allocation-heavier than RDKit's
+        // borrowed Bond wrappers.
+        let callback_error = Arc::clone(&callback_error);
+        let query_bonds = Arc::new(bond_snapshots(&query.inner));
+        let target_bonds = Arc::new(bond_snapshots(&mol.inner));
+        Arc::new(
+            move |query_bond: &cosmolkit_core::Bond, target_bond: &cosmolkit_core::Bond| {
+                Python::attach(|py| {
+                    let result = Py::new(py, query_bonds[query_bond.id().index()].clone())
+                        .and_then(|py_query_bond| {
+                            Py::new(py, target_bonds[target_bond.id().index()].clone()).and_then(
+                                |py_target_bond| {
+                                    callback
+                                        .call1(py, (py_query_bond, py_target_bond))
+                                        .and_then(|value| value.extract::<bool>(py))
+                                },
+                            )
+                        });
+                    match result {
+                        Ok(accepted) => accepted,
+                        Err(error) => {
+                            let mut stored = callback_error
+                                .lock()
+                                .expect("callback error mutex poisoned");
+                            if stored.is_none() {
+                                *stored = Some(error);
+                            }
+                            false
+                        }
+                    }
+                })
+            },
+        ) as cosmolkit_core::ExtraBondCheck
+    });
     let params = cosmolkit_core::SubstructMatchParams {
         max_matches,
         uniquify,
         use_chirality: false,
         specified_stereo_query_matches_unspecified: false,
+        extra_atom_check,
+        extra_bond_check,
+        extra_final_check,
+        ..Default::default()
     };
-    cosmolkit_core::get_substruct_matches_with_params(&mol.inner, &query.inner, &params)
+    let matches = help_get_substruct_matches(&mol.inner, &query.inner, &params)
         .into_iter()
         .map(Into::into)
-        .collect()
+        .collect();
+    if let Some(error) = callback_error
+        .lock()
+        .expect("callback error mutex poisoned")
+        .take()
+    {
+        return Err(error);
+    }
+    Ok(matches)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -10488,8 +11055,24 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MmffOptimizeMoleculeResult>()?;
     m.add_class::<MmffOptimizeMoleculeConfResult>()?;
     m.add_class::<MmffOptimizeMoleculeConfsResult>()?;
-    m.add_class::<PySmartsMolecule>()?;
     m.add_class::<SubstructMatchResult>()?;
+    // RDKit✔️✔️:   python::class_<RDKit::SmartsParserParams, boost::noncopyable>(
+    // RDKit✔️✔️:       "SmartsParserParams", "Parameters controlling SMARTS Parsing")
+    // RDKit✔️✔️:       .def_readwrite("debugParse", &RDKit::SmartsParserParams::debugParse,
+    // RDKit✔️✔️:                      "controls the amount of debugging information produced")
+    // RDKit✔️✔️:       .def_readwrite("parseName", &RDKit::SmartsParserParams::parseName,
+    // RDKit✔️✔️:                      "controls whether or not the molecule name is also parsed")
+    // RDKit✔️✔️:       .def_readwrite("allowCXSMILES",
+    // RDKit✔️✔️:                      &RDKit::SmartsParserParams::allowCXSMILES,
+    // RDKit✔️✔️:                      "controls whether or not the CXSMILES extensions are parsed")
+    // RDKit✔️✔️:       .def_readwrite("strictCXSMILES",
+    // RDKit✔️✔️:                      &RDKit::SmartsParserParams::strictCXSMILES,
+    // RDKit✔️✔️:                      "controls whether or not problems in CXSMILES parsing "
+    // RDKit✔️✔️:                      "causes molecule parsing to fail")
+    // RDKit✔️✔️:       .def_readwrite("mergeHs", &RDKit::SmartsParserParams::mergeHs,
+    // RDKit✔️✔️:                      "toggles merging H atoms in the SMARTS into neighboring atoms")
+    // RDKit✔️✔️:       .def("__setattr__", &safeSetattr);
+    m.add_class::<SmartsParserParams>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;
     m.add_function(wrap_pyfunction!(mol_from_binary, m)?)?;
@@ -10497,7 +11080,19 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "_rebuild_molecule_from_pickle",
         wrap_pyfunction!(_rebuild_molecule_from_pickle, m)?,
     )?;
+    // RDKit✔️✔️:   python::def("MolFromSmarts", RDKit::MolFromSmarts,
+    // RDKit✔️✔️:               (python::arg("SMARTS"), python::arg("mergeHs") = false,
+    // RDKit✔️✔️:                python::arg("replacements") = python::dict()),
+    // RDKit✔️✔️:               docString.c_str(),
+    // RDKit✔️✔️:               python::return_value_policy<python::manage_new_object>());
+    // RDKit✔️✔️:   python::def("MolFromSmarts", MolFromSmartsHelper,
+    // RDKit✔️✔️:               (python::arg("SMARTS"), python::arg("params")), docString.c_str(),
+    // RDKit✔️✔️:               python::return_value_policy<python::manage_new_object>());
+    // Complexity review: PyO3 registers two constant-time call shims under
+    // distinct snake-case names because Rust does not overload functions.
+    // Both shims invoke the same core compiler and return the same Molecule.
     m.add_function(wrap_pyfunction!(parse_smarts, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_smarts_with_params, m)?)?;
     m.add_function(wrap_pyfunction!(uff_has_all_molecule_params, m)?)?;
     m.add_function(wrap_pyfunction!(uff_optimize_molecule, m)?)?;
     m.add_function(wrap_pyfunction!(uff_optimize_molecule_confs, m)?)?;

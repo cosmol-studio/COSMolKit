@@ -449,8 +449,8 @@ source molecule.
 Substructure And SMARTS
 -----------------------
 
-Substructure matching functions accept molecule queries. This surface is
-unfinished until strict RDKit molecule-query parity tests pass:
+Substructure matching functions accept ordinary molecules or query-bearing
+``Molecule`` values compiled by the canonical SMARTS parser:
 
 .. code-block:: python
 
@@ -462,9 +462,8 @@ unfinished until strict RDKit molecule-query parity tests pass:
    print(cosmolkit.has_substruct_match(mol, query))
    print(cosmolkit.get_substruct_match(mol, query).atom_mapping())
 
-``parse_smarts()`` exposes the Rust SMARTS parser as parse metadata. It returns
-a ``SmartsMolecule`` query-tree value. Direct SMARTS query matching is not yet
-a Python API; Python substructure functions currently accept molecule queries.
+``parse_smarts()`` returns an ordinary ``Molecule`` carrying the compiled query
+graph. The same value can be passed directly to the substructure functions.
 
 .. code-block:: python
 
@@ -472,3 +471,15 @@ a Python API; Python substructure functions currently accept molecule queries.
 
    print(smarts.num_atoms())
    print(smarts.num_bonds())
+   print(smarts.to_smarts())
+   print(cosmolkit.has_substruct_match(mol, smarts))
+
+Query-bearing molecules can be written as ordinary SMARTS or CXSMARTS without
+converting them to a separate query type:
+
+.. code-block:: python
+
+   labeled = cosmolkit.parse_smarts("[#6] |$site$|")
+
+   print(labeled.to_smarts())
+   print(labeled.to_cx_smarts())

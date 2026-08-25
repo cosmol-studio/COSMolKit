@@ -1394,11 +1394,27 @@ pub(super) fn has_stereo_bond_dir(direction: BondDirection) -> bool {
 }
 
 pub(super) fn neighboring_directed_bond(mol: &Molecule, atom: AtomId) -> Option<BondId> {
-    for bond in mol.bonds() {
-        if bond.order() != BondOrder::Double
-            && has_stereo_bond_dir(bond.direction())
-            && (bond.begin() == atom || bond.end() == atom)
-        {
+    // BEGIN RDKIT CPP FUNCTION getNeighboringDirectedBond
+    // RDKit✔️✔️: const Bond *getNeighboringDirectedBond(const ROMol &mol, const Atom *atom) {
+    // RDKit✔️✔️:   PRECONDITION(atom, "no atom");
+    // RDKit✔️✔️:   for (const auto &bondIdx :
+    // RDKit✔️✔️:        boost::make_iterator_range(mol.getAtomBonds(atom))) {
+    // RDKit✔️✔️:     const Bond *bond = mol[bondIdx];
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (bond->getBondType() != Bond::BondType::DOUBLE &&
+    // RDKit✔️✔️:         hasStereoBondDir(bond)) {
+    // RDKit✔️✔️:       return bond;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return nullptr;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION getNeighboringDirectedBond
+    // Local complexity review: the topology CSR adjacency gives the same
+    // O(degree(atom)) lookup and allocation-free iteration as RDKit's
+    // `getAtomBonds()` range. Bond lookup remains direct by stable BondId.
+    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.index()) {
+        let bond = &mol.bonds()[neighbor.bond.index()];
+        if bond.order() != BondOrder::Double && has_stereo_bond_dir(bond.direction()) {
             return Some(bond.id());
         }
     }
@@ -1442,17 +1458,20 @@ pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), 
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION setBondStereoFromDirections
+    // Local complexity review: each double bond performs two CSR adjacency
+    // scans matching RDKit's `getAtomBonds()` calls. The update list is O(D)
+    // auxiliary storage, where D is the number of eligible double bonds; it
+    // avoids cloning bonds and keeps immutable graph reads separate from the
+    // final in-place stereo writes. Overall work is O(E + sum endpoint degree),
+    // matching the source traversal for the modeled topology representation.
     mol.properties_mut().clear_prop("_needsDetectBondStereo");
-    let bond_ids: Vec<BondId> = mol.bonds().iter().map(|bond| bond.id()).collect();
-    for bond_id in bond_ids {
-        let Some(snapshot) = mol.bonds().get(bond_id.index()).cloned() else {
-            continue;
-        };
-        if snapshot.order() != BondOrder::Double || snapshot.stereo() == BondStereo::Any {
+    let mut updates = Vec::new();
+    for bond in mol.bonds() {
+        if bond.order() != BondOrder::Double || bond.stereo() == BondStereo::Any {
             continue;
         }
-        let begin = snapshot.begin();
-        let end = snapshot.end();
+        let begin = bond.begin();
+        let end = bond.end();
         let Some(begin_dir_bond) = neighboring_directed_bond(mol, begin) else {
             continue;
         };
@@ -1488,8 +1507,16 @@ pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), 
         } else {
             BondStereo::Cis
         };
-        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
-            bond.set_stereo_atoms(Some([begin_side_stereo_atom, end_side_stereo_atom]));
+        updates.push((
+            bond.id(),
+            [begin_side_stereo_atom, end_side_stereo_atom],
+            stereo,
+        ));
+    }
+    let topology = mol.topology_block_mut();
+    for (bond_id, stereo_atoms, stereo) in updates {
+        if let Some(bond) = topology.bonds.get_mut(bond_id.index()) {
+            bond.set_stereo_atoms(Some(stereo_atoms));
             bond.set_stereo(stereo);
         }
     }
@@ -1563,149 +1590,6 @@ pub(super) fn clear_single_bond_dir_flags(mol: &mut Molecule, only_wedge_flags: 
             }
         }
     }
-}
-
-const QUERY_SCAN_SENTINEL: u32 = 0xDEADBEEF;
-
-pub(super) fn complete_smiles_query_scan_subset(mol: &mut Molecule) {
-    // RDKit✔️✔️: void completeMolQueries(RWMol *mol, unsigned int magicVal) {
-    // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");
-    // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
-    // RDKit✔️✔️:     if (atom->hasQuery()) {
-    // RDKit✔️✔️:       completeQueryAndChildren(atom->getQuery(), atom, magicVal);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // COSMolKit: for the currently modeled SMILES CX query-scan inputs, the
-    // sentinel-bearing placeholders are `rb:*` and `s:*`. Both are completed
-    // here and `_NeedsQueryScan` is cleared once no unresolved sentinels
-    // remain in any atom query tree.
-    let ring_counts = smiles_atom_ring_bond_counts(mol);
-    let non_hydrogen_degrees = smiles_non_hydrogen_degrees(mol);
-    let topology = mol.topology_block_mut();
-    let mut unresolved_scan_query = false;
-    for (atom_idx, atom) in topology.atoms.iter_mut().enumerate() {
-        let Some(query) = atom.query_mut() else {
-            continue;
-        };
-        complete_smiles_query_scan_predicates(
-            query,
-            ring_counts[atom_idx],
-            non_hydrogen_degrees[atom_idx],
-        );
-        unresolved_scan_query |= atom_query_has_unresolved_smiles_scan(query);
-    }
-    if !unresolved_scan_query {
-        mol.properties_mut().clear_prop("_NeedsQueryScan");
-    }
-}
-
-pub(super) fn atom_query_has_unresolved_smiles_scan(query: &QueryNode<AtomQueryPredicate>) -> bool {
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCountNeedsScan) => true,
-        QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) => {
-            *value == QUERY_SCAN_SENTINEL
-        }
-        QueryNode::Predicate(_) => false,
-        QueryNode::And(children) | QueryNode::Or(children) => {
-            children.iter().any(atom_query_has_unresolved_smiles_scan)
-        }
-        QueryNode::Not(child) => atom_query_has_unresolved_smiles_scan(child),
-    }
-}
-
-pub(super) fn complete_smiles_query_scan_predicates(
-    query: &mut QueryNode<AtomQueryPredicate>,
-    ring_bond_count: u8,
-    non_hydrogen_degree: u32,
-) {
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCountNeedsScan) => {
-            *query = QueryNode::predicate(AtomQueryPredicate::RingBondCount(ring_bond_count));
-        }
-        QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value))
-            if *value == QUERY_SCAN_SENTINEL =>
-        {
-            *query =
-                QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(non_hydrogen_degree));
-        }
-        QueryNode::Predicate(_) => {}
-        QueryNode::And(children) | QueryNode::Or(children) => {
-            for child in children {
-                complete_smiles_query_scan_predicates(child, ring_bond_count, non_hydrogen_degree);
-            }
-        }
-        QueryNode::Not(child) => {
-            complete_smiles_query_scan_predicates(child, ring_bond_count, non_hydrogen_degree)
-        }
-    }
-}
-
-pub(super) fn smiles_atom_ring_bond_counts(molecule: &Molecule) -> Vec<u8> {
-    let atom_count = molecule.num_atoms();
-    let mut counts = vec![0_u8; atom_count];
-    for (bond_idx, bond) in molecule.bonds().iter().enumerate() {
-        if smiles_bond_is_in_cycle(molecule, bond_idx) {
-            counts[bond.begin().index()] = counts[bond.begin().index()].saturating_add(1);
-            counts[bond.end().index()] = counts[bond.end().index()].saturating_add(1);
-        }
-    }
-    counts
-}
-
-pub(super) fn smiles_bond_is_in_cycle(molecule: &Molecule, removed_bond_idx: usize) -> bool {
-    let Some(removed) = molecule.bonds().get(removed_bond_idx) else {
-        return false;
-    };
-    let target = removed.end();
-    let mut stack = vec![removed.begin()];
-    let mut seen = vec![false; molecule.num_atoms()];
-    while let Some(atom_id) = stack.pop() {
-        if atom_id == target {
-            return true;
-        }
-        if seen[atom_id.index()] {
-            continue;
-        }
-        seen[atom_id.index()] = true;
-        for (bond_idx, bond) in molecule.bonds().iter().enumerate() {
-            if bond_idx == removed_bond_idx {
-                continue;
-            }
-            let next = if bond.begin() == atom_id {
-                Some(bond.end())
-            } else if bond.end() == atom_id {
-                Some(bond.begin())
-            } else {
-                None
-            };
-            if let Some(next) = next
-                && !seen[next.index()]
-            {
-                stack.push(next);
-            }
-        }
-    }
-    false
-}
-
-pub(super) fn smiles_non_hydrogen_degrees(molecule: &Molecule) -> Vec<u32> {
-    let mut counts = vec![0_u32; molecule.num_atoms()];
-    for bond in molecule.bonds() {
-        let begin = bond.begin();
-        let end = bond.end();
-        if let Some(end_atom) = molecule.atom(end)
-            && (end_atom.atomic_number() != 1 || end_atom.isotope().is_some_and(|i| i > 1))
-        {
-            counts[begin.index()] = counts[begin.index()].saturating_add(1);
-        }
-        if let Some(begin_atom) = molecule.atom(begin)
-            && (begin_atom.atomic_number() != 1 || begin_atom.isotope().is_some_and(|i| i > 1))
-        {
-            counts[end.index()] = counts[end.index()].saturating_add(1);
-        }
-    }
-    counts
 }
 
 pub(super) fn atrop_can_have_direction(order: BondOrder) -> bool {

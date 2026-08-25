@@ -1,6 +1,6 @@
 //! Shared source-backed torsion-bond query selection for RDKit force fields.
 
-use crate::search::smarts_parse::build_query_molecule;
+use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
 use crate::{Molecule, SubstructMatchError, SubstructMatchParams};
 
 pub(crate) const DEFAULT_TORSION_BOND_SMARTS: &str = "[!$(*#*)&!D1]~[!$(*#*)&!D1]";
@@ -95,12 +95,21 @@ fn match_parsed_torsion_bonds(
     mol: &Molecule,
     torsion_bond_smarts: &str,
 ) -> Result<Vec<TorsionBondMatch>, TorsionBondQueryError> {
-    let query = build_query_molecule(torsion_bond_smarts).map_err(|detail| {
-        TorsionBondQueryError::QueryBuild {
-            smarts: torsion_bond_smarts.to_owned(),
-            detail,
-        }
-    })?;
+    // RDKit✔️✔️:   const ROMol *query = (torsionBondSmarts == DefaultTorsionBondSmarts::string())
+    // RDKit✔️✔️:                            ? defaultQuery
+    // RDKit✔️✔️:                            : SmartsToMol(torsionBondSmarts);
+    // RDKit✔️✔️:   TEST_ASSERT(query);
+    // RDKit✔️✔️:   unsigned int nHits = SubstructMatch(mol, *query, matchVect);
+    // Local complexity review: canonical compilation is linear in the SMARTS
+    // input and matching retains the existing VF2 graph traversal. This path
+    // no longer performs a compatibility conversion or alternate parse.
+    let query =
+        mol_from_smarts(torsion_bond_smarts, &SmartsParseParams::default()).map_err(|error| {
+            TorsionBondQueryError::QueryBuild {
+                smarts: torsion_bond_smarts.to_owned(),
+                detail: error.to_string(),
+            }
+        })?;
     if query.num_atoms() != 2 || query.num_bonds() != 1 {
         return Err(TorsionBondQueryError::QueryShape {
             smarts: torsion_bond_smarts.to_owned(),
@@ -222,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_query_uses_smarts_and_vf2_match_order() {
+    fn smarts_consumer_torsion_query() {
         let matches = match_torsion_bonds(
             &chain(&[BondOrder::Single, BondOrder::Double, BondOrder::Single]),
             "[*:1]-[*:2]",

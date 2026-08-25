@@ -4,8 +4,10 @@ mod cx;
 mod direction;
 mod stereo;
 
+pub(crate) use self::cx::get_cx_extensions;
 pub(crate) use self::stereo::{
     assign_stereochemistry_on_working_copy, serialize_ring_stereo_atoms,
+    update_property_cache_for_smiles,
 };
 use self::{cx::*, direction::*, stereo::*};
 
@@ -269,7 +271,7 @@ impl CxWriteScope {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
-enum MolStackElem {
+pub(crate) enum MolStackElem {
     Atom(AtomId),
     Bond(BondId, AtomId),
     Ring { bond: BondId, ring_idx: usize },
@@ -1014,6 +1016,32 @@ fn canonicalize_fragment_stack(
         params.do_random,
         overrides.bond_symbols,
     )
+}
+
+pub(crate) fn canonicalize_fragment_stack_for_smarts(
+    molecule: &Molecule,
+    atoms: &[AtomId],
+    bonds: &[BondId],
+    start_atom: AtomId,
+    ranks: &[usize],
+    params: &SmilesWriteParams,
+) -> Result<Vec<MolStackElem>, SmilesWriteError> {
+    let plan = FragmentWritePlan {
+        atoms: atoms.to_vec(),
+        bonds: bonds.to_vec(),
+        rooted_at_atom: Some(start_atom),
+    };
+    let mut traversal_params = params.clone();
+    traversal_params.do_random = false;
+    Ok(canonicalize_fragment_stack(
+        molecule,
+        &plan,
+        start_atom,
+        ranks,
+        &traversal_params,
+        SmilesWriteOverrides::default(),
+    )?
+    .stack)
 }
 
 fn write_mol_stack(

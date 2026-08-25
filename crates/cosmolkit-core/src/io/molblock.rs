@@ -855,6 +855,11 @@ fn flatten_query_predicates_inner<T: Clone>(
                 flatten_query_predicates_inner(child, result, negated);
             }
         }
+        QueryNode::Xor(children) => {
+            for child in children {
+                flatten_query_predicates_inner(child, result, negated);
+            }
+        }
         QueryNode::Not(child) => {
             flatten_query_predicates_inner(child, result, !negated);
         }
@@ -899,9 +904,11 @@ fn v2000_query_atom_sss_lines(atom: &Atom, sss_counter: &mut u32) -> Result<Stri
                 out.push_str(&format!("M  AAL{:>4}{:>4} {}\\n", 1, atom_idx, text));
                 continue;
             }
-            AtomQueryPredicate::RecursiveSmarts(smarts) => {
+            AtomQueryPredicate::RecursiveSmarts(query) => {
                 // RDKit writes: M  SMS <atomIdx> <SMARTS>
-                out.push_str(&format!("M  SMS{:>4} {}\\n", atom_idx, smarts));
+                if let Some(smarts) = query.source_smarts() {
+                    out.push_str(&format!("M  SMS{:>4} {}\\n", atom_idx, smarts));
+                }
                 continue;
             }
             _ => {}
@@ -947,7 +954,7 @@ fn atom_query_predicate_to_sap_code(pred: &AtomQueryPredicate) -> u32 {
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(_) => 6,
         AtomQueryPredicate::RingBondCount(_) => 9,
         AtomQueryPredicate::RingBondCountLessEqual(_) => 9,
-        AtomQueryPredicate::RingBondCountNeedsScan => 9,
+        AtomQueryPredicate::HasRingBond => 9,
         AtomQueryPredicate::IsAromatic(_) => 12,
         AtomQueryPredicate::IsUnsaturated => 11,
         AtomQueryPredicate::RGroupLabel(_) => 20, // ALS (atom list symbol)
@@ -975,7 +982,7 @@ fn atom_query_predicate_to_sap_value(pred: &AtomQueryPredicate) -> u32 {
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(h) => *h as u32,
         AtomQueryPredicate::RingBondCount(c) => *c as u32,
         AtomQueryPredicate::RingBondCountLessEqual(c) => *c as u32,
-        AtomQueryPredicate::RingBondCountNeedsScan => 1,
+        AtomQueryPredicate::HasRingBond => 1,
         AtomQueryPredicate::IsAromatic(true) => 1,
         AtomQueryPredicate::IsAromatic(false) => 0,
         AtomQueryPredicate::IsUnsaturated => 1,

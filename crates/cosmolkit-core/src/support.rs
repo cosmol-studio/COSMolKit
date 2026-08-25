@@ -222,9 +222,11 @@ pub const DESCRIPTORS_FEATURE: FeatureSpec = FeatureSpec {
 pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     name: "substructure.match",
     category: FeatureCategory::Core,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental molecule-query substructure matching through the current VF2 surface. Direct SMARTS-query parity and broader RDKit query semantics are separate future capability boundaries and are not part of this feature's current parity claim.",
+    docs: "Match ordinary-molecule query-bearing Molecule values through the canonical VF2 matcher, including SMARTS parser/writer round trips, recursive query execution, atom/bond predicates, stereo, callbacks, match ordering, counts, errors, and parameters covered by the pinned RDKit SMARTS and substructure corpora. Reaction SMARTS and database/container SMARTS remain separate unsupported capability boundaries.",
 };
 
 pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {

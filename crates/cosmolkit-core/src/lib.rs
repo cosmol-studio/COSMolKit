@@ -116,6 +116,11 @@ pub use notation::{canon_smiles, fragment, sequence, smiles_write};
 pub use operations::{ops, sanitize};
 pub use properties::avalon_fingerprint::{AvalonFingerprintFlags, AvalonFingerprintParams};
 pub use properties::{avalon_fingerprint, batch, draw, fingerprint, mol_hash, mol_pickler};
+pub use search::{
+    SmartsParseParams, SmartsWriteError, get_atom_smarts, get_bond_smarts,
+    mol_fragment_to_cx_smarts, mol_fragment_to_smarts, mol_from_smarts, mol_to_cx_smarts,
+    mol_to_smarts,
+};
 pub use search::{query, smarts_parse, substruct};
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
@@ -293,9 +298,12 @@ pub use stereo::{
     assign_stereochemistry, perceive_stereochemistry,
 };
 pub use substruct::{
-    SubstructMatchError, SubstructMatchParams, SubstructMatchResult, get_substruct_match,
+    AtomCoordsMatchFunctor, ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SubstructMatchError,
+    SubstructMatchOverload, SubstructMatchParams, SubstructMatchParamsJsonError,
+    SubstructMatchResult, check_substruct_match_overload_support, get_substruct_match,
     get_substruct_matches, get_substruct_matches_with_params, has_substruct_match,
-    try_get_substruct_matches_with_params,
+    substruct_match_params_to_json, try_get_substruct_matches_with_params,
+    update_substruct_match_params_from_json,
 };
 pub use support::{
     AROMATICITY_FEATURE, ATOM_PAIR_FINGERPRINT_FEATURE, AVALON_FINGERPRINT_FEATURE, BATCH_FEATURE,

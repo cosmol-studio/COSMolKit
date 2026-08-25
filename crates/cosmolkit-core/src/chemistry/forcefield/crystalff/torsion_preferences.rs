@@ -1,7 +1,9 @@
 //! Source-backed RDKit CrystalFF torsion-preference helpers.
 
 use crate::SmartsParseError;
-use crate::search::smarts_parse::{SmartsMolecule, build_query_molecule, parse_smarts};
+#[cfg(test)]
+use crate::search::smarts_parse::compile_query_fixture;
+use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
 use crate::{
     AtomQueryPredicate, AtomSpec, BondId, BondOrder, BondQueryPredicate, BondSpec, Element,
     Hybridization, Molecule, MoleculeBuilder, QueryNode, RingInfo, SubstructMatchParams,
@@ -104,8 +106,7 @@ pub(crate) struct ExpTorsionAngle {
     smarts: String,
     force_constants: Vec<f64>,
     signs: Vec<i32>,
-    pattern: Result<SmartsMolecule, SmartsParseError>,
-    query_molecule: Result<Molecule, String>,
+    query_molecule: Result<Molecule, SmartsParseError>,
     idx: [usize; 4],
 }
 
@@ -131,13 +132,8 @@ impl ExpTorsionAngle {
     }
 
     #[must_use]
-    pub(crate) fn pattern(&self) -> Result<&SmartsMolecule, &SmartsParseError> {
-        self.pattern.as_ref()
-    }
-
-    #[must_use]
-    pub(crate) fn query_molecule(&self) -> Result<&Molecule, &str> {
-        self.query_molecule.as_ref().map_err(String::as_str)
+    pub(crate) fn query_molecule(&self) -> Result<&Molecule, &SmartsParseError> {
+        self.query_molecule.as_ref()
     }
 
     #[must_use]
@@ -369,7 +365,7 @@ pub fn get_experimental_torsions(
             let query_molecule = param.query_molecule().map_err(|reason| {
                 CrystalffTorsionPreferencesError::QueryBuildFailed {
                     smarts: param.smarts().to_owned(),
-                    reason: reason.to_owned(),
+                    reason: reason.to_string(),
                 }
             })?;
             let trace_row34_timing =
@@ -396,6 +392,7 @@ pub fn get_experimental_torsions(
                     uniquify: false,
                     use_chirality: false,
                     specified_stereo_query_matches_unspecified: false,
+                    ..Default::default()
                 },
             );
             if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
@@ -727,19 +724,31 @@ fn parse_exp_torsion_angle_line(
         force_constants.push(force_constant);
     }
 
-    let pattern = parse_smarts(&smarts);
-    let query_molecule = build_query_molecule(&smarts);
-    let idx = query_molecule.as_ref().map_or_else(
-        |_| map_pattern_atom_indices(&smarts),
-        map_query_atom_indices,
-    );
+    // RDKit✔️✔️:       angle.dp_pattern.reset(SmartsToMol(angle.smarts));
+    // RDKit✔️✔️:       // get the atom indices for atom 1, 2, 3, 4 in the pattern
+    // RDKit✔️✔️:       for (unsigned int i = 0; i < (angle.dp_pattern.get())->getNumAtoms();
+    // RDKit✔️✔️:            ++i) {
+    // RDKit✔️✔️:         Atom const *atom = (angle.dp_pattern.get())->getAtomWithIdx(i);
+    // RDKit✔️✔️:         int num;
+    // RDKit✔️✔️:         if (atom->getPropIfPresent("molAtomMapNumber", num)) {
+    // RDKit✔️✔️:           if (num > 0 && num < 5) {
+    // RDKit✔️✔️:             angle.idx[num - 1] = i;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // Local complexity review: CrystalFF performs one canonical SMARTS
+    // compilation and one linear atom-map scan. The retained Result preserves
+    // the collection's deferred parse-error behavior without reparsing.
+    let query_molecule = mol_from_smarts(&smarts, &SmartsParseParams::default());
+    let idx = query_molecule
+        .as_ref()
+        .map_or([0; 4], map_pattern_atom_indices);
 
     Ok(ExpTorsionAngle {
         torsion_idx,
         smarts,
         force_constants,
         signs,
-        pattern,
         query_molecule,
         idx,
     })
@@ -811,394 +820,42 @@ struct CrystalffTemplateBond {
     query: QueryNode<BondQueryPredicate>,
 }
 
-fn unspecified_smarts_bond_query() -> QueryNode<BondQueryPredicate> {
-    QueryNode::Or(vec![
-        QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
-        QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
-    ])
-}
-
-fn expand_crystalff_smarts_bonds(smarts: &str) -> Result<Vec<CrystalffTemplateBond>, String> {
-    #[derive(Clone)]
-    struct ParserState<'a> {
-        chars: &'a [char],
-        pos: usize,
-        next_atom_idx: usize,
-        bonds: Vec<CrystalffTemplateBond>,
-        ring_open: BTreeMap<u8, (usize, QueryNode<BondQueryPredicate>)>,
-    }
-
-    fn bond_query_for_char(ch: char) -> QueryNode<BondQueryPredicate> {
-        match ch {
-            '-' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
-            '=' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Double)),
-            '#' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Triple)),
-            ':' => QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
-            '~' => QueryNode::Predicate(BondQueryPredicate::Any),
-            // RDKit SMARTS `/` and `\` are directional stereo annotations, not
-            // standalone graph predicates in DescribeQuery(), but the parser
-            // still applies the single-or-aromatic base bond query.
-            '/' | '\\' => unspecified_smarts_bond_query(),
-            _ => QueryNode::Predicate(BondQueryPredicate::Any),
-        }
-    }
-
-    fn is_bond_char(ch: char) -> bool {
-        matches!(ch, '-' | '=' | '#' | ':' | '~' | '/' | '\\')
-    }
-
-    fn is_bond_query_char(ch: char) -> bool {
-        is_bond_char(ch) || matches!(ch, '!' | '@' | ';' | ',')
-    }
-
-    fn simplify_bond_query(
-        predicates: Vec<QueryNode<BondQueryPredicate>>,
-    ) -> QueryNode<BondQueryPredicate> {
-        let mut simplified = predicates
-            .into_iter()
-            .filter(|predicate| *predicate != QueryNode::Predicate(BondQueryPredicate::Any))
-            .collect::<Vec<_>>();
-        match simplified.len() {
-            0 => QueryNode::Predicate(BondQueryPredicate::Any),
-            1 => simplified.pop().expect("single bond predicate"),
-            _ => QueryNode::And(simplified),
-        }
-    }
-
-    fn parse_bond_query(
-        chars: &[char],
-        pos: &mut usize,
-    ) -> Result<QueryNode<BondQueryPredicate>, String> {
-        let mut predicates = Vec::new();
-        let mut consumed = false;
-        let mut logical_or = false;
-        while let Some(&ch) = chars.get(*pos) {
-            if !is_bond_query_char(ch) {
-                break;
-            }
-            consumed = true;
-            match ch {
-                '!' if chars.get(*pos + 1) == Some(&'@') => {
-                    predicates.push(QueryNode::Predicate(BondQueryPredicate::IsInRing(false)));
-                    *pos += 2;
-                }
-                '@' => {
-                    predicates.push(QueryNode::Predicate(BondQueryPredicate::IsInRing(true)));
-                    *pos += 1;
-                }
-                ';' => {
-                    *pos += 1;
-                }
-                ',' => {
-                    logical_or = true;
-                    *pos += 1;
-                }
-                '-' | '=' | '#' | ':' | '~' | '/' | '\\' => {
-                    predicates.push(bond_query_for_char(ch));
-                    *pos += 1;
-                }
-                '!' => {
-                    return Err(format!(
-                        "RDKit CrystalFF SMARTS topology parser encountered unsupported negated bond query at position {}",
-                        *pos
-                    ));
-                }
-                _ => unreachable!("non-bond query character filtered earlier"),
-            }
-        }
-        if consumed {
-            let simplified = predicates
-                .into_iter()
-                .filter(|predicate| *predicate != QueryNode::Predicate(BondQueryPredicate::Any))
-                .collect::<Vec<_>>();
-            if logical_or {
-                match simplified.len() {
-                    0 => Ok(QueryNode::Predicate(BondQueryPredicate::Any)),
-                    1 => Ok(simplified
-                        .into_iter()
-                        .next()
-                        .expect("single bond predicate")),
-                    _ => Ok(QueryNode::Or(simplified)),
-                }
-            } else {
-                Ok(simplify_bond_query(simplified))
-            }
-        } else {
-            Ok(unspecified_smarts_bond_query())
-        }
-    }
-
-    fn is_organic_subset_symbol(chars: &[char], pos: usize) -> Option<usize> {
-        let tail = chars.get(pos..)?;
-        let two_char = if tail.len() >= 2 {
-            match (tail[0], tail[1]) {
-                ('C', 'l') | ('B', 'r') | ('S', 'i') | ('A', 's') | ('S', 'e') | ('T', 'e') => {
-                    Some(2)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-        two_char.or_else(|| {
-            matches!(
-                tail[0],
-                '*' | 'B'
-                    | 'C'
-                    | 'N'
-                    | 'O'
-                    | 'S'
-                    | 'P'
-                    | 'F'
-                    | 'I'
-                    | 'H'
-                    | 'R'
-                    | 'X'
-                    | 'D'
-                    | 'v'
-                    | 'V'
-                    | 'r'
-                    | 'u'
-                    | 'A'
-                    | 'T'
-                    | 'Z'
-                    | 'K'
-                    | 'W'
-                    | 'U'
-                    | 'Y'
-                    | 'G'
-                    | 'L'
-                    | 'J'
-                    | 'E'
-                    | 'M'
-                    | 'Q'
-                    | 'c'
-                    | 'n'
-                    | 'o'
-                    | 's'
-                    | 'p'
-                    | 'a'
-                    | 'b'
-            )
-            .then_some(1)
+fn expand_crystalff_smarts_bonds(
+    query_molecule: &Molecule,
+) -> Result<Vec<CrystalffTemplateBond>, String> {
+    // Local complexity review: this is one O(E) pass over the canonical query
+    // graph with one clone per bond query. It performs no SMARTS tokenization,
+    // graph reconstruction, fallback, or consumer-local predicate synthesis.
+    query_molecule
+        .bonds()
+        .iter()
+        .enumerate()
+        .map(|(bond_idx, bond)| {
+            let query = bond.query().cloned().ok_or_else(|| {
+                format!("RDKit CrystalFF canonical SMARTS bond {bond_idx} has no compiled query")
+            })?;
+            Ok(CrystalffTemplateBond {
+                begin_atom_idx: bond.begin().index(),
+                end_atom_idx: bond.end().index(),
+                query,
+            })
         })
-    }
-
-    fn parse_ring_number(chars: &[char], pos: &mut usize) -> Result<u8, String> {
-        if chars.get(*pos) == Some(&'%') {
-            let d1 = chars.get(*pos + 1).copied();
-            let d2 = chars.get(*pos + 2).copied();
-            match (d1, d2) {
-                (Some(c1), Some(c2)) if c1.is_ascii_digit() && c2.is_ascii_digit() => {
-                    *pos += 3;
-                    Ok(((c1 as u8 - b'0') * 10) + (c2 as u8 - b'0'))
-                }
-                _ => Err(
-                    "RDKit CrystalFF SMARTS topology parser expected two digits after '%'"
-                        .to_string(),
-                ),
-            }
-        } else if let Some(ch) = chars.get(*pos).copied() {
-            if ch.is_ascii_digit() {
-                *pos += 1;
-                Ok(ch as u8 - b'0')
-            } else {
-                Err(
-                    "RDKit CrystalFF SMARTS topology parser expected a ring-closure digit"
-                        .to_string(),
-                )
-            }
-        } else {
-            Err(
-                "RDKit CrystalFF SMARTS topology parser reached end while reading ring closure"
-                    .to_string(),
-            )
-        }
-    }
-
-    fn skip_atom(chars: &[char], pos: &mut usize) -> Result<(), String> {
-        match chars.get(*pos).copied() {
-            Some('[') => {
-                let mut depth = 1usize;
-                *pos += 1;
-                while let Some(ch) = chars.get(*pos).copied() {
-                    *pos += 1;
-                    match ch {
-                        '[' => depth += 1,
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                return Ok(());
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                Err(
-                    "RDKit CrystalFF SMARTS topology parser found an unclosed bracket atom"
-                        .to_string(),
-                )
-            }
-            Some(_) => {
-                let Some(consumed) = is_organic_subset_symbol(chars, *pos) else {
-                    return Err(
-                        "RDKit CrystalFF SMARTS topology parser encountered an unsupported atom token"
-                            .to_string(),
-                    );
-                };
-                *pos += consumed;
-                Ok(())
-            }
-            None => {
-                Err("RDKit CrystalFF SMARTS topology parser expected an atom token".to_string())
-            }
-        }
-    }
-
-    fn parse_atom(state: &mut ParserState<'_>) -> Result<usize, String> {
-        skip_atom(state.chars, &mut state.pos)?;
-        let atom_idx = state.next_atom_idx;
-        state.next_atom_idx += 1;
-        Ok(atom_idx)
-    }
-
-    fn add_bond(
-        state: &mut ParserState<'_>,
-        begin_atom_idx: usize,
-        end_atom_idx: usize,
-        query: QueryNode<BondQueryPredicate>,
-    ) {
-        state.bonds.push(CrystalffTemplateBond {
-            begin_atom_idx,
-            end_atom_idx,
-            query,
-        });
-    }
-
-    fn parse_chain(
-        state: &mut ParserState<'_>,
-        mut current_atom_idx: usize,
-    ) -> Result<usize, String> {
-        while state.pos < state.chars.len() {
-            match state.chars[state.pos] {
-                ')' => break,
-                '(' => {
-                    state.pos += 1;
-                    let _ = parse_chain(state, current_atom_idx)?;
-                    if state.chars.get(state.pos) != Some(&')') {
-                        return Err(
-                            "RDKit CrystalFF SMARTS topology parser expected ')' to close a branch"
-                                .to_string(),
-                        );
-                    }
-                    state.pos += 1;
-                }
-                '.' => {
-                    state.pos += 1;
-                    current_atom_idx = parse_atom(state)?;
-                }
-                _ => {
-                    let query = parse_bond_query(state.chars, &mut state.pos)?;
-                    if state.pos >= state.chars.len() {
-                        return Err(
-                            "RDKit CrystalFF SMARTS topology parser ended after a bond token"
-                                .to_string(),
-                        );
-                    }
-                    if state.chars[state.pos].is_ascii_digit() || state.chars[state.pos] == '%' {
-                        let ring_number = parse_ring_number(state.chars, &mut state.pos)?;
-                        if let Some((open_atom_idx, open_query)) =
-                            state.ring_open.remove(&ring_number)
-                        {
-                            let resolved_query =
-                                if query == QueryNode::Predicate(BondQueryPredicate::Any) {
-                                    open_query
-                                } else {
-                                    query
-                                };
-                            add_bond(state, open_atom_idx, current_atom_idx, resolved_query);
-                        } else {
-                            state
-                                .ring_open
-                                .insert(ring_number, (current_atom_idx, query));
-                        }
-                    } else {
-                        let next_atom_idx = parse_atom(state)?;
-                        add_bond(state, current_atom_idx, next_atom_idx, query);
-                        current_atom_idx = next_atom_idx;
-                    }
-                }
-            }
-        }
-        Ok(current_atom_idx)
-    }
-
-    let chars: Vec<char> = smarts.chars().collect();
-    if chars.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut state = ParserState {
-        chars: &chars,
-        pos: 0,
-        next_atom_idx: 0,
-        bonds: Vec::new(),
-        ring_open: BTreeMap::new(),
-    };
-    let first_atom_idx = parse_atom(&mut state)?;
-    let _ = parse_chain(&mut state, first_atom_idx)?;
-    if !state.ring_open.is_empty() {
-        return Err(
-            "RDKit CrystalFF SMARTS topology parser found an unbalanced ring closure".to_string(),
-        );
-    }
-    Ok(state.bonds)
+        .collect()
 }
 
-fn map_pattern_atom_indices(smarts: &str) -> [usize; 4] {
-    let mut idx = [0; 4];
-    let chars: Vec<char> = smarts.chars().collect();
-    let mut atom_idx = 0usize;
-    let mut i = 0usize;
-
-    while i < chars.len() {
-        match chars[i] {
-            '[' => {
-                let start = i + 1;
-                i += 1;
-                while i < chars.len() && chars[i] != ']' {
-                    i += 1;
-                }
-                let end = i.min(chars.len());
-                let bracket_content: String = chars[start..end].iter().collect();
-                if let Some(map_number) = extract_atom_map_number(&bracket_content)
-                    && (1..=4).contains(&map_number)
-                {
-                    idx[usize::try_from(map_number - 1).expect("atom-map index fits usize")] =
-                        atom_idx;
-                }
-                atom_idx += 1;
-                if i < chars.len() {
-                    i += 1;
-                }
-            }
-            'A'..='Z' | 'a'..='z' | '*' => {
-                if is_organic_atom_token_start(&chars, i) {
-                    atom_idx += 1;
-                    i += organic_atom_token_len(&chars, i);
-                } else {
-                    i += 1;
-                }
-            }
-            _ => {
-                i += 1;
-            }
-        }
-    }
-
-    idx
-}
-
-fn map_query_atom_indices(query_molecule: &Molecule) -> [usize; 4] {
+fn map_pattern_atom_indices(query_molecule: &Molecule) -> [usize; 4] {
+    // RDKit✔️✔️:       for (unsigned int i = 0; i < (angle.dp_pattern.get())->getNumAtoms();
+    // RDKit✔️✔️:            ++i) {
+    // RDKit✔️✔️:         Atom const *atom = (angle.dp_pattern.get())->getAtomWithIdx(i);
+    // RDKit✔️✔️:         int num;
+    // RDKit✔️✔️:         if (atom->getPropIfPresent("molAtomMapNumber", num)) {
+    // RDKit✔️✔️:           if (num > 0 && num < 5) {
+    // RDKit✔️✔️:             angle.idx[num - 1] = i;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // Local complexity review: one allocation-free O(V) pass over the
+    // canonical compiled query atoms matches RDKit's dp_pattern traversal.
     let mut idx = [0; 4];
     for (atom_idx, atom) in query_molecule.atoms().iter().enumerate() {
         if let Some(map_number) = atom.atom_map()
@@ -1210,43 +867,19 @@ fn map_query_atom_indices(query_molecule: &Molecule) -> [usize; 4] {
     idx
 }
 
-fn extract_atom_map_number(bracket_content: &str) -> Option<u32> {
-    let colon_pos = bracket_content.rfind(':')?;
-    let digits = &bracket_content[colon_pos + 1..];
-    if digits.is_empty() || !digits.chars().all(|ch| ch.is_ascii_digit()) {
-        return None;
-    }
-    digits.parse::<u32>().ok()
-}
-
-fn is_organic_atom_token_start(chars: &[char], idx: usize) -> bool {
-    match chars[idx] {
-        'B' => chars.get(idx + 1) != Some(&'r'),
-        'C' => chars.get(idx + 1) != Some(&'l'),
-        'N' | 'O' | 'P' | 'S' | 'F' | 'I' | 'b' | 'c' | 'n' | 'o' | 'p' | 's' | '*' => true,
-        'H' => true,
-        _ => false,
-    }
-}
-
-fn organic_atom_token_len(chars: &[char], idx: usize) -> usize {
-    match chars[idx] {
-        'C' if chars.get(idx + 1) == Some(&'l') => 2,
-        'B' if chars.get(idx + 1) == Some(&'r') => 2,
-        _ => 1,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         CrystalFFDetails, CrystalffTorsionPreferencesError, ExpTorsionAngleCollection,
-        build_query_molecule, get_experimental_torsions, get_experimental_torsions_without_bonds,
+        compile_query_fixture, get_experimental_torsions, get_experimental_torsions_without_bonds,
         torsion_preferences_macrocycles, torsion_preferences_small_rings, torsion_preferences_v1,
         torsion_preferences_v2,
     };
     use crate::search::query::{atom_matches_query, bond_matches_query};
-    use crate::{Molecule, SubstructMatchParams, get_substruct_matches_with_params};
+    use crate::{
+        BondOrder, BondQueryPredicate, Molecule, QueryNode, SmartsParseParams,
+        SubstructMatchParams, get_substruct_matches_with_params, mol_from_smarts,
+    };
 
     const VALID_BASE_PARAM_LINE: &str = "[C:1][C:2][C:3][C:4] 1 0 -1 0 1 0 -1 0 1 0 -1 0\n";
     const VALID_OVERRIDE_PARAM_LINE: &str =
@@ -1371,7 +1004,7 @@ mod tests {
             .expect("parse azide")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule("[*:1][X3,X2:2]=[X3,X2:3][*:4]").expect("build query");
+        let query = compile_query_fixture("[*:1][X3,X2:2]=[X3,X2:3][*:4]").expect("build query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -1381,6 +1014,7 @@ mod tests {
                 uniquify: true,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -1391,27 +1025,66 @@ mod tests {
     }
 
     #[test]
-    fn crystalff_exptorsionanglecollection_constructor_retains_smarts_parse_result() {
+    fn smarts_consumer_crystalff_unspecified_bond() {
+        let query = mol_from_smarts("CC", &SmartsParseParams::default()).unwrap();
+        let expanded = super::expand_crystalff_smarts_bonds(&query).unwrap();
+
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(
+            expanded[0].query,
+            QueryNode::Predicate(BondQueryPredicate::OrderIn(vec![
+                BondOrder::Single,
+                BondOrder::Aromatic,
+            ]))
+        );
+    }
+
+    #[test]
+    fn smarts_consumer_crystalff_bonds() {
+        let query = mol_from_smarts("[#6]1~[#7]=[#8]-1", &SmartsParseParams::default()).unwrap();
+        let expanded = super::expand_crystalff_smarts_bonds(&query).unwrap();
+
+        assert_eq!(expanded.len(), query.num_bonds());
+        assert_eq!(
+            expanded
+                .iter()
+                .map(|bond| (bond.begin_atom_idx, bond.end_atom_idx, &bond.query))
+                .collect::<Vec<_>>(),
+            query
+                .bonds()
+                .iter()
+                .map(|bond| (
+                    bond.begin().index(),
+                    bond.end().index(),
+                    bond.query().unwrap()
+                ))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn smarts_consumer_crystalff_compile() {
         let params = ExpTorsionAngleCollection::new("CCCC 1 0 1 0 1 0 1 0 1 0 1 0\n").unwrap();
 
         let angle = &params.params()[0];
         assert_eq!(angle.smarts(), "CCCC");
-        assert!(angle.pattern().is_ok());
+        let query = angle.query_molecule().expect("canonical compiled query");
+        assert_eq!(query.num_atoms(), 4);
+        assert_eq!(query.num_bonds(), 3);
     }
 
     #[test]
-    fn crystalff_exptorsionanglecollection_constructor_retains_unsupported_smarts_parse_errors() {
-        let params =
-            ExpTorsionAngleCollection::new("[C:1][C:2][C:3][C:4] 1 0 1 0 1 0 1 0 1 0 1 0\n")
-                .unwrap();
+    fn crystalff_exptorsionanglecollection_constructor_retains_smarts_parse_errors() {
+        let params = ExpTorsionAngleCollection::new("[C:1 1 0 1 0 1 0 1 0 1 0 1 0\n").unwrap();
 
         let angle = &params.params()[0];
-        assert_eq!(angle.smarts(), "[C:1][C:2][C:3][C:4]");
-        assert!(angle.pattern().is_ok());
+        assert_eq!(angle.smarts(), "[C:1");
+        assert!(angle.query_molecule().is_err());
+        assert_eq!(angle.idx(), [0; 4]);
     }
 
     #[test]
-    fn crystalff_exptorsionanglecollection_constructor_extracts_atom_map_indices() {
+    fn smarts_consumer_crystalff_maps() {
         let params =
             ExpTorsionAngleCollection::new("[C:4][C:2][C:1][C:3] 1 0 1 0 1 0 1 0 1 0 1 0\n")
                 .unwrap();
@@ -2028,7 +1701,7 @@ mod tests {
         )
         .expect("parse RDKit simple_torsion.etkdg fixture")
         .molecule;
-        let query = build_query_molecule("[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]")
+        let query = compile_query_fixture("[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]")
             .expect("build CrystalFF query");
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2038,6 +1711,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2056,7 +1730,7 @@ mod tests {
             .expect("parse row34")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule("[C:1][CX4:2]!@;-[CX3:3][c:4]").expect("build query");
+        let query = compile_query_fixture("[C:1][CX4:2]!@;-[CX3:3][c:4]").expect("build query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2066,6 +1740,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2081,7 +1756,7 @@ mod tests {
             .expect("parse row20")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule("[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]")
+        let query = compile_query_fixture("[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]")
             .expect("build carboxylate query");
 
         let matches = get_substruct_matches_with_params(
@@ -2092,6 +1767,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2107,7 +1783,7 @@ mod tests {
             .expect("parse row57")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule("[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]")
+        let query = compile_query_fixture("[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]")
             .expect("build recursive carbonyl query");
 
         let matches = get_substruct_matches_with_params(
@@ -2118,6 +1794,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2135,7 +1812,7 @@ mod tests {
             .expect("parse row34")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule(smarts).expect("build CrystalFF query");
+        let query = compile_query_fixture(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2145,6 +1822,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2200,7 +1878,7 @@ mod tests {
             .expect("parse row20")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule(smarts).expect("build CrystalFF query");
+        let query = compile_query_fixture(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2210,6 +1888,7 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
@@ -2277,7 +1956,7 @@ mod tests {
             .expect("parse row89")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule(smarts).expect("build CrystalFF query");
+        let query = compile_query_fixture(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2287,13 +1966,14 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
         println!("row89_debug_smarts={smarts}");
         println!(
             "row89_debug_query_idx={:?}",
-            super::map_query_atom_indices(&query)
+            super::map_pattern_atom_indices(&query)
         );
         println!(
             "row89_debug_matches={:?}",
@@ -2347,7 +2027,7 @@ mod tests {
             .expect("parse row61")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_query_molecule(smarts).expect("build CrystalFF query");
+        let query = compile_query_fixture(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2357,13 +2037,14 @@ mod tests {
                 uniquify: false,
                 use_chirality: false,
                 specified_stereo_query_matches_unspecified: false,
+                ..Default::default()
             },
         );
 
         println!("row61_debug_smarts={smarts}");
         println!(
             "row61_debug_query_idx={:?}",
-            super::map_query_atom_indices(&query)
+            super::map_pattern_atom_indices(&query)
         );
         println!(
             "row61_debug_matches={:?}",

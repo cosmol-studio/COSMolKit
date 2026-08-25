@@ -243,4 +243,34 @@ mod tests {
         assert_eq!(ids, vec![0, 1]);
         assert_eq!(embedded_multi.conformers_3d().len(), 2);
     }
+
+    #[test]
+    fn smarts_rust_facade_exposes_canonical_parser_and_writer_apis() {
+        let mut parse_params = SmartsParseParams::default();
+        parse_params.parse_name = false;
+        let query = mol_from_smarts("[#6]-[#8]", &parse_params).expect("SMARTS query");
+        let write_params = SmilesWriteParams::default();
+
+        assert_eq!(
+            get_atom_smarts(&query.atoms()[0], &write_params).unwrap(),
+            "[#6]"
+        );
+        assert_eq!(
+            get_bond_smarts(&query.bonds()[0], &write_params, Some(0)).unwrap(),
+            "-"
+        );
+        assert_eq!(mol_to_smarts(&query, &write_params).unwrap(), "[#6]-[#8]");
+        assert_eq!(
+            mol_fragment_to_smarts(&query, &write_params, &[AtomId::new(1)], None).unwrap(),
+            "[#8]"
+        );
+        assert_eq!(
+            mol_to_cx_smarts(&query, &write_params).unwrap(),
+            "[#6]-[#8]"
+        );
+        assert_eq!(
+            mol_fragment_to_cx_smarts(&query, &write_params, &[AtomId::new(0)], None).unwrap(),
+            "[#6]"
+        );
+    }
 }

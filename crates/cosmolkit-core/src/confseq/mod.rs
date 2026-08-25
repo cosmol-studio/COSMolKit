@@ -6150,6 +6150,7 @@ mod tests {
             uniquify: false,
             use_chirality: false,
             specified_stereo_query_matches_unspecified: false,
+            ..Default::default()
         };
         let matches = crate::get_substruct_matches_with_params(molecule, molecule, &params);
         if matches.is_empty() {

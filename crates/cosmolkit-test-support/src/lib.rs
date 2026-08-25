@@ -145,6 +145,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "xyz_read.jsonl" => "xyz",
         "kekulize_clear_flags_false.jsonl" => "kekulize",
         "delete_substructs.jsonl" | "delete_substructs_onlyfrags_chirality.jsonl" => "substructure",
+        "smarts.jsonl" => "smarts",
         "rdkit_builtin_fixture_migration.jsonl" => "rdkit_builtin",
         other => panic!(
             "unknown RDKit expected output '{other}'; add an explicit domain mapping before use"
@@ -196,7 +197,9 @@ pub fn rdkit_prepare_command(suite: &str) -> String {
 
 fn prepare_command(reference: &str, domain: &str, profile: &str) -> String {
     match reference {
-        "rdkit" => rdkit_prepare_command(domain),
+        "rdkit" => format!(
+            ".venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile {profile} --suite {domain} --jobs 4"
+        ),
         "gemmi" => format!(
             ".venv/bin/python tools/testdata/gemmi/generate_all.py --profile {profile} --suite mmcif_writer --jobs 4"
         ),
@@ -378,6 +381,7 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         "ciplabeler_focused" => {
             repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
         }
+        "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
         "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
         "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
         other => return Err(format!("unknown expected-data profile '{other}'")),

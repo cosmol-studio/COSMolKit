@@ -2954,78 +2954,134 @@ pub fn atom_chiral_type_from_bond_dir_pseudo_3d(
 
 // ── Bridgehead helper ─────────────────────────────────────────────────
 
-/// Check if an atom is a bridgehead (part of at least two rings sharing
-/// at least two bonds, and has at least three ring bonds).
-/// Port of RDKit queryIsAtomBridgehead (QueryOps.cpp:22-87).
-fn is_atom_bridgehead(mol: &Molecule, atom_idx: usize) -> bool {
-    let ri = match mol.derived_cache().rings.as_ref() {
-        Some(ri) => ri,
-        None => return false,
-    };
-    if !ri.is_initialized() {
-        return false;
-    }
-    let deg = atom_degree(mol, atom_idx);
-    if deg < 3 {
-        return false;
+pub(crate) fn query_is_atom_bridgehead(
+    mol: &Molecule,
+    atom_idx: usize,
+    ring_info: &crate::RingInfo,
+) -> i32 {
+    // RDKit✔️✔️: int queryIsAtomBridgehead(Atom const *at) {
+    // RDKit✔️✔️:   // at least three ring bonds, all ring bonds in a ring which shares at
+    // RDKit✔️✔️:   // least two bonds with another ring involving this atom
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // We can't just go with "at least three ring bonds shared between multiple
+    // RDKit✔️✔️:   // rings" because of structures like CC12CCN(CC1)C2 where there are only two
+    // RDKit✔️✔️:   // SSSRs
+    // RDKit✔️✔️:   PRECONDITION(at, "no atom");
+    // RDKit✔️✔️:   if (at->getDegree() < 3) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const auto &mol = at->getOwningMol();
+    // RDKit✔️✔️:   const auto ri = mol.getRingInfo();
+    // RDKit✔️✔️:   if (!ri || !ri->isInitialized()) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // track which ring bonds involve this atom
+    // RDKit✔️✔️:   boost::dynamic_bitset<> atomRingBonds(mol.getNumBonds());
+    // RDKit✔️✔️:   for (const auto bnd : mol.atomBonds(at)) {
+    // RDKit✔️✔️:     if (ri->numBondRings(bnd->getIdx())) {
+    // RDKit✔️✔️:       atomRingBonds.set(bnd->getIdx());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atomRingBonds.count() < 3) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   boost::dynamic_bitset<> bondsInRingI(mol.getNumBonds());
+    // RDKit✔️✔️:   boost::dynamic_bitset<> ringsOverlap(ri->numRings());
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < ri->bondRings().size(); ++i) {
+    // RDKit✔️✔️:     bondsInRingI.reset();
+    // RDKit✔️✔️:     bool atomInRingI = false;
+    // RDKit✔️✔️:     for (const auto bidx : ri->bondRings()[i]) {
+    // RDKit✔️✔️:       bondsInRingI.set(bidx);
+    // RDKit✔️✔️:       if (atomRingBonds[bidx]) {
+    // RDKit✔️✔️:         atomInRingI = true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!atomInRingI) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int j = i + 1; j < ri->bondRings().size(); ++j) {
+    // RDKit✔️✔️:       unsigned int overlap = 0;
+    // RDKit✔️✔️:       bool atomInRingJ = false;
+    // RDKit✔️✔️:       for (const auto bidx : ri->bondRings()[j]) {
+    // RDKit✔️✔️:         if (atomRingBonds[bidx]) {
+    // RDKit✔️✔️:           atomInRingJ = true;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (bondsInRingI[bidx]) {
+    // RDKit✔️✔️:           ++overlap;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (overlap >= 2 && atomInRingJ) {
+    // RDKit✔️✔️:           // we have two rings containing the atom which share at least two
+    // RDKit✔️✔️:           // bonds:
+    // RDKit✔️✔️:           ringsOverlap.set(i);
+    // RDKit✔️✔️:           ringsOverlap.set(j);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!ringsOverlap[i]) {
+    // RDKit✔️✔️:       return 0;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 1;
+    // RDKit✔️✔️: }
+    // Local complexity review: both implementations use bit-packed arrays of
+    // O(B + R), scan the atom's CSR incident-bond range once, then perform the
+    // same ring-pair overlap loops with O(R^2 * ring_size) worst-case time.
+    // Each ring-I bitset reset is O(B), matching dynamic_bitset::reset(). Rust
+    // allocates no per-pair collections and performs O(1) indexed lookups.
+    let adjacency = &mol.topology_block().adjacency;
+    if adjacency.neighbors_of(atom_idx).len() < 3 || !ring_info.is_initialized() {
+        return 0;
     }
 
-    // Collect ring bonds for this atom
-    let atom_id = crate::AtomId::new(atom_idx);
-    let mut ring_bonds: Vec<bool> = vec![false; mol.bonds().len()];
-    let mut ring_bond_count = 0usize;
-    for b in mol.bonds() {
-        let b_idx = b.id().index();
-        if (b.begin().index() == atom_idx || b.end().index() == atom_idx)
-            && ri.num_bond_rings(b.id()) > 0
-        {
-            ring_bonds[b_idx] = true;
-            ring_bond_count += 1;
+    let mut atom_ring_bonds = vec![false; mol.num_bonds()];
+    for neighbor in adjacency.neighbors_of(atom_idx) {
+        if ring_info.num_bond_rings(neighbor.bond) != 0 {
+            atom_ring_bonds[neighbor.bond.index()] = true;
         }
     }
-    if ring_bond_count < 3 {
-        return false;
+    if atom_ring_bonds.iter().filter(|is_ring| **is_ring).count() < 3 {
+        return 0;
     }
 
-    let bond_rings = ri.bond_rings();
-    let num_rings = bond_rings.len();
-
-    // Pre-compute which rings contain this atom
-    let atom_ring_members = ri.atom_members(atom_id);
-    let atom_ring_set: HashSet<usize> = atom_ring_members.iter().copied().collect();
-
-    for i in 0..num_rings {
-        if !atom_ring_set.contains(&i) {
+    let bond_rings = ring_info.bond_rings();
+    let mut bonds_in_ring_i = vec![false; mol.num_bonds()];
+    let mut rings_overlap = vec![false; bond_rings.len()];
+    for (i, ring_i) in bond_rings.iter().enumerate() {
+        bonds_in_ring_i.fill(false);
+        let mut atom_in_ring_i = false;
+        for bond in ring_i {
+            bonds_in_ring_i[bond.index()] = true;
+            if atom_ring_bonds[bond.index()] {
+                atom_in_ring_i = true;
+            }
+        }
+        if !atom_in_ring_i {
             continue;
         }
-        // Build bit set of bonds in ring i
-        let mut bonds_in_i = vec![false; mol.bonds().len()];
-        for b in &bond_rings[i] {
-            bonds_in_i[b.index()] = true;
-        }
-
-        for j in (i + 1)..num_rings {
-            if !atom_ring_set.contains(&j) {
-                continue;
-            }
-            let mut overlap = 0u32;
+        for (j, ring_j) in bond_rings.iter().enumerate().skip(i + 1) {
+            let mut overlap = 0;
             let mut atom_in_ring_j = false;
-            for b in &bond_rings[j] {
-                let bidx = b.index();
-                if ring_bonds[bidx] {
+            for bond in ring_j {
+                if atom_ring_bonds[bond.index()] {
                     atom_in_ring_j = true;
                 }
-                if bonds_in_i[bidx] {
+                if bonds_in_ring_i[bond.index()] {
                     overlap += 1;
                 }
                 if overlap >= 2 && atom_in_ring_j {
-                    return true;
+                    rings_overlap[i] = true;
+                    rings_overlap[j] = true;
+                    break;
                 }
             }
         }
+        if !rings_overlap[i] {
+            return 0;
+        }
     }
-
-    false
+    1
 }
 
 // BEGIN RDKIT CPP FUNCTION: atomIsCandidateForRingStereochem (Chirality.cpp:1455-1517)
@@ -3068,7 +3124,7 @@ pub fn atom_is_candidate_for_ring_stereochem(
     if atom.atomic_number() == 7
         && atom_total_degree(mol, atom_idx) == 3
         && !ri.is_atom_in_ring_of_size(atom_id, 3)
-        && !is_atom_bridgehead(mol, atom_idx)
+        && query_is_atom_bridgehead(mol, atom_idx, ri) == 0
     {
         return false;
     }
@@ -4698,9 +4754,14 @@ pub fn is_atom_potential_chiral_center(
                         (bond.begin().index() == atom_idx || bond.end().index() == atom_idx)
                             && bond.is_conjugated()
                     });
+                    let is_bridgehead = mol
+                        .derived_cache()
+                        .rings
+                        .as_ref()
+                        .is_some_and(|ri| query_is_atom_bridgehead(mol, atom_idx, ri) != 0);
                     if atom.hybridization() == crate::Hybridization::Sp3
                         && !atom_has_conjugated_bond
-                        && (in_three_membered_ring || is_atom_bridgehead(mol, atom_idx))
+                        && (in_three_membered_ring || is_bridgehead)
                     {
                         legal_center = true;
                     }

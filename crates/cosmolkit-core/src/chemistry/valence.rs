@@ -1111,6 +1111,11 @@ pub(crate) fn bond_valence_contrib(bond: &Bond, atom_id: AtomId) -> Result<f64, 
     // RDKit✔️✔️:   return 0;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION QueryBond::getValenceContrib
+    // Local complexity review: both implementations perform one query-
+    // presence check and, when present, one O(q) complex-bond-type traversal
+    // before an O(1) base bond contribution calculation. Rust borrows the
+    // canonical typed query tree and adds no clone, allocation, repeated scan,
+    // temporary collection, or asymptotic work.
     if bond.query().is_some_and(has_complex_bond_type_query) {
         return Ok(0.0);
     }
@@ -1177,6 +1182,11 @@ pub(crate) fn has_complex_bond_type_query(query: &QueryNode<BondQueryPredicate>)
     // RDKit✔️✔️:   return hasComplexBondTypeQueryHelper(qry, false);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION QueryOps::hasComplexBondTypeQuery
+    // Local complexity review: both implementations make one depth-first walk
+    // over the query tree with sibling-carried seenBondOrder state, requiring
+    // O(q) worst-case time and O(h) recursion space. Typed predicate checks
+    // avoid description strings and the fixed five-entry lookup without
+    // adding allocation, cloning, repeated traversal, or temporary storage.
     has_complex_bond_type_query_helper(query, false).0
 }
 
@@ -1202,11 +1212,16 @@ pub(crate) fn has_bond_type_query(query: &QueryNode<BondQueryPredicate>) -> bool
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION QueryOps::hasBondTypeQuery
+    // Local complexity review: both implementations perform a depth-first
+    // query-tree walk with short-circuiting in O(q) worst-case time and O(h)
+    // recursion space. Typed classification removes description/type-label
+    // string copies and the fixed five-entry lookup, with no added allocation,
+    // cloning, repeated traversal, or temporary collection.
     if query_node_is_bond_order_function(query) {
         return true;
     }
     match query {
-        QueryNode::And(children) | QueryNode::Or(children) => {
+        QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
             children.iter().any(has_bond_type_query)
         }
         QueryNode::Not(child) => has_bond_type_query(child),
@@ -1233,7 +1248,7 @@ fn has_complex_bond_type_query_helper(
 
     let mut seen_bond_order = seen_bond_order || is_bond_order;
     match query {
-        QueryNode::And(children) | QueryNode::Or(children) => {
+        QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
             for child in children {
                 // RDKit threads the "already saw a bond-order term" state
                 // across siblings so later recursive children can detect a
@@ -1264,7 +1279,11 @@ fn query_node_is_bond_order(query: &QueryNode<BondQueryPredicate>) -> bool {
     match query {
         QueryNode::Predicate(BondQueryPredicate::Order(_)) => true,
         QueryNode::Predicate(BondQueryPredicate::OrderIn(orders)) => orders.len() == 1,
-        QueryNode::Predicate(_) | QueryNode::And(_) | QueryNode::Or(_) | QueryNode::Not(_) => false,
+        QueryNode::Predicate(_)
+        | QueryNode::And(_)
+        | QueryNode::Or(_)
+        | QueryNode::Xor(_)
+        | QueryNode::Not(_) => false,
     }
 }
 
@@ -2858,7 +2877,7 @@ mod tests {
     }
 
     #[test]
-    fn has_bond_type_query_matches_rdkit_description_and_child_walk() {
+    fn smarts_has_bond_type_query() {
         assert!(super::has_bond_type_query(&QueryNode::predicate(
             BondQueryPredicate::Order(BondOrder::Single)
         )));
@@ -2884,7 +2903,7 @@ mod tests {
     }
 
     #[test]
-    fn has_complex_bond_type_query_distinguishes_simple_and_complex_queries_like_rdkit() {
+    fn smarts_has_complex_bond_type_query() {
         assert!(!super::has_complex_bond_type_query(&QueryNode::predicate(
             BondQueryPredicate::Order(BondOrder::Single)
         )));
@@ -2900,6 +2919,52 @@ mod tests {
         assert!(!super::has_complex_bond_type_query(&QueryNode::predicate(
             BondQueryPredicate::IsInRing(true)
         )));
+    }
+
+    #[test]
+    fn smarts_query_bond_valence() {
+        let mut builder = MoleculeBuilder::new();
+        let atoms = (0..6)
+            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
+            .collect::<Vec<_>>();
+        let plain = builder
+            .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Double))
+            .unwrap();
+        let simple = builder
+            .add_bond(
+                BondSpec::new(atoms[2], atoms[3], BondOrder::Double).with_query(
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+                ),
+            )
+            .unwrap();
+        let complex = builder
+            .add_bond(
+                BondSpec::new(atoms[4], atoms[5], BondOrder::Double).with_query(
+                    QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
+                        BondOrder::Single,
+                        BondOrder::Double,
+                    ])),
+                ),
+            )
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        assert_eq!(
+            super::bond_valence_contrib(&molecule.bonds()[plain.index()], atoms[0]).unwrap(),
+            2.0
+        );
+        assert_eq!(
+            super::bond_valence_contrib(&molecule.bonds()[simple.index()], atoms[2]).unwrap(),
+            2.0
+        );
+        assert_eq!(
+            super::bond_valence_contrib(&molecule.bonds()[complex.index()], atoms[4]).unwrap(),
+            0.0
+        );
+        assert_eq!(
+            super::bond_valence_contrib(&molecule.bonds()[plain.index()], atoms[5]).unwrap(),
+            0.0
+        );
     }
 
     #[test]

@@ -260,7 +260,7 @@ pub(super) fn rdkit_query_ops_is_metal(atomic_number: u8) -> bool {
     )
 }
 
-pub(super) fn update_property_cache_for_smiles(
+pub(crate) fn update_property_cache_for_smiles(
     molecule: &mut Molecule,
 ) -> Result<(), SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles writer property-cache prep

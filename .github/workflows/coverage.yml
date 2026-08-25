@@ -107,6 +107,14 @@ jobs:
                       echo "regenerated=false" >> "$GITHUB_OUTPUT"
                   fi
 
+            - name: Prepare and validate RDKit SMARTS source expected data
+              run: |
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile smarts_source \
+                      --suite smarts \
+                      --jobs 4
+
             - name: Save validated RDKit expected-data cache
               if: steps.prepare_rdkit_expected.outputs.regenerated == 'true'
               uses: actions/cache/save@v4

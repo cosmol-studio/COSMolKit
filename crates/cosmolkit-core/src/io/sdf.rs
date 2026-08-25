@@ -31,6 +31,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::search::query::convert_complex_name_to_query;
 use crate::{
     AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate,
     BondSpec, BondStereo, Conformer2D, Conformer3D, CoordinateDimension, Element,
@@ -3797,59 +3798,7 @@ fn parse_v2000_atom_line(
 }
 
 fn molfile_complex_atom_query(symbol: &str) -> Option<QueryNode<AtomQueryPredicate>> {
-    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/QueryOps.cpp :: convertComplexNameToQuery
-    // RDKit✔️✔️: void convertComplexNameToQuery(Atom *query, std::string_view symb) {
-    // RDKit✔️✔️:   if (symb == "Q") {
-    // RDKit✔️✔️:     query->setQuery(makeQAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "QH") {
-    // RDKit✔️✔️:     query->setQuery(makeQHAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "A") {
-    // RDKit✔️✔️:     query->setQuery(makeAAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "AH") {
-    // RDKit✔️✔️:     query->setQuery(makeAHAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "X") {
-    // RDKit✔️✔️:     query->setQuery(makeXAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "XH") {
-    // RDKit✔️✔️:     query->setQuery(makeXHAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "M") {
-    // RDKit✔️✔️:     query->setQuery(makeMAtomQuery());
-    // RDKit✔️✔️:   } else if (symb == "MH") {
-    // RDKit✔️✔️:     query->setQuery(makeMHAtomQuery());
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     ASSERT_INVARIANT(0, "bad complex query symbol");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/QueryOps.cpp :: convertComplexNameToQuery
-    let halogens = vec![9, 17, 35, 53, 85];
-    let mh_excluded = vec![
-        0, 2, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18, 33, 34, 35, 36, 52, 53, 54, 85, 86,
-    ];
-    match symbol {
-        "A" => Some(QueryNode::not(QueryNode::predicate(
-            AtomQueryPredicate::AtomicNumber(1),
-        ))),
-        "AH" => Some(QueryNode::predicate(AtomQueryPredicate::Any)),
-        "Q" => Some(QueryNode::not(QueryNode::or(vec![
-            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
-            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
-        ]))),
-        "QH" => Some(QueryNode::not(QueryNode::predicate(
-            AtomQueryPredicate::AtomicNumber(6),
-        ))),
-        "X" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
-            halogens,
-        ))),
-        "XH" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
-            [halogens, vec![1]].concat(),
-        ))),
-        "M" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(
-            [mh_excluded, vec![1]].concat(),
-        ))),
-        "MH" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(
-            mh_excluded,
-        ))),
-        _ => None,
-    }
+    convert_complex_name_to_query(symbol).ok()
 }
 
 fn parse_v2000_bond_block<R: BufRead>(
@@ -4904,9 +4853,9 @@ fn parse_ring_bond_count_line(
                 state
                     .molecule_props
                     .insert("_NeedsQueryScan".to_string(), "1".to_string());
-                AtomQueryPredicate::RingBondCountNeedsScan
+                AtomQueryPredicate::RingBondCount(crate::search::query::QUERY_SCAN_MAGIC_VALUE)
             }
-            1..=3 => AtomQueryPredicate::RingBondCount(count as u8),
+            1..=3 => AtomQueryPredicate::RingBondCount(count as u32),
             4 => AtomQueryPredicate::RingBondCountLessEqual(4),
             _ => {
                 return Err(SdfReadError::Parse(format!(
@@ -5003,11 +4952,14 @@ fn parse_marvin_smarts_line(
     })?;
     let sma = line.get(smarts_start..).unwrap_or_default();
     let atom = atom_line_mut(atoms, atom_index, line_number)?;
-    crate::search::smarts_parse::parse_smarts(sma).map_err(|_| {
-        SdfReadError::Parse(format!(
-            "Cannot parse smarts: '{sma}' on line {line_number}"
-        ))
-    })?;
+    // Local complexity review: the Marvin SMARTS is compiled exactly once and
+    // the resulting canonical query graph is moved into the recursive query.
+    let query_molecule = crate::mol_from_smarts(sma, &crate::SmartsParseParams::default())
+        .map_err(|_| {
+            SdfReadError::Parse(format!(
+                "Cannot parse smarts: '{sma}' on line {line_number}"
+            ))
+        })?;
     atom.spec = atom
         .spec
         .clone()
@@ -5015,7 +4967,9 @@ fn parse_marvin_smarts_line(
         .with_prop("_MolFileAtomQuery", "1")
         .with_query(merge_atom_query(
             atom.spec.query().cloned(),
-            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(sma.to_string())),
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
+                crate::search::query::RecursiveStructureQuery::from_smarts(sma, query_molecule, 0),
+            )),
         ));
     Ok(())
 }
@@ -8729,7 +8683,9 @@ fn parse_v3000_atom_props(
                         let existing = spec.query().cloned();
                         spec = spec.with_query(merge_atom_query(
                             existing,
-                            QueryNode::predicate(AtomQueryPredicate::RingBondCountNeedsScan),
+                            QueryNode::predicate(AtomQueryPredicate::RingBondCount(
+                                crate::search::query::QUERY_SCAN_MAGIC_VALUE,
+                            )),
                         ));
                         continue;
                     } else if rbcount > 4 {
@@ -8738,7 +8694,7 @@ fn parse_v3000_atom_props(
                     let predicate = if rbcount == 4 {
                         AtomQueryPredicate::RingBondCountLessEqual(4)
                     } else {
-                        AtomQueryPredicate::RingBondCount(rbcount as u8)
+                        AtomQueryPredicate::RingBondCount(rbcount as u32)
                     };
                     let existing = spec.query().cloned();
                     spec = spec
@@ -12495,7 +12451,7 @@ M  END
     }
 
     #[test]
-    fn process_sgroups_accepts_smartsq_without_smarts_parser() {
+    fn smarts_consumer_sdf_smartsq() {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         builder
@@ -12512,14 +12468,12 @@ M  END
             .unwrap();
         let mut molecule = builder.build().unwrap();
 
-        // SMARTS Q is accepted without error (SMARTS preserved on sgroup data
-        // during processing). The sgroup is consumed/removed as in RDKit but
-        // no per-atom query objects are created.
         process_sgroups(&mut molecule, SdfReadParams::default()).unwrap();
 
-        // No query atom was set (COSMolKit doesn't have a SMARTS parser).
-        assert_eq!(molecule.atoms()[0].query(), None);
-        // The SMARTS Q sgroup was consumed and removed (matching RDKit).
+        assert!(matches!(
+            molecule.atoms()[0].query(),
+            Some(QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(_)))
+        ));
         assert!(molecule.substance_groups().is_empty());
     }
 
@@ -13797,7 +13751,7 @@ $$$$
     }
 
     #[test]
-    fn parse_v2000_property_block_applies_query_and_misc_property_lines() {
+    fn smarts_consumer_sdf_smarts_line() {
         let input = concat!(
             "M  PXA   1 payload\n",
             "M  RGP  1   2   7\n",
