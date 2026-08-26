@@ -2,13 +2,13 @@ Fingerprints
 ============
 
 .. meta::
-   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, AtomPair, Topological Torsion, MACCS, RDKFingerprint, and Avalon bit and count vectors with explicit RDKit parity boundaries.
+   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, AtomPair, Topological Torsion, MACCS, RDKFingerprint, Avalon, and Layered bit and count vectors with explicit RDKit parity boundaries.
 
 COSMolKit exposes fixed-length bit vectors plus the source-defined sparse bit
 and count forms used by AtomPair. The exposed Morgan and MACCS branches are
 covered by strict RDKit bit-identical parity tests. The source-backed
-topological, Avalon, AtomPair, and Topological Torsion implementations follow
-their pinned upstream algorithms and exact maintained-corpus validation.
+topological, Avalon, Layered, AtomPair, and Topological Torsion implementations
+follow their pinned upstream algorithms and exact maintained-corpus validation.
 Similarity-shape correlation or structurally similar hashing is not a
 compatibility claim. The Python ``Fingerprint`` object is a sparse view over
 the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
@@ -179,6 +179,100 @@ replacement is not an acceptance condition.
    print(topological.on_bits())
    print(avalon.on_bits())
 
+Layered fingerprints
+--------------------
+
+``Molecule.fingerprint_layered()`` implements RDKit's Layered fingerprint
+algorithm version ``0.7.0``. RDKit labels this algorithm experimental;
+COSMolKit preserves that upstream metadata even though the exposed parameter
+and result types are ordinary project-native APIs. The six active source layer
+bits are:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Flag
+     - Layer
+     - Encoded state
+   * - ``0x01``
+     - topology
+     - path-local atom degree and bond-neighbor topology
+   * - ``0x02``
+     - bond order
+     - normalized bond type plus topology
+   * - ``0x04``
+     - atom type
+     - atomic numbers plus topology
+   * - ``0x08``
+     - ring presence
+     - sparse ring-bond membership
+   * - ``0x10``
+     - ring size
+     - minimum source SSSR ring size
+   * - ``0x20``
+     - aromaticity
+     - query-aware endpoint aromaticity plus topology
+
+``0x07`` is the source substructure prefix and ``0x3f`` selects all active
+layers. The default ``0xffffffff`` retains all ten source flag slots; high bits
+have no encoder in RDKit and therefore add no components. They are accepted,
+not repurposed as COSMolKit extensions.
+
+Paths are bond paths with inclusive ``min_path`` and ``max_path`` bounds. The
+defaults are 1 through 7, 2,048 output bits, and branched enumeration.
+``branched_paths=False`` selects linear bond paths. ``from_atoms=None`` means
+no root restriction. An explicit empty list is different: it is a present
+empty root selection and returns an empty fingerprint. Duplicate and reordered
+roots retain the source aggregation order.
+
+.. code-block:: python
+
+   import cosmolkit
+
+   molecule = cosmolkit.Molecule.from_smiles("c1ccccc1O")
+   substructure = molecule.fingerprint_layered(
+       layers=0x07,
+       min_path=1,
+       max_path=7,
+       fp_size=2048,
+   )
+
+   even_mask = cosmolkit.Fingerprint.from_on_bits(257, range(0, 257, 2))
+   counted = molecule.fingerprint_layered_with_output(
+       layers=0x3F,
+       min_path=2,
+       max_path=4,
+       fp_size=257,
+       atom_counts=[10] * molecule.num_atoms(),
+       set_only_bits=even_mask,
+       branched_paths=True,
+       from_atoms=[0],
+   )
+
+   print(substructure.on_bits())
+   print(counted.fingerprint().on_bits())
+   print(counted.atom_counts())
+
+``set_only_bits`` must have exactly ``fp_size`` bits. It gates projected bits
+before insertion and before counting. A supplied ``atom_counts`` vector is a
+seed, not a zeroed output buffer; its length must be at least the molecule atom
+count. Every atom in a path is incremented once when any layer projection for
+that path passes the mask, even when several layers set bits or bit collisions
+occur. Omitting counts makes ``atom_counts()`` return ``None``.
+
+Invalid zero/reversed path bounds, zero width, short count vectors,
+width-mismatched masks, out-of-range roots, and ring-preparation failures are
+reported as typed exceptions. The operation is read-only: repeated,
+interleaved, batch, and concurrent calls share the same Rust scalar core and
+do not mutate molecule topology, properties, coordinates, or derived caches.
+
+Pinned RDKit contains one upstream defect in the unrooted linear call: it
+requests atom-index paths and later consumes them as bond indices, which can
+terminate the process for ordinary acyclic molecules. COSMolKit does not copy
+that crash. It applies the source header's documented bond-path semantics, the
+same semantics used by the valid rooted linear branch. This is an explicit
+process-safety compatibility difference, not a chemistry fallback.
+
 AtomPair fingerprints
 ---------------------
 
@@ -332,6 +426,15 @@ Batch Fingerprints
        n_jobs=8,
        progress_bar=False,
    )
+   layered = batch.fingerprint_layered_list(
+       layers=0x3F,
+       min_path=1,
+       max_path=7,
+       fp_size=2048,
+       n_jobs=8,
+       progress_bar=False,
+   )
 
    print([fp.on_bits() if fp is not None else None for fp in fps])
    print([fp.on_bits() if fp is not None else None for fp in atom_pairs])
+   print([fp.on_bits() if fp is not None else None for fp in layered])

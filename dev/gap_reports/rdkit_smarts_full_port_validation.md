@@ -100,7 +100,7 @@ non-None branch is visible to the type checker.
 ## Support Boundary
 
 `SUBSTRUCTURE_FEATURE` is now `SupportedWithRdkitParity("2026.03.1")` for the
-ordinary-molecule SMARTS/query boundary. `dev/parity_scope.md`,
+ordinary-molecule SMARTS/query boundary. `VALIDATION.md`,
 `dev/porting_inventory.md`, the Rust support metadata, Python docstrings, and
 the generated stub describe the same scope. The support claim does not cover
 reaction SMARTS, database/container SMARTS, or unrelated RDKit query APIs.

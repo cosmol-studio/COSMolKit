@@ -21,10 +21,10 @@ empty.
 
 ## [Unreleased]
 
-This release adds the public modern RDKit CIPLabeler and completes the
-ordinary-molecule SMARTS parser, query, writer, and substructure-matching path
-through source-backed Rust implementations with explicit state lifecycle and
-pinned parity validation.
+This release adds the public modern RDKit CIPLabeler and source-backed Layered
+fingerprints, and completes the ordinary-molecule SMARTS parser, query, writer,
+and substructure-matching path through source-backed Rust implementations with
+explicit state lifecycle and pinned parity validation.
 
 ### Added
 
@@ -46,6 +46,10 @@ pinned parity validation.
 - Added ordinary-molecule substructure matching with recursive queries,
   query-query and generic matching, callbacks, source ordering, uniqueness and
   match limits, and typed matching parameters.
+- Added the source-backed RDKit Layered fingerprint 0.7.0 to Rust and Python,
+  including all six active layers, linear and branched rooted paths, masks,
+  seeded atom counts, structured errors, complete result state, and ordered
+  batch execution through the sole shared fingerprint core.
 
 ### Changed
 
@@ -63,6 +67,10 @@ pinned parity validation.
   and public SMARTS consumer onto one typed query model, parser, writer, and
   matcher, removing the parallel `SmartsMolecule` representation and
   consumer-local conversion paths.
+- Preserved RDKit's experimental classification for Layered fingerprints.
+  COSMolKit returns the source-documented bond-path result for unrooted linear
+  calls instead of reproducing the pinned implementation's input-dependent
+  process crash.
 
 ### Fixed
 
@@ -100,6 +108,14 @@ pinned parity validation.
   and remain outside the ordinary-molecule boundary. The Bison diagnostic
   stream requested by `debug_parse` is explicitly unsupported rather than
   silently ignored.
+- The complete Layered audit processed all 2,897,819 ChEMBL 37 source records
+  over 128 shards. All 2,897,804 mutually parseable records matched pinned
+  RDKit across 18 profiles and 52,160,472 exact complete-result comparisons,
+  with zero mismatch, invalid profile, failed task, or retained finding.
+- The committed focused, 152-row, and 5,000-row Layered gates cover 5,168 input
+  rows, 92,808 branch executions, and 278,424 exact output-field comparisons.
+  They cover every active layer, path/root mode, mask, seeded-count state,
+  query branch, structured error, scalar/batch form, and composition path.
 
 ## [0.2.13] - 2026-08-24
 

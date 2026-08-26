@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::ops::{BitOr, BitOrAssign};
 use std::sync::OnceLock;
 
 use crate::chemistry::ciplabeler::assign_cip_labels;
@@ -4260,6 +4262,8 @@ pub enum FingerprintError {
     CipLabeler { reason: String },
     #[error("stereochemistry preparation failed while generating a fingerprint: {reason}")]
     StereoPreparation { reason: String },
+    #[error("ring preparation failed while generating a fingerprint: {reason}")]
+    RingPreparation { reason: String },
     #[error("AtomPair fingerprint generation failed: {reason}")]
     AtomPair { reason: String },
     #[error("sparse fingerprint index {index} is outside vector length {size}")]
@@ -4281,6 +4285,14 @@ pub enum FingerprintError {
     BitLengthMismatch { left: usize, right: usize },
 }
 
+impl From<crate::RingFindingError> for FingerprintError {
+    fn from(error: crate::RingFindingError) -> Self {
+        Self::RingPreparation {
+            reason: error.to_string(),
+        }
+    }
+}
+
 impl From<crate::chemistry::ciplabeler::CipLabelerError> for FingerprintError {
     fn from(error: crate::chemistry::ciplabeler::CipLabelerError) -> Self {
         Self::CipLabeler {
@@ -4295,6 +4307,147 @@ impl From<crate::StereoError> for FingerprintError {
             reason: error.to_string(),
         }
     }
+}
+
+// BEGIN RDKIT CPP CONSTANTS LayeredFingerprintMol metadata
+// RDKit✔️✔️: const unsigned int maxFingerprintLayers = 10;
+pub const LAYERED_FINGERPRINT_MAX_LAYERS: usize = 10;
+// RDKit✔️✔️: const std::string LayeredFingerprintMolVersion = "0.7.0";
+pub const LAYERED_FINGERPRINT_VERSION: &str = "0.7.0";
+// RDKit✔️✔️: const unsigned int substructLayers = 0x07;
+pub const LAYERED_FINGERPRINT_SUBSTRUCTURE_LAYERS: u32 = 0x07;
+// END RDKIT CPP CONSTANTS LayeredFingerprintMol metadata
+
+/// Source layer flags for RDKit's experimental Layered fingerprint algorithm.
+///
+/// Unknown/high source bits are retained because the C++ API accepts the full
+/// `unsigned int` value and silently produces no components for unimplemented
+/// layer slots. Only the six named layers currently emit components:
+/// topology (`0x01`), bond order (`0x02`), atom type (`0x04`), ring presence
+/// (`0x08`), minimum ring size (`0x10`), and aromaticity (`0x20`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LayeredFingerprintLayers(u32);
+
+impl LayeredFingerprintLayers {
+    pub const TOPOLOGY: Self = Self(0x01);
+    pub const BOND_ORDER: Self = Self(0x02);
+    pub const ATOM_TYPE: Self = Self(0x04);
+    pub const RING_PRESENCE: Self = Self(0x08);
+    pub const RING_SIZE: Self = Self(0x10);
+    pub const AROMATICITY: Self = Self(0x20);
+    pub const ACTIVE: Self = Self(0x3f);
+    pub const SUBSTRUCTURE: Self = Self(LAYERED_FINGERPRINT_SUBSTRUCTURE_LAYERS);
+    pub const ALL_SOURCE_BITS: Self = Self(u32::MAX);
+
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn from_bits_retain(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+impl BitOr for LayeredFingerprintLayers {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl BitOrAssign for LayeredFingerprintLayers {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+/// Parameters for the source-backed Layered fingerprint API.
+///
+/// The defaults reproduce the source wrapper: all source flag bits, bond-path
+/// lengths 1 through 7, 2,048 output bits, branched path enumeration, no atom
+/// counts, no output-bit mask, and no root selection. `from_atoms: None`
+/// selects the whole graph, while `Some(Vec::new())` is a present but empty
+/// root selection and therefore enumerates no paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayeredFingerprintParams {
+    /// Layer flags. Unknown high bits are retained and emit no components.
+    pub layers: LayeredFingerprintLayers,
+    /// Minimum bond-path length. Zero is rejected as `minPath==0`.
+    pub min_path: u32,
+    /// Maximum bond-path length. Values below `min_path` are rejected.
+    pub max_path: u32,
+    /// Explicit output width. Zero is rejected.
+    pub fp_size: u32,
+    /// Optional seeded source `atomCounts` vector. Values are incremented and
+    /// returned without clearing the caller-provided seed.
+    pub atom_counts: Option<Vec<u32>>,
+    /// Optional projection mask, which must have exactly `fp_size` bits.
+    pub set_only_bits: Option<Fingerprint>,
+    /// Enumerate branched subgraphs when true and linear bond paths when false.
+    pub branched_paths: bool,
+    /// `None` is an absent source pointer; `Some(Vec::new())` is a present
+    /// empty selection and therefore enumerates no paths.
+    pub from_atoms: Option<Vec<u32>>,
+}
+
+impl Default for LayeredFingerprintParams {
+    fn default() -> Self {
+        // RDKit✔️✔️: const ROMol &mol, unsigned int layerFlags = 0xFFFFFFFF,
+        // RDKit✔️✔️: unsigned int minPath = 1, unsigned int maxPath = 7,
+        // RDKit✔️✔️: unsigned int fpSize = 2048, std::vector<unsigned int> *atomCounts = nullptr,
+        // RDKit✔️✔️: ExplicitBitVect *setOnlyBits = nullptr, bool branchedPaths = true,
+        // RDKit✔️✔️: const std::vector<std::uint32_t> *fromAtoms = nullptr);
+        Self {
+            layers: LayeredFingerprintLayers::ALL_SOURCE_BITS,
+            min_path: 1,
+            max_path: 7,
+            fp_size: 2048,
+            atom_counts: None,
+            set_only_bits: None,
+            branched_paths: true,
+            from_atoms: None,
+        }
+    }
+}
+
+impl LayeredFingerprintParams {
+    pub fn validate(&self) -> Result<(), FingerprintError> {
+        if self.min_path == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "minPath==0",
+            });
+        }
+        if self.max_path < self.min_path {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "maxPath<minPath",
+            });
+        }
+        if self.fp_size == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "fpSize==0",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayeredFingerprintResult {
+    /// The fixed-width Layered bit vector.
+    pub fingerprint: Fingerprint,
+    /// Updated seeded counts, or `None` when counts were not requested.
+    ///
+    /// Every atom in an accepted path is incremented once for that path, even
+    /// when several active layers set bits or several projections collide.
+    pub atom_counts: Option<Vec<u32>>,
 }
 
 fn copied_atoms_setting_bits(
@@ -4907,13 +5060,53 @@ fn rdkit_bond_stereo_code(stereo: crate::BondStereo) -> u32 {
     }
 }
 
-// RDKit uses:  gboost::hash_combine(seed, value)
-// which expands to:  seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 pub(crate) fn hash_combine(seed: &mut u32, value: u32) {
+    // BEGIN RDKIT CPP FUNCTION hash_combine
+    // RDKit✔️✔️: template <class T>
+    // RDKit✔️✔️: inline void hash_combine(std::hash_result_t& seed, T const& v)
+    // RDKit✔️✔️: {
+    // RDKit✔️✔️:   gboost::hash<T> hasher;
+    // RDKit✔️✔️:   seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION hash_combine
+    // `value` is the identity hash for the unsigned-int inputs used by the
+    // fingerprint paths. Local complexity review: both implementations make
+    // the same fixed number of 32-bit scalar operations in O(1), allocate
+    // nothing, and explicitly wrap modulo 2^32.
     *seed ^= value
         .wrapping_add(0x9e3779b9u32)
         .wrapping_add(seed.wrapping_shl(6))
         .wrapping_add(seed.wrapping_shr(2));
+}
+
+pub(crate) fn hash_range(values: &[u32]) -> u32 {
+    // BEGIN RDKIT CPP TYPE hash_result_t
+    // RDKit✔️✔️: namespace std {
+    // RDKit✔️✔️: typedef std::uint32_t hash_result_t;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP TYPE hash_result_t
+    // BEGIN RDKIT CPP FUNCTION hash_range
+    // RDKit✔️✔️: template <class It>
+    // RDKit✔️✔️: inline std::hash_result_t hash_range(It first, It last) {
+    // RDKit✔️✔️:   std::hash_result_t seed = 0;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (; first != last; ++first) {
+    // RDKit✔️✔️:     hash_combine(seed, *first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return seed;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION hash_range
+    // Local complexity review: both implementations make one ordered O(n)
+    // pass, retain one 32-bit seed, and allocate or clone nothing. A slice
+    // iterator has the same contiguous access pattern as the source vector
+    // iterators; the explicit u32 result prevents native pointer width from
+    // changing wrapping behavior.
+    let mut seed = 0u32;
+    for &value in values {
+        hash_combine(&mut seed, value);
+    }
+    seed
 }
 
 fn morgan_additional_output_from_rdkit_output(output: AdditionalOutput) -> MorganAdditionalOutput {
@@ -5967,7 +6160,64 @@ fn find_all_paths_of_length_n(
     Ok(paths.remove(&target_len).unwrap_or_default())
 }
 
-pub(crate) fn enumerate_rdkit_fp_paths(
+fn enumerate_fingerprint_paths_for_root(
+    molecule: &Molecule,
+    lower: usize,
+    upper: usize,
+    use_hs: bool,
+    branched_paths: bool,
+    root: Option<u32>,
+) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, FingerprintError> {
+    if branched_paths {
+        let neighbors = rdkit_fp_bond_neighbors(molecule, use_hs);
+        let mut result = (lower..=upper)
+            .map(|length| (length, Vec::new()))
+            .collect::<BTreeMap<_, _>>();
+        let mut forbidden = vec![false; molecule.num_bonds()];
+        for bond_index in 0..molecule.num_bonds() {
+            let bond = &molecule.bonds()[bond_index];
+            if !neighbors[bond_index].is_empty()
+                || (use_hs
+                    || (molecule.atoms()[bond.begin().index()].atomic_number() != 1
+                        && molecule.atoms()[bond.end().index()].atomic_number() != 1))
+            {
+                if let Some(root) = root.map(|value| value as usize) {
+                    if root >= molecule.num_atoms()
+                        || (root != bond.begin().index() && root != bond.end().index())
+                    {
+                        continue;
+                    }
+                }
+                if forbidden[bond_index] {
+                    continue;
+                }
+                forbidden[bond_index] = true;
+                rdkit_fp_recurse_subgraphs(
+                    &neighbors,
+                    vec![bond_index],
+                    neighbors[bond_index].clone(),
+                    lower,
+                    upper,
+                    forbidden.clone(),
+                    &mut result,
+                );
+            }
+        }
+        return Ok(result);
+    }
+
+    find_all_paths_of_lengths_m_to_n(
+        molecule,
+        lower,
+        upper,
+        true,
+        use_hs,
+        root.map_or(-1, i64::from),
+        false,
+    )
+}
+
+pub(crate) fn enumerate_fingerprint_paths(
     molecule: &Molecule,
     min_path: u32,
     max_path: u32,
@@ -5975,6 +6225,40 @@ pub(crate) fn enumerate_rdkit_fp_paths(
     branched_paths: bool,
     from_atoms: Option<&[u32]>,
 ) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
+    // RDKit✔️✔️: void enumerateAllPaths(const ROMol &mol, INT_PATH_LIST_MAP &allPaths,
+    // RDKit✔️✔️:                        const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit✔️✔️:                        bool branchedPaths, bool useHs, unsigned int minPath,
+    // RDKit✔️✔️:                        unsigned int maxPath) {
+    // RDKit✔️✔️:   if (!fromAtoms) {
+    // RDKit✔️✔️:     if (branchedPaths) {
+    // RDKit✔️✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs);
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     for (auto aidx : *fromAtoms) {
+    // RDKit✔️✔️:       INT_PATH_LIST_MAP tPaths;
+    // RDKit✔️✔️:       if (branchedPaths) {
+    // RDKit✔️✔️:         tPaths =
+    // RDKit✔️✔️:             findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs, aidx);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         tPaths =
+    // RDKit✔️✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs, aidx);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
+    // RDKit✔️✔️:            tpit != tPaths.end(); ++tpit) {
+    // RDKit✔️✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
+    // RDKit✔️✔️:                                          tpit->second.begin(), tpit->second.end());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
+    // Local complexity review: each source call and Rust helper enumerates the
+    // same path/subgraph state once per requested root. Both prepend each root
+    // group to the per-length vector; no molecule or completed path map is
+    // cloned beyond the source-equivalent recursive path state.
     if min_path == 0 || max_path < min_path {
         return Err(FingerprintError::InvalidArguments {
             reason: "invalid path lengths",
@@ -5982,96 +6266,755 @@ pub(crate) fn enumerate_rdkit_fp_paths(
     }
     let lower = min_path as usize;
     let upper = max_path as usize;
-    let roots = from_atoms.unwrap_or(&[]);
+    let Some(roots) = from_atoms else {
+        return enumerate_fingerprint_paths_for_root(
+            molecule,
+            lower,
+            upper,
+            use_hs,
+            branched_paths,
+            None,
+        );
+    };
 
-    if branched_paths {
-        let neighbors = rdkit_fp_bond_neighbors(molecule, use_hs);
-        let enumerate_for_root = |root: Option<usize>| {
-            let mut result = (lower..=upper)
-                .map(|length| (length, Vec::new()))
-                .collect::<BTreeMap<_, _>>();
-            let mut forbidden = vec![false; molecule.num_bonds()];
-            for bond_index in 0..molecule.num_bonds() {
-                let bond = &molecule.bonds()[bond_index];
-                if !neighbors[bond_index].is_empty()
-                    || (use_hs
-                        || (molecule.atoms()[bond.begin().index()].atomic_number() != 1
-                            && molecule.atoms()[bond.end().index()].atomic_number() != 1))
-                {
-                    if let Some(root) = root {
-                        if root >= molecule.num_atoms()
-                            || (root != bond.begin().index() && root != bond.end().index())
-                        {
-                            continue;
-                        }
+    let mut result: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
+    for &root in roots {
+        let rooted_paths = enumerate_fingerprint_paths_for_root(
+            molecule,
+            lower,
+            upper,
+            use_hs,
+            branched_paths,
+            Some(root),
+        )?;
+        for (length, paths) in rooted_paths {
+            result.entry(length).or_default().splice(0..0, paths);
+        }
+    }
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct LayeredFingerprintPreparation<'a> {
+    ring_info: Cow<'a, crate::RingInfo>,
+    bond_cache: Vec<&'a crate::Bond>,
+    query_masks: Vec<u8>,
+    aromatic_atoms: Vec<bool>,
+    atomic_numbers: Vec<u32>,
+}
+
+fn prepare_layered_fingerprint<'a>(
+    molecule: &'a Molecule,
+    min_path: u32,
+    max_path: u32,
+    fp_size: usize,
+    atom_counts: Option<&[u32]>,
+    set_only_bits: Option<&Fingerprint>,
+) -> Result<LayeredFingerprintPreparation<'a>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION LayeredFingerprintMol preparation
+    // RDKit✔️✔️:   PRECONDITION(minPath != 0, "minPath==0");
+    // RDKit✔️✔️:   PRECONDITION(maxPath >= minPath, "maxPath<minPath");
+    // RDKit✔️✔️:   PRECONDITION(fpSize != 0, "fpSize==0");
+    // RDKit✔️✔️:   PRECONDITION(!atomCounts || atomCounts->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomCounts size");
+    // RDKit✔️✔️:   PRECONDITION(!setOnlyBits || setOnlyBits->getNumBits() == fpSize,
+    // RDKit✔️✔️:                "bad setOnlyBits size");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:     MolOps::findSSSR(mol);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<const Bond *> bondCache;
+    // RDKit✔️✔️:   bondCache.resize(mol.getNumBonds());
+    // RDKit✔️✔️:   std::vector<short> isQueryBond(mol.getNumBonds(), 0);
+    // RDKit✔️✔️:   ROMol::EDGE_ITER firstB, lastB;
+    // RDKit✔️✔️:   boost::tie(firstB, lastB) = mol.getEdges();
+    // RDKit✔️✔️:   while (firstB != lastB) {
+    // RDKit✔️✔️:     const Bond *bond = mol[*firstB];
+    // RDKit✔️✔️:     isQueryBond[bond->getIdx()] = 0x0;
+    // RDKit✔️✔️:     bondCache[bond->getIdx()] = bond;
+    // RDKit✔️✔️:     if (isComplexQuery(bond)) {
+    // RDKit✔️✔️:       isQueryBond[bond->getIdx()] = 0x1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (isComplexQuery(bond->getBeginAtom())) {
+    // RDKit✔️✔️:       isQueryBond[bond->getIdx()] |= 0x2;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (isComplexQuery(bond->getEndAtom())) {
+    // RDKit✔️✔️:       isQueryBond[bond->getIdx()] |= 0x4;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++firstB;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<bool> aromaticAtoms(mol.getNumAtoms(), false);
+    // RDKit✔️✔️:   std::vector<int> anums(mol.getNumAtoms(), 0);
+    // RDKit✔️✔️:   ROMol::VERTEX_ITER firstA, lastA;
+    // RDKit✔️✔️:   boost::tie(firstA, lastA) = mol.getVertices();
+    // RDKit✔️✔️:   while (firstA != lastA) {
+    // RDKit✔️✔️:     const Atom *atom = mol[*firstA];
+    // RDKit✔️✔️:     if (isAtomAromatic(atom)) {
+    // RDKit✔️✔️:       aromaticAtoms[atom->getIdx()] = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     anums[atom->getIdx()] = atom->getAtomicNum();
+    // RDKit✔️✔️:     ++firstA;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION LayeredFingerprintMol preparation
+    // Local complexity review: validation is O(1), ring preparation reuses an
+    // initialized cache or performs the same exact-SSSR calculation, and the
+    // bond/atom caches are each filled by one ordered O(B)/O(A) pass. The Rust
+    // representation performs the same allocations and no molecule clone.
+    if min_path == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "minPath==0",
+        });
+    }
+    if max_path < min_path {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "maxPath<minPath",
+        });
+    }
+    if fp_size == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "fpSize==0",
+        });
+    }
+    if atom_counts.is_some_and(|counts| counts.len() < molecule.num_atoms()) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad atomCounts size",
+        });
+    }
+    if set_only_bits.is_some_and(|bits| bits.n_bits() != fp_size) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad setOnlyBits size",
+        });
+    }
+
+    let ring_info = match molecule
+        .derived_cache()
+        .rings
+        .as_ref()
+        .filter(|rings| rings.is_initialized())
+    {
+        Some(rings) => Cow::Borrowed(rings),
+        None => Cow::Owned(crate::rings::find_sssr(molecule)?),
+    };
+
+    let mut bond_cache = Vec::with_capacity(molecule.num_bonds());
+    let mut query_masks = Vec::with_capacity(molecule.num_bonds());
+    for bond in molecule.bonds() {
+        let mut query_mask = 0u8;
+        if crate::search::query::is_complex_bond_query(bond) {
+            query_mask = 0x1;
+        }
+        if crate::search::query::is_complex_atom_query(&molecule.atoms()[bond.begin().index()]) {
+            query_mask |= 0x2;
+        }
+        if crate::search::query::is_complex_atom_query(&molecule.atoms()[bond.end().index()]) {
+            query_mask |= 0x4;
+        }
+        bond_cache.push(bond);
+        query_masks.push(query_mask);
+    }
+
+    let mut aromatic_atoms = Vec::with_capacity(molecule.num_atoms());
+    let mut atomic_numbers = Vec::with_capacity(molecule.num_atoms());
+    for atom in molecule.atoms() {
+        aromatic_atoms.push(crate::search::query::is_atom_aromatic(atom, molecule));
+        atomic_numbers.push(u32::from(atom.atomic_number()));
+    }
+
+    Ok(LayeredFingerprintPreparation {
+        ring_info,
+        bond_cache,
+        query_masks,
+        aromatic_atoms,
+        atomic_numbers,
+    })
+}
+
+#[inline]
+fn layered_topology_hash(
+    bond_neighbor_count: u32,
+    begin_atom_degree: u32,
+    end_atom_degree: u32,
+) -> u32 {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 1
+    // RDKit✔️✔️:         if (layerFlags & 0x1) {
+    // RDKit✔️✔️:           // layer 1: straight topology
+    // RDKit✔️✔️:           unsigned int a1Deg, a2Deg;
+    // RDKit✔️✔️:           a1Deg = atomDegrees[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:           a2Deg = atomDegrees[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:           if (a1Deg < a2Deg) {
+    // RDKit✔️✔️:             std::swap(a1Deg, a2Deg);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           ourHash = bondNbrs[i] % 8;  // 3 bits here
+    // RDKit✔️✔️:           ourHash |= (a1Deg % 8) << 3;
+    // RDKit✔️✔️:           ourHash |= (a2Deg % 8) << 6;
+    // RDKit✔️✔️:           hashLayers[0].push_back(ourHash);
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 1
+    // Local complexity review: both forms perform three modulo operations,
+    // one conditional swap, two shifts, and two ORs in O(1), with no lookup,
+    // allocation, clone, or branch beyond the source branch.
+    let (larger_degree, smaller_degree) = if begin_atom_degree < end_atom_degree {
+        (end_atom_degree, begin_atom_degree)
+    } else {
+        (begin_atom_degree, end_atom_degree)
+    };
+    (bond_neighbor_count % 8) | ((larger_degree % 8) << 3) | ((smaller_degree % 8) << 6)
+}
+
+#[inline]
+fn layered_bond_order_hash(
+    bond: &crate::Bond,
+    bond_neighbor_count: u32,
+    begin_atom_degree: u32,
+    end_atom_degree: u32,
+    path_queries: u8,
+) -> Option<u32> {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 2
+    // RDKit✔️✔️:         if (layerFlags & 0x2 && !(pathQueries & 0x1)) {
+    // RDKit✔️✔️:           // layer 2: include bond orders:
+    // RDKit✔️✔️:           unsigned int bondHash;
+    // RDKit✔️✔️:           // makes sure aromatic bonds and single bonds  always hash the same:
+    // RDKit✔️✔️:           if (!bi->getIsAromatic() && bi->getBondType() != Bond::SINGLE &&
+    // RDKit✔️✔️:               bi->getBondType() != Bond::AROMATIC) {
+    // RDKit✔️✔️:             bondHash = bi->getBondType();
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             bondHash = Bond::SINGLE;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           unsigned int a1Deg, a2Deg;
+    // RDKit✔️✔️:           a1Deg = atomDegrees[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:           a2Deg = atomDegrees[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:           if (a1Deg < a2Deg) {
+    // RDKit✔️✔️:             std::swap(a1Deg, a2Deg);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           ourHash = bondHash % 8;
+    // RDKit✔️✔️:           ourHash |= (bondNbrs[i] % 8) << 3;
+    // RDKit✔️✔️:           ourHash |= (a1Deg % 8) << 6;
+    // RDKit✔️✔️:           ourHash |= (a2Deg % 8) << 9;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:           hashLayers[1].push_back(ourHash);
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 2
+    // Local complexity review: source and Rust each use one constant-time
+    // query-mask branch, one bond-state branch, one degree canonicalization,
+    // four modulo/packing fields, and no allocation or graph traversal.
+    if path_queries & 0x1 != 0 {
+        return None;
+    }
+    let bond_hash = if !bond.is_aromatic()
+        && bond.order() != BondOrder::Single
+        && bond.order() != BondOrder::Aromatic
+    {
+        rdkit_bond_type_code(bond.order())
+    } else {
+        rdkit_bond_type_code(BondOrder::Single)
+    };
+    let (larger_degree, smaller_degree) = if begin_atom_degree < end_atom_degree {
+        (end_atom_degree, begin_atom_degree)
+    } else {
+        (begin_atom_degree, end_atom_degree)
+    };
+    Some(
+        (bond_hash % 8)
+            | ((bond_neighbor_count % 8) << 3)
+            | ((larger_degree % 8) << 6)
+            | ((smaller_degree % 8) << 9),
+    )
+}
+
+#[inline]
+fn layered_atom_type_hash(
+    begin_atomic_number: u32,
+    end_atomic_number: u32,
+    begin_atom_degree: u32,
+    end_atom_degree: u32,
+    bond_neighbor_count: u32,
+    path_queries: u8,
+) -> Option<u32> {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 3
+    // RDKit✔️✔️:         if (layerFlags & 0x4 && !(pathQueries & 0x6)) {
+    // RDKit✔️✔️:           // std::cerr<<" consider: "<<bi->getBeginAtomIdx()<<" - "
+    // RDKit✔️✔️:           // <<bi->getEndAtomIdx()<<std::endl;
+    // RDKit✔️✔️:           // layer 3: include atom types:
+    // RDKit✔️✔️:           unsigned int a1Hash, a2Hash;
+    // RDKit✔️✔️:           a1Hash = (anums[bi->getBeginAtomIdx()] % 128);
+    // RDKit✔️✔️:           a2Hash = (anums[bi->getEndAtomIdx()] % 128);
+    // RDKit✔️✔️:           unsigned int a1Deg, a2Deg;
+    // RDKit✔️✔️:           a1Deg = atomDegrees[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:           a2Deg = atomDegrees[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:           if (a1Hash < a2Hash) {
+    // RDKit✔️✔️:             std::swap(a1Hash, a2Hash);
+    // RDKit✔️✔️:             std::swap(a1Deg, a2Deg);
+    // RDKit✔️✔️:           } else if (a1Hash == a2Hash && a1Deg < a2Deg) {
+    // RDKit✔️✔️:             std::swap(a1Deg, a2Deg);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           ourHash = a1Hash;
+    // RDKit✔️✔️:           ourHash |= a2Hash << 7;
+    // RDKit✔️✔️:           ourHash |= (a1Deg % 8) << 14;
+    // RDKit✔️✔️:           ourHash |= (a2Deg % 8) << 17;
+    // RDKit✔️✔️:           ourHash |= (bondNbrs[i] % 8) << 20;
+    // RDKit✔️✔️:           hashLayers[2].push_back(ourHash);
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 3
+    // Local complexity review: source and Rust each use one suppression test,
+    // two modulo-normalized atom keys, lexicographic endpoint ordering, and
+    // five fixed-width packed fields in O(1), without allocation or lookup.
+    if path_queries & 0x6 != 0 {
+        return None;
+    }
+    let mut first_hash = begin_atomic_number % 128;
+    let mut second_hash = end_atomic_number % 128;
+    let mut first_degree = begin_atom_degree;
+    let mut second_degree = end_atom_degree;
+    if first_hash < second_hash {
+        std::mem::swap(&mut first_hash, &mut second_hash);
+        std::mem::swap(&mut first_degree, &mut second_degree);
+    } else if first_hash == second_hash && first_degree < second_degree {
+        std::mem::swap(&mut first_degree, &mut second_degree);
+    }
+    Some(
+        first_hash
+            | (second_hash << 7)
+            | ((first_degree % 8) << 14)
+            | ((second_degree % 8) << 17)
+            | ((bond_neighbor_count % 8) << 20),
+    )
+}
+
+#[inline]
+fn layered_aromaticity_hash(
+    begin_aromatic: bool,
+    end_aromatic: bool,
+    bond_neighbor_count: u32,
+    path_queries: u8,
+) -> Option<u32> {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 6
+    // RDKit✔️✔️:         if (layerFlags & 0x20 && !(pathQueries & 0x6)) {
+    // RDKit✔️✔️:           // std::cerr<<" consider: "<<bi->getBeginAtomIdx()<<" - "
+    // RDKit✔️✔️:           // <<bi->getEndAtomIdx()<<std::endl;
+    // RDKit✔️✔️:           // layer 6: aromaticity:
+    // RDKit✔️✔️:           bool a1Hash = aromaticAtoms[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:           bool a2Hash = aromaticAtoms[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:           if ((!a1Hash) && a2Hash) {
+    // RDKit✔️✔️:             std::swap(a1Hash, a2Hash);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           ourHash = a1Hash;
+    // RDKit✔️✔️:           ourHash |= a2Hash << 1;
+    // RDKit✔️✔️:           ourHash |= (bondNbrs[i] % 8) << 5;
+    // RDKit✔️✔️:           hashLayers[5].push_back(ourHash);
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 6
+    // Local complexity review: both implementations perform one suppression
+    // branch, one endpoint canonicalization, one modulo, and three fixed-width
+    // packs in O(1), with no allocation, clone, lookup, or traversal.
+    if path_queries & 0x6 != 0 {
+        return None;
+    }
+    let (first_aromatic, second_aromatic) = if !begin_aromatic && end_aromatic {
+        (end_aromatic, begin_aromatic)
+    } else {
+        (begin_aromatic, end_aromatic)
+    };
+    Some(
+        u32::from(first_aromatic)
+            | (u32::from(second_aromatic) << 1)
+            | ((bond_neighbor_count % 8) << 5),
+    )
+}
+
+#[inline]
+fn layered_ring_presence_hash(
+    bond: &crate::Bond,
+    ring_info: &crate::RingInfo,
+    path_queries: u8,
+) -> Option<u32> {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 4
+    // RDKit✔️✔️:         if (layerFlags & 0x8 && !(pathQueries & 0x6)) {
+    // RDKit✔️✔️:           // layer 4: include ring information
+    // RDKit✔️✔️:           if (queryIsBondInRing(bi)) {
+    // RDKit✔️✔️:             hashLayers[3].push_back(1);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 4
+    // Local complexity review: both forms perform the same mask branch and
+    // O(1) indexed ring-membership lookup, allocate nothing, and deliberately
+    // omit rather than encode non-ring bonds.
+    if path_queries & 0x6 != 0 {
+        return None;
+    }
+    (crate::search::query::query_is_bond_in_ring(bond, ring_info) != 0).then_some(1)
+}
+
+#[inline]
+fn layered_min_ring_size_hash(
+    bond: &crate::Bond,
+    ring_info: &crate::RingInfo,
+    path_queries: u8,
+) -> Option<u32> {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 5
+    // RDKit✔️✔️:         if (layerFlags & 0x10 && !(pathQueries & 0x6)) {
+    // RDKit✔️✔️:           // layer 5: include ring size information
+    // RDKit✔️✔️:           ourHash = (queryBondMinRingSize(bi) % 8);
+    // RDKit✔️✔️:           hashLayers[4].push_back(ourHash);
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol layer 5
+    // Local complexity review: source and Rust each scan only this bond's
+    // ring-membership list to select the minimum and apply one modulo. Both
+    // are O(R_bond), use O(1) auxiliary space, and allocate or clone nothing.
+    if path_queries & 0x6 != 0 {
+        return None;
+    }
+    Some((crate::search::query::query_bond_min_ring_size(bond, ring_info) % 8) as u32)
+}
+
+fn project_layered_path(
+    hash_layers: &mut [Vec<u32>],
+    atoms_in_path: &[bool],
+    fp_size: usize,
+    set_only_bits: Option<&Fingerprint>,
+    result_words: &mut [u64],
+    mut atom_counts: Option<&mut [u32]>,
+) {
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol projection
+    // RDKit✔️✔️:       unsigned int l = 0;
+    // RDKit✔️✔️:       bool flaggedPath = false;
+    // RDKit✔️✔️:       for (auto layerIt = hashLayers.begin(); layerIt != hashLayers.end();
+    // RDKit✔️✔️:            ++layerIt, ++l) {
+    // RDKit✔️✔️:         if (!layerIt->size()) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // ----
+    // RDKit✔️✔️:         std::sort(layerIt->begin(), layerIt->end());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // finally, we will add the number of distinct atoms in the path at the
+    // RDKit✔️✔️:         // end
+    // RDKit✔️✔️:         // of the vect. This allows us to distinguish C1CC1 from CC(C)C
+    // RDKit✔️✔️:         layerIt->push_back(static_cast<unsigned int>(atomsInPath.count()));
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         layerIt->push_back(l + 1);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // hash the path to generate a seed:
+    // RDKit✔️✔️:         unsigned long seed =
+    // RDKit✔️✔️:             gboost::hash_range(layerIt->begin(), layerIt->end());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         unsigned int bitId = seed % fpSize;
+    // RDKit✔️✔️:         if (!setOnlyBits || (*setOnlyBits)[bitId]) {
+    // RDKit✔️✔️:           res->setBit(bitId);
+    // RDKit✔️✔️:           if (atomCounts && !flaggedPath) {
+    // RDKit✔️✔️:             for (unsigned int aIdx = 0; aIdx < atomsInPath.size(); ++aIdx) {
+    // RDKit✔️✔️:               if (atomsInPath[aIdx]) {
+    // RDKit✔️✔️:                 (*atomCounts)[aIdx] += 1;
+    // RDKit✔️✔️:               }
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:             flaggedPath = true;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol projection
+    // Local complexity review: both implementations sort each nonempty layer,
+    // append two scalar suffixes, hash it once, set one indexed bit, and scan
+    // the atom mask at most once per accepted path. Rust uses the same dense
+    // word representation and performs no additional completed-path clone.
+    debug_assert!(fp_size > 0);
+    debug_assert_eq!(result_words.len(), fp_size.div_ceil(64));
+    debug_assert!(set_only_bits.is_none_or(|bits| bits.n_bits() == fp_size));
+    debug_assert!(
+        atom_counts
+            .as_ref()
+            .is_none_or(|counts| counts.len() >= atoms_in_path.len())
+    );
+
+    let distinct_atom_count = atoms_in_path.iter().filter(|&&present| present).count() as u32;
+    let mut flagged_path = false;
+    for (layer_index, layer) in hash_layers.iter_mut().enumerate() {
+        if layer.is_empty() {
+            continue;
+        }
+        layer.sort_unstable();
+        layer.push(distinct_atom_count);
+        layer.push(layer_index as u32 + 1);
+
+        let bit_id = hash_range(layer) as usize % fp_size;
+        let accepted =
+            set_only_bits.is_none_or(|mask| mask.bits[bit_id / 64] & (1u64 << (bit_id % 64)) != 0);
+        if !accepted {
+            continue;
+        }
+        result_words[bit_id / 64] |= 1u64 << (bit_id % 64);
+        if !flagged_path {
+            if let Some(counts) = atom_counts.as_deref_mut() {
+                for atom_index in 0..atoms_in_path.len() {
+                    if atoms_in_path[atom_index] {
+                        counts[atom_index] = counts[atom_index].wrapping_add(1);
                     }
-                    if forbidden[bond_index] {
-                        continue;
-                    }
-                    forbidden[bond_index] = true;
-                    rdkit_fp_recurse_subgraphs(
-                        &neighbors,
-                        vec![bond_index],
-                        neighbors[bond_index].clone(),
-                        lower,
-                        upper,
-                        forbidden.clone(),
-                        &mut result,
-                    );
+                }
+                flagged_path = true;
+            }
+        }
+    }
+}
+
+pub fn layered_fingerprint(
+    molecule: &Molecule,
+    params: &LayeredFingerprintParams,
+) -> Result<Fingerprint, FingerprintError> {
+    Ok(layered_fingerprint_with_output(molecule, params)?.fingerprint)
+}
+
+/// Compute a source-backed Layered fingerprint and optional atom counts.
+///
+/// This read-only operation neither mutates the molecule nor stores ring or
+/// fingerprint intermediates in it. Calls can be repeated, interleaved with
+/// other fingerprint families, or run concurrently on shared molecules.
+/// Invalid path bounds, widths, count lengths, mask widths, and roots return a
+/// structured [`FingerprintError`].
+pub fn layered_fingerprint_with_output(
+    molecule: &Molecule,
+    params: &LayeredFingerprintParams,
+) -> Result<LayeredFingerprintResult, FingerprintError> {
+    params.validate()?;
+    if params.from_atoms.as_ref().is_some_and(|roots| {
+        roots
+            .iter()
+            .any(|&root| root as usize >= molecule.num_atoms())
+    }) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "fromAtoms contains atom index out of range",
+        });
+    }
+
+    let mut atom_counts = params.atom_counts.clone();
+    let prepared = prepare_layered_fingerprint(
+        molecule,
+        params.min_path,
+        params.max_path,
+        params.fp_size as usize,
+        atom_counts.as_deref(),
+        params.set_only_bits.as_ref(),
+    )?;
+
+    // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol path selection
+    // RDKit✔️✔️:   auto *res = new ExplicitBitVect(fpSize);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   INT_PATH_LIST_MAP allPaths;
+    // RDKit✔️✔️:   if (!fromAtoms) {
+    // RDKit✔️✔️:     if (branchedPaths) {
+    // RDKit✔️✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, false);
+    // RDKit✔️✔️:     } else {
+    // RDKit❗✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, false);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     for (auto aidx : *fromAtoms) {
+    // RDKit✔️✔️:       INT_PATH_LIST_MAP tPaths;
+    // RDKit✔️✔️:       if (branchedPaths) {
+    // RDKit✔️✔️:         tPaths =
+    // RDKit✔️✔️:             findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, false, aidx);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         tPaths =
+    // RDKit✔️✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, false, aidx);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
+    // RDKit✔️✔️:            tpit != tPaths.end(); ++tpit) {
+    // RDKit✔️✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
+    // RDKit✔️✔️:                                          tpit->second.begin(), tpit->second.end());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP BLOCK LayeredFingerprintMol path selection
+    // The pinned unrooted linear call passes `false` in the `useBonds` slot
+    // and can index atom paths as bonds. Isolated pinned-RDKit calls terminate
+    // with SIGSEGV for common acyclic molecules. The maintained Layered
+    // contract uses the header-documented bond-path semantics shared by the
+    // rooted call; COSMolKit does not reproduce an upstream process crash.
+    let all_paths = enumerate_fingerprint_paths(
+        molecule,
+        params.min_path,
+        params.max_path,
+        false,
+        params.branched_paths,
+        params.from_atoms.as_deref(),
+    )?;
+    let fp_size = params.fp_size as usize;
+    let mut result_words = vec![0u64; fp_size.div_ceil(64)];
+
+    for paths in all_paths.values() {
+        for path in paths {
+            // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol path intermediates
+            // RDKit✔️✔️:       std::vector<std::vector<unsigned int>> hashLayers(maxFingerprintLayers);
+            // RDKit✔️✔️:       for (unsigned int i = 0; i < maxFingerprintLayers; ++i) {
+            // RDKit✔️✔️:         if (layerFlags & (0x1 << i)) {
+            // RDKit✔️✔️:           hashLayers[i].reserve(maxPath);
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:       // details about what kinds of query features appear on the path:
+            // RDKit✔️✔️:       unsigned int pathQueries = 0;
+            // RDKit✔️✔️:       for (int pIt : path) {
+            // RDKit✔️✔️:         pathQueries |= isQueryBond[pIt];
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:       // calculate the number of neighbors each bond has in the path:
+            // RDKit✔️✔️:       std::vector<unsigned int> bondNbrs(path.size(), 0);
+            // RDKit✔️✔️:       atomsInPath.reset();
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:       std::vector<unsigned int> atomDegrees(mol.getNumAtoms(), 0);
+            // RDKit✔️✔️:       for (int i : path) {
+            // RDKit✔️✔️:         const Bond *bi = bondCache[i];
+            // RDKit✔️✔️:         atomDegrees[bi->getBeginAtomIdx()]++;
+            // RDKit✔️✔️:         atomDegrees[bi->getEndAtomIdx()]++;
+            // RDKit✔️✔️:         atomsInPath.set(bi->getBeginAtomIdx());
+            // RDKit✔️✔️:         atomsInPath.set(bi->getEndAtomIdx());
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:       for (unsigned int i = 0; i < path.size(); ++i) {
+            // RDKit✔️✔️:         const Bond *bi = bondCache[path[i]];
+            // RDKit✔️✔️:         for (unsigned int j = i + 1; j < path.size(); ++j) {
+            // RDKit✔️✔️:           const Bond *bj = bondCache[path[j]];
+            // RDKit✔️✔️:           if (bi->getBeginAtomIdx() == bj->getBeginAtomIdx() ||
+            // RDKit✔️✔️:               bi->getBeginAtomIdx() == bj->getEndAtomIdx() ||
+            // RDKit✔️✔️:               bi->getEndAtomIdx() == bj->getBeginAtomIdx() ||
+            // RDKit✔️✔️:               bi->getEndAtomIdx() == bj->getEndAtomIdx()) {
+            // RDKit✔️✔️:             ++bondNbrs[i];
+            // RDKit✔️✔️:             ++bondNbrs[j];
+            // RDKit✔️✔️:           }
+            // RDKit✔️✔️:         }
+            // END RDKIT CPP BLOCK LayeredFingerprintMol path intermediates
+            // Local complexity review: source and Rust both allocate ten
+            // layer vectors, scan P bonds for query/degree state, perform the
+            // same O(P^2) pairwise adjacency count, and encode each bond once.
+            let mut hash_layers = vec![Vec::new(); LAYERED_FINGERPRINT_MAX_LAYERS];
+            for (layer_index, layer) in hash_layers.iter_mut().enumerate() {
+                if params.layers.bits() & (1u32 << layer_index) != 0 {
+                    layer.reserve(params.max_path as usize);
                 }
             }
-            result
-        };
 
-        if roots.is_empty() {
-            return Ok(enumerate_for_root(None));
-        }
-        let mut result = (lower..=upper)
-            .map(|length| (length, Vec::new()))
-            .collect::<BTreeMap<_, _>>();
-        for &root in roots {
-            let root_paths = enumerate_for_root(Some(root as usize));
-            for (length, paths) in root_paths {
-                result.entry(length).or_default().splice(0..0, paths);
+            let mut path_queries = 0u8;
+            let mut atom_degrees = vec![0u32; molecule.num_atoms()];
+            let mut atoms_in_path = vec![false; molecule.num_atoms()];
+            for &bond_index in path {
+                let bond = *prepared.bond_cache.get(bond_index).ok_or(
+                    FingerprintError::InvalidArguments {
+                        reason: "enumerated path contains invalid bond index",
+                    },
+                )?;
+                path_queries |= prepared.query_masks[bond_index];
+                let begin = bond.begin().index();
+                let end = bond.end().index();
+                atom_degrees[begin] = atom_degrees[begin].wrapping_add(1);
+                atom_degrees[end] = atom_degrees[end].wrapping_add(1);
+                atoms_in_path[begin] = true;
+                atoms_in_path[end] = true;
             }
+
+            let mut bond_neighbors = vec![0u32; path.len()];
+            for first_position in 0..path.len() {
+                let first = prepared.bond_cache[path[first_position]];
+                for second_position in (first_position + 1)..path.len() {
+                    let second = prepared.bond_cache[path[second_position]];
+                    if first.begin() == second.begin()
+                        || first.begin() == second.end()
+                        || first.end() == second.begin()
+                        || first.end() == second.end()
+                    {
+                        bond_neighbors[first_position] =
+                            bond_neighbors[first_position].wrapping_add(1);
+                        bond_neighbors[second_position] =
+                            bond_neighbors[second_position].wrapping_add(1);
+                    }
+                }
+            }
+
+            for (path_position, &bond_index) in path.iter().enumerate() {
+                let bond = prepared.bond_cache[bond_index];
+                let begin = bond.begin().index();
+                let end = bond.end().index();
+                let neighbor_count = bond_neighbors[path_position];
+                let begin_degree = atom_degrees[begin];
+                let end_degree = atom_degrees[end];
+
+                if params.layers.contains(LayeredFingerprintLayers::TOPOLOGY) {
+                    hash_layers[0].push(layered_topology_hash(
+                        neighbor_count,
+                        begin_degree,
+                        end_degree,
+                    ));
+                }
+                if params.layers.contains(LayeredFingerprintLayers::BOND_ORDER) {
+                    if let Some(hash) = layered_bond_order_hash(
+                        bond,
+                        neighbor_count,
+                        begin_degree,
+                        end_degree,
+                        path_queries,
+                    ) {
+                        hash_layers[1].push(hash);
+                    }
+                }
+                if params.layers.contains(LayeredFingerprintLayers::ATOM_TYPE) {
+                    if let Some(hash) = layered_atom_type_hash(
+                        prepared.atomic_numbers[begin],
+                        prepared.atomic_numbers[end],
+                        begin_degree,
+                        end_degree,
+                        neighbor_count,
+                        path_queries,
+                    ) {
+                        hash_layers[2].push(hash);
+                    }
+                }
+                if params
+                    .layers
+                    .contains(LayeredFingerprintLayers::RING_PRESENCE)
+                {
+                    if let Some(hash) =
+                        layered_ring_presence_hash(bond, prepared.ring_info.as_ref(), path_queries)
+                    {
+                        hash_layers[3].push(hash);
+                    }
+                }
+                if params.layers.contains(LayeredFingerprintLayers::RING_SIZE) {
+                    if let Some(hash) =
+                        layered_min_ring_size_hash(bond, prepared.ring_info.as_ref(), path_queries)
+                    {
+                        hash_layers[4].push(hash);
+                    }
+                }
+                if params
+                    .layers
+                    .contains(LayeredFingerprintLayers::AROMATICITY)
+                {
+                    if let Some(hash) = layered_aromaticity_hash(
+                        prepared.aromatic_atoms[begin],
+                        prepared.aromatic_atoms[end],
+                        neighbor_count,
+                        path_queries,
+                    ) {
+                        hash_layers[5].push(hash);
+                    }
+                }
+            }
+
+            project_layered_path(
+                &mut hash_layers,
+                &atoms_in_path,
+                fp_size,
+                params.set_only_bits.as_ref(),
+                &mut result_words,
+                atom_counts.as_deref_mut(),
+            );
         }
-        return Ok(result);
     }
 
-    if from_atoms.is_none() {
-        find_all_paths_of_lengths_m_to_n(molecule, lower, upper, true, use_hs, -1, false)
-    } else {
-        // RDKit source: FingerprintUtil.cpp lines 293-320 (`enumerateAllPaths`).
-        // RDKit✔️✔️: for (auto aidx : *fromAtoms) {
-        // RDKit✔️✔️:   INT_PATH_LIST_MAP tPaths;
-        // RDKit✔️✔️:   tPaths = findAllPathsOfLengthsMtoN(
-        // RDKit✔️✔️:       mol, minPath, maxPath, true, useHs, aidx);
-        // RDKit✔️✔️:   for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
-        // RDKit✔️✔️:        tpit != tPaths.end(); ++tpit) {
-        // RDKit✔️✔️:     allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
-        // RDKit✔️✔️:                                      tpit->second.begin(), tpit->second.end());
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️: }
-        let mut result = BTreeMap::new();
-        for &root in roots {
-            let rooted_paths = find_all_paths_of_lengths_m_to_n(
-                molecule,
-                lower,
-                upper,
-                true,
-                use_hs,
-                i64::from(root),
-                false,
-            )?;
-            for (length, paths) in rooted_paths {
-                result
-                    .entry(length)
-                    .or_insert_with(Vec::new)
-                    .splice(0..0, paths);
-            }
-        }
-        Ok(result)
-    }
+    Ok(LayeredFingerprintResult {
+        fingerprint: Fingerprint {
+            bits: result_words,
+            n_bits: fp_size,
+        },
+        atom_counts,
+    })
 }
 
 /// One source `RDKitFPAtomEnv` produced by the RDKitFP environment generator.
@@ -6159,20 +7102,6 @@ impl RdkitFpEnvironment {
     }
 }
 
-fn rdkit_fp_hash_range(values: &[u32]) -> u32 {
-    // RDKit source: RDGeneral/hash/hash.hpp `gboost::hash_range`.
-    // RDKit✔️✔️: template <class It> inline std::size_t hash_range(It first, It last) {
-    // RDKit✔️✔️:   std::size_t seed = 0;
-    // RDKit✔️✔️:   for (; first != last; ++first) hash_combine(seed, *first);
-    // RDKit✔️✔️:   return seed;
-    // RDKit✔️✔️: }
-    let mut seed = 0u32;
-    for &value in values {
-        hash_combine(&mut seed, value);
-    }
-    seed
-}
-
 pub(crate) fn generate_rdkit_fp_environments(
     molecule: &Molecule,
     params: &TopologicalFingerprintParams,
@@ -6193,7 +7122,7 @@ pub(crate) fn generate_rdkit_fp_environments(
     // RDKit✔️✔️: RDKitFPUtils::enumerateAllPaths(
     // RDKit✔️✔️:     mol, allPaths, fromAtoms, fpArguments->df_branchedPaths,
     // RDKit✔️✔️:     fpArguments->df_useHs, fpArguments->d_minPath, fpArguments->d_maxPath);
-    let all_paths = enumerate_rdkit_fp_paths(
+    let all_paths = enumerate_fingerprint_paths(
         molecule,
         params.min_path,
         params.max_path,
@@ -6243,7 +7172,7 @@ pub(crate) fn generate_rdkit_fp_environments(
                         .filter(|&&in_path| in_path)
                         .count() as u32,
                 );
-                rdkit_fp_hash_range(&bond_hashes)
+                hash_range(&bond_hashes)
             } else {
                 hash_inputs.bond_hashes[0]
             };
@@ -7665,7 +8594,11 @@ mod topological_torsion_public_api_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AtomSpec, BondSpec, BondStereo, Element, Molecule};
+    use crate::{
+        AtomQueryPredicate, AtomSpec, BondQueryPredicate, BondSpec, BondStereo, Element, Molecule,
+        QueryNode,
+    };
+    use serde::Deserialize;
 
     fn default_morgan_params(radius: u32, n_bits: usize) -> MorganFingerprintParams {
         MorganFingerprintParams {
@@ -7761,6 +8694,31 @@ mod tests {
     }
 
     #[test]
+    fn layered_boost_hash_range_matches_empty_order_and_overflow() {
+        assert_eq!(hash_range(&[]), 0x0000_0000);
+        assert_eq!(hash_range(&[0]), 0x9e37_79b9);
+        assert_eq!(hash_range(&[1]), 0x9e37_79ba);
+        assert_eq!(hash_range(&[1, 2]), 0xcd94_bf13);
+        assert_eq!(hash_range(&[2, 1]), 0xcd94_bf53);
+        assert_eq!(hash_range(&[u32::MAX; 4]), 0x4841_0b19);
+        assert_eq!(
+            hash_range(&[u32::MAX, 0, 0x8000_0000, 0x7fff_ffff]),
+            0x6841_6bc8
+        );
+    }
+
+    #[test]
+    fn layered_boost_hash_range_is_pinned_to_uint32_not_native_width() {
+        let source_width_hash = hash_range(&[0x1234_5678, 0x9abc_def0, u32::MAX]);
+        assert_eq!(source_width_hash, 0xf41b_442d);
+
+        // Applying the same expression to a native-width 64-bit seed retains
+        // high bits and therefore does not reproduce RDKit's `hash_result_t`.
+        let native_width_hash = 0x0000_0b74_341b_442du64;
+        assert_ne!(u64::from(source_width_hash), native_width_hash);
+    }
+
+    #[test]
     fn rdkit_fp_bond_hash_inputs_match_boost_hash_combine_order() {
         let molecule = Molecule::from_smiles("CCO").expect("fixture");
         let invariants = rdkit_fp_atom_invariants(&molecule);
@@ -7804,7 +8762,7 @@ mod tests {
         branched_paths: bool,
         from_atoms: Option<&[u32]>,
     ) -> BTreeMap<usize, Vec<Vec<usize>>> {
-        enumerate_rdkit_fp_paths(
+        enumerate_fingerprint_paths(
             molecule,
             min_path,
             max_path,
@@ -7842,6 +8800,725 @@ mod tests {
                 (2, vec![vec![0, 2], vec![0, 1], vec![1, 2]]),
                 (3, vec![vec![0, 2, 1]]),
             ])
+        );
+    }
+
+    #[test]
+    fn layered_shared_path_enumeration_distinguishes_absent_and_empty_roots() {
+        let molecule = Molecule::from_smiles("CC(C)C").expect("root-state fixture");
+        for branched_paths in [false, true] {
+            let absent = expected_paths(&molecule, 1, 3, true, branched_paths, None);
+            let empty = expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[]));
+            assert!(absent.values().any(|paths| !paths.is_empty()));
+            assert_eq!(empty, BTreeMap::new());
+        }
+    }
+
+    #[test]
+    fn layered_shared_path_enumeration_preserves_root_duplicates_and_prepend_order() {
+        fn prepend_groups(
+            groups: &[&BTreeMap<usize, Vec<Vec<usize>>>],
+        ) -> BTreeMap<usize, Vec<Vec<usize>>> {
+            let mut result = BTreeMap::new();
+            for group in groups {
+                for (&length, paths) in *group {
+                    result
+                        .entry(length)
+                        .or_insert_with(Vec::new)
+                        .splice(0..0, paths.iter().cloned());
+                }
+            }
+            result
+        }
+
+        let molecule = Molecule::from_smiles("CC(C)C").expect("root-order fixture");
+        for branched_paths in [false, true] {
+            let root_zero = expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[0]));
+            let root_two = expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[2]));
+
+            assert_eq!(
+                expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[0, 0])),
+                prepend_groups(&[&root_zero, &root_zero])
+            );
+            assert_eq!(
+                expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[0, 2])),
+                prepend_groups(&[&root_zero, &root_two])
+            );
+            assert_eq!(
+                expected_paths(&molecule, 1, 3, true, branched_paths, Some(&[2, 0])),
+                prepend_groups(&[&root_two, &root_zero])
+            );
+        }
+    }
+
+    #[test]
+    fn layered_preparation_rejects_each_source_precondition() {
+        let molecule = Molecule::from_smiles("CCO").expect("precondition fixture");
+        let error =
+            |result: Result<LayeredFingerprintPreparation<'_>, FingerprintError>| match result
+                .expect_err("source precondition must fail")
+            {
+                FingerprintError::InvalidArguments { reason } => reason,
+                other => panic!("unexpected error: {other}"),
+            };
+
+        assert_eq!(
+            error(prepare_layered_fingerprint(
+                &molecule, 0, 7, 2048, None, None
+            )),
+            "minPath==0"
+        );
+        assert_eq!(
+            error(prepare_layered_fingerprint(
+                &molecule, 2, 1, 2048, None, None
+            )),
+            "maxPath<minPath"
+        );
+        assert_eq!(
+            error(prepare_layered_fingerprint(&molecule, 1, 7, 0, None, None)),
+            "fpSize==0"
+        );
+        assert_eq!(
+            error(prepare_layered_fingerprint(
+                &molecule,
+                1,
+                7,
+                2048,
+                Some(&[0, 0]),
+                None,
+            )),
+            "bad atomCounts size"
+        );
+        let wrong_width = Fingerprint::from_on_bits(1024, []);
+        assert_eq!(
+            error(prepare_layered_fingerprint(
+                &molecule,
+                1,
+                7,
+                2048,
+                None,
+                Some(&wrong_width),
+            )),
+            "bad setOnlyBits size"
+        );
+    }
+
+    #[test]
+    fn layered_preparation_reuses_initialized_rings_or_computes_exact_sssr() {
+        let uncached = Molecule::new();
+        let prepared = prepare_layered_fingerprint(&uncached, 1, 7, 2048, None, None)
+            .expect("uncached exact SSSR preparation");
+        assert!(matches!(prepared.ring_info, Cow::Owned(_)));
+        assert!(prepared.ring_info.is_initialized());
+
+        let cached = Molecule::from_smiles_with_sanitize("C1CC1", false)
+            .expect("cached-ring fixture")
+            .with_assigned_rings()
+            .expect("materialize initialized ring cache");
+        let prepared = prepare_layered_fingerprint(&cached, 1, 7, 2048, None, None)
+            .expect("cached ring preparation");
+        assert!(matches!(prepared.ring_info, Cow::Borrowed(_)));
+        assert_eq!(prepared.ring_info.num_rings(), 1);
+    }
+
+    #[test]
+    fn layered_preparation_builds_source_ordered_atom_bond_and_query_caches() {
+        let molecule = Molecule::from_smiles("CCO").expect("cache fixture");
+        let prepared = prepare_layered_fingerprint(&molecule, 1, 7, 2048, None, None)
+            .expect("cache preparation");
+        assert_eq!(
+            prepared
+                .bond_cache
+                .iter()
+                .map(|bond| bond.id().index())
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(prepared.query_masks, vec![0, 0]);
+        assert_eq!(prepared.atomic_numbers, vec![6, 6, 8]);
+        assert_eq!(prepared.aromatic_atoms, vec![false, false, false]);
+
+        let aromatic = Molecule::from_smiles("c1ccccc1").expect("aromatic cache fixture");
+        let prepared = prepare_layered_fingerprint(&aromatic, 1, 7, 2048, None, None)
+            .expect("aromatic cache preparation");
+        assert_eq!(prepared.atomic_numbers, vec![6; 6]);
+        assert_eq!(prepared.aromatic_atoms, vec![true; 6]);
+
+        let mut builder = Molecule::builder();
+        let begin = builder.add_atom(
+            AtomSpec::new(Element::C)
+                .with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))),
+        );
+        let end = builder.add_atom(
+            AtomSpec::new(Element::C)
+                .with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))),
+        );
+        builder
+            .add_bond(
+                BondSpec::new(begin, end, BondOrder::Single)
+                    .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
+            )
+            .expect("query-mask bond");
+        let query = builder.build().expect("query-mask molecule");
+        let prepared = prepare_layered_fingerprint(&query, 1, 7, 2048, None, None)
+            .expect("query-mask preparation");
+        assert_eq!(prepared.query_masks, vec![0x7]);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LayeredQueryFixture {
+        schema_version: u32,
+        reference: LayeredQueryReference,
+        parameters: LayeredQueryParameters,
+        complexity_masks: Vec<LayeredQueryCase>,
+        aromaticity_branches: Vec<LayeredQueryCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LayeredQueryReference {
+        name: String,
+        version: String,
+        source_revision: String,
+        source_paths: Vec<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LayeredQueryParameters {
+        layer_flags: u32,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        branched_paths: bool,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LayeredQueryCase {
+        case_id: String,
+        notation: String,
+        input: String,
+        query_masks: Vec<u8>,
+        aromatic_atoms: Vec<bool>,
+        on_bits: Vec<usize>,
+    }
+
+    #[test]
+    fn layered_query_parity_matches_source_masks_and_aromaticity() {
+        let fixture_path = cosmolkit_test_support::repo_root()
+            .join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_query_cases.json");
+        let fixture_text = std::fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", fixture_path.display()));
+        let fixture: LayeredQueryFixture = serde_json::from_str(&fixture_text)
+            .unwrap_or_else(|error| panic!("failed to parse {}: {error}", fixture_path.display()));
+
+        assert_eq!(fixture.schema_version, 1);
+        assert_eq!(fixture.reference.name, "RDKit");
+        assert_eq!(fixture.reference.version, "2026.3.1");
+        assert_eq!(
+            fixture.reference.source_revision,
+            "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+        );
+        assert!(
+            fixture
+                .reference
+                .source_paths
+                .iter()
+                .any(|path| path.contains("Fingerprints/test1.cpp"))
+        );
+        assert!(
+            fixture
+                .reference
+                .source_paths
+                .iter()
+                .any(|path| path.contains("QueryOps.cpp"))
+        );
+
+        let params = LayeredFingerprintParams {
+            layers: LayeredFingerprintLayers::from_bits_retain(fixture.parameters.layer_flags),
+            min_path: fixture.parameters.min_path,
+            max_path: fixture.parameters.max_path,
+            fp_size: fixture.parameters.fp_size,
+            branched_paths: fixture.parameters.branched_paths,
+            ..LayeredFingerprintParams::default()
+        };
+
+        let assert_case = |case: &LayeredQueryCase| {
+            let molecule = match case.notation.as_str() {
+                "smiles" => Molecule::from_smiles(&case.input).unwrap_or_else(|error| {
+                    panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)
+                }),
+                "smarts" => mol_from_smarts(&case.input, &SmartsParseParams::default())
+                    .unwrap_or_else(|error| {
+                        panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)
+                    }),
+                notation => panic!("{}: unsupported notation {notation}", case.case_id),
+            };
+            let prepared = prepare_layered_fingerprint(
+                &molecule,
+                params.min_path,
+                params.max_path,
+                params.fp_size as usize,
+                None,
+                None,
+            )
+            .unwrap_or_else(|error| panic!("{} preparation failed: {error}", case.case_id));
+            assert_eq!(
+                prepared.query_masks, case.query_masks,
+                "{}: exact three-bit bond/endpoint query masks",
+                case.case_id
+            );
+            assert_eq!(
+                prepared.aromatic_atoms, case.aromatic_atoms,
+                "{}: exact query-aware aromaticity cache",
+                case.case_id
+            );
+            let fingerprint = layered_fingerprint(&molecule, &params)
+                .unwrap_or_else(|error| panic!("{} fingerprint failed: {error}", case.case_id));
+            assert_eq!(
+                fingerprint.on_bits(),
+                case.on_bits,
+                "{}: exact complete Layered fingerprint",
+                case.case_id
+            );
+        };
+
+        for case in &fixture.complexity_masks {
+            assert_case(case);
+        }
+        assert_eq!(
+            fixture
+                .complexity_masks
+                .iter()
+                .map(|case| case.query_masks[0])
+                .collect::<Vec<_>>(),
+            (0u8..=7).collect::<Vec<_>>(),
+            "fixture must cover every source three-bit mask exactly once"
+        );
+        for case in &fixture.aromaticity_branches {
+            assert_case(case);
+        }
+
+        // The committed SMARTS fixture covers every source-representable
+        // root. These typed cases close the remaining QueryOps dispatch
+        // branches without widening the private query API just for tests.
+        let query_aromaticity = |query, aromatic| {
+            let mut builder = Molecule::builder();
+            let atom_id = builder.add_atom(
+                AtomSpec::new(Element::C)
+                    .with_aromatic(aromatic)
+                    .with_query(query),
+            );
+            let molecule = builder.build().expect("typed aromaticity query fixture");
+            crate::search::query::is_atom_aromatic(&molecule.atoms()[atom_id.index()], &molecule)
+        };
+        let number = || QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let aromatic = || QueryNode::predicate(AtomQueryPredicate::IsAromatic(true));
+        let formal_charge = || QueryNode::predicate(AtomQueryPredicate::FormalCharge(0));
+
+        assert!(query_aromaticity(number(), true));
+        assert!(!query_aromaticity(QueryNode::or(vec![aromatic()]), true));
+        assert!(!query_aromaticity(
+            QueryNode::xor(vec![aromatic(), number()]),
+            true,
+        ));
+        assert!(!query_aromaticity(
+            QueryNode::and(vec![aromatic(), number()]),
+            true,
+        ));
+        assert!(!query_aromaticity(
+            QueryNode::and(vec![number(), formal_charge()]),
+            true,
+        ));
+        assert!(!query_aromaticity(
+            QueryNode::not(QueryNode::and(vec![number(), aromatic()])),
+            true,
+        ));
+        assert!(!query_aromaticity(
+            QueryNode::not(QueryNode::not(aromatic())),
+            true,
+        ));
+        assert!(!query_aromaticity(formal_charge(), true));
+    }
+
+    #[test]
+    fn layered_topology_bond_order_encoders_match_source_packing_and_modulo() {
+        fn one_bond(order: BondOrder, aromatic: bool) -> Molecule {
+            let mut builder = Molecule::builder();
+            let begin = builder.add_atom(AtomSpec::new(Element::C));
+            let end = builder.add_atom(AtomSpec::new(Element::C));
+            builder
+                .add_bond(BondSpec::new(begin, end, order).with_aromatic(aromatic))
+                .expect("encoder fixture bond");
+            builder.build().expect("encoder fixture")
+        }
+
+        assert_eq!(layered_topology_hash(9, 2, 5), 169);
+        assert_eq!(layered_topology_hash(9, 5, 2), 169);
+        assert_eq!(layered_topology_hash(u32::MAX, u32::MAX, u32::MAX), 511);
+
+        let double = one_bond(BondOrder::Double, false);
+        assert_eq!(
+            layered_bond_order_hash(&double.bonds()[0], 9, 2, 5, 0),
+            Some(1_354)
+        );
+        assert_eq!(
+            layered_bond_order_hash(&double.bonds()[0], 9, 5, 2, 0),
+            Some(1_354)
+        );
+        assert_eq!(
+            layered_bond_order_hash(&double.bonds()[0], u32::MAX, u32::MAX, u32::MAX, 0,),
+            Some(4_090)
+        );
+
+        let quadruple = one_bond(BondOrder::Quadruple, false);
+        assert_eq!(
+            layered_bond_order_hash(&quadruple.bonds()[0], 9, 2, 5, 0),
+            Some(1_356)
+        );
+        let aromatic_flag = one_bond(BondOrder::Double, true);
+        assert_eq!(
+            layered_bond_order_hash(&aromatic_flag.bonds()[0], 9, 2, 5, 0),
+            Some(1_353)
+        );
+    }
+
+    #[test]
+    fn layered_topology_bond_order_encoder_suppresses_only_complex_bond_queries() {
+        let molecule = Molecule::from_smiles("C=C").expect("suppression fixture");
+        let bond = &molecule.bonds()[0];
+        assert_eq!(layered_bond_order_hash(bond, 0, 1, 1, 0x1), None);
+        assert_eq!(layered_bond_order_hash(bond, 0, 1, 1, 0x7), None);
+        assert_eq!(layered_bond_order_hash(bond, 0, 1, 1, 0x6), Some(578));
+        assert_eq!(layered_topology_hash(0, 1, 1), 72);
+    }
+
+    #[test]
+    fn layered_atom_type_aromaticity_encoders_match_endpoint_order_and_packing() {
+        assert_eq!(layered_atom_type_hash(8, 6, 2, 5, 9, 0), Some(1_737_480));
+        assert_eq!(layered_atom_type_hash(6, 8, 5, 2, 9, 0), Some(1_737_480));
+        assert_eq!(layered_atom_type_hash(6, 6, 2, 5, 9, 0), Some(1_393_414));
+        assert_eq!(
+            layered_atom_type_hash(u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, 0,),
+            Some(8_388_607)
+        );
+
+        assert_eq!(layered_aromaticity_hash(true, false, 9, 0), Some(33));
+        assert_eq!(layered_aromaticity_hash(false, true, 9, 0), Some(33));
+        assert_eq!(layered_aromaticity_hash(true, true, 9, 0), Some(35));
+        assert_eq!(layered_aromaticity_hash(false, false, 9, 0), Some(32));
+        assert_eq!(layered_aromaticity_hash(true, true, u32::MAX, 0), Some(227));
+    }
+
+    #[test]
+    fn layered_atom_type_aromaticity_encoders_use_query_aware_cache_and_suppression() {
+        assert_eq!(layered_atom_type_hash(6, 8, 1, 1, 0, 0x2), None);
+        assert_eq!(layered_atom_type_hash(6, 8, 1, 1, 0, 0x4), None);
+        assert_eq!(layered_atom_type_hash(6, 8, 1, 1, 0, 0x1), Some(148_232));
+        assert_eq!(layered_aromaticity_hash(true, false, 0, 0x6), None);
+        assert_eq!(layered_aromaticity_hash(true, false, 0, 0x1), Some(1));
+
+        let mut builder = Molecule::builder();
+        let aromatic = builder.add_atom(AtomSpec::new(Element::C).with_query(
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: true,
+            }),
+        ));
+        let aliphatic = builder.add_atom(AtomSpec::new(Element::C).with_query(
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            }),
+        ));
+        builder
+            .add_bond(BondSpec::new(aromatic, aliphatic, BondOrder::Single))
+            .expect("query-aware aromaticity bond");
+        let molecule = builder.build().expect("query-aware aromaticity fixture");
+        let prepared = prepare_layered_fingerprint(&molecule, 1, 7, 2048, None, None)
+            .expect("query-aware aromaticity preparation");
+        assert_eq!(prepared.query_masks, vec![0]);
+        assert_eq!(prepared.aromatic_atoms, vec![true, false]);
+        assert_eq!(
+            layered_aromaticity_hash(
+                prepared.aromatic_atoms[0],
+                prepared.aromatic_atoms[1],
+                0,
+                prepared.query_masks[0],
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn layered_ring_encoders_distinguish_omission_zero_and_source_sssr_size() {
+        let chain = Molecule::from_smiles("CC").expect("acyclic ring fixture");
+        let chain_rings = crate::rings::find_sssr(&chain).expect("acyclic exact SSSR");
+        let chain_bond = &chain.bonds()[0];
+        assert_eq!(
+            layered_ring_presence_hash(chain_bond, &chain_rings, 0),
+            None
+        );
+        assert_eq!(
+            layered_min_ring_size_hash(chain_bond, &chain_rings, 0),
+            Some(0)
+        );
+
+        let triangle = Molecule::from_smiles("C1CC1").expect("ring fixture");
+        let triangle_rings = crate::rings::find_sssr(&triangle).expect("ring exact SSSR");
+        assert_eq!(
+            layered_ring_presence_hash(&triangle.bonds()[0], &triangle_rings, 0),
+            Some(1)
+        );
+        assert_eq!(
+            layered_min_ring_size_hash(&triangle.bonds()[0], &triangle_rings, 0),
+            Some(3)
+        );
+
+        let nine_ring = Molecule::from_smiles("C1CCCCCCCC1").expect("modulo ring fixture");
+        let nine_ring_info = crate::rings::find_sssr(&nine_ring).expect("modulo exact SSSR");
+        assert_eq!(
+            layered_min_ring_size_hash(&nine_ring.bonds()[0], &nine_ring_info, 0),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn layered_ring_encoders_match_fused_membership_and_endpoint_query_suppression() {
+        let fused = Molecule::from_smiles("c1ccc2ccccc2c1").expect("fused-ring fixture");
+        let ring_info = crate::rings::find_sssr(&fused).expect("fused exact SSSR");
+        let shared_bond = fused
+            .bonds()
+            .iter()
+            .find(|bond| ring_info.num_bond_rings(bond.id()) > 1)
+            .expect("fused exact SSSR shared bond");
+        assert_eq!(ring_info.min_bond_ring_size(shared_bond.id()), 6);
+        assert_eq!(
+            layered_ring_presence_hash(shared_bond, &ring_info, 0),
+            Some(1)
+        );
+        assert_eq!(
+            layered_min_ring_size_hash(shared_bond, &ring_info, 0),
+            Some(6)
+        );
+        assert_eq!(
+            layered_ring_presence_hash(shared_bond, &ring_info, 0x1),
+            Some(1)
+        );
+        assert_eq!(
+            layered_ring_presence_hash(shared_bond, &ring_info, 0x2),
+            None
+        );
+        assert_eq!(
+            layered_min_ring_size_hash(shared_bond, &ring_info, 0x4),
+            None
+        );
+    }
+
+    #[test]
+    fn layered_projection_sorts_suffixes_hashes_and_applies_sparse_mask() {
+        let mut layers = vec![Vec::new(); 10];
+        layers[0] = vec![3, 1, 2];
+        layers[1] = vec![7];
+        let atoms_in_path = vec![true, true, true];
+        let mask = Fingerprint::from_on_bits(1000, [146]);
+        let mut words = vec![0u64; 1000usize.div_ceil(64)];
+        let mut counts = vec![4, 10, u32::MAX];
+
+        project_layered_path(
+            &mut layers,
+            &atoms_in_path,
+            1000,
+            Some(&mask),
+            &mut words,
+            Some(&mut counts),
+        );
+
+        assert_eq!(layers[0], vec![1, 2, 3, 3, 1]);
+        assert_eq!(hash_range(&layers[0]), 0xfee9_dcd9);
+        assert_eq!(hash_range(&layers[0]) % 1000, 289);
+        assert_eq!(layers[1], vec![7, 3, 2]);
+        assert_eq!(hash_range(&layers[1]), 0xfb5d_90da);
+        assert_eq!(hash_range(&layers[1]) % 1000, 146);
+        assert_eq!(
+            Fingerprint {
+                bits: words,
+                n_bits: 1000,
+            }
+            .on_bits(),
+            vec![146]
+        );
+        assert_eq!(counts, vec![5, 11, 0]);
+    }
+
+    #[test]
+    fn layered_projection_counts_once_per_accepted_path_across_collisions_and_repeats() {
+        let atoms_in_path = vec![true, false, true];
+        let allow_all = Fingerprint::from_on_bits(1, [0]);
+        let deny_all = Fingerprint::from_on_bits(1, []);
+        let mut words = vec![0u64; 1];
+        let mut counts = vec![0, 5, 0];
+
+        let mut colliding_layers = vec![Vec::new(); 10];
+        colliding_layers[0] = vec![1];
+        colliding_layers[5] = vec![1];
+        project_layered_path(
+            &mut colliding_layers,
+            &atoms_in_path,
+            1,
+            Some(&allow_all),
+            &mut words,
+            Some(&mut counts),
+        );
+        assert_eq!(words, vec![1]);
+        assert_eq!(counts, vec![1, 5, 1]);
+
+        let mut repeated_path_layers = vec![Vec::new(); 10];
+        repeated_path_layers[0] = vec![1];
+        project_layered_path(
+            &mut repeated_path_layers,
+            &atoms_in_path,
+            1,
+            None,
+            &mut words,
+            Some(&mut counts),
+        );
+        assert_eq!(counts, vec![2, 5, 2]);
+
+        let mut rejected_layers = vec![Vec::new(); 10];
+        rejected_layers[0] = vec![1];
+        project_layered_path(
+            &mut rejected_layers,
+            &atoms_in_path,
+            1,
+            Some(&deny_all),
+            &mut words,
+            Some(&mut counts),
+        );
+        assert_eq!(counts, vec![2, 5, 2]);
+    }
+
+    #[test]
+    fn layered_end_to_end_defaults_and_active_layers_match_pinned_source() {
+        let molecule = Molecule::from_smiles("CCO").expect("end-to-end fixture");
+        let original = molecule.clone();
+        let params = LayeredFingerprintParams {
+            atom_counts: Some(vec![0; 3]),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &params)
+            .expect("default Layered fingerprint");
+        assert_eq!(result.fingerprint.n_bits(), 2048);
+        assert_eq!(
+            result.fingerprint.on_bits(),
+            vec![92, 360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
+        );
+        assert_eq!(result.atom_counts, Some(vec![2, 3, 2]));
+        assert_eq!(molecule, original);
+
+        let active = LayeredFingerprintParams {
+            layers: LayeredFingerprintLayers::ACTIVE,
+            ..params.clone()
+        };
+        assert_eq!(
+            layered_fingerprint(&molecule, &active).expect("active Layered fingerprint"),
+            result.fingerprint
+        );
+        assert_eq!(
+            molecule
+                .layered_fingerprint(&params)
+                .expect("Molecule Layered method"),
+            result.fingerprint
+        );
+    }
+
+    #[test]
+    fn layered_end_to_end_layers_masks_counts_and_roots_match_pinned_source() {
+        let molecule = Molecule::from_smiles("CCO").expect("option fixture");
+        let topology = LayeredFingerprintParams {
+            layers: LayeredFingerprintLayers::TOPOLOGY,
+            atom_counts: Some(vec![0; 3]),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &topology)
+            .expect("topology-only Layered fingerprint");
+        assert_eq!(result.fingerprint.on_bits(), vec![674, 867]);
+        assert_eq!(result.atom_counts, Some(vec![2, 3, 2]));
+
+        let masked = LayeredFingerprintParams {
+            atom_counts: Some(vec![10, 20, 30]),
+            set_only_bits: Some(Fingerprint::from_on_bits(2048, [674])),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &masked)
+            .expect("masked Layered fingerprint");
+        assert_eq!(result.fingerprint.on_bits(), vec![674]);
+        assert_eq!(result.atom_counts, Some(vec![11, 22, 31]));
+
+        let empty_roots = LayeredFingerprintParams {
+            atom_counts: Some(vec![0; 3]),
+            from_atoms: Some(Vec::new()),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &empty_roots)
+            .expect("present-empty root selection");
+        assert!(result.fingerprint.on_bits().is_empty());
+        assert_eq!(result.atom_counts, Some(vec![0, 0, 0]));
+
+        let rooted_linear = LayeredFingerprintParams {
+            atom_counts: Some(vec![0; 3]),
+            branched_paths: false,
+            from_atoms: Some(vec![0]),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &rooted_linear)
+            .expect("rooted linear Layered fingerprint");
+        assert_eq!(
+            result.fingerprint.on_bits(),
+            vec![360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
+        );
+        assert_eq!(result.atom_counts, Some(vec![2, 2, 1]));
+    }
+
+    #[test]
+    fn layered_public_api_preserves_source_metadata_high_bits_and_errors() {
+        let defaults = LayeredFingerprintParams::default();
+        assert_eq!(defaults.layers.bits(), u32::MAX);
+        assert_eq!(defaults.min_path, 1);
+        assert_eq!(defaults.max_path, 7);
+        assert_eq!(defaults.fp_size, 2048);
+        assert!(defaults.branched_paths);
+        assert_eq!(LAYERED_FINGERPRINT_MAX_LAYERS, 10);
+        assert_eq!(LAYERED_FINGERPRINT_VERSION, "0.7.0");
+        assert_eq!(LayeredFingerprintLayers::SUBSTRUCTURE.bits(), 0x07);
+
+        let molecule = Molecule::from_smiles("CCO").expect("metadata fixture");
+        let high_only = LayeredFingerprintParams {
+            layers: LayeredFingerprintLayers::from_bits_retain(0xffff_ffc0),
+            atom_counts: Some(vec![5, 6, 7]),
+            ..LayeredFingerprintParams::default()
+        };
+        let result = layered_fingerprint_with_output(&molecule, &high_only)
+            .expect("source-accepted high flags");
+        assert!(result.fingerprint.on_bits().is_empty());
+        assert_eq!(result.atom_counts, Some(vec![5, 6, 7]));
+
+        let invalid_root = LayeredFingerprintParams {
+            from_atoms: Some(vec![3]),
+            ..LayeredFingerprintParams::default()
+        };
+        assert!(matches!(
+            layered_fingerprint(&molecule, &invalid_root),
+            Err(FingerprintError::InvalidArguments {
+                reason: "fromAtoms contains atom index out of range"
+            })
+        ));
+        assert_eq!(
+            crate::LAYERED_FINGERPRINT_FEATURE.status,
+            crate::SupportStatus::Experimental
+        );
+        assert!(
+            crate::PUBLIC_FEATURES
+                .iter()
+                .any(|feature| **feature == crate::LAYERED_FINGERPRINT_FEATURE)
         );
     }
 

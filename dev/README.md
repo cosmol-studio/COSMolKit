@@ -48,7 +48,7 @@ subdirectories so that an old plan cannot be mistaken for current policy.
 - [`ai_native_features.md`](./ai_native_features.md)
 
 Current parity boundaries are summarized in
-[`parity_scope.md`](./parity_scope.md), and the current per-feature ledger is
+[`VALIDATION.md`](../VALIDATION.md), and the current per-feature ledger is
 [`porting_inventory.md`](./porting_inventory.md). Historical percentage
 estimates and phase roadmaps are retained under
 [`archive/roadmaps/`](./archive/roadmaps/) and are not current status claims.

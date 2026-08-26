@@ -23,6 +23,17 @@ maccs = mol.maccs_fingerprint()
 atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
 atom_pair_sparse_count = mol.fingerprint_atom_pair_sparse_count()
 atom_pair_output = mol.fingerprint_atom_pair_with_output().additional_output()
+layered_mask = mol.fingerprint_layered(fp_size=257)
+layered = mol.fingerprint_layered_with_output(
+    layers=0x3F,
+    min_path=2,
+    max_path=4,
+    fp_size=257,
+    atom_counts=[10] * mol.num_atoms(),
+    set_only_bits=layered_mask,
+    branched_paths=True,
+    from_atoms=[0],
+)
 
 print("fp1 bits:", fp1.on_bits()[:8])
 print("similarity:", similarity)
@@ -42,3 +53,5 @@ print(
     list(atom_pair_sparse_count.nonzero_elements().items())[:8],
 )
 print("AtomPair atom counts:", atom_pair_output.atom_counts())
+print("Layered bits:", layered.fingerprint().on_bits()[:8])
+print("Layered seeded atom counts:", layered.atom_counts())

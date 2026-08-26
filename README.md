@@ -35,8 +35,8 @@ COSMolKit combines a native Rust API with Python interfaces designed for array-o
 
 * Python documentation: https://kit.cosmol.org/
 * Interactive Web Tools: https://tools.cosmol.org/tools
-* Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
-* Feature parity scope: [`dev/parity_scope.md`](dev/parity_scope.md)
+* Rust crate notes: [`crates/cosmolkit/README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit/README.md)
+* Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
 
 ## Validation Status
 
@@ -44,13 +44,13 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 29 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 31 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
 Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
 The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
 
-See [`dev/parity_scope.md`](dev/parity_scope.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
+See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
 
 ## Installation
 
@@ -113,6 +113,9 @@ print(fp.on_bits())
 
 atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
 print(atom_pair.on_bits())
+
+layered = mol.fingerprint_layered(layers=0x3F, fp_size=2048)
+print(layered.on_bits())
 
 batch = (
     MoleculeBatch.from_smiles_list(
@@ -249,6 +252,9 @@ inputs until a trusted graph has been constructed.
 - Morgan, MACCS, RDKit topological, Avalon, AtomPair, and Topological Torsion
   fingerprints for the validated exact-parity branches, including sparse/count
   forms, provenance, 2D/3D AtomPair distances, and ordered batch execution
+- Source-backed RDKit Layered fingerprint 0.7.0 with all six active layers,
+  roots, masks, seeded atom counts, and ordered batch execution; this family
+  retains upstream's experimental classification
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
@@ -339,6 +345,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
   and Topological Torsion fingerprints for their validated exact-parity
   branches, including typed provenance, count/bit forms, 2D/3D AtomPair
   distances, Tanimoto similarity, and ordered batch execution
+- 🧪 Source-backed RDKit Layered fingerprint `0.7.0`, including all six active
+  layers, roots, masks, seeded counts, and ordered batch execution; upstream
+  classifies this fingerprint family as experimental
 - ✅ Substructure matching and Python SMARTS parse metadata
 - ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring

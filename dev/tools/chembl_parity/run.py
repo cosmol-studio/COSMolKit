@@ -56,6 +56,7 @@ SCRIPT_MODES = {
     "audit_combinations.py": {"batch", "concurrent", "scalar"},
     "audit_fingerprints.py": {
         "atom_pair",
+        "layered",
         "topological_avalon",
         "topological_torsion",
     },
@@ -304,6 +305,7 @@ def build_identity(
                 root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json",
                 root
                 / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json",
+                root / "tools/testdata/rdkit/layered_fingerprint_profile.json",
             )
         },
     }
@@ -391,6 +393,8 @@ def command_for(
                     root
                     / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json"
                 ),
+                "--layered-profile",
+                str(root / "tools/testdata/rdkit/layered_fingerprint_profile.json"),
                 "--mode",
                 str(phase["mode"]),
             )

@@ -5,8 +5,23 @@
 ## Documentation
 
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
-- Core source layout: [`../cosmolkit-core/src/README.md`](../cosmolkit-core/src/README.md)
-- Python package notes: [`../../README.md`](../../README.md)
+- Project validation: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
+- Core source layout: [`crates/cosmolkit-core/src/README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit-core/src/README.md)
+- Project overview and Python package notes: [`README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/README.md)
+
+## Validation Status
+
+COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
+
+The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
+
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 31 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+
+Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
+
+The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
+
+See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
 
 ## Installation
 
@@ -146,14 +161,15 @@ unmodeled source states return an explicit descriptor error.
 ## Fingerprints
 
 The Rust facade exposes source-backed Morgan, AtomPair, Topological Torsion,
-MACCS, RDKit topological, and Avalon fingerprints. ``TopologicalTorsion*`` is
+MACCS, RDKit topological, Avalon, and Layered fingerprints. ``TopologicalTorsion*`` is
 the ordered atom-path torsion family; ``TopologicalFingerprint*`` remains
 RDKit's distinct path/subgraph ``RDKFingerprintMol`` family. The applicable
 families can also return typed provenance:
 
 ```rust
 use cosmolkit::{
-    AtomPairFingerprintParams, AvalonFingerprintParams, Molecule,
+    AtomPairFingerprintParams, AvalonFingerprintParams, LayeredFingerprintLayers,
+    LayeredFingerprintParams, Molecule,
     TopologicalFingerprintOutputRequest,
     TopologicalFingerprintParams, TopologicalTorsionFingerprintOutputRequest,
     TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintVector,
@@ -174,6 +190,10 @@ let provenance = molecule.topological_fingerprint_with_output(
 )?;
 let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
 let atom_pair = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default())?;
+let layered = molecule.layered_fingerprint(&LayeredFingerprintParams {
+    layers: LayeredFingerprintLayers::SUBSTRUCTURE,
+    ..Default::default()
+})?;
 let torsion_params = TopologicalTorsionFingerprintParams::default();
 let torsion_ids = topological_torsion_sparse_count_fingerprint(&molecule, &torsion_params)?;
 let torsion_bits = topological_torsion_fingerprint(&molecule, &torsion_params)?;
@@ -191,6 +211,7 @@ assert_eq!(topological.n_bits(), 2048);
 assert!(provenance.output.atom_bits.is_some());
 assert_eq!(avalon.n_bits(), 512);
 assert_eq!(atom_pair.n_bits(), 2048);
+assert_eq!(layered.n_bits(), 2048);
 assert!(!torsion_ids.nonzero_elements().is_empty());
 assert_eq!(torsion_bits.n_bits(), 2048);
 assert!(torsion_provenance.additional_output.is_some());
@@ -218,6 +239,18 @@ regression gates for these profiles.
 AtomPair is additionally checked across all 2,897,804 mutually parseable
 ChEMBL 37 molecules, covering 118,809,964 comparisons over 40 vectors and one
 complete provenance output per molecule with zero mismatches.
+
+Layered exposes the six source layers, arbitrary retained source flags,
+inclusive path bounds, rooted linear or branched enumeration, exact-width bit
+masks, and seeded atom counts through one read-only core while preserving the
+upstream ``0.7.0`` compatibility metadata. ``None`` roots mean whole-molecule
+enumeration; an explicitly empty root vector enumerates no paths. Invalid
+bounds, widths, count lengths, masks, and roots return ``FingerprintError``.
+The complete ChEMBL 37 audit covers all 2,897,804 mutually parseable records
+across 18 profiles and 52,160,472 exact comparisons with zero mismatches.
+Pinned RDKit's unrooted linear branch can consume atom indices as bond indices
+and terminate the process; COSMolKit deliberately uses the documented
+bond-path semantics instead of reproducing that crash.
 
 ## Conformer Generation And Force Field Applications
 
@@ -299,7 +332,7 @@ cargo run -p cosmolkit --example conformer_generation
 cargo run -p cosmolkit --example forcefield_optimization
 ```
 
-## Development
+## Contributor Validation
 
 Core validation should use operation-contract checks:
 
@@ -315,7 +348,7 @@ Use debug-profile test filters for small local iterations. Use release mode with
 testing keeps operation contracts and runtime invariants enabled through the
 strict feature set.
 
-Python binding development:
+Python binding validation:
 
 ```bash
 uv sync --group dev

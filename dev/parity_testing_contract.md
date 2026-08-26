@@ -758,7 +758,7 @@ CIP rank/label only if explicitly supported
 CIP labels may require special handling and should not be compared unless
 COSMolKit explicitly supports them. The modern CIPLabeler boundary is supported
 and its complete-state comparison contract is recorded in
-[`parity_scope.md`](./parity_scope.md); adjacent stereochemistry orchestration
+[`VALIDATION.md`](../VALIDATION.md); adjacent stereochemistry orchestration
 remains a separate capability.
 
 ---

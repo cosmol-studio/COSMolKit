@@ -62,7 +62,7 @@ COSMolKit tests should be organized around these categories.
 | Molecule-level props | Single-source transforms preserve molecule props | partial | Extend across topology operations |
 | Fragment/combine props | Multi-source/splitting ops define operation-specific prop policy | planned | Only required when these APIs exist |
 | Stereo validity | Stereo indices remain valid or stereo is recomputed/dropped/error | partial | Needs unified stereo invariant runner |
-| RDKit parity | Supported parity features match pinned RDKit | implemented | Current covered profiles have no unexplained mismatch; exact corpus, branch, state, and tolerance evidence is recorded in [`parity_scope.md`](./parity_scope.md) |
+| RDKit parity | Supported parity features match pinned RDKit | implemented | Current covered profiles have no unexplained mismatch; exact corpus, branch, state, and tolerance evidence is recorded in [`VALIDATION.md`](../VALIDATION.md) |
 | Parity policy | Registry uses `ParityPolicy`, not `rdkit_parity: bool` | implemented | Molecule operations with non-`NotApplicable` policy require a profile and are emitted into `PARITY_MATRIX`; executable profile coverage remains a separate test obligation |
 | Open findings | Any newly discovered difference remains executable while being fixed | implemented | An open finding blocks a parity-covered release claim; current covered profiles do not rely on xfails or accepted mismatches |
 | Golden reproducibility | Golden outputs generated from pinned scripts/env | implemented | Metadata may be script-level, README-level, or CI-level |

@@ -209,6 +209,14 @@ pub const AVALON_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Provide the source-backed Avalon/REACCS explicit-bit path for n_bits, is_query, and bit_flags, including source byte rounding, aromaticity passes, query branches, and non-SSS feature families. The pinned RDKit adapter matches exactly across the maintained 5,000-row, 23-profile validation matrix; count/string overloads and unrelated Avalon APIs remain out of scope.",
 };
 
+pub const LAYERED_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.layered",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Provide the single source-backed RDKit Layered fingerprint 0.7.0 core with all six active layers, rooted linear and branched path selection, masks, seeded atom counts, scalar calls, and ordered batch execution. All 2,897,804 mutually parseable ChEMBL 37 records match pinned RDKit 2026.03.1 across 18 profiles and 52,160,472 exact comparisons. RDKit labels this family experimental, so COSMolKit preserves that status. COSMolKit intentionally returns the documented bond-path result for unrooted linear calls instead of reproducing the pinned source's input-dependent process crash.",
+};
+
 pub const DESCRIPTORS_FEATURE: FeatureSpec = FeatureSpec {
     name: "descriptors.molecular",
     category: FeatureCategory::Core,
@@ -361,6 +369,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &ATOM_PAIR_FINGERPRINT_FEATURE,
     &TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
     &AVALON_FINGERPRINT_FEATURE,
+    &LAYERED_FINGERPRINT_FEATURE,
     &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,
     &DRAWING_FEATURE,

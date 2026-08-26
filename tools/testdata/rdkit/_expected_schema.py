@@ -108,6 +108,9 @@ SCHEMAS = {
     "rdkit_topological_fingerprint.jsonl": _schema(
         "branches:object,error:null|string,rdkit_ok:boolean,row:integer,smiles:string"
     ),
+    "layered_fingerprint.jsonl": _schema(
+        "branches:object,error:null|string,rdkit_ok:boolean,row:integer,smiles:string"
+    ),
     "topological_torsion_fingerprint.jsonl": _schema(
         "error:null|string,errors:null|object,helpers:null|object,legacy:null|object,profiles:object,rdkit_ok:boolean,row:integer,smiles:string"
     ),

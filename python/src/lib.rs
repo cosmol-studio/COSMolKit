@@ -444,6 +444,29 @@ fn make_avalon_fingerprint_params(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn make_layered_fingerprint_params(
+    layers: u32,
+    min_path: u32,
+    max_path: u32,
+    fp_size: u32,
+    atom_counts: Option<Vec<u32>>,
+    set_only_bits: Option<&Fingerprint>,
+    branched_paths: bool,
+    from_atoms: Option<Vec<u32>>,
+) -> cosmolkit_core::LayeredFingerprintParams {
+    cosmolkit_core::LayeredFingerprintParams {
+        layers: cosmolkit_core::LayeredFingerprintLayers::from_bits_retain(layers),
+        min_path,
+        max_path,
+        fp_size,
+        atom_counts,
+        set_only_bits: set_only_bits.map(|fingerprint| fingerprint.inner.clone()),
+        branched_paths,
+        from_atoms,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn make_topological_fingerprint_params(
     min_path: u32,
     max_path: u32,
@@ -3791,6 +3814,115 @@ Return distance-geometry bounds matrices for all valid records.
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
+        layers=0xffff_ffff,
+        min_path=1,
+        max_path=7,
+        fp_size=2048,
+        atom_counts=None,
+        set_only_bits=None,
+        branched_paths=true,
+        from_atoms=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    #[doc = r#"
+Return ordered Layered fingerprints for valid batch records.
+
+Invalid input records remain ``None`` at their original positions. All
+fingerprints delegate to the same Rust scalar core.
+"#]
+    fn fingerprint_layered_list(
+        &self,
+        layers: u32,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        atom_counts: Option<Vec<u32>>,
+        set_only_bits: Option<&Fingerprint>,
+        branched_paths: bool,
+        from_atoms: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        let params = make_layered_fingerprint_params(
+            layers,
+            min_path,
+            max_path,
+            fp_size,
+            atom_counts,
+            set_only_bits,
+            branched_paths,
+            from_atoms,
+        );
+        self.inner
+            .layered_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        layers=0xffff_ffff,
+        min_path=1,
+        max_path=7,
+        fp_size=2048,
+        atom_counts=None,
+        set_only_bits=None,
+        branched_paths=true,
+        from_atoms=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    #[doc = r#"
+Return ordered Layered fingerprints and optional updated atom counts.
+
+Invalid input records remain ``None`` at their original positions.
+"#]
+    fn fingerprint_layered_with_output_list(
+        &self,
+        layers: u32,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        atom_counts: Option<Vec<u32>>,
+        set_only_bits: Option<&Fingerprint>,
+        branched_paths: bool,
+        from_atoms: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<LayeredFingerprintResult>>> {
+        let params = make_layered_fingerprint_params(
+            layers,
+            min_path,
+            max_path,
+            fp_size,
+            atom_counts,
+            set_only_bits,
+            branched_paths,
+            from_atoms,
+        );
+        self.inner
+            .layered_fingerprint_with_output_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(Into::into))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
         radius=2,
         n_bits=2048,
         include_chirality=false,
@@ -5917,6 +6049,98 @@ mutate the source molecule.
         self.inner
             .avalon_fingerprint(&params)
             .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        layers=0xffff_ffff,
+        min_path=1,
+        max_path=7,
+        fp_size=2048,
+        atom_counts=None,
+        set_only_bits=None,
+        branched_paths=true,
+        from_atoms=None
+    ))]
+    #[doc = r#"
+Return the source-backed RDKit Layered fingerprint.
+
+``layers`` retains the source ``unsigned int`` flag value, including inactive
+high bits. ``set_only_bits`` masks projected bits with another explicit bit
+vector. ``from_atoms=None`` uses the unrooted source branch, while an empty
+list is a present empty root selection and therefore yields no paths. The
+source molecule is never mutated.
+"#]
+    fn fingerprint_layered(
+        &self,
+        layers: u32,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        atom_counts: Option<Vec<u32>>,
+        set_only_bits: Option<&Fingerprint>,
+        branched_paths: bool,
+        from_atoms: Option<Vec<u32>>,
+    ) -> PyResult<Fingerprint> {
+        let params = make_layered_fingerprint_params(
+            layers,
+            min_path,
+            max_path,
+            fp_size,
+            atom_counts,
+            set_only_bits,
+            branched_paths,
+            from_atoms,
+        );
+        self.inner
+            .layered_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        layers=0xffff_ffff,
+        min_path=1,
+        max_path=7,
+        fp_size=2048,
+        atom_counts=None,
+        set_only_bits=None,
+        branched_paths=true,
+        from_atoms=None
+    ))]
+    #[doc = r#"
+Return a source-backed Layered fingerprint and the optional updated atom counts.
+
+When ``atom_counts`` is provided its values seed the source count vector and
+the returned counts contain the source increments. Omitting it preserves the
+source null-pointer branch and returns ``None`` for ``atom_counts()``.
+"#]
+    fn fingerprint_layered_with_output(
+        &self,
+        layers: u32,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        atom_counts: Option<Vec<u32>>,
+        set_only_bits: Option<&Fingerprint>,
+        branched_paths: bool,
+        from_atoms: Option<Vec<u32>>,
+    ) -> PyResult<LayeredFingerprintResult> {
+        let params = make_layered_fingerprint_params(
+            layers,
+            min_path,
+            max_path,
+            fp_size,
+            atom_counts,
+            set_only_bits,
+            branched_paths,
+            from_atoms,
+        );
+        self.inner
+            .layered_fingerprint_with_output(&params)
+            .map(Into::into)
             .map_err(fingerprint_pyerr)
     }
 
@@ -8761,6 +8985,23 @@ struct Fingerprint {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Fingerprint {
+    #[staticmethod]
+    #[doc = r#"
+Create an explicit bit fingerprint from its width and on-bit indexes.
+
+Every index must be smaller than ``n_bits``.
+"#]
+    fn from_on_bits(n_bits: usize, on_bits: Vec<usize>) -> PyResult<Self> {
+        if let Some(bit) = on_bits.iter().copied().find(|&bit| bit >= n_bits) {
+            return Err(PyValueError::new_err(format!(
+                "fingerprint bit {bit} is outside n_bits={n_bits}"
+            )));
+        }
+        Ok(Self {
+            inner: cosmolkit_core::Fingerprint::from_on_bits(n_bits, on_bits),
+        })
+    }
+
     #[doc = r#"
 Return the fingerprint bit-vector length.
 "#]
@@ -8791,6 +9032,45 @@ Return the Tanimoto similarity to another fingerprint.
             "Fingerprint(n_bits={}, on_bits={})",
             self.inner.n_bits(),
             self.inner.on_bits().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct LayeredFingerprintResult {
+    fingerprint: Fingerprint,
+    atom_counts: Option<Vec<u32>>,
+}
+
+impl From<cosmolkit_core::LayeredFingerprintResult> for LayeredFingerprintResult {
+    fn from(value: cosmolkit_core::LayeredFingerprintResult) -> Self {
+        Self {
+            fingerprint: Fingerprint {
+                inner: value.fingerprint,
+            },
+            atom_counts: value.atom_counts,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl LayeredFingerprintResult {
+    fn fingerprint(&self) -> Fingerprint {
+        self.fingerprint.clone()
+    }
+
+    fn atom_counts(&self) -> Option<Vec<u32>> {
+        self.atom_counts.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LayeredFingerprintResult(n_bits={}, has_atom_counts={})",
+            self.fingerprint.inner.n_bits(),
+            self.atom_counts.is_some()
         )
     }
 }
@@ -11043,6 +11323,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTopologicalTorsionFingerprintOptions>()?;
     m.add_class::<PyTopologicalTorsionFingerprintGenerator>()?;
     m.add_class::<Fingerprint>()?;
+    m.add_class::<LayeredFingerprintResult>()?;
     m.add_class::<AtomPairFingerprintResult>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;

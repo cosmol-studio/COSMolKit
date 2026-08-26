@@ -68,11 +68,13 @@ Run the command from the repository root. Worker processes are launched as
 `dev.tools.chembl_parity` modules so their shared comparison helpers use
 normal package imports rather than depending on the current script directory.
 
-`profiles/complete.json` is the default profile. It retains the 22 phases from
-the original completed audit and the later full-corpus
-RDKFingerprint/Avalon, AtomPair, and Topological Torsion fingerprint phases.
-Four additional phases cover topology operations, connected fragments, direct
-2D coordinate generation, and COSMolKit binary roundtrips.
+`profiles/complete.json` is the default 31-phase profile. It retains the 22
+phases from the original completed audit, the later full-corpus modern
+CIPLabeler phase, and the RDKFingerprint/Avalon, AtomPair, Topological Torsion,
+and Layered fingerprint phases. Four additional phases cover topology
+operations, connected fragments, direct 2D coordinate generation, and
+COSMolKit binary roundtrips. The complete profile therefore contains 3,968
+ordered shard tasks over the 128-shard corpus.
 The existing batch phase also compares scalar and batch sanitize, both
 kekulize branches, and direct 2D coordinates. The profile records phase order,
 selection boundaries, branch modes, fixed repeat phases, reference version,
@@ -143,7 +145,7 @@ returns nonzero when any task is missing or fails, or when any noninformational
 
 ## Accepting Evidence
 
-A result may update `dev/parity_scope.md` only when:
+A result may update `VALIDATION.md` only when:
 
 1. the run manifest has `complete: true` and `passed: true`;
 2. all configured phases and shards completed;

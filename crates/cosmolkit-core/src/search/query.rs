@@ -998,7 +998,7 @@ fn make_atom_prop_query(
     })
 }
 
-fn complex_atom_query_helper(
+pub(crate) fn complex_atom_query_helper(
     query: &QueryNode<AtomQueryPredicate>,
     has_atomic_number: &mut bool,
 ) -> bool {
@@ -1057,7 +1057,7 @@ fn complex_atom_query_helper(
     }
 }
 
-fn is_complex_atom_query(atom: &Atom) -> bool {
+pub(crate) fn is_complex_atom_query(atom: &Atom) -> bool {
     // RDKit✔️✔️: bool isComplexQuery(const Atom *a) {
     // RDKit✔️✔️:   PRECONDITION(a, "bad atom");
     // RDKit✔️✔️:   if (!a->hasQuery()) {
@@ -1108,6 +1108,125 @@ fn is_complex_atom_query(atom: &Atom) -> bool {
             complex_atom_query_helper(query, &mut has_atomic_number) || !has_atomic_number
         }
         QueryNode::Predicate(_) => true,
+    }
+}
+
+pub(crate) fn is_atom_aromatic(atom: &Atom, molecule: &Molecule) -> bool {
+    // BEGIN RDKIT CPP FUNCTION isAromaticAtom
+    // RDKit✔️✔️: bool isAromaticAtom(const Atom &atom) {
+    // RDKit✔️✔️:   if (atom.getIsAromatic()) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atom.hasOwningMol()) {
+    // RDKit✔️✔️:     for (const auto &bond : atom.getOwningMol().atomBonds(&atom)) {
+    // RDKit✔️✔️:       if (bond->getIsAromatic() ||
+    // RDKit✔️✔️:           bond->getBondType() == Bond::BondType::AROMATIC) {
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION isAromaticAtom
+    // BEGIN RDKIT CPP FUNCTION isAtomAromatic
+    // RDKit✔️✔️: bool isAtomAromatic(const Atom *a) {
+    // RDKit✔️✔️:   PRECONDITION(a, "bad atom");
+    // RDKit✔️✔️:   bool res = false;
+    // RDKit✔️✔️:   if (!a->hasQuery()) {
+    // RDKit✔️✔️:     res = isAromaticAtom(*a);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::string descr = a->getQuery()->getDescription();
+    // RDKit✔️✔️:     if (descr == "AtomAtomicNum") {
+    // RDKit✔️✔️:       res = a->getIsAromatic();
+    // RDKit✔️✔️:     } else if (descr == "AtomIsAromatic") {
+    // RDKit✔️✔️:       res = true;
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomIsAliphatic") {
+    // RDKit✔️✔️:       res = false;
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomType") {
+    // RDKit✔️✔️:       res = getAtomTypeIsAromatic(
+    // RDKit✔️✔️:           static_cast<ATOM_EQUALS_QUERY *>(a->getQuery())->getVal());
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomAnd") {
+    // RDKit✔️✔️:       auto childIt = a->getQuery()->beginChildren();
+    // RDKit✔️✔️:       if ((*childIt)->getDescription() == "AtomAtomicNum") {
+    // RDKit✔️✔️:         if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:           res = false;
+    // RDKit✔️✔️:         } else if ((*(childIt + 1))->getDescription() == "AtomIsAliphatic") {
+    // RDKit✔️✔️:           res = false;
+    // RDKit✔️✔️:         } else if ((*(childIt + 1))->getDescription() == "AtomIsAromatic") {
+    // RDKit✔️✔️:           res = true;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION isAtomAromatic
+    //
+    // QueryNode retains RDKit's root description as its enum identity. The
+    // AtomAnd branch intentionally inspects only the first two children in
+    // source order and intentionally ignores negation on its second child.
+    // Local complexity review: concrete atoms scan the same indexed incident
+    // bond range in O(degree); query atoms inspect one root and at most two
+    // children in O(1). Neither implementation allocates, clones, performs a
+    // keyed lookup, builds a temporary collection, or traverses a query tree.
+    let Some(query) = atom.query() else {
+        if atom.is_aromatic() {
+            return true;
+        }
+        for neighbor in molecule
+            .topology_block()
+            .adjacency
+            .neighbors_of(atom.id().index())
+        {
+            let bond = &molecule.bonds()[neighbor.bond.index()];
+            if bond.is_aromatic() || bond.order() == BondOrder::Aromatic {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    fn atom_and_aromaticity(children: &[QueryNode<AtomQueryPredicate>]) -> bool {
+        if !matches!(
+            children.first(),
+            Some(QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)))
+        ) {
+            return false;
+        }
+        match children.get(1) {
+            Some(QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))) => *aromatic,
+            Some(QueryNode::Not(child)) => match child.as_ref() {
+                QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic)) => *aromatic,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    match query {
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)) => atom.is_aromatic(),
+        QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))
+        | QueryNode::Predicate(AtomQueryPredicate::AtomType { aromatic, .. }) => *aromatic,
+        QueryNode::And(children) => atom_and_aromaticity(children),
+        QueryNode::Not(child) => match child.as_ref() {
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)) => atom.is_aromatic(),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))
+            | QueryNode::Predicate(AtomQueryPredicate::AtomType { aromatic, .. }) => !*aromatic,
+            QueryNode::And(_) => false,
+            QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => {
+                false
+            }
+        },
+        QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) => false,
     }
 }
 
@@ -3056,7 +3175,7 @@ pub(crate) fn make_single_or_aromatic_bond_query() -> QueryNode<BondQueryPredica
     ]))
 }
 
-fn is_complex_bond_query(bond: &Bond) -> bool {
+pub(crate) fn is_complex_bond_query(bond: &Bond) -> bool {
     // RDKit✔️✔️: bool isComplexQuery(const Bond *b) {
     // RDKit✔️✔️:   PRECONDITION(b, "bad bond");
     // RDKit✔️✔️:   if (!b->hasQuery()) {
@@ -4147,7 +4266,7 @@ fn query_atom_has_ring_bond(
 }
 
 #[inline]
-fn query_is_bond_in_ring(bond: &Bond, ring_info: &RingInfo) -> i32 {
+pub(crate) fn query_is_bond_in_ring(bond: &Bond, ring_info: &RingInfo) -> i32 {
     // RDKit✔️✔️: static inline int queryIsBondInRing(Bond const *bond) {
     // RDKit✔️✔️:   return bond->getOwningMol().getRingInfo()->numBondRings(bond->getIdx()) != 0;
     // RDKit✔️✔️: };
@@ -4174,7 +4293,7 @@ fn query_atom_min_ring_size(atom: &Atom, ring_info: &RingInfo) -> usize {
 }
 
 #[inline]
-fn query_bond_min_ring_size(bond: &Bond, ring_info: &RingInfo) -> usize {
+pub(crate) fn query_bond_min_ring_size(bond: &Bond, ring_info: &RingInfo) -> usize {
     // RDKit✔️✔️: static inline int queryBondMinRingSize(Bond const *bond) {
     // RDKit✔️✔️:   return bond->getOwningMol().getRingInfo()->minBondRingSize(bond->getIdx());
     // RDKit✔️✔️: };
@@ -6174,7 +6293,14 @@ mod tests {
     use super::*;
 
     fn test_atom_with_query(query: Option<QueryNode<AtomQueryPredicate>>) -> Atom {
-        let spec = crate::AtomSpec::new(crate::Element::C);
+        test_atom_with_query_and_aromatic(query, false)
+    }
+
+    fn test_atom_with_query_and_aromatic(
+        query: Option<QueryNode<AtomQueryPredicate>>,
+        aromatic: bool,
+    ) -> Atom {
+        let spec = crate::AtomSpec::new(crate::Element::C).with_aromatic(aromatic);
         let spec = match query {
             Some(query) => spec.with_query(query),
             None => spec,
@@ -6221,6 +6347,162 @@ mod tests {
             AtomQueryPredicate::AtomicNumberIn(vec![6, 8]),
         ))));
         assert!(is_complex_atom_query(&atom(charge())));
+    }
+
+    #[test]
+    fn layered_query_complexity_helpers_match_source() {
+        let atom = |query| test_atom_with_query(Some(query));
+        let number = || QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let charge = || QueryNode::predicate(AtomQueryPredicate::FormalCharge(0));
+
+        assert!(!is_complex_atom_query(&atom(QueryNode::and(vec![
+            charge(),
+            QueryNode::and(vec![charge(), number()]),
+        ]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::and(vec![
+            charge(),
+            QueryNode::and(vec![charge()]),
+        ]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::and(vec![
+            number(),
+            QueryNode::not(charge()),
+        ]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::and(Vec::new()))));
+
+        let bond = |query| test_bond_with_query(Some(query));
+        let order = |value| QueryNode::predicate(BondQueryPredicate::Order(value));
+        assert!(!is_complex_bond_query(&bond(QueryNode::or(vec![
+            order(BondOrder::Aromatic),
+            order(BondOrder::Single),
+        ]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::or(vec![order(
+            BondOrder::Single,
+        )]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::or(vec![
+            order(BondOrder::Single),
+            order(BondOrder::Aromatic),
+            order(BondOrder::Single),
+        ]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::or(vec![
+            QueryNode::not(order(BondOrder::Single)),
+            order(BondOrder::Aromatic),
+        ]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::predicate(
+            BondQueryPredicate::OrderIn(vec![BondOrder::Aromatic, BondOrder::Single]),
+        ))));
+    }
+
+    #[test]
+    fn layered_query_aromaticity_matches_source() {
+        let mut builder = Molecule::builder();
+        let plain = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let aromatic_by_flag =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let aromatic_by_bond = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let aromatic_neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(
+                aromatic_by_bond,
+                aromatic_neighbor,
+                BondOrder::Aromatic,
+            ))
+            .expect("aromaticity fixture bond is valid");
+        let molecule = builder.build().expect("aromaticity fixture is valid");
+
+        assert!(!is_atom_aromatic(
+            &molecule.atoms()[plain.index()],
+            &molecule
+        ));
+        assert!(is_atom_aromatic(
+            &molecule.atoms()[aromatic_by_flag.index()],
+            &molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &molecule.atoms()[aromatic_by_bond.index()],
+            &molecule,
+        ));
+
+        let query_molecule = Molecule::new();
+        let query_atom = |query, aromatic| test_atom_with_query_and_aromatic(Some(query), aromatic);
+        let number = || QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let aromatic = || QueryNode::predicate(AtomQueryPredicate::IsAromatic(true));
+        let aliphatic = || QueryNode::predicate(AtomQueryPredicate::IsAromatic(false));
+        let atom_type = |is_aromatic| {
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: is_aromatic,
+            })
+        };
+
+        assert!(!is_atom_aromatic(
+            &query_atom(number(), false),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(number(), true),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(QueryNode::not(number()), true),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(aromatic(), false),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(QueryNode::not(aromatic()), false),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(aliphatic(), true),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(QueryNode::not(aliphatic()), false),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(atom_type(true), false),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(QueryNode::not(atom_type(false)), false),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(QueryNode::and(vec![number(), aromatic()]), false),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(QueryNode::and(vec![number(), aliphatic()]), true),
+            &query_molecule,
+        ));
+        assert!(is_atom_aromatic(
+            &query_atom(
+                QueryNode::and(vec![number(), QueryNode::not(aromatic())]),
+                false,
+            ),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(QueryNode::and(vec![aromatic(), number()]), true),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(
+                QueryNode::not(QueryNode::and(vec![number(), aromatic()])),
+                true,
+            ),
+            &query_molecule,
+        ));
+        assert!(!is_atom_aromatic(
+            &query_atom(
+                QueryNode::predicate(AtomQueryPredicate::FormalCharge(0)),
+                true,
+            ),
+            &query_molecule,
+        ));
     }
 
     #[test]
@@ -11694,6 +11976,57 @@ mod tests {
         assert_eq!(
             query_bond_min_ring_size(&molecule.bonds()[non_ring_bond.index()], ring_info),
             0
+        );
+    }
+
+    #[test]
+    fn layered_ring_accessors_match_source() {
+        let mut builder = Molecule::builder();
+        let triangle = [
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C)),
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C)),
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C)),
+        ];
+        let ring_bond = builder
+            .add_bond(crate::BondSpec::new(
+                triangle[0],
+                triangle[1],
+                BondOrder::Single,
+            ))
+            .expect("Layered ring accessor fixture bond is valid");
+        for (begin, end) in [(triangle[1], triangle[2]), (triangle[2], triangle[0])] {
+            builder
+                .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
+                .expect("Layered ring accessor fixture bond is valid");
+        }
+        let external = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let non_ring_bond = builder
+            .add_bond(crate::BondSpec::new(
+                triangle[0],
+                external,
+                BondOrder::Single,
+            ))
+            .expect("Layered non-ring accessor fixture bond is valid");
+        let molecule = builder
+            .build()
+            .expect("Layered ring accessor fixture is valid");
+        let ring_info = crate::find_sssr(&molecule).expect("exact SSSR succeeds");
+
+        assert_eq!(
+            query_is_bond_in_ring(&molecule.bonds()[ring_bond.index()], &ring_info),
+            1,
+        );
+        assert_eq!(
+            query_bond_min_ring_size(&molecule.bonds()[ring_bond.index()], &ring_info),
+            3,
+        );
+        assert_eq!(
+            query_is_bond_in_ring(&molecule.bonds()[non_ring_bond.index()], &ring_info),
+            0,
+        );
+        assert_eq!(
+            query_bond_min_ring_size(&molecule.bonds()[non_ring_bond.index()], &ring_info,),
+            0,
         );
     }
 

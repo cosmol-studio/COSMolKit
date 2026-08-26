@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import cosmolkit
-from rdkit import Chem, RDLogger, rdBase
+from rdkit import Chem, DataStructs, RDLogger, rdBase
 from rdkit.Avalon import pyAvalonTools
 from rdkit.Chem import rdFingerprintGenerator
 
 
 EXPECTED_RDKIT_VERSION = "2026.03.1"
+EXPECTED_RDKIT_SOURCE_REVISION = "351f8f378f8ad6bbd517980c38896e66bf907af8"
+EXPECTED_LAYERED_VERSION = "0.7.0"
 UINT32_MASK = (1 << 32) - 1
 RDLogger.DisableLog("rdApp.*")
 
@@ -267,6 +269,151 @@ def compare_avalon(
         except Exception as error:  # noqa: BLE001
             ck_value = {"error": error_value(error)}
         audit.compare(f"avalon.{name}", record, rd_value, ck_value)
+
+
+def layered_branches(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    if profile.get("schema_version") != 1:
+        raise ValueError("Layered profile schema_version must be 1")
+    if profile.get("rdkit_version") != "2026.3.1":
+        raise ValueError("Layered profile RDKit version does not match the pin")
+    if profile.get("rdkit_source_revision") != EXPECTED_RDKIT_SOURCE_REVISION:
+        raise ValueError("Layered profile source revision does not match the pin")
+    if profile.get("algorithm_version") != EXPECTED_LAYERED_VERSION:
+        raise ValueError("Layered profile algorithm version does not match the source")
+    if profile.get("comparison_fields") != ["num_bits", "on_bits", "atom_counts"]:
+        raise ValueError("Layered profile comparison_fields must cover every exact output")
+    branches = profile.get("branches")
+    if not isinstance(branches, list) or not branches:
+        raise ValueError("Layered profile branches must be a nonempty list")
+    names: set[str] = set()
+    for branch in branches:
+        if not isinstance(branch, dict):
+            raise ValueError("every Layered branch must be an object")
+        name = branch.get("name")
+        if not isinstance(name, str) or not name or name in names:
+            raise ValueError(f"Layered branch name is empty or duplicated: {name!r}")
+        names.add(name)
+        for key in ("layerFlags", "minPath", "maxPath", "fpSize", "branchedPaths"):
+            if key not in branch:
+                raise ValueError(f"Layered branch {name!r} is missing {key}")
+        try:
+            int(str(branch["layerFlags"]), 0)
+        except ValueError as error:
+            raise ValueError(f"Layered branch {name!r} has invalid layerFlags") from error
+        if not isinstance(branch["minPath"], int) or not isinstance(
+            branch["maxPath"], int
+        ):
+            raise ValueError(f"Layered branch {name!r} has invalid path bounds")
+        if not isinstance(branch["fpSize"], int) or branch["fpSize"] < 1:
+            raise ValueError(f"Layered branch {name!r} has invalid fpSize")
+        if not isinstance(branch["branchedPaths"], bool):
+            raise ValueError(f"Layered branch {name!r} has invalid branchedPaths")
+        if branch.get("fromAtoms") not in (None, "first", "terminal_pair"):
+            raise ValueError(f"Layered branch {name!r} has invalid fromAtoms selector")
+        if branch.get("atomCounts") not in (None, "zeros", "index_plus_10"):
+            raise ValueError(f"Layered branch {name!r} has invalid atomCounts selector")
+        if branch.get("setOnlyBits") not in (None, "even", "mod_three"):
+            raise ValueError(f"Layered branch {name!r} has invalid setOnlyBits selector")
+    return branches
+
+
+def layered_from_atoms(atom_count: int, selector: str | None) -> list[int] | None:
+    if selector is None:
+        return None
+    if selector == "first":
+        return [0] if atom_count else []
+    if atom_count == 0:
+        return []
+    if atom_count == 1:
+        return [0]
+    return [0, atom_count - 1]
+
+
+def layered_atom_counts(atom_count: int, selector: str | None) -> list[int] | None:
+    if selector is None:
+        return None
+    if selector == "zeros":
+        return [0] * atom_count
+    return [index + 10 for index in range(atom_count)]
+
+
+def layered_masks(
+    fp_size: int, selector: str | None
+) -> tuple[Any | None, Any | None]:
+    if selector is None:
+        return None, None
+    step = 2 if selector == "even" else 3
+    on_bits = list(range(0, fp_size, step))
+    rdkit_mask = DataStructs.ExplicitBitVect(fp_size)
+    for bit in on_bits:
+        rdkit_mask.SetBit(bit)
+    return rdkit_mask, cosmolkit.Fingerprint.from_on_bits(fp_size, on_bits)
+
+
+def compare_layered(
+    audit: Audit,
+    record: dict[str, Any],
+    rd_mol: Chem.Mol,
+    ck_mol: Any,
+    branches: list[dict[str, Any]],
+) -> None:
+    atom_count = rd_mol.GetNumAtoms()
+    for branch in branches:
+        name = str(branch["name"])
+        fp_size = int(branch["fpSize"])
+        from_atoms = layered_from_atoms(atom_count, branch.get("fromAtoms"))
+        rdkit_counts = layered_atom_counts(atom_count, branch.get("atomCounts"))
+        cosmolkit_counts = (
+            None if rdkit_counts is None else list(rdkit_counts)
+        )
+        rdkit_mask, cosmolkit_mask = layered_masks(
+            fp_size, branch.get("setOnlyBits")
+        )
+        rdkit_kwargs: dict[str, Any] = {
+            "layerFlags": int(str(branch["layerFlags"]), 0),
+            "minPath": int(branch["minPath"]),
+            "maxPath": int(branch["maxPath"]),
+            "fpSize": fp_size,
+            "branchedPaths": bool(branch["branchedPaths"]),
+        }
+        cosmolkit_kwargs: dict[str, Any] = {
+            "layers": int(str(branch["layerFlags"]), 0),
+            "min_path": int(branch["minPath"]),
+            "max_path": int(branch["maxPath"]),
+            "fp_size": fp_size,
+            "branched_paths": bool(branch["branchedPaths"]),
+        }
+        if from_atoms is not None:
+            rdkit_kwargs["fromAtoms"] = from_atoms
+            cosmolkit_kwargs["from_atoms"] = from_atoms
+        if rdkit_counts is not None:
+            rdkit_kwargs["atomCounts"] = rdkit_counts
+            cosmolkit_kwargs["atom_counts"] = cosmolkit_counts
+        if rdkit_mask is not None:
+            rdkit_kwargs["setOnlyBits"] = rdkit_mask
+            cosmolkit_kwargs["set_only_bits"] = cosmolkit_mask
+        try:
+            rdkit_fp = Chem.LayeredFingerprint(rd_mol, **rdkit_kwargs)
+            rdkit_value: Any = {
+                "n_bits": rdkit_fp.GetNumBits(),
+                "on_bits": list(rdkit_fp.GetOnBits()),
+                "atom_counts": rdkit_counts,
+            }
+        except Exception as error:  # noqa: BLE001
+            rdkit_value = {"error": error_value(error)}
+        try:
+            cosmolkit_result = ck_mol.fingerprint_layered_with_output(
+                **cosmolkit_kwargs
+            )
+            cosmolkit_fp = cosmolkit_result.fingerprint()
+            cosmolkit_value: Any = {
+                "n_bits": cosmolkit_fp.n_bits(),
+                "on_bits": cosmolkit_fp.on_bits(),
+                "atom_counts": cosmolkit_result.atom_counts(),
+            }
+        except Exception as error:  # noqa: BLE001
+            cosmolkit_value = {"error": error_value(error)}
+        audit.compare(f"layered.{name}", record, rdkit_value, cosmolkit_value)
 
 
 def atom_pair_kwargs(
@@ -698,9 +845,10 @@ def main() -> None:
     parser.add_argument("--avalon-profile", type=Path, required=True)
     parser.add_argument("--atom-pair-profile", type=Path, required=True)
     parser.add_argument("--topological-torsion-profile", type=Path, required=True)
+    parser.add_argument("--layered-profile", type=Path, required=True)
     parser.add_argument(
         "--mode",
-        choices=("topological_avalon", "atom_pair", "topological_torsion"),
+        choices=("topological_avalon", "atom_pair", "topological_torsion", "layered"),
         required=True,
     )
     parser.add_argument("--limit", type=int)
@@ -723,11 +871,13 @@ def main() -> None:
     avalon_profile = load_json(args.avalon_profile)
     atom_pair_profile = load_json(args.atom_pair_profile)
     topological_torsion_profile = load_json(args.topological_torsion_profile)
+    layered_profile = load_json(args.layered_profile)
     topological_branches = topological_profile["branches"]
     avalon_branches = avalon_profile["corpus_branches"]
     atom_pair_branches = atom_pair_profile["branches"]
     atom_pair_generators = make_atom_pair_generators(atom_pair_branches)
     topological_torsion_branches = topological_torsion_profile["corpus_branches"]
+    complete_layered_branches = layered_branches(layered_profile)
     rdkit_torsion_generators, cosmolkit_torsion_generators = (
         make_topological_torsion_generators(topological_torsion_branches)
     )
@@ -783,7 +933,7 @@ def main() -> None:
                         atom_pair_branches,
                         atom_pair_generators,
                     )
-                else:
+                elif args.mode == "topological_torsion":
                     compare_topological_torsion(
                         audit,
                         record,
@@ -792,6 +942,10 @@ def main() -> None:
                         topological_torsion_branches,
                         rdkit_torsion_generators,
                         cosmolkit_torsion_generators,
+                    )
+                else:
+                    compare_layered(
+                        audit, record, rd_mol, ck_mol, complete_layered_branches
                     )
     finally:
         audit.finish(
@@ -836,6 +990,8 @@ def main() -> None:
                         for branch in topological_torsion_branches
                     ),
                 }
+                if args.mode == "topological_torsion"
+                else {"layered": len(complete_layered_branches)}
             ),
         )
 

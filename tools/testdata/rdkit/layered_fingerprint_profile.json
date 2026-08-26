@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.3.1",
+  "rdkit_source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
+  "algorithm_version": "0.7.0",
+  "source_paths": [
+    "Code/GraphMol/Fingerprints/Fingerprints.h",
+    "Code/GraphMol/Fingerprints/Fingerprints.cpp",
+    "Code/GraphMol/QueryOps.cpp",
+    "Code/GraphMol/MolOps.cpp",
+    "Code/GraphMol/FindRings.cpp",
+    "Code/GraphMol/FindRings.h",
+    "Code/GraphMol/ROMol.cpp",
+    "Code/GraphMol/ROMol.h",
+    "Code/GraphMol/Queries/Query.h",
+    "Code/GraphMol/Queries/QueryObjects.h",
+    "Code/RDGeneral/hash/hash.hpp"
+  ],
+  "comparison_fields": [
+    "num_bits",
+    "on_bits",
+    "atom_counts"
+  ],
+  "branches": [
+    {
+      "name": "default",
+      "layerFlags": "0xffffffff",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "active_layers",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "topology_layer",
+      "layerFlags": "0x01",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "bond_order_layer",
+      "layerFlags": "0x02",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "atom_type_layer",
+      "layerFlags": "0x04",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "ring_presence_layer",
+      "layerFlags": "0x08",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "ring_size_layer",
+      "layerFlags": "0x10",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "aromaticity_layer",
+      "layerFlags": "0x20",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "substructure_layers",
+      "layerFlags": "0x07",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true
+    },
+    {
+      "name": "path_range_2_4_size_257",
+      "layerFlags": "0x3f",
+      "minPath": 2,
+      "maxPath": 4,
+      "fpSize": 257,
+      "branchedPaths": true
+    },
+    {
+      "name": "active_size_64",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 64,
+      "branchedPaths": true
+    },
+    {
+      "name": "rooted_first_branched",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true,
+      "fromAtoms": "first"
+    },
+    {
+      "name": "rooted_terminal_pair_branched",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true,
+      "fromAtoms": "terminal_pair"
+    },
+    {
+      "name": "rooted_first_linear",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": false,
+      "fromAtoms": "first"
+    },
+    {
+      "name": "even_mask_zero_counts",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 256,
+      "branchedPaths": true,
+      "atomCounts": "zeros",
+      "setOnlyBits": "even"
+    },
+    {
+      "name": "mod_three_mask_seeded_counts",
+      "layerFlags": "0x3f",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 257,
+      "branchedPaths": true,
+      "atomCounts": "index_plus_10",
+      "setOnlyBits": "mod_three"
+    },
+    {
+      "name": "high_source_bits_only",
+      "layerFlags": "0xffffffc0",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true,
+      "atomCounts": "zeros"
+    },
+    {
+      "name": "no_layers",
+      "layerFlags": "0x00",
+      "minPath": 1,
+      "maxPath": 7,
+      "fpSize": 2048,
+      "branchedPaths": true,
+      "atomCounts": "zeros"
+    }
+  ]
+}

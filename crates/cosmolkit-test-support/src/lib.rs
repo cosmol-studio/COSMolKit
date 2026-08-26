@@ -126,6 +126,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         | "atom_pair_fingerprint.jsonl"
         | "maccs_fingerprint.jsonl"
         | "rdkit_topological_fingerprint.jsonl"
+        | "layered_fingerprint.jsonl"
         | "topological_torsion_fingerprint.jsonl"
         | "avalon_fingerprint.jsonl" => "fingerprint",
         "conformer_generation.jsonl"
@@ -378,6 +379,9 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         profile if profile == profile_name() => smiles_path(),
         "atom_pair_focused" => repo_root()
             .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        "layered_focused" => {
+            repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi")
+        }
         "ciplabeler_focused" => {
             repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
         }

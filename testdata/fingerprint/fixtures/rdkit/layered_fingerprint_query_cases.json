@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "name": "RDKit",
+    "version": "2026.3.1",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+    "source_paths": [
+      "Code/GraphMol/Fingerprints/Fingerprints.cpp:269-301",
+      "Code/GraphMol/Fingerprints/Fingerprints.cpp:332-473",
+      "Code/GraphMol/Fingerprints/test1.cpp:691-853",
+      "Code/GraphMol/QueryOps.cpp:728-950"
+    ]
+  },
+  "parameters": {
+    "layer_flags": 63,
+    "min_path": 1,
+    "max_path": 7,
+    "fp_size": 512,
+    "branched_paths": true
+  },
+  "complexity_masks": [
+    {
+      "case_id": "mask_0_simple_bond_simple_endpoints",
+      "notation": "smarts",
+      "input": "C-C",
+      "query_masks": [0],
+      "aromatic_atoms": [false, false],
+      "on_bits": [20, 98, 99, 162, 360]
+    },
+    {
+      "case_id": "mask_1_complex_bond_simple_endpoints",
+      "notation": "smarts",
+      "input": "C~C",
+      "query_masks": [1],
+      "aromatic_atoms": [false, false],
+      "on_bits": [20, 98, 99, 162]
+    },
+    {
+      "case_id": "mask_2_simple_bond_complex_begin",
+      "notation": "smarts",
+      "input": "[C,N]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "mask_3_complex_bond_complex_begin",
+      "notation": "smarts",
+      "input": "[C,N]~C",
+      "query_masks": [3],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162]
+    },
+    {
+      "case_id": "mask_4_simple_bond_complex_end",
+      "notation": "smarts",
+      "input": "C-[C,N]",
+      "query_masks": [4],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "mask_5_complex_bond_complex_end",
+      "notation": "smarts",
+      "input": "C~[C,N]",
+      "query_masks": [5],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162]
+    },
+    {
+      "case_id": "mask_6_simple_bond_complex_endpoints",
+      "notation": "smarts",
+      "input": "[C,N]-[C,N]",
+      "query_masks": [6],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "mask_7_complex_bond_complex_endpoints",
+      "notation": "smarts",
+      "input": "[C,N]~[C,N]",
+      "query_masks": [7],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162]
+    }
+  ],
+  "aromaticity_branches": [
+    {
+      "case_id": "concrete_non_aromatic_atoms",
+      "notation": "smiles",
+      "input": "CC",
+      "query_masks": [0],
+      "aromatic_atoms": [false, false],
+      "on_bits": [20, 98, 99, 162, 360]
+    },
+    {
+      "case_id": "concrete_aromatic_atoms_and_bonds",
+      "notation": "smiles",
+      "input": "c1ccccc1",
+      "query_masks": [0, 0, 0, 0, 0, 0],
+      "aromatic_atoms": [true, true, true, true, true, true],
+      "on_bits": [5, 20, 48, 54, 114, 162, 179, 198, 203, 206, 214, 216, 224, 226, 247, 284, 289, 303, 311, 315, 333, 338, 342, 354, 355, 359, 360, 362, 366, 370, 402, 403, 412, 449, 470, 481]
+    },
+    {
+      "case_id": "atomic_number_queries_follow_atom_flag",
+      "notation": "smarts",
+      "input": "[#6]-[#6]",
+      "query_masks": [0],
+      "aromatic_atoms": [false, false],
+      "on_bits": [20, 98, 99, 162, 360]
+    },
+    {
+      "case_id": "aromatic_predicate",
+      "notation": "smarts",
+      "input": "[a]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [true, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "negated_aromatic_predicate",
+      "notation": "smarts",
+      "input": "[!a]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "aliphatic_predicate",
+      "notation": "smarts",
+      "input": "[A]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "negated_aliphatic_predicate",
+      "notation": "smarts",
+      "input": "[!A]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [true, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "aromatic_atom_type",
+      "notation": "smarts",
+      "input": "c-C",
+      "query_masks": [0],
+      "aromatic_atoms": [true, false],
+      "on_bits": [20, 98, 162, 336, 360]
+    },
+    {
+      "case_id": "negated_aromatic_atom_type",
+      "notation": "smarts",
+      "input": "[!c]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "atomic_number_and_aromaticity",
+      "notation": "smarts",
+      "input": "[#6;a]-[#6;A]",
+      "query_masks": [0],
+      "aromatic_atoms": [true, false],
+      "on_bits": [20, 98, 162, 336, 360]
+    },
+    {
+      "case_id": "atomic_number_and_negated_aromaticity",
+      "notation": "smarts",
+      "input": "[#6;!a]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [true, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "atom_or_is_not_aromatic",
+      "notation": "smarts",
+      "input": "[c,n]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    },
+    {
+      "case_id": "unrecognized_query_root_is_not_aromatic",
+      "notation": "smarts",
+      "input": "[$(c)]-C",
+      "query_masks": [2],
+      "aromatic_atoms": [false, false],
+      "on_bits": [162, 360]
+    }
+  ]
+}

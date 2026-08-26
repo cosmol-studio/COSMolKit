@@ -1,4 +1,4 @@
-# Feature Parity Scope
+# COSMolKit Validation
 
 This page records the exact corpus and comparison boundary behind COSMolKit's
 RDKit parity claims. RDKit `2026.03.1` is the current chemistry reference. A
@@ -20,21 +20,22 @@ interchangeably in tests or documentation.
 
 The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
 composition, batch, and concurrency audit; the complete modern CIPLabeler,
-RDKFingerprint/Avalon, AtomPair, and Topological Torsion audits; and the
-15-phase execution recorded below. The chemistry/composition audit contains
-2,816 tasks over 128 corpus shards, while the four complete independent audit
-phases add 512 tasks over the same shards.
+RDKFingerprint/Avalon, AtomPair, Topological Torsion, and Layered fingerprint
+audits; and the 15-phase execution recorded below. The chemistry/composition
+audit contains
+2,816 tasks over 128 corpus shards, while the five complete independent audit
+phases add 640 tasks over the same shards.
 Phases with a configured atom-count boundary evaluate 2,854,362 eligible
 records. Large subset phases select their stated number of records from the
 same ChEMBL 37 source; they are not separate corpora.
 
 The repository-owned preparation, phase definitions, resumable runner, result
 identity, and acceptance procedure are documented in
-[`dev/tools/chembl_parity/README.md`](tools/chembl_parity/README.md). The
+[`dev/tools/chembl_parity/README.md`](dev/tools/chembl_parity/README.md). The
 current `complete.json` profile preserves the completed phases, adds four
 configured phases for topology operations, fragments, direct 2D coordinates,
-and binary roundtrips, and includes modern CIPLabeler plus the three complete
-fingerprint audit phases. The extended profile contains 30 phases and 3,840
+and binary roundtrips, and includes modern CIPLabeler plus the four complete
+fingerprint audit phases. The extended profile contains 31 phases and 3,968
 shard tasks. The consolidated validation covers all five additions over their
 complete configured ChEMBL boundaries. Modern CIPLabeler, fragments, direct 2D
 coordinates, topology operations, and binary roundtrips each have a complete
@@ -46,17 +47,18 @@ reference pins, and pass/fail rules are version controlled.
 ## Complete ChEMBL 37 Validation Summary
 
 The consolidated validation record combines the 22-phase audit, the complete
-modern CIPLabeler, RDKFingerprint/Avalon, AtomPair, and Topological Torsion
-audits, and the 15-phase execution. The 15-phase execution used COSMolKit
-`0.2.12`, pinned RDKit `2026.03.1`, the same 2,897,819-record ChEMBL 37 source,
-128 corpus shards, and 112 workers. All 15 phases and all 1,920 shard tasks
+modern CIPLabeler, RDKFingerprint/Avalon, AtomPair, Topological Torsion, and
+Layered fingerprint audits, and the 15-phase execution. The 15-phase execution
+used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the same 2,897,819-record
+ChEMBL 37 source, 128 corpus shards, and 112 workers. All 15 phases and all
+1,920 shard tasks
 completed; every result artifact and checksum was independently revalidated.
-Together with the four independent complete audits, the consolidated evidence
-table records 2,879,420,720 matching checks and zero blocking mismatch. Bounds
+Together with the five independent complete audits, the consolidated evidence
+table records 2,931,581,192 matching checks and zero blocking mismatch. Bounds
 additionally traversed 2,757,910,995 matrix entries.
 
 The first 15 rows summarize the consolidated chemistry and composition
-execution. The final four rows are independent complete modern CIPLabeler and
+execution. The final five rows are independent complete modern CIPLabeler and
 fingerprint audits over the same ChEMBL 37 source.
 
 | Phase or independent audit | Records evaluated | Matching checks | Blocking mismatches | Status |
@@ -80,6 +82,7 @@ fingerprint audits over the same ChEMBL 37 source.
 | RDKFingerprint/Avalon fingerprints | 2,897,819 source; 2,897,804 compared | 113,014,356 | 0 | Pass |
 | AtomPair fingerprints | 2,897,819 source; 2,897,804 compared | 118,809,964 | 0 | Pass |
 | Topological Torsion fingerprints | 2,897,819 source; 2,897,804 compared | 127,503,376 | 0 | Pass |
+| Layered fingerprints | 2,897,819 source; 2,897,804 compared | 52,160,472 | 0 | Pass |
 
 The topology phase covers the `RemoveHs(sanitize=false)` value and in-place
 branches, including RDKit's non-strict property-cache update before removal
@@ -94,7 +97,7 @@ legacy and archive-v1.0 read compatibility. The complete configured boundary
 produced 11,534,336 matches and no mismatch or finding across 524,288 records.
 
 The immutable identity and detailed acceptance record are in
-[`dev/gap_reports/chembl37_complete_validation_summary_20260820.md`](gap_reports/chembl37_complete_validation_summary_20260820.md).
+[`dev/gap_reports/chembl37_complete_validation_summary_20260820.md`](dev/gap_reports/chembl37_complete_validation_summary_20260820.md).
 The run validates the recorded extension and start-of-run repository snapshot.
 Later uncommitted working-tree changes require a rebuilt extension and a new
 identity before they can inherit this evidence.
@@ -110,6 +113,7 @@ matrix entries actually compared, not merely the number of input molecules.
 | Molecular descriptors | ChEMBL 37 | 2,897,804 | 29 | 84,036,316 |
 | Morgan and MACCS fingerprints | ChEMBL 37 | 2,897,804 | 31 configured | 89,831,720 completed |
 | Topological Torsion fingerprints | ChEMBL 37 | 2,897,804 | 36 vectors + 8 provenance outputs | 127,503,376 |
+| Layered fingerprints | ChEMBL 37 | 2,897,804 | 18 complete bit/count result profiles | 52,160,472 |
 | Explicit-hydrogen graph/state | ChEMBL 37 | 2,854,362 | 4 | 11,417,448 |
 | Distance-geometry bounds | ChEMBL 37 | 2,854,362 matrices | every matrix entry | 2,757,910,995 entries |
 | InChI parse branches | ChEMBL 37 | 2,854,362 | 4 | 11,417,448 |
@@ -128,7 +132,7 @@ matrix entries actually compared, not merely the number of input molecules.
 | Modern CIPLabeler | ChEMBL 37 | 2,854,362 | full, selected atom, selected bond, empty selection | 11,417,448 |
 
 Except for the separately identified modern CIPLabeler, RDKFingerprint,
-Avalon, AtomPair, and Topological Torsion rows,
+Avalon, AtomPair, Topological Torsion, and Layered rows,
 the ChEMBL 37 figures above are the complete chemistry/composition audit
 counters. The acceptance model combines that full-corpus breadth with exact
 source-regression matrices for every covered branch: 10 descriptor rows,
@@ -138,7 +142,7 @@ rows with 82,944 writer comparisons, 441 SVG rows, 160 I/O rows with 2,560
 writer comparisons, seven conformer rows, and 262 force-field rows. Every
 listed regression matrix has exact pinned-RDKit agreement; no percentage
 threshold or unexplained mismatch is accepted. RDKFingerprint, Avalon,
-AtomPair, and Topological Torsion additionally have complete current
+AtomPair, Topological Torsion, and Layered additionally have complete current
 full-corpus executions.
 
 The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
@@ -212,7 +216,7 @@ atoms. The pinned source boundary covers tetrahedral, double-bond, and
 atropisomeric configurations constructed by `findConfigs`; descriptor families
 outside that dispatcher are separate capabilities. The immutable result and
 reproduction command are recorded in the [modern CIPLabeler validation
-report](gap_reports/rdkit_ciplabeler_full_port_validation.md).
+report](dev/gap_reports/rdkit_ciplabeler_full_port_validation.md).
 
 ### Morgan And MACCS Fingerprints
 
@@ -221,7 +225,7 @@ Morgan compares 15 parameter profiles as both the main vector and
 102 rows from each of two custom-bond-invariant output counters because of an
 audit-harness accounting gap, not an accepted mismatch. Exact source
 regressions cover both affected branches. The selected boundary is documented
-in the [Morgan/MACCS validation report](gap_reports/rdkit_morgan_maccs_full_port_validation.md).
+in the [Morgan/MACCS validation report](dev/gap_reports/rdkit_morgan_maccs_full_port_validation.md).
 
 ### RDKFingerprint And Avalon Fingerprints
 
@@ -229,8 +233,8 @@ RDKFingerprint comparisons include vector width, the complete on-bit set,
 `atomBits`, and `bitInfo`. Avalon compares complete explicit-bit vectors across
 23 profiles. Their combined 128-shard audit completed with zero mismatch or
 failed task. Family-specific boundaries and reproducibility identities are in
-the [RDKFingerprint](gap_reports/rdkit_topological_fingerprint_full_port_validation.md)
-and [Avalon](gap_reports/avalon_fingerprint_full_port_validation.md) validation
+the [RDKFingerprint](dev/gap_reports/rdkit_topological_fingerprint_full_port_validation.md)
+and [Avalon](dev/gap_reports/avalon_fingerprint_full_port_validation.md) validation
 reports.
 
 ### AtomPair Fingerprints
@@ -242,7 +246,7 @@ distance bounds, atom selection and exclusion, custom atom invariants, and
 and bit-info mappings. The source-aligned implementation also covers 2D and 3D
 distance-cache reuse, conformer keys, invalidation, and concurrent cold/warm
 reads. The full audit has zero mismatch, invalid profile, or retained finding;
-details are in the [AtomPair validation report](gap_reports/rdkit_atom_pair_fingerprint_full_port_validation.md).
+details are in the [AtomPair validation report](dev/gap_reports/rdkit_atom_pair_fingerprint_full_port_validation.md).
 
 ### Topological Torsion Fingerprints
 
@@ -259,7 +263,26 @@ endpoint correction. Fingerprinting reads the source explicit-valence cache;
 `with_hydrogens()` commits the source-defined transition needed by both modern
 and legacy calls. The complete audit has zero mismatch, invalid profile, or
 retained finding; details are in the [Topological Torsion validation
-report](gap_reports/rdkit_topological_torsion_fingerprint_full_port_validation.md).
+report](dev/gap_reports/rdkit_topological_torsion_fingerprint_full_port_validation.md).
+
+### Layered Fingerprints
+
+Layered fingerprint comparisons cover all six active source layers, active,
+default, substructure, zero, and inactive-high layer masks, two width/path
+configurations, branched and rooted-linear paths, rooted branched selections,
+bit masks, and seeded atom counts. Every successful profile compares the exact
+fingerprint width, complete ordered on-bit set, and complete optional atom-count
+vector. The complete 128-shard ChEMBL 37 audit evaluated all 18 profiles for
+every mutually parseable row, totaling 52,160,472 exact comparisons with zero
+mismatch, invalid profile, or retained finding; details and immutable run
+identity are in the [Layered validation
+report](dev/gap_reports/rdkit_layered_fingerprint_full_port_validation.md).
+
+Pinned RDKit's unrooted-linear call passes atom paths into code that consumes
+bond paths and can terminate the process. COSMolKit does not reproduce that
+crash: it returns the bond-path result documented by the source API and used by
+the valid rooted-linear branch. This process-safety difference is excluded
+from, rather than counted as part of, the zero-mismatch total.
 
 ### Fingerprint Acceptance Rules
 
@@ -269,10 +292,10 @@ audits process all 2,897,819 ChEMBL 37 source records: 2,897,804 are mutually
 parseable and 15 are rejected by both libraries.
 
 The maintained 5,000-row gates consume all 14 RDKFingerprint, 23 Avalon, ten
-AtomPair, and nine Topological Torsion profiles. Each active profile defines
-the vector forms and provenance it claims. Comparisons use exact equality,
-deterministic ordered collection, and validated manifests; there is no
-sampling, tolerance, skipped mismatch, approximate vector, similarity
+AtomPair, nine Topological Torsion, and 18 Layered profiles. Each active profile
+defines the vector forms and provenance it claims. Comparisons use exact
+equality, deterministic ordered collection, and validated manifests; there is
+no sampling, tolerance, skipped mismatch, approximate vector, similarity
 threshold, fallback fingerprint, or runtime RDKit dependency. Run identities
 and aggregate checksums remain in the linked validation reports instead of
 being repeated in this scope summary.

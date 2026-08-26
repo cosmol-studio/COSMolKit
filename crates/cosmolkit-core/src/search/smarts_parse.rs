@@ -172,9 +172,12 @@ fn to_mol(inp: &str) -> Result<Molecule, String> {
             let (query, chiral_tag, chiral_permutation) =
                 materialize_smarts_atom_state(query.clone()).map_err(|error| error.to_string())?;
             let isotope = atom_isotope(&query);
+            let (atomic_number, aromatic) = source_query_atom_identity(&query);
             let mut spec = AtomSpec::new(
-                Element::from_atomic_number(0).expect("atomic number zero is a valid query atom"),
+                Element::from_atomic_number(atomic_number)
+                    .expect("source SMARTS atomic number is a valid element"),
             )
+            .with_aromatic(aromatic)
             .with_query(query)
             .with_chiral_tag(chiral_tag);
             if let Some(chiral_permutation) = chiral_permutation {
@@ -217,6 +220,62 @@ fn to_mol(inp: &str) -> Result<Molecule, String> {
             .map_err(|error| error.to_string())?;
     }
     builder.build().map_err(|error| error.to_string())
+}
+
+fn source_query_atom_identity(query: &QueryNode<AtomQueryPredicate>) -> (u8, bool) {
+    // BEGIN RDKIT CPP BLOCK SMARTS QueryAtom identity retention
+    // RDKit✔️✔️: atom_expr: atom_expr AND_TOKEN atom_expr {
+    // RDKit✔️✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+    // RDKit✔️✔️:   if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
+    // RDKit✔️✔️:   SmilesParseOps::ClearAtomChemicalProps($1);
+    // RDKit✔️✔️:   delete $3;
+    // RDKit✔️✔️:   $$ = $1;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | atom_expr OR_TOKEN atom_expr {
+    // RDKit✔️✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_OR,true);
+    // RDKit✔️✔️:   if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
+    // RDKit✔️✔️:   SmilesParseOps::ClearAtomChemicalProps($1);
+    // RDKit✔️✔️:   $1->setAtomicNum(0);
+    // RDKit✔️✔️:   delete $3;
+    // RDKit✔️✔️:   $$ = $1;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: point_query: NOT_TOKEN point_query {
+    // RDKit✔️✔️:   $2->getQuery()->setNegation(!($2->getQuery()->getNegation()));
+    // RDKit✔️✔️:   $2->setAtomicNum(0);
+    // RDKit✔️✔️:   SmilesParseOps::ClearAtomChemicalProps($2);
+    // RDKit✔️✔️:   $$ = $2;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | HASH_TOKEN number { $$ = new QueryAtom($2); }
+    // END RDKIT CPP BLOCK SMARTS QueryAtom identity retention
+    // `QueryNode` stores the final query tree instead of RDKit's mutable
+    // QueryAtom construction object. AND retains the left QueryAtom identity;
+    // OR/XOR and NOT clear only its atomic number, while its aromatic flag is
+    // retained. This single ordered traversal reconstructs those observable
+    // source fields in O(query height), without allocating or cloning.
+    match query {
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_number)) => {
+            (*atomic_number, false)
+        }
+        QueryNode::Predicate(AtomQueryPredicate::AtomType {
+            atomic_number,
+            aromatic,
+        }) => (*atomic_number, *aromatic),
+        QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic)) => (0, *aromatic),
+        QueryNode::And(children) => children
+            .first()
+            .map(source_query_atom_identity)
+            .unwrap_or((0, false)),
+        QueryNode::Or(children) | QueryNode::Xor(children) => (
+            0,
+            children
+                .first()
+                .map(source_query_atom_identity)
+                .unwrap_or((0, false))
+                .1,
+        ),
+        QueryNode::Not(child) => (0, source_query_atom_identity(child).1),
+        QueryNode::Predicate(_) => (0, false),
+    }
 }
 
 fn materialize_smarts_atom_state(

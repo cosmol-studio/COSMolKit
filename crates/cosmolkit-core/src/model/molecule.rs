@@ -1245,6 +1245,20 @@ impl Molecule {
         crate::fingerprint::topological_fingerprint_with_output(self, params, request)
     }
 
+    pub fn layered_fingerprint(
+        &self,
+        params: &crate::fingerprint::LayeredFingerprintParams,
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
+        crate::fingerprint::layered_fingerprint(self, params)
+    }
+
+    pub fn layered_fingerprint_with_output(
+        &self,
+        params: &crate::fingerprint::LayeredFingerprintParams,
+    ) -> Result<crate::fingerprint::LayeredFingerprintResult, crate::FingerprintError> {
+        crate::fingerprint::layered_fingerprint_with_output(self, params)
+    }
+
     pub fn maccs_fingerprint(
         &self,
         params: &crate::fingerprint::MaccsFingerprintParams,

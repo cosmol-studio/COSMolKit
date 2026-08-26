@@ -175,6 +175,54 @@ class WorkflowTests(unittest.TestCase):
             torsion_profile.name, "topological_torsion_fingerprint_profile.json"
         )
 
+    def test_layered_phase_is_complete_and_source_profiled(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phase = {item["name"]: item for item in profile["phases"]}["layered"]
+        self.assertEqual(phase["script"], "audit_fingerprints.py")
+        self.assertEqual(phase["mode"], "layered")
+        self.assertEqual(phase["expected_processed"], profile["corpus_records"])
+        self.assertEqual(phase["expected_profiles"], {"layered": 18})
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/layered/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(command[command.index("--mode") + 1], "layered")
+        layered_profile = Path(command[command.index("--layered-profile") + 1])
+        self.assertEqual(layered_profile.name, "layered_fingerprint_profile.json")
+
+    def test_layered_auditor_compares_every_configured_exact_field(self) -> None:
+        profile = runner.load_json(
+            TOOL_DIR.parents[2]
+            / "tools/testdata/rdkit/layered_fingerprint_profile.json"
+        )
+        branches = audit_fingerprints.layered_branches(profile)
+        self.assertEqual(len(branches), 18)
+        by_name = {branch["name"]: branch for branch in branches}
+        selected = [
+            by_name["default"],
+            by_name["rooted_terminal_pair_branched"],
+            by_name["mod_three_mask_seeded_counts"],
+            by_name["high_source_bits_only"],
+        ]
+        record = {"row": 0, "chembl_id": "HARNESS", "smiles": "c1ccccc1O"}
+        rd_mol = audit_fingerprints.Chem.MolFromSmiles(record["smiles"])
+        ck_mol = audit_fingerprints.cosmolkit.Molecule.from_smiles(record["smiles"])
+        self.assertIsNotNone(rd_mol)
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_fingerprints.Audit(Path(temporary) / "summary.json", 4)
+            audit_fingerprints.compare_layered(
+                audit, record, rd_mol, ck_mol, selected
+            )
+            self.assertEqual(sum(audit.counts.values()), len(selected))
+            self.assertTrue(
+                all(key.startswith("match.layered.") for key in audit.counts)
+            )
+            audit.finish(1, {"layered": len(selected)})
+
     def test_topological_torsion_auditor_compares_all_vectors_and_provenance(self) -> None:
         profile = runner.load_json(
             TOOL_DIR.parents[2]

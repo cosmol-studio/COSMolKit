@@ -30,6 +30,8 @@ PROFILE_INPUTS = {
     / "testdata/stereo/fixtures/ciplabeler_focused.json",
     "atom_pair_focused": REPO_ROOT
     / "testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi",
+    "layered_focused": REPO_ROOT
+    / "testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
     "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
@@ -232,6 +234,13 @@ GENERATOR_SPECS = [
         "fingerprint",
         {"default", "strict-corpus", "fingerprint"},
         generator_dependencies=("rdkit_topological_fingerprint_profile.json",),
+    ),
+    spec(
+        "layered_fingerprint_golden",
+        "layered_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint", "layered"},
+        generator_dependencies=("layered_fingerprint_profile.json",),
     ),
     spec(
         "topological_torsion_fingerprint_golden",

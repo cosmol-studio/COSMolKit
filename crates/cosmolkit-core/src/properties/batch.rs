@@ -1348,6 +1348,88 @@ impl MoleculeBatch {
         )
     }
 
+    pub fn layered_fingerprint_list_with_progress(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.layered_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn layered_fingerprint_list_with_options(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Layered fingerprints",
+            |progress| self.layered_fingerprint_list_with_runtime(params, progress, n_jobs),
+        )
+    }
+
+    fn layered_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.layered_fingerprint",
+            |molecule| {
+                molecule
+                    .layered_fingerprint(params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn layered_fingerprint_with_output_list_with_progress(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::LayeredFingerprintResult>>, BatchValidationError> {
+        self.layered_fingerprint_with_output_list_with_runtime(params, progress, None)
+    }
+
+    pub fn layered_fingerprint_with_output_list_with_options(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::LayeredFingerprintResult>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Layered fingerprints with atom counts",
+            |progress| {
+                self.layered_fingerprint_with_output_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn layered_fingerprint_with_output_list_with_runtime(
+        &self,
+        params: &crate::LayeredFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::LayeredFingerprintResult>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.layered_fingerprint_with_output",
+            |molecule| {
+                molecule
+                    .layered_fingerprint_with_output(params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
     pub fn morgan_fingerprint_list_with_progress(
         &self,
         params: &crate::MorganFingerprintParams,

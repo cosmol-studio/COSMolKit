@@ -97,3 +97,114 @@ def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -
     assert str(inspect.signature(cosmolkit.Molecule.assign_chiral_tags_from_structure_)) == (
         "(self, /, conf_id=-1, replace_existing_tags=True)"
     )
+
+
+def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
+    module = _stub_module()
+    scalar_arguments = [
+        "self",
+        "layers",
+        "min_path",
+        "max_path",
+        "fp_size",
+        "atom_counts",
+        "set_only_bits",
+        "branched_paths",
+        "from_atoms",
+    ]
+    batch_arguments = [*scalar_arguments, "n_jobs", "progress_bar"]
+    scalar_defaults = [
+        Ellipsis,
+        Ellipsis,
+        Ellipsis,
+        Ellipsis,
+        None,
+        None,
+        Ellipsis,
+        None,
+    ]
+    batch_defaults = [*scalar_defaults, None, None]
+    expected_methods = {
+        "Molecule": {
+            "fingerprint_layered": (
+                scalar_arguments,
+                scalar_defaults,
+                "Fingerprint",
+            ),
+            "fingerprint_layered_with_output": (
+                scalar_arguments,
+                scalar_defaults,
+                "LayeredFingerprintResult",
+            ),
+        },
+        "MoleculeBatch": {
+            "fingerprint_layered_list": (
+                batch_arguments,
+                batch_defaults,
+                "builtins.list[typing.Optional[Fingerprint]]",
+            ),
+            "fingerprint_layered_with_output_list": (
+                batch_arguments,
+                batch_defaults,
+                "builtins.list[typing.Optional[LayeredFingerprintResult]]",
+            ),
+        },
+    }
+
+    for class_name, expected in expected_methods.items():
+        class_node = _stub_class(module, class_name)
+        declarations = [
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in expected
+        ]
+        assert Counter(method.name for method in declarations) == {
+            method_name: 1 for method_name in expected
+        }
+        methods = {method.name: method for method in declarations}
+        for method_name, (arguments, defaults, return_type) in expected.items():
+            method = methods[method_name]
+            assert [argument.arg for argument in method.args.args] == arguments
+            assert len(method.args.defaults) == len(arguments) - 1
+            assert [ast.literal_eval(default) for default in method.args.defaults] == defaults
+            assert method.returns is not None
+            assert ast.unparse(method.returns) == return_type
+
+    expected_runtime_signatures = {
+        cosmolkit.Molecule.fingerprint_layered: (
+            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
+            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None)"
+        ),
+        cosmolkit.Molecule.fingerprint_layered_with_output: (
+            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
+            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None)"
+        ),
+        cosmolkit.MoleculeBatch.fingerprint_layered_list: (
+            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
+            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None, "
+            "n_jobs=None, progress_bar=None)"
+        ),
+        cosmolkit.MoleculeBatch.fingerprint_layered_with_output_list: (
+            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
+            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None, "
+            "n_jobs=None, progress_bar=None)"
+        ),
+    }
+    for runtime_method, expected_signature in expected_runtime_signatures.items():
+        assert str(inspect.signature(runtime_method)) == expected_signature
+
+    result_class = _stub_class(module, "LayeredFingerprintResult")
+    result_methods = {
+        node.name: node
+        for node in result_class.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"fingerprint", "atom_counts"}
+    }
+    assert set(result_methods) == {"fingerprint", "atom_counts"}
+    assert result_methods["fingerprint"].returns is not None
+    assert result_methods["atom_counts"].returns is not None
+    assert ast.unparse(result_methods["fingerprint"].returns) == "Fingerprint"
+    assert ast.unparse(result_methods["atom_counts"].returns) == (
+        "typing.Optional[builtins.list[builtins.int]]"
+    )

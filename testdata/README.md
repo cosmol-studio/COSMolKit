@@ -144,6 +144,6 @@ one executed test and `1 passed`; a filtered run with zero executed tests is
 not validation.
 
 Feature-specific comparison boundaries are documented in
-[`dev/parity_scope.md`](../dev/parity_scope.md). The normative layout and
+[`VALIDATION.md`](../VALIDATION.md). The normative layout and
 cache rules are in
 [`dev/repository_organization_policy.md`](../dev/repository_organization_policy.md).
