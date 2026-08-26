@@ -223,6 +223,110 @@ class WorkflowTests(unittest.TestCase):
             )
             audit.finish(1, {"layered": len(selected)})
 
+    def test_pattern_phase_is_complete_source_profiled_and_sharded(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phase = {item["name"]: item for item in profile["phases"]}["pattern"]
+        self.assertEqual(phase["script"], "audit_fingerprints.py")
+        self.assertEqual(phase["mode"], "pattern")
+        self.assertEqual(phase["expected_processed"], profile["corpus_records"])
+        self.assertEqual(phase["expected_profiles"], {"pattern": 10})
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/pattern/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(command[command.index("--mode") + 1], "pattern")
+        pattern_profile = Path(command[command.index("--pattern-profile") + 1])
+        self.assertEqual(pattern_profile.name, "pattern_fingerprint_profile.json")
+
+    def test_pattern_auditor_compares_every_complete_corpus_profile_exactly(self) -> None:
+        profile = runner.load_json(
+            TOOL_DIR.parents[2]
+            / "tools/testdata/rdkit/pattern_fingerprint_profile.json"
+        )
+        branches = audit_fingerprints.validate_pattern_profile(profile)
+        self.assertEqual(len(branches), 10)
+        self.assertNotIn(
+            "set_only_bits_wrong_width",
+            {branch["name"] for branch in branches},
+        )
+        record = {"row": 0, "chembl_id": "HARNESS", "smiles": "CCCO"}
+        rd_mol = audit_fingerprints.Chem.MolFromSmiles(record["smiles"])
+        ck_mol = audit_fingerprints.cosmolkit.Molecule.from_smiles(record["smiles"])
+        self.assertIsNotNone(rd_mol)
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_fingerprints.Audit(Path(temporary) / "summary.json", 4)
+            audit_fingerprints.compare_pattern(
+                audit, record, rd_mol, ck_mol, branches
+            )
+            self.assertEqual(sum(audit.counts.values()), 10)
+            self.assertTrue(
+                all(key.startswith("match.pattern.") for key in audit.counts)
+            )
+            audit.finish(1, {"pattern": 10})
+
+    def test_pattern_aggregate_rejects_partial_profile_and_missing_shard(self) -> None:
+        expected_profiles = {"pattern": 10}
+        with tempfile.TemporaryDirectory() as temporary:
+            phase_dir = Path(temporary)
+            results = {}
+            for shard in range(2):
+                output = phase_dir / f"shard-{shard:03d}.json"
+                output.write_text(
+                    json.dumps(
+                        {
+                            "processed": 1,
+                            "profiles": expected_profiles,
+                            "counts": {"match.pattern.default": 1},
+                        }
+                    )
+                )
+                output.with_suffix(".findings.jsonl").write_text("")
+                results[str(shard)] = {"returncode": 0, "output": str(output)}
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertTrue(aggregate["passed"])
+
+            summary = json.loads((phase_dir / "shard-001.json").read_text())
+            summary["profiles"] = {"pattern": 9}
+            (phase_dir / "shard-001.json").write_text(json.dumps(summary))
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+            self.assertEqual(aggregate["invalid_profile_tasks"], 1)
+
+            del results["1"]
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+
+    def test_pattern_profile_is_part_of_resume_identity(self) -> None:
+        root = TOOL_DIR.parents[2]
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        with mock.patch.object(runner, "extension_artifacts", return_value=[]), mock.patch.object(
+            runner, "git_head", return_value="HEAD"
+        ), mock.patch.object(runner, "distribution_version", return_value="0"):
+            identity = runner.build_identity(
+                root,
+                TOOL_DIR,
+                TOOL_DIR / "profiles/complete.json",
+                profile,
+                {"source_sha256": "source"},
+                "manifest-sha",
+                b"",
+                b"",
+            )
+        self.assertIn(
+            "tools/testdata/rdkit/pattern_fingerprint_profile.json",
+            identity["reference_profiles"],
+        )
+
     def test_topological_torsion_auditor_compares_all_vectors_and_provenance(self) -> None:
         profile = runner.load_json(
             TOOL_DIR.parents[2]

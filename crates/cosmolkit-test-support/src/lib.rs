@@ -124,6 +124,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "sdf_read.jsonl" | "sdf_write.jsonl" => "sdf",
         "morgan_fingerprint.jsonl"
         | "atom_pair_fingerprint.jsonl"
+        | "pattern_fingerprint.jsonl"
         | "maccs_fingerprint.jsonl"
         | "rdkit_topological_fingerprint.jsonl"
         | "layered_fingerprint.jsonl"
@@ -374,22 +375,24 @@ fn reference_identity(reference: &str) -> Result<ReferenceIdentity, String> {
 }
 
 fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Result<(), String> {
-    let current_path = match expected_profile {
-        "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
-        profile if profile == profile_name() => smiles_path(),
-        "atom_pair_focused" => repo_root()
-            .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
-        "layered_focused" => {
-            repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi")
-        }
-        "ciplabeler_focused" => {
-            repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
-        }
-        "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
-        "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
-        "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
-        other => return Err(format!("unknown expected-data profile '{other}'")),
-    };
+    let current_path =
+        match expected_profile {
+            "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
+            profile if profile == profile_name() => smiles_path(),
+            "atom_pair_focused" => repo_root()
+                .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+            "layered_focused" => repo_root()
+                .join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi"),
+            "pattern_focused" => repo_root()
+                .join("testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi"),
+            "ciplabeler_focused" => {
+                repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
+            }
+            "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
+            "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
+            "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
+            other => return Err(format!("unknown expected-data profile '{other}'")),
+        };
     let current = normalize_existing_path(&current_path)?;
     let declared = normalize_existing_path(&identity_path(input)?)?;
     if current != declared {

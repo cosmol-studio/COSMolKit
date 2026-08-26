@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.3.1",
+  "fingerprint_version": "1.0.0",
+  "source_paths": [
+    "Code/GraphMol/Fingerprints/PatternFingerprints.cpp",
+    "Code/GraphMol/Fingerprints/Fingerprints.h",
+    "Code/GraphMol/Wrap/MolOps.cpp"
+  ],
+  "comparison_fields": [
+    "ok",
+    "n_bits",
+    "on_bits",
+    "atom_counts_before",
+    "atom_counts_after",
+    "set_only_bits",
+    "error"
+  ],
+  "corpus_comparison_fields": [
+    "status",
+    "length",
+    "on_bits"
+  ],
+  "corpus_branch_names": [
+    "default",
+    "tautomeric",
+    "width_1",
+    "width_7_tautomeric_collision",
+    "width_127",
+    "atom_counts_zeroed",
+    "atom_counts_prepopulated",
+    "set_only_bits_zero",
+    "set_only_bits_all",
+    "set_only_bits_sparse"
+  ],
+  "corpus_exclusions": {
+    "set_only_bits_wrong_width": "invalid-width precondition coverage is exhaustive in the focused and maintained-corpus gates; the project-native public facade deliberately omits this source-only inert argument"
+  },
+  "branches": [
+    {
+      "name": "default",
+      "fpSize": 2048,
+      "tautomericFingerprint": false,
+      "atomCounts": "none",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "tautomeric",
+      "fpSize": 2048,
+      "tautomericFingerprint": true,
+      "atomCounts": "none",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "width_1",
+      "fpSize": 1,
+      "tautomericFingerprint": false,
+      "atomCounts": "none",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "width_7_tautomeric_collision",
+      "fpSize": 7,
+      "tautomericFingerprint": true,
+      "atomCounts": "none",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "width_127",
+      "fpSize": 127,
+      "tautomericFingerprint": false,
+      "atomCounts": "none",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "atom_counts_zeroed",
+      "fpSize": 257,
+      "tautomericFingerprint": false,
+      "atomCounts": "zeroed",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "atom_counts_prepopulated",
+      "fpSize": 257,
+      "tautomericFingerprint": true,
+      "atomCounts": "index_plus_11",
+      "setOnlyBits": "none"
+    },
+    {
+      "name": "set_only_bits_zero",
+      "fpSize": 257,
+      "tautomericFingerprint": false,
+      "atomCounts": "none",
+      "setOnlyBits": "zero"
+    },
+    {
+      "name": "set_only_bits_all",
+      "fpSize": 257,
+      "tautomericFingerprint": true,
+      "atomCounts": "none",
+      "setOnlyBits": "all"
+    },
+    {
+      "name": "set_only_bits_sparse",
+      "fpSize": 257,
+      "tautomericFingerprint": false,
+      "atomCounts": "index_plus_11",
+      "setOnlyBits": "sparse"
+    },
+    {
+      "name": "set_only_bits_wrong_width",
+      "fpSize": 257,
+      "tautomericFingerprint": false,
+      "atomCounts": "none",
+      "setOnlyBits": "wrong_width"
+    }
+  ]
+}

@@ -208,3 +208,45 @@ def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() 
     assert ast.unparse(result_methods["atom_counts"].returns) == (
         "typing.Optional[builtins.list[builtins.int]]"
     )
+
+
+def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
+    module = _stub_module()
+    cases = [
+        (
+            "Molecule",
+            "pattern_fingerprint",
+            ["self", "n_bits", "tautomeric"],
+            "Fingerprint",
+            "(self, /, n_bits=2048, tautomeric=False)",
+        ),
+        (
+            "MoleculeBatch",
+            "pattern_fingerprint_list",
+            ["self", "n_bits", "tautomeric", "n_jobs", "progress_bar"],
+            "builtins.list[typing.Optional[Fingerprint]]",
+            "(self, /, n_bits=2048, tautomeric=False, n_jobs=None, progress_bar=None)",
+        ),
+    ]
+
+    for class_name, method_name, arguments, return_annotation, runtime_signature in cases:
+        class_node = _stub_class(module, class_name)
+        methods = [
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == method_name
+        ]
+        assert len(methods) == 1
+        method = methods[0]
+        assert [argument.arg for argument in method.args.args] == arguments
+        assert len(method.args.defaults) == len(arguments) - 1
+        assert all(
+            isinstance(default, ast.Constant) and default.value is Ellipsis
+            for default in method.args.defaults[:2]
+        )
+        assert method.returns is not None
+        assert ast.unparse(method.returns) == return_annotation
+
+        runtime_method = getattr(getattr(cosmolkit, class_name), method_name)
+        assert str(inspect.signature(runtime_method)) == runtime_signature

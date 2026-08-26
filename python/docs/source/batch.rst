@@ -132,12 +132,15 @@ Derived Outputs
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
+   patterns = prepared.pattern_fingerprint_list(n_bits=2048, tautomeric=False)
    atom_pairs = prepared.fingerprint_atom_pair_list(n_bits=2048)
 
-Morgan and AtomPair batch APIs use the same source-backed generator cores as
+Morgan, Pattern, and AtomPair batch APIs use the same source-backed cores as
 the single-molecule APIs, preserve record order, and are covered by exact
-pinned-RDKit parity tests. Topological Torsion exposes the same ordered bulk
-execution through its generator methods. Morgan and AtomPair can also collect
+pinned-RDKit parity tests. Pattern batch calls reuse the fixed compile-once
+SMARTS table and return one result per input; they are not the separate RDKit
+``MolBundle`` intersection operation. Topological Torsion exposes the same
+ordered bulk execution through its generator methods. Morgan and AtomPair can also collect
 provenance through the following ``MoleculeBatch`` conveniences:
 
 .. code-block:: python

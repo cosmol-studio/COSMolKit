@@ -6350,14 +6350,40 @@ mod tests {
     }
 
     #[test]
-    fn layered_query_complexity_helpers_match_source() {
+    fn query_complexity_classifiers_match_source_across_fingerprint_consumers() {
         let atom = |query| test_atom_with_query(Some(query));
         let number = || QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let atom_type = |atomic_number, aromatic| {
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number,
+                aromatic,
+            })
+        };
         let charge = || QueryNode::predicate(AtomQueryPredicate::FormalCharge(0));
 
+        assert!(!is_complex_atom_query(&test_atom_with_query(None)));
+        assert!(!is_complex_atom_query(&atom(QueryNode::predicate(
+            AtomQueryPredicate::Any,
+        ))));
+        assert!(!is_complex_atom_query(&atom(number())));
+        assert!(!is_complex_atom_query(&atom(atom_type(6, false))));
+        assert!(!is_complex_atom_query(&atom(atom_type(6, true))));
+        assert!(is_complex_atom_query(&atom(QueryNode::not(number()))));
+        assert!(is_complex_atom_query(&atom(QueryNode::or(vec![
+            number(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
+        ]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::xor(vec![
+            number(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
+        ]))));
         assert!(!is_complex_atom_query(&atom(QueryNode::and(vec![
             charge(),
             QueryNode::and(vec![charge(), number()]),
+        ]))));
+        assert!(!is_complex_atom_query(&atom(QueryNode::and(vec![
+            charge(),
+            QueryNode::and(vec![atom_type(6, false), charge()]),
         ]))));
         assert!(is_complex_atom_query(&atom(QueryNode::and(vec![
             charge(),
@@ -6368,9 +6394,20 @@ mod tests {
             QueryNode::not(charge()),
         ]))));
         assert!(is_complex_atom_query(&atom(QueryNode::and(Vec::new()))));
+        assert!(is_complex_atom_query(&atom(QueryNode::predicate(
+            AtomQueryPredicate::AtomicNumberIn(vec![6, 8]),
+        ))));
+        assert!(is_complex_atom_query(&atom(QueryNode::predicate(
+            AtomQueryPredicate::AtomicNumberNotIn(vec![6, 8]),
+        ))));
 
         let bond = |query| test_bond_with_query(Some(query));
         let order = |value| QueryNode::predicate(BondQueryPredicate::Order(value));
+        assert!(!is_complex_bond_query(&test_bond_with_query(None)));
+        assert!(!is_complex_bond_query(&bond(order(BondOrder::Single))));
+        assert!(!is_complex_bond_query(&bond(QueryNode::predicate(
+            BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Aromatic]),
+        ))));
         assert!(!is_complex_bond_query(&bond(QueryNode::or(vec![
             order(BondOrder::Aromatic),
             order(BondOrder::Single),
@@ -6389,6 +6426,21 @@ mod tests {
         ]))));
         assert!(is_complex_bond_query(&bond(QueryNode::predicate(
             BondQueryPredicate::OrderIn(vec![BondOrder::Aromatic, BondOrder::Single]),
+        ))));
+        assert!(is_complex_bond_query(&bond(QueryNode::predicate(
+            BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
+        ))));
+        assert!(is_complex_bond_query(&bond(QueryNode::not(order(
+            BondOrder::Single,
+        )))));
+        assert!(is_complex_bond_query(&bond(QueryNode::and(vec![order(
+            BondOrder::Single,
+        )]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::xor(vec![order(
+            BondOrder::Single,
+        )]))));
+        assert!(is_complex_bond_query(&bond(QueryNode::predicate(
+            BondQueryPredicate::Any,
         ))));
     }
 

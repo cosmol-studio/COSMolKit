@@ -1,6 +1,7 @@
 use cosmolkit_core::{
-    AvalonFingerprintParams, MaccsFingerprintParams, Molecule, MorganFingerprintParams,
-    TopologicalFingerprintParams,
+    AtomPairFingerprintParams, AvalonFingerprintParams, MaccsFingerprintParams, Molecule,
+    MorganFingerprintParams, PatternFingerprintParams, TopologicalFingerprintParams,
+    TopologicalTorsionFingerprintParams, topological_torsion_fingerprint,
 };
 use rayon::prelude::*;
 
@@ -10,7 +11,11 @@ struct Snapshot {
     avalon: Vec<usize>,
     topological: Vec<usize>,
     morgan: Vec<usize>,
+    atom_pair: Vec<usize>,
+    pattern: Vec<usize>,
+    tautomeric_pattern: Vec<usize>,
     maccs: Vec<usize>,
+    topological_torsion: Vec<usize>,
 }
 
 fn snapshot(molecule: &Molecule) -> Snapshot {
@@ -28,10 +33,31 @@ fn snapshot(molecule: &Molecule) -> Snapshot {
             .morgan_fingerprint(&MorganFingerprintParams::default())
             .expect("Morgan fingerprint")
             .on_bits(),
+        atom_pair: molecule
+            .atom_pair_fingerprint(&AtomPairFingerprintParams::default())
+            .expect("AtomPair fingerprint")
+            .on_bits(),
+        pattern: molecule
+            .pattern_fingerprint(&PatternFingerprintParams::default())
+            .expect("Pattern fingerprint")
+            .on_bits(),
+        tautomeric_pattern: molecule
+            .pattern_fingerprint(&PatternFingerprintParams {
+                n_bits: 257,
+                tautomeric: true,
+            })
+            .expect("tautomeric Pattern fingerprint")
+            .on_bits(),
         maccs: molecule
             .maccs_fingerprint(&MaccsFingerprintParams::default())
             .expect("MACCS fingerprint")
             .on_bits(),
+        topological_torsion: topological_torsion_fingerprint(
+            molecule,
+            &TopologicalTorsionFingerprintParams::default(),
+        )
+        .expect("Topological Torsion fingerprint")
+        .on_bits(),
     }
 }
 
@@ -52,9 +78,19 @@ fn fingerprint_families_are_order_independent_and_non_mutating() {
 
     for molecule in &molecules {
         let _ = molecule.avalon_fingerprint(&AvalonFingerprintParams::default());
+        let _ = molecule.pattern_fingerprint(&PatternFingerprintParams {
+            n_bits: 257,
+            tautomeric: true,
+        });
         let _ = molecule.morgan_fingerprint(&MorganFingerprintParams::default());
+        let _ = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default());
         let _ = molecule.topological_fingerprint(&TopologicalFingerprintParams::default());
+        let _ = topological_torsion_fingerprint(
+            molecule,
+            &TopologicalTorsionFingerprintParams::default(),
+        );
         let _ = molecule.maccs_fingerprint(&MaccsFingerprintParams::default());
+        let _ = molecule.pattern_fingerprint(&PatternFingerprintParams::default());
         let _ = molecule.maccs_fingerprint(&MaccsFingerprintParams::default());
         let _ = molecule.avalon_fingerprint(&AvalonFingerprintParams::default());
     }

@@ -1230,6 +1230,13 @@ impl Molecule {
         crate::fingerprint::atom_pair_fingerprint_with_output(self, params)
     }
 
+    pub fn pattern_fingerprint(
+        &self,
+        params: &crate::PatternFingerprintParams,
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
+        crate::fingerprint::pattern_fingerprint(self, params)
+    }
+
     pub fn topological_fingerprint(
         &self,
         params: &crate::fingerprint::TopologicalFingerprintParams,

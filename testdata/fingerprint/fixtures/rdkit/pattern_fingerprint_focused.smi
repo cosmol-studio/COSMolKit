@@ -1,0 +1,19 @@
+# Pattern fingerprint focused inputs. The first field selects the pinned parser.
+smiles	C
+smiles	CC
+smiles	CCCO
+smiles	CC(C)O
+smiles	CC.CN
+smiles	C1CCCCC1
+smiles	c1ccccc1O
+smiles	C1CC2CCC1C2
+smiles	C1CCC2(CC1)CCCC2
+smiles	O=[N+]([O-])c1ccccc1
+smiles	[13CH3][C@H](F)Cl
+smiles	[H]C([H])([H])C
+smarts	[*]
+smarts	[C,N]
+smarts	C~N
+smarts	C-,=N
+smarts	[R]1@[R]@[R]1
+smarts	[$(C=O),N;H1]

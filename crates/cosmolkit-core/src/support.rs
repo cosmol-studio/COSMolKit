@@ -189,6 +189,16 @@ pub const ATOM_PAIR_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Provide the source-backed AtomPair sparse-count, folded-count, sparse-bit, explicit-bit, AdditionalOutput, 2D/3D distance, chirality, selector, custom-invariant, count-simulation, metadata/JSON, and ordered batch branches through one generator core. Exact validation covers every mutually parseable ChEMBL 37 record across ten profiles and 118,809,964 comparisons against pinned RDKit.",
 };
 
+pub const PATTERN_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.pattern",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Provide the source-backed ordinary-molecule Pattern fingerprint with the fixed 13-query table, ordinary and tautomer-aware hashing, query-bearing molecule behavior, variable nonzero widths, and ordered batch execution through one compile-once core. Focused, small, maintained 5,000-row, and complete ChEMBL 37 validation covers ten full-corpus profiles and 28,978,040 exact comparisons against pinned RDKit. RDKit identifies Pattern version 1.0.0 as experimental; the separate MolBundle intersection overload remains outside COSMolKit's molecule and ordered-batch model.",
+};
+
 pub const TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     name: "fingerprint.topological_torsion",
     category: FeatureCategory::Fingerprint,
@@ -367,6 +377,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
     &ATOM_PAIR_FINGERPRINT_FEATURE,
+    &PATTERN_FINGERPRINT_FEATURE,
     &TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
     &AVALON_FINGERPRINT_FEATURE,
     &LAYERED_FINGERPRINT_FEATURE,
@@ -408,7 +419,9 @@ pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {
 
 #[cfg(test)]
 mod tests {
-    use super::{ATOM_PAIR_FINGERPRINT_FEATURE, PUBLIC_FEATURES, SupportStatus};
+    use super::{
+        ATOM_PAIR_FINGERPRINT_FEATURE, PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, SupportStatus,
+    };
 
     #[test]
     fn atom_pair_support_metadata_records_the_validated_rdkit_boundary() {
@@ -421,7 +434,22 @@ mod tests {
         assert!(
             PUBLIC_FEATURES
                 .iter()
-                .any(|feature| std::ptr::eq(*feature, &ATOM_PAIR_FINGERPRINT_FEATURE))
+                .any(|feature| **feature == ATOM_PAIR_FINGERPRINT_FEATURE)
+        );
+    }
+
+    #[test]
+    fn pattern_support_metadata_records_the_validated_rdkit_boundary() {
+        assert_eq!(
+            PATTERN_FINGERPRINT_FEATURE.status,
+            SupportStatus::SupportedWithRdkitParity {
+                rdkit_version: "2026.03.1",
+            }
+        );
+        assert!(
+            PUBLIC_FEATURES
+                .iter()
+                .any(|feature| **feature == PATTERN_FINGERPRINT_FEATURE)
         );
     }
 }

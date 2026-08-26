@@ -21,10 +21,10 @@ empty.
 
 ## [Unreleased]
 
-This release adds the public modern RDKit CIPLabeler and source-backed Layered
-fingerprints, and completes the ordinary-molecule SMARTS parser, query, writer,
-and substructure-matching path through source-backed Rust implementations with
-explicit state lifecycle and pinned parity validation.
+This release adds the public modern RDKit CIPLabeler and source-backed Pattern
+and Layered fingerprints, and completes the ordinary-molecule SMARTS parser,
+query, writer, and substructure-matching path through source-backed Rust
+implementations with explicit state lifecycle and pinned parity validation.
 
 ### Added
 
@@ -50,6 +50,14 @@ explicit state lifecycle and pinned parity validation.
   including all six active layers, linear and branched rooted paths, masks,
   seeded atom counts, structured errors, complete result state, and ordered
   batch execution through the sole shared fingerprint core.
+- Added source-backed ordinary-molecule Pattern fingerprints in Rust and
+  Python with the 13 pinned built-in SMARTS patterns, ordinary and
+  tautomer-aware hashing, query-bearing molecule behavior, configurable
+  nonzero widths, and ordered parallel batch execution through one
+  compile-once table and one shared core.
+- Added deterministic Pattern oracle generation, focused/small/5,000-row exact
+  regression gates, screening and architecture guards, composition tests, a
+  reproducible ChEMBL 37 phase, and representative cross-engine benchmarks.
 
 ### Changed
 
@@ -116,6 +124,20 @@ explicit state lifecycle and pinned parity validation.
   rows, 92,808 branch executions, and 278,424 exact output-field comparisons.
   They cover every active layer, path/root mode, mask, seeded-count state,
   query branch, structured error, scalar/batch form, and composition path.
+- The complete Pattern audit processed all 2,897,819 ChEMBL 37 records over
+  128/128 deterministic shards. All 2,897,804 mutually parseable records
+  matched RDKit `2026.03.1` revision
+  `351f8f378f8ad6bbd517980c38896e66bf907af8` across ten complete profiles,
+  totaling 28,978,040 exact vectors with zero mismatch; 15 records were
+  rejected by both parsers.
+- Pattern validation covers default and tautomeric output, query-bearing
+  graphs, boundary and collision-heavy widths, source-inert count/mask
+  arguments, exact errors, screening containment, immutability, ordering,
+  concurrency, and interleaving with every implemented fingerprint family.
+  RDKit's separate `MolBundle` intersection overload remains outside the
+  ordinary molecule and ordered batch model. The behavioral parity claim does
+  not include performance parity: representative warm benchmarks retain a
+  measured `1.508-3.104x` constant-factor runtime gap.
 
 ## [0.2.13] - 2026-08-24
 

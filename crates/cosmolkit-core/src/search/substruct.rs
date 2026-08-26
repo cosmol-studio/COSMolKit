@@ -3564,9 +3564,25 @@ fn substruct_match_impl_with_recursive_cache(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
 ) -> SubstructMatchResultList {
+    let query_ctx = build_query_match_context(mol);
+    substruct_match_impl_with_recursive_cache_and_context(
+        mol,
+        query,
+        params,
+        recursive_cache,
+        &query_ctx,
+    )
+}
+
+fn substruct_match_impl_with_recursive_cache_and_context(
+    mol: &Molecule,
+    query: &Molecule,
+    params: &SubstructMatchParams,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+    query_ctx: &QueryMatchContext,
+) -> SubstructMatchResultList {
     let m_num_atoms = mol.num_atoms();
     let q_num_atoms = query.num_atoms();
-    let query_ctx = build_query_match_context(mol);
 
     // RDKit source (SubstructMatch.cpp):
     //   if (!mNumAtoms || !qNumAtoms || qNumAtoms > mNumAtoms) {
@@ -3586,11 +3602,11 @@ fn substruct_match_impl_with_recursive_cache(
     //   detail::BondLabelFunctor bondLabeler(query, mol, params);
     //   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
     let atom_fn = |qi: usize, mj: usize| -> bool {
-        atom_label_matches(query, mol, qi, mj, params, recursive_cache, &query_ctx)
+        atom_label_matches(query, mol, qi, mj, params, recursive_cache, query_ctx)
     };
 
     let bond_fn = |qei: usize, mei: usize| -> bool {
-        bond_label_matches(query, mol, qei, mei, params, &query_ctx)
+        bond_label_matches(query, mol, qei, mei, params, query_ctx)
     };
 
     // RDKit source:
@@ -4386,6 +4402,33 @@ pub fn try_get_substruct_matches_with_params(
     params: &SubstructMatchParams,
 ) -> SubstructMatchResultList {
     substruct_match_impl(mol, query, params)
+}
+
+pub(crate) fn try_get_substruct_matches_with_params_and_context(
+    mol: &Molecule,
+    query: &Molecule,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+) -> SubstructMatchResultList {
+    // This narrow entry retains the canonical preflight, recursive-query
+    // preparation, VF2 implementation, final checks, and result ordering. It
+    // only lets callers that run several immutable queries against one target
+    // reuse the target-derived match context, as RDKit reuses ROMol state.
+    preflight_query_molecule(query)?;
+    if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
+        return Ok(Vec::new());
+    }
+    let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
+    if params.recursion_possible {
+        populate_recursive_query_match_cache(mol, query, params, &mut recursive_locker.cache)?;
+    }
+    substruct_match_impl_with_recursive_cache_and_context(
+        mol,
+        query,
+        params,
+        Some(&recursive_locker.cache),
+        query_context,
+    )
 }
 
 // ---------------------------------------------------------------------------

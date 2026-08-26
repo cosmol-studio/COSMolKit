@@ -2,13 +2,14 @@ Fingerprints
 ============
 
 .. meta::
-   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, AtomPair, Topological Torsion, MACCS, RDKFingerprint, Avalon, and Layered bit and count vectors with explicit RDKit parity boundaries.
+   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, Pattern, AtomPair, Topological Torsion, MACCS, RDKFingerprint, Avalon, and Layered bit and count vectors with explicit RDKit parity boundaries.
 
 COSMolKit exposes fixed-length bit vectors plus the source-defined sparse bit
 and count forms used by AtomPair. The exposed Morgan and MACCS branches are
 covered by strict RDKit bit-identical parity tests. The source-backed
-topological, Avalon, Layered, AtomPair, and Topological Torsion implementations
-follow their pinned upstream algorithms and exact maintained-corpus validation.
+topological, Avalon, Pattern, Layered, AtomPair, and Topological Torsion
+implementations follow their pinned upstream algorithms and exact
+maintained-corpus validation.
 Similarity-shape correlation or structurally similar hashing is not a
 compatibility claim. The Python ``Fingerprint`` object is a sparse view over
 the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
@@ -272,6 +273,53 @@ terminate the process for ordinary acyclic molecules. COSMolKit does not copy
 that crash. It applies the source header's documented bond-path semantics, the
 same semantics used by the valid rooted linear branch. This is an explicit
 process-safety compatibility difference, not a chemistry fallback.
+
+Pattern fingerprints
+--------------------
+
+``Molecule.pattern_fingerprint()`` reproduces RDKit's ordinary-molecule
+Pattern fingerprint using the fixed, source-ordered table of 13 SMARTS
+queries. The default result has 2,048 bits. ``tautomeric=True`` enables the
+source's tautomer-aware structural hash for single, double, and aromatic bond
+states:
+
+.. code-block:: python
+
+   mol = Molecule.from_smiles("c1ccccc1O")
+
+   pattern = mol.pattern_fingerprint()
+   tautomeric_pattern = mol.pattern_fingerprint(
+       n_bits=2048,
+       tautomeric=True,
+   )
+
+   print(pattern.on_bits())
+   print(tautomeric_pattern.on_bits())
+
+The call is value-style and does not mutate the molecule. Query-bearing
+molecules are supported and follow the source's Pattern-specific atom and bond
+suppression rules. The compiled SMARTS table is shared across repeated,
+concurrent, scalar, and batch calls; Pattern calls can be interleaved with the
+other fingerprint families without shared option state.
+
+``n_bits`` must be greater than zero. SMARTS-compilation and substructure
+matching failures remain typed exceptions rather than selecting another
+fingerprint algorithm. RDKit labels Pattern fingerprint version ``1.0.0``
+experimental; COSMolKit preserves that upstream metadata while its documented
+ordinary-molecule boundary is tested exactly against the pinned source.
+
+The pinned RDKit ordinary overload accepts ``atomCounts`` and ``setOnlyBits``
+but only validates their sizes; their values are otherwise unused and
+unchanged. COSMolKit intentionally omits those inert arguments instead of
+presenting them as functional options. RDKit's separate ``MolBundle`` overload
+intersects member fingerprints. COSMolKit does not expose it because an
+ordered ``MoleculeBatch`` returns one result per record and is not a bundle.
+
+The committed focused, small, and 5,000-row matrices cover query inputs,
+tautomer mode, boundary and collision-prone widths, inert-argument behavior,
+and exact validation errors. The complete ChEMBL 37 audit compares ten full
+profiles across all 2,897,804 mutually parseable records: 28,978,040 exact
+vectors with zero mismatch.
 
 AtomPair fingerprints
 ---------------------

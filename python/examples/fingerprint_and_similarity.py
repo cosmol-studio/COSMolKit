@@ -19,6 +19,8 @@ topological_output = mol.topological_fingerprint_with_output(
     bit_info=True,
 )
 avalon = mol.avalon_fingerprint(n_bits=512)
+pattern = mol.pattern_fingerprint(n_bits=2048)
+tautomeric_pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=True)
 maccs = mol.maccs_fingerprint()
 atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
 atom_pair_sparse_count = mol.fingerprint_atom_pair_sparse_count()
@@ -46,6 +48,8 @@ print(
 )
 print("topological path entries:", len(topological_output.bit_info()))
 print("Avalon bits:", avalon.on_bits()[:8])
+print("Pattern bits:", pattern.on_bits()[:8])
+print("Tautomeric Pattern bits:", tautomeric_pattern.on_bits()[:8])
 print("MACCS bits:", maccs.on_bits()[:8])
 print("AtomPair bits:", atom_pair.on_bits()[:8])
 print(

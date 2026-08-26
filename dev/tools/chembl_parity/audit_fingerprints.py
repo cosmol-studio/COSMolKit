@@ -271,6 +271,104 @@ def compare_avalon(
         audit.compare(f"avalon.{name}", record, rd_value, ck_value)
 
 
+def validate_pattern_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    if profile.get("schema_version") != 1:
+        raise ValueError("Pattern profile schema_version must be 1")
+    if profile.get("rdkit_version") != "2026.3.1":
+        raise ValueError("Pattern profile RDKit version must be 2026.3.1")
+    if profile.get("fingerprint_version") != "1.0.0":
+        raise ValueError("Pattern fingerprint version must be 1.0.0")
+    if profile.get("corpus_comparison_fields") != ["status", "length", "on_bits"]:
+        raise ValueError("Pattern corpus comparison fields must be exact")
+    branches = profile.get("branches")
+    if not isinstance(branches, list) or not branches:
+        raise ValueError("Pattern profile branches must be a nonempty list")
+    required = {
+        "name",
+        "fpSize",
+        "tautomericFingerprint",
+        "atomCounts",
+        "setOnlyBits",
+    }
+    if any(not isinstance(branch, dict) or not required <= set(branch) for branch in branches):
+        raise ValueError("Pattern branches are missing required fields")
+    by_name = {str(branch["name"]): branch for branch in branches}
+    if len(by_name) != len(branches):
+        raise ValueError("Pattern branch names must be unique")
+    names = profile.get("corpus_branch_names")
+    if (
+        not isinstance(names, list)
+        or not names
+        or not all(isinstance(name, str) and name in by_name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise ValueError("Pattern corpus branch names must be unique known branches")
+    selected = [by_name[name] for name in names]
+    if any(branch["setOnlyBits"] == "wrong_width" for branch in selected):
+        raise ValueError("Pattern corpus branches cannot include invalid-width profiles")
+    return selected
+
+
+def make_pattern_atom_counts(molecule: Chem.Mol, state: str) -> list[int] | None:
+    if state == "none":
+        return None
+    if state == "zeroed":
+        return [0] * molecule.GetNumAtoms()
+    if state == "index_plus_11":
+        return [index + 11 for index in range(molecule.GetNumAtoms())]
+    raise ValueError(f"unknown Pattern atomCounts state: {state}")
+
+
+def make_pattern_set_only_bits(n_bits: int, state: str) -> Any:
+    if state == "none":
+        return None
+    width = n_bits + 1 if state == "wrong_width" else n_bits
+    mask = DataStructs.ExplicitBitVect(width)
+    if state == "all":
+        for bit in range(width):
+            mask.SetBit(bit)
+    elif state == "sparse":
+        for bit in (0, width // 2, width - 1):
+            mask.SetBit(bit)
+    elif state not in {"zero", "wrong_width"}:
+        raise ValueError(f"unknown Pattern setOnlyBits state: {state}")
+    return mask
+
+
+def compare_pattern(
+    audit: Audit,
+    record: dict[str, Any],
+    rd_mol: Chem.Mol,
+    ck_mol: Any,
+    branches: list[dict[str, Any]],
+) -> None:
+    for branch in branches:
+        name = str(branch["name"])
+        n_bits = int(branch["fpSize"])
+        tautomeric = bool(branch["tautomericFingerprint"])
+        atom_counts = make_pattern_atom_counts(rd_mol, str(branch["atomCounts"]))
+        mask = make_pattern_set_only_bits(n_bits, str(branch["setOnlyBits"]))
+        audit.compare(
+            f"pattern.{name}",
+            record,
+            capture_bit_fingerprint(
+                lambda: Chem.PatternFingerprint(
+                    rd_mol,
+                    n_bits,
+                    [] if atom_counts is None else atom_counts,
+                    mask,
+                    tautomeric,
+                )
+            ),
+            capture_bit_fingerprint(
+                lambda: ck_mol.pattern_fingerprint(
+                    n_bits=n_bits,
+                    tautomeric=tautomeric,
+                )
+            ),
+        )
+
+
 def layered_branches(profile: dict[str, Any]) -> list[dict[str, Any]]:
     if profile.get("schema_version") != 1:
         raise ValueError("Layered profile schema_version must be 1")
@@ -844,11 +942,18 @@ def main() -> None:
     parser.add_argument("--topological-profile", type=Path, required=True)
     parser.add_argument("--avalon-profile", type=Path, required=True)
     parser.add_argument("--atom-pair-profile", type=Path, required=True)
+    parser.add_argument("--pattern-profile", type=Path, required=True)
     parser.add_argument("--topological-torsion-profile", type=Path, required=True)
     parser.add_argument("--layered-profile", type=Path, required=True)
     parser.add_argument(
         "--mode",
-        choices=("topological_avalon", "atom_pair", "topological_torsion", "layered"),
+        choices=(
+            "topological_avalon",
+            "atom_pair",
+            "pattern",
+            "topological_torsion",
+            "layered",
+        ),
         required=True,
     )
     parser.add_argument("--limit", type=int)
@@ -870,12 +975,14 @@ def main() -> None:
     topological_profile = load_json(args.topological_profile)
     avalon_profile = load_json(args.avalon_profile)
     atom_pair_profile = load_json(args.atom_pair_profile)
+    pattern_profile = load_json(args.pattern_profile)
     topological_torsion_profile = load_json(args.topological_torsion_profile)
     layered_profile = load_json(args.layered_profile)
     topological_branches = topological_profile["branches"]
     avalon_branches = avalon_profile["corpus_branches"]
     atom_pair_branches = atom_pair_profile["branches"]
     atom_pair_generators = make_atom_pair_generators(atom_pair_branches)
+    pattern_branches = validate_pattern_profile(pattern_profile)
     topological_torsion_branches = topological_torsion_profile["corpus_branches"]
     complete_layered_branches = layered_branches(layered_profile)
     rdkit_torsion_generators, cosmolkit_torsion_generators = (
@@ -933,6 +1040,8 @@ def main() -> None:
                         atom_pair_branches,
                         atom_pair_generators,
                     )
+                elif args.mode == "pattern":
+                    compare_pattern(audit, record, rd_mol, ck_mol, pattern_branches)
                 elif args.mode == "topological_torsion":
                     compare_topological_torsion(
                         audit,
@@ -968,6 +1077,8 @@ def main() -> None:
                     ),
                 }
                 if args.mode == "atom_pair"
+                else {"pattern": len(pattern_branches)}
+                if args.mode == "pattern"
                 else {
                     "topological_torsion_sparse_count": len(topological_torsion_branches),
                     "topological_torsion_count": len(topological_torsion_branches),

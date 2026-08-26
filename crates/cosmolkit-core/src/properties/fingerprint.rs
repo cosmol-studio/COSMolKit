@@ -11,6 +11,7 @@ use serde_json::Value;
 
 mod atom_pair;
 pub(crate) mod generator;
+mod pattern;
 
 pub(crate) use atom_pair::atom_pair_function_arguments;
 pub use atom_pair::{
@@ -18,6 +19,7 @@ pub use atom_pair::{
     AtomPairFingerprintOutput, AtomPairFingerprintParams, atom_pair_fingerprint,
     atom_pair_fingerprint_with_output,
 };
+pub use pattern::{PATTERN_FINGERPRINT_VERSION, PatternFingerprintParams, pattern_fingerprint};
 
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 // Copied source lines appear as:  // RDKit<beh><perf>: ...
@@ -4179,6 +4181,18 @@ pub struct Fingerprint {
 }
 
 impl Fingerprint {
+    pub(crate) fn zeroed(n_bits: usize) -> Self {
+        Self {
+            bits: vec![0; n_bits.div_ceil(64)],
+            n_bits,
+        }
+    }
+
+    pub(crate) fn set_bit(&mut self, bit: usize) {
+        debug_assert!(bit < self.n_bits);
+        self.bits[bit / 64] |= 1u64 << (bit % 64);
+    }
+
     pub(crate) fn from_lsb_bytes(n_bits: usize, bytes: &[u8]) -> Self {
         let mut bits = vec![0; n_bits.div_ceil(64)];
         for (byte_index, &byte) in bytes.iter().enumerate() {
@@ -4266,6 +4280,8 @@ pub enum FingerprintError {
     RingPreparation { reason: String },
     #[error("AtomPair fingerprint generation failed: {reason}")]
     AtomPair { reason: String },
+    #[error("Pattern fingerprint generation failed: {reason}")]
+    Pattern { reason: String },
     #[error("sparse fingerprint index {index} is outside vector length {size}")]
     SparseIndexOutOfRange { index: u64, size: u64 },
     #[error(transparent)]

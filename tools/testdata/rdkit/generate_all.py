@@ -32,6 +32,8 @@ PROFILE_INPUTS = {
     / "testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi",
     "layered_focused": REPO_ROOT
     / "testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi",
+    "pattern_focused": REPO_ROOT
+    / "testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
     "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
@@ -221,6 +223,13 @@ GENERATOR_SPECS = [
         "fingerprint",
         {"default", "strict-corpus", "fingerprint", "atom-pair"},
         generator_dependencies=("atom_pair_fingerprint_profile.json",),
+    ),
+    spec(
+        "pattern_fingerprint_golden",
+        "pattern_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint", "pattern"},
+        generator_dependencies=("pattern_fingerprint_profile.json",),
     ),
     spec(
         "maccs_fingerprint_golden",

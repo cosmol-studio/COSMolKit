@@ -3381,6 +3381,35 @@ Return the number of invalid records.
         self.inner.invalid_count()
     }
 
+    #[pyo3(signature = (n_bits=2048, tautomeric=false, n_jobs=None, progress_bar=None))]
+    #[doc = r#"
+Return ordered Pattern fingerprints for valid batch records.
+
+Invalid input records remain ``None`` at their original positions. The
+fingerprints use the same source-backed core and compile-once Pattern query
+table as ``Molecule.pattern_fingerprint``. This ordered batch operation returns
+one result per input; it is not RDKit's distinct ``MolBundle`` intersection
+overload.
+"#]
+    fn pattern_fingerprint_list(
+        &self,
+        n_bits: usize,
+        tautomeric: bool,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        let params = cosmolkit_core::PatternFingerprintParams { n_bits, tautomeric };
+        self.inner
+            .pattern_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         n_bits=2048,
@@ -6048,6 +6077,29 @@ mutate the source molecule.
         let params = make_avalon_fingerprint_params(n_bits, is_query, bit_flags);
         self.inner
             .avalon_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (n_bits=2048, tautomeric=false))]
+    #[doc = r#"
+Return the source-backed Pattern fingerprint without mutating the molecule.
+
+``tautomeric=True`` enables the pinned source's tautomer-aware structural
+hashing. ``n_bits`` must be greater than zero. Query-bearing molecules follow
+the source's Pattern-specific query suppression rules, and all calls reuse one
+compile-once table of 13 built-in SMARTS queries.
+
+RDKit identifies Pattern fingerprint version 1.0.0 as experimental. COSMolKit
+preserves that upstream metadata while validating this ordinary-molecule
+boundary exactly. The source's inert ``atomCounts`` and ``setOnlyBits``
+arguments are intentionally omitted, and the distinct ``MolBundle``
+intersection overload is not represented by this scalar API.
+"#]
+    fn pattern_fingerprint(&self, n_bits: usize, tautomeric: bool) -> PyResult<Fingerprint> {
+        let params = cosmolkit_core::PatternFingerprintParams { n_bits, tautomeric };
+        self.inner
+            .pattern_fingerprint(&params)
             .map(|inner| Fingerprint { inner })
             .map_err(fingerprint_pyerr)
     }

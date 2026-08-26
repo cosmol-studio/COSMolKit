@@ -57,6 +57,7 @@ SCRIPT_MODES = {
     "audit_fingerprints.py": {
         "atom_pair",
         "layered",
+        "pattern",
         "topological_avalon",
         "topological_torsion",
     },
@@ -303,6 +304,7 @@ def build_identity(
                 / "tools/testdata/rdkit/rdkit_topological_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/avalon_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json",
+                root / "tools/testdata/rdkit/pattern_fingerprint_profile.json",
                 root
                 / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/layered_fingerprint_profile.json",
@@ -388,6 +390,8 @@ def command_for(
                 str(root / "tools/testdata/rdkit/avalon_fingerprint_profile.json"),
                 "--atom-pair-profile",
                 str(root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json"),
+                "--pattern-profile",
+                str(root / "tools/testdata/rdkit/pattern_fingerprint_profile.json"),
                 "--topological-torsion-profile",
                 str(
                     root
