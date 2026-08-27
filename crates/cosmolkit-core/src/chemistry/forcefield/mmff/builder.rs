@@ -7,7 +7,7 @@ use crate::chemistry::forcefield::core::ForceFieldVec3;
 use crate::chemistry::forcefield::torsion_query::{
     DEFAULT_TORSION_BOND_SMARTS, TorsionBondQueryError, match_torsion_bonds,
 };
-use crate::chemistry::mol_transforms::{MolTransformError, get_atom_positions};
+use crate::chemistry::mol_transforms::MolTransformError;
 use crate::notation::fragment::{get_fragment_atom_mapping, get_mol_frags};
 use crate::{AdjacencyList, Hybridization, Molecule};
 
@@ -122,7 +122,7 @@ pub(crate) fn construct_force_field_with_props(
     // RDKit✔️❌:   // add the atomic positions:
     // RDKit✔️❌:   Conformer &conf = mol.getConformer(confId);
     let conf_index = select_mmff_conformer_index(mol, conf_id)?;
-    let positions = get_atom_positions(mol, conf_index)?;
+    let positions = mol.conformers_3d()[conf_index].coordinates();
     // RDKit✔️❌:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
     for coords in positions {
         // RDKit✔️❌:     res->positions().push_back(&(conf.getAtomPos(i)));

@@ -1350,6 +1350,341 @@ pub(crate) struct Molecule {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AlignmentAtomMap", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "A probe-to-reference atom pair used by molecular alignment."]
+struct PyAlignmentAtomMap {
+    probe_atom: usize,
+    reference_atom: usize,
+}
+
+impl From<cosmolkit_core::AlignmentAtomMap> for PyAlignmentAtomMap {
+    fn from(value: cosmolkit_core::AlignmentAtomMap) -> Self {
+        Self {
+            probe_atom: value.probe_atom,
+            reference_atom: value.reference_atom,
+        }
+    }
+}
+
+impl From<&PyAlignmentAtomMap> for cosmolkit_core::AlignmentAtomMap {
+    fn from(value: &PyAlignmentAtomMap) -> Self {
+        Self {
+            probe_atom: value.probe_atom,
+            reference_atom: value.reference_atom,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyAlignmentAtomMap {
+    #[new]
+    fn new(probe_atom: usize, reference_atom: usize) -> Self {
+        Self {
+            probe_atom,
+            reference_atom,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AlignmentAtomMap(probe_atom={}, reference_atom={})",
+            self.probe_atom, self.reference_atom
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AlignmentParameters", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Parameters for an explicit or first-match molecular alignment."]
+struct PyAlignmentParameters {
+    probe_conformer_id: i32,
+    reference_conformer_id: i32,
+    atom_map: Option<Vec<PyAlignmentAtomMap>>,
+    weights: Option<Vec<f64>>,
+    reflect: bool,
+    max_iterations: u32,
+}
+
+impl PyAlignmentParameters {
+    fn core_parameters(&self) -> cosmolkit_core::AlignmentParameters {
+        cosmolkit_core::AlignmentParameters {
+            probe_conformer_id: self.probe_conformer_id,
+            reference_conformer_id: self.reference_conformer_id,
+            atom_map: self
+                .atom_map
+                .as_ref()
+                .map(|map| map.iter().map(Into::into).collect()),
+            weights: self.weights.clone(),
+            reflect: self.reflect,
+            max_iterations: self.max_iterations,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyAlignmentParameters {
+    #[new]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_map=None, weights=None, reflect=false, max_iterations=50))]
+    fn new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_map: Option<Vec<PyAlignmentAtomMap>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+    ) -> Self {
+        Self {
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_map,
+            weights,
+            reflect,
+            max_iterations,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "BestAlignmentParameters", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Parameters for source-compatible best molecular alignment and RMSD."]
+struct PyBestAlignmentParameters {
+    probe_conformer_id: i32,
+    reference_conformer_id: i32,
+    atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    weights: Option<Vec<f64>>,
+    reflect: bool,
+    max_iterations: u32,
+    max_matches: i32,
+    symmetrize_conjugated_terminal_groups: bool,
+    ignore_hydrogens: bool,
+    num_threads: i32,
+}
+
+impl PyBestAlignmentParameters {
+    fn core_parameters(&self) -> cosmolkit_core::BestAlignmentParameters {
+        cosmolkit_core::BestAlignmentParameters {
+            probe_conformer_id: self.probe_conformer_id,
+            reference_conformer_id: self.reference_conformer_id,
+            atom_maps: self
+                .atom_maps
+                .iter()
+                .map(|map| map.iter().map(Into::into).collect())
+                .collect(),
+            weights: self.weights.clone(),
+            reflect: self.reflect,
+            max_iterations: self.max_iterations,
+            max_matches: self.max_matches,
+            symmetrize_conjugated_terminal_groups: self.symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens: self.ignore_hydrogens,
+            num_threads: self.num_threads,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyBestAlignmentParameters {
+    #[new]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, reflect=false, max_iterations=50, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+        ignore_hydrogens: bool,
+        num_threads: i32,
+    ) -> Self {
+        Self {
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_maps: atom_maps.unwrap_or_default(),
+            weights,
+            reflect,
+            max_iterations,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens,
+            num_threads,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AllConformerRmsdParameters", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Parameters accepted by source-compatible all-conformer best RMSD."]
+struct PyAllConformerRmsdParameters {
+    atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    weights: Option<Vec<f64>>,
+    max_matches: i32,
+    symmetrize_conjugated_terminal_groups: bool,
+    ignore_hydrogens: bool,
+    num_threads: i32,
+}
+
+impl PyAllConformerRmsdParameters {
+    fn core_parameters(&self) -> cosmolkit_core::AllConformerRmsdParameters {
+        cosmolkit_core::AllConformerRmsdParameters {
+            atom_maps: self
+                .atom_maps
+                .iter()
+                .map(|map| map.iter().map(Into::into).collect())
+                .collect(),
+            weights: self.weights.clone(),
+            max_matches: self.max_matches,
+            symmetrize_conjugated_terminal_groups: self.symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens: self.ignore_hydrogens,
+            num_threads: self.num_threads,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyAllConformerRmsdParameters {
+    #[new]
+    #[pyo3(signature = (atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
+    fn new(
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+        ignore_hydrogens: bool,
+        num_threads: i32,
+    ) -> Self {
+        Self {
+            atom_maps: atom_maps.unwrap_or_default(),
+            weights,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens,
+            num_threads,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "CoordinateRmsdParameters", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Parameters for RMSD measurement in the existing coordinate frame."]
+struct PyCoordinateRmsdParameters {
+    probe_conformer_id: i32,
+    reference_conformer_id: i32,
+    atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    weights: Option<Vec<f64>>,
+    max_matches: i32,
+    symmetrize_conjugated_terminal_groups: bool,
+}
+
+impl PyCoordinateRmsdParameters {
+    fn core_parameters(&self) -> cosmolkit_core::CoordinateRmsdParameters {
+        cosmolkit_core::CoordinateRmsdParameters {
+            probe_conformer_id: self.probe_conformer_id,
+            reference_conformer_id: self.reference_conformer_id,
+            atom_maps: self
+                .atom_maps
+                .iter()
+                .map(|map| map.iter().map(Into::into).collect())
+                .collect(),
+            weights: self.weights.clone(),
+            max_matches: self.max_matches,
+            symmetrize_conjugated_terminal_groups: self.symmetrize_conjugated_terminal_groups,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyCoordinateRmsdParameters {
+    #[new]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true))]
+    fn new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+    ) -> Self {
+        Self {
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_maps: atom_maps.unwrap_or_default(),
+            weights,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(
+    name = "ConformerAlignmentParameters",
+    get_all,
+    set_all,
+    from_py_object
+)]
+#[derive(Clone)]
+#[doc = "Parameters for aligning selected or all conformers of one molecule."]
+struct PyConformerAlignmentParameters {
+    atom_indices: Option<Vec<usize>>,
+    conformer_ids: Option<Vec<usize>>,
+    weights: Option<Vec<f64>>,
+    reflect: bool,
+    max_iterations: u32,
+}
+
+impl PyConformerAlignmentParameters {
+    fn core_parameters(&self) -> cosmolkit_core::ConformerAlignmentParameters {
+        cosmolkit_core::ConformerAlignmentParameters {
+            atom_indices: self.atom_indices.clone(),
+            conformer_ids: self.conformer_ids.clone(),
+            weights: self.weights.clone(),
+            reflect: self.reflect,
+            max_iterations: self.max_iterations,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyConformerAlignmentParameters {
+    #[new]
+    #[pyo3(signature = (atom_indices=None, conformer_ids=None, weights=None, reflect=false, max_iterations=50))]
+    fn new(
+        atom_indices: Option<Vec<usize>>,
+        conformer_ids: Option<Vec<usize>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+    ) -> Self {
+        Self {
+            atom_indices,
+            conformer_ids,
+            weights,
+            reflect,
+            max_iterations,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "EmbedParameters", skip_from_py_object)]
 #[derive(Clone)]
 struct PyEmbedParameters {
@@ -5235,6 +5570,164 @@ https://github.com/cosmol-studio/COSMolKit/blob/main/dev/tetrahedral_stereo.md
 "#]
     fn tetrahedral_stereo(&self) -> PyResult<Vec<(usize, Vec<Option<usize>>)>> {
         to_python_tetrahedral_stereo(&self.inner)
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Compute the transform aligning this molecule to ``reference`` without mutation.
+
+The returned result contains the RMSD, 4x4 transform, and selected atom map.
+Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
+"#]
+    fn alignment_transform_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(PyAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .alignment_transform_to(&reference.inner, &params)
+            .map(Into::into)
+            .map_err(|err| PyValueError::new_err(format!("alignment_transform_to failed: {err}")))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Return the best source-compatible alignment result without mutating either molecule."]
+    fn best_alignment_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyBestAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(PyBestAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .best_alignment_to(&reference.inner, &params)
+            .map(Into::into)
+            .map_err(|err| PyValueError::new_err(format!("best_alignment_to failed: {err}")))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Return the best aligned RMSD without changing either molecule's coordinates."]
+    fn best_rmsd_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyBestAlignmentParameters>,
+    ) -> PyResult<f64> {
+        let params = params
+            .map(PyBestAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .best_rmsd_to(&reference.inner, &params)
+            .map_err(|err| PyValueError::new_err(format!("best_rmsd_to failed: {err}")))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Measure RMSD in the existing coordinate frame without alignment or mutation.
+
+This method corresponds to RDKit ``CalcRMS`` semantics, including map
+enumeration and optional terminal-group symmetrization.
+"#]
+    fn coordinate_rmsd_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyCoordinateRmsdParameters>,
+    ) -> PyResult<f64> {
+        let params = params
+            .map(PyCoordinateRmsdParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .coordinate_rmsd_to(&reference.inner, &params)
+            .map_err(|err| PyValueError::new_err(format!("coordinate_rmsd_to failed: {err}")))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Return best RMSD values for every ordered triangular conformer pair without mutation."]
+    fn all_conformer_best_rmsds(
+        &self,
+        params: Option<&PyAllConformerRmsdParameters>,
+    ) -> PyResult<Vec<PyConformerRmsd>> {
+        let params = params
+            .map(PyAllConformerRmsdParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .all_conformer_best_rmsds(&params)
+            .map(|values| values.into_iter().map(Into::into).collect())
+            .map_err(|err| PyValueError::new_err(format!("all_conformer_best_rmsds failed: {err}")))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Return a new molecule aligned to ``reference`` together with its alignment result.
+
+The source and reference molecules remain unchanged.
+"#]
+    fn with_alignment_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<(Molecule, PyAlignmentResult)> {
+        let params = params
+            .map(PyAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .with_alignment_to(&reference.inner, &params)
+            .map(|(molecule, result)| (Molecule { inner: molecule }, result.into()))
+            .map_err(|err| PyValueError::new_err(format!("with_alignment_to failed: {err}")))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Align this molecule to ``reference`` in place and return the applied result."]
+    fn align_to_<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        #[gen_stub(override_type(type_repr = "Molecule"))] reference: &Bound<'py, PyAny>,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(PyAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        let reference_inner = if slf.as_ptr() == reference.as_ptr() {
+            slf.inner.clone()
+        } else {
+            reference.extract::<PyRef<'_, Molecule>>()?.inner.clone()
+        };
+        slf.inner
+            .align_to_(&reference_inner, &params)
+            .map(Into::into)
+            .map_err(|err| PyValueError::new_err(format!("align_to_ failed: {err}")))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Return a molecule with aligned conformers and the ordered source RMS report."]
+    fn with_aligned_conformers(
+        &self,
+        params: Option<&PyConformerAlignmentParameters>,
+    ) -> PyResult<(Molecule, PyConformerAlignmentReport)> {
+        let params = params
+            .map(PyConformerAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .with_aligned_conformers_with_params(params)
+            .map(|(molecule, report)| (Molecule { inner: molecule }, report.into()))
+            .map_err(|err| PyValueError::new_err(format!("with_aligned_conformers failed: {err}")))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Align selected or all conformers in place and return the ordered source RMS report."]
+    fn align_conformers_(
+        &mut self,
+        params: Option<&PyConformerAlignmentParameters>,
+    ) -> PyResult<PyConformerAlignmentReport> {
+        let params = params
+            .map(PyConformerAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .align_conformers_with_params_(params)
+            .map(Into::into)
+            .map_err(|err| PyValueError::new_err(format!("align_conformers_ failed: {err}")))
     }
 
     #[pyo3(signature = (coords=None, *, z_policy="ignore"))]
@@ -9338,6 +9831,145 @@ impl TopologicalFingerprintResult {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AlignmentTransform", skip_from_py_object)]
+#[derive(Clone)]
+struct PyAlignmentTransform {
+    matrix: [[f64; 4]; 4],
+}
+
+impl From<cosmolkit_core::AlignmentTransform> for PyAlignmentTransform {
+    fn from(value: cosmolkit_core::AlignmentTransform) -> Self {
+        Self {
+            matrix: value.matrix,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyAlignmentTransform {
+    #[doc = "Return the source-oriented 4x4 homogeneous transform matrix."]
+    fn matrix(&self) -> Vec<Vec<f64>> {
+        self.matrix.iter().map(|row| row.to_vec()).collect()
+    }
+
+    fn __repr__(&self) -> String {
+        "AlignmentTransform(matrix=4x4)".to_string()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AlignmentResult", skip_from_py_object)]
+#[derive(Clone)]
+struct PyAlignmentResult {
+    inner: cosmolkit_core::AlignmentResult,
+}
+
+impl From<cosmolkit_core::AlignmentResult> for PyAlignmentResult {
+    fn from(inner: cosmolkit_core::AlignmentResult) -> Self {
+        Self { inner }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyAlignmentResult {
+    #[doc = "Return the aligned root-mean-square deviation."]
+    fn rmsd(&self) -> f64 {
+        self.inner.rmsd
+    }
+
+    #[doc = "Return the transform mapping probe coordinates onto the reference."]
+    fn transform(&self) -> PyAlignmentTransform {
+        self.inner.transform.into()
+    }
+
+    #[doc = "Return the selected probe-to-reference atom map."]
+    fn atom_map(&self) -> Vec<PyAlignmentAtomMap> {
+        self.inner
+            .atom_map
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AlignmentResult(rmsd={}, mapped_atoms={})",
+            self.inner.rmsd,
+            self.inner.atom_map.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "ConformerRmsd", skip_from_py_object)]
+#[derive(Clone)]
+struct PyConformerRmsd {
+    inner: cosmolkit_core::ConformerRmsd,
+}
+
+impl From<cosmolkit_core::ConformerRmsd> for PyConformerRmsd {
+    fn from(inner: cosmolkit_core::ConformerRmsd) -> Self {
+        Self { inner }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyConformerRmsd {
+    fn probe_conformer_id(&self) -> usize {
+        self.inner.probe_conformer_id
+    }
+
+    fn reference_conformer_id(&self) -> usize {
+        self.inner.reference_conformer_id
+    }
+
+    fn rmsd(&self) -> f64 {
+        self.inner.rmsd
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ConformerRmsd(probe_conformer_id={}, reference_conformer_id={}, rmsd={})",
+            self.inner.probe_conformer_id, self.inner.reference_conformer_id, self.inner.rmsd
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "ConformerAlignmentReport", skip_from_py_object)]
+#[derive(Clone)]
+struct PyConformerAlignmentReport {
+    rmsds: Vec<f64>,
+}
+
+impl From<cosmolkit_core::ConformerAlignmentReport> for PyConformerAlignmentReport {
+    fn from(value: cosmolkit_core::ConformerAlignmentReport) -> Self {
+        Self { rmsds: value.rmsds }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyConformerAlignmentReport {
+    #[doc = "Return RMS values in the source conformer-selection order."]
+    fn rmsds(&self) -> Vec<f64> {
+        self.rmsds.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("ConformerAlignmentReport(rmsds={})", self.rmsds.len())
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
 struct EmbedMoleculeResult {
@@ -11339,6 +11971,16 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_batch_validation_error_class(m)?;
     add_inchi_error_classes(m)?;
     m.add_class::<Molecule>()?;
+    m.add_class::<PyAlignmentAtomMap>()?;
+    m.add_class::<PyAlignmentParameters>()?;
+    m.add_class::<PyBestAlignmentParameters>()?;
+    m.add_class::<PyAllConformerRmsdParameters>()?;
+    m.add_class::<PyCoordinateRmsdParameters>()?;
+    m.add_class::<PyConformerAlignmentParameters>()?;
+    m.add_class::<PyAlignmentTransform>()?;
+    m.add_class::<PyAlignmentResult>()?;
+    m.add_class::<PyConformerRmsd>()?;
+    m.add_class::<PyConformerAlignmentReport>()?;
     m.add_class::<PyEmbedParameters>()?;
     m.add_class::<BioStructure>()?;
     m.add_class::<PyMmcifOutputGroups>()?;

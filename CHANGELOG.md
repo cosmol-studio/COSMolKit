@@ -10,22 +10,28 @@
 [Python package](https://pypi.org/project/cosmolkit/).
 <!-- release-header:end -->
 
+<!-- release-footer:start -->
+COSMolKit advances its minor compatibility series through successive prime
+numbers, just for fun. 😈
+<!-- release-footer:end -->
+
 All notable changes to COSMolKit are recorded in this file.
 
 The text between the `release-header` markers is prepended to every GitHub
-Release so the project, documentation, and web tools remain easy to discover.
-For each release, move the completed entries from `Unreleased` into a section
-named `## [x.y.z] - YYYY-MM-DD`. The release workflow extracts the section whose
+Release, and the text between the `release-footer` markers is appended. For
+each release, move the completed entries from `Unreleased` into a section named
+`## [x.y.z] - YYYY-MM-DD`. The release workflow extracts the section whose
 version matches the pushed `v*` tag and fails when that section is missing or
 empty.
 
 ## [Unreleased]
 
-This release adds the public modern RDKit CIPLabeler, source-backed Pattern and
-Layered fingerprints, and the Rust tautomer-enumeration surface, and completes
-the ordinary-molecule SMARTS parser, query, writer, and substructure-matching
-path through source-backed Rust implementations with explicit state lifecycle
-and pinned parity validation.
+This release adds the public modern RDKit CIPLabeler, ordinary molecular
+alignment and RMSD, source-backed Pattern and Layered fingerprints, and the
+Rust tautomer-enumeration surface, and completes the ordinary-molecule SMARTS
+parser, query, writer, and substructure-matching path through source-backed
+Rust implementations with explicit state lifecycle and pinned parity
+validation.
 
 ### Added
 
@@ -63,6 +69,11 @@ and pinned parity validation.
   multi-molecule results, canonical selection and scoring, callbacks, current
   and V1 transform sets, structured errors, and focused, PCS, 5,000-row, and
   ChEMBL 37 validation workflows.
+- Added source-backed ordinary RDKit MolAlign in Rust and Python with typed
+  explicit/automatic atom maps, weighted and reflected transforms, read-only
+  best and coordinate-frame RMSD, all-conformer pair output, and explicit
+  value-style or trailing-underscore coordinate mutation. O3A remains a
+  separately scoped future capability.
 
 ### Changed
 
@@ -87,9 +98,20 @@ and pinned parity validation.
   COSMolKit returns the source-documented bond-path result for unrooted linear
   calls instead of reproducing the pinned implementation's input-dependent
   process crash.
+- Consolidated depiction, distance geometry, MolAlign, and molecular
+  coordinate transforms onto one private pure-Rust quaternion/Jacobi alignment
+  and 4x4 transform implementation; pinned source behavior required no
+  numerical FFI backend.
 
 ### Fixed
 
+- Corrected the shared SMILES stereo dispatcher so writer-side reassignment
+  with stereo cleanup disabled stops before RDKit's `cleanIt`-only ring and
+  terminal cleanup, preserving canonical disconnected-fragment, bridgehead,
+  and directional double-bond stereochemistry.
+- Corrected MMFF force-field construction for sparse or explicitly named
+  conformer IDs by resolving the source conformer ID exactly once and reading
+  coordinates from that selected storage row.
 - Completed the modern CIP digraph, configuration, auxiliary-label, and
   sequence-rule call paths, including source-prefix sorter ownership in Rule4b
   and Rule5New, exact selected-call dispatch, shared recursion budgeting,
@@ -157,6 +179,12 @@ and pinned parity validation.
   128 ChEMBL shards re-executed the complete branch matrix. Focused fixtures
   permanently lock the distinct legacy/modern stereo-center predicates, ring
   stereo cleanup, canonical traversal, and fragment computed-state lifecycle.
+- The complete ordinary MolAlign audit processed 2,854,362 eligible ChEMBL 37
+  records across 128/128 shards and performed 11,417,207 comparisons of RMSD,
+  complete transforms, selected maps, conformer-pair order, changed
+  coordinates, and source/reference immutability with zero mismatch or
+  retained finding. Fifteen rows were rejected by both parsers and 43,442
+  accepted rows exceeded the configured 80-atom boundary.
 
 ## [0.2.13] - 2026-08-24
 

@@ -20,11 +20,11 @@ interchangeably in tests or documentation.
 
 The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
 composition, batch, and concurrency audit; the complete modern CIPLabeler,
-RDKFingerprint/Avalon, AtomPair, Pattern, Topological Torsion, Layered
-fingerprint, and tautomer audits; and the 15-phase execution recorded below.
-The chemistry/composition audit contains 2,816 tasks over 128 corpus shards,
-while the seven complete independent audit phases add 896 tasks over the same
-shards.
+ordinary MolAlign, RDKFingerprint/Avalon, AtomPair, Pattern, Topological
+Torsion, Layered fingerprint, and tautomer audits; and the 15-phase execution
+recorded below. The chemistry/composition audit contains 2,816 tasks over 128
+corpus shards, while the eight complete independent audit phases add 1,024
+tasks over the same shards.
 Phases with a configured atom-count boundary evaluate 2,854,362 eligible
 records. Large subset phases select their stated number of records from the
 same ChEMBL 37 source; they are not separate corpora.
@@ -34,12 +34,14 @@ identity, and acceptance procedure are documented in
 [`dev/tools/chembl_parity/README.md`](dev/tools/chembl_parity/README.md). The
 current `complete.json` profile preserves the completed phases, adds four
 configured phases for topology operations, fragments, direct 2D coordinates,
-and binary roundtrips, and includes modern CIPLabeler, the five complete
-fingerprint audit phases, and tautomer enumeration. The extended profile
-contains 33 phases and 4,224 shard tasks. Modern CIPLabeler, fragments, direct
-2D coordinates, topology operations, binary roundtrips, and tautomer
-enumeration each have a complete accepted result with zero mismatch. The
-summary below reports this final evidence boundary.
+and binary roundtrips, and includes modern CIPLabeler, ordinary MolAlign, plus
+the five complete fingerprint audit phases and tautomer enumeration. The
+extended profile contains 34 phases and 4,352 shard tasks. The consolidated
+validation covers all additions over their complete configured ChEMBL
+boundaries. Modern CIPLabeler, ordinary MolAlign, fragments, direct 2D
+coordinates, topology operations, binary roundtrips, and tautomer enumeration
+each have a complete accepted result with zero mismatch. The summary below
+reports this final evidence boundary.
 Corpus shards and run outputs remain uncommitted; code, profiles, source and
 reference pins, and pass/fail rules are version controlled.
 
@@ -60,19 +62,20 @@ surface. Focused fixtures independently lock every discovered source boundary.
 ## Complete ChEMBL 37 Validation Summary
 
 The consolidated validation record combines the 22-phase audit, the complete
-modern CIPLabeler, RDKFingerprint/Avalon, AtomPair, Pattern, Topological
-Torsion, Layered fingerprint, and tautomer audits, and the 15-phase execution.
-The 15-phase execution used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the
-same 2,897,819-record ChEMBL 37 source, 128 corpus shards, and 112 workers. All
-15 phases and all 1,920 shard tasks completed; every result artifact and
-checksum was independently revalidated.
-Together with the seven independent complete audits, the consolidated evidence
-table records 3,172,098,939 matching checks and zero blocking mismatch. Bounds
+modern CIPLabeler, ordinary MolAlign, RDKFingerprint/Avalon, AtomPair, Pattern,
+Topological Torsion, Layered fingerprint, and tautomer audits, and the 15-phase
+execution. The 15-phase execution used COSMolKit `0.2.12`, pinned RDKit
+`2026.03.1`, the same 2,897,819-record ChEMBL 37 source, 128 corpus shards, and
+112 workers. All 15 phases and all 1,920 shard tasks completed; every result
+artifact and checksum was independently revalidated. Together with the eight
+independent complete audits, the consolidated evidence table records
+3,183,516,146 matching checks and zero blocking mismatch. Bounds
 additionally traversed 2,757,910,995 matrix entries.
 
 The first 15 rows summarize the consolidated chemistry and composition
-execution. The final seven rows are independent complete modern CIPLabeler,
-fingerprint, and tautomer audits over the same ChEMBL 37 source.
+execution. The final eight rows are independent complete modern CIPLabeler,
+ordinary MolAlign, fingerprint, and tautomer audits over the same ChEMBL 37
+source.
 
 | Phase or independent audit | Records evaluated | Matching checks | Blocking mismatches | Status |
 |---|---:|---:|---:|---|
@@ -92,6 +95,7 @@ fingerprint, and tautomer audits over the same ChEMBL 37 source.
 | Fixed-seed conformer outcome | 524,288 | 524,288 | 0 | Pass |
 | UFF/MMFF force fields | 524,288 | 3,139,761 | 0 | Pass |
 | Modern CIPLabeler | 2,854,362 compared; 15 parser rejects; 43,442 over 80 atoms | 11,417,448 | 0 | Pass |
+| Ordinary MolAlign and RMSD | 2,854,362 compared; 15 parser rejects; 43,442 over 80 atoms | 11,417,207 | 0 | Pass |
 | RDKFingerprint/Avalon fingerprints | 2,897,819 source; 2,897,804 compared | 113,014,356 | 0 | Pass |
 | AtomPair fingerprints | 2,897,819 source; 2,897,804 compared | 118,809,964 | 0 | Pass |
 | Pattern fingerprints | 2,897,819 source; 2,897,804 compared | 28,978,040 | 0 | Pass |
@@ -146,10 +150,12 @@ matrix entries actually compared, not merely the number of input molecules.
 | AtomPair | ChEMBL 37 | 2,897,804 | 40 vectors + 1 provenance output | 118,809,964 |
 | Pattern | ChEMBL 37 | 2,897,804 | 10 complete vectors | 28,978,040 |
 | Modern CIPLabeler | ChEMBL 37 | 2,854,362 | full, selected atom, selected bond, empty selection | 11,417,448 |
+| Ordinary MolAlign and RMSD | ChEMBL 37 | 2,854,362 | 6 rotated call families; transforms, maps, RMSD, coordinates, order, immutability | 11,417,207 |
 | Tautomer enumeration | ChEMBL 37 | 2,897,819 | parse + 8 complete enumeration profiles | 211,539,707 |
 
-Except for the separately identified modern CIPLabeler, RDKFingerprint,
-Avalon, AtomPair, Pattern, Topological Torsion, Layered, and tautomer rows,
+Except for the separately identified modern CIPLabeler, ordinary MolAlign,
+RDKFingerprint, Avalon, AtomPair, Pattern, Topological Torsion, Layered, and
+tautomer rows,
 the ChEMBL 37 figures above are the complete chemistry/composition audit
 counters. The acceptance model combines that full-corpus breadth with exact
 source-regression matrices for every covered branch: 10 descriptor rows,
@@ -251,6 +257,26 @@ atropisomeric configurations constructed by `findConfigs`; descriptor families
 outside that dispatcher are separate capabilities. The immutable result and
 reproduction command are recorded in the [modern CIPLabeler validation
 report](dev/gap_reports/rdkit_ciplabeler_full_port_validation.md).
+
+### Molecular Alignment And RMSD
+
+The ordinary MolAlign audit rotates alignment-transform, best-alignment,
+coordinate-frame RMSD, explicit value-style alignment, all-conformer best-RMS,
+and conformer-alignment calls across stable ChEMBL row numbers. It compares
+RMSD values and complete 4x4 transforms to `1e-8`, atom maps and conformer-pair
+order exactly, changed coordinates to `1e-8`, and complete source/reference
+coordinate snapshots for immutability.
+
+All 2,854,362 eligible molecules produced 11,417,207 matching checks with zero
+mismatch across 128/128 shards. Fifteen source rows were rejected by both
+parsers and 43,442 accepted rows exceeded the configured 80-atom boundary.
+Focused, 152-row, and explicit exhaustive 5,000-row gates additionally cover
+weights, reflection, iteration limits, sparse conformer IDs, map validation,
+terminal-group symmetry, structured errors, and exact mutation separation.
+The [MolAlign validation report](dev/gap_reports/rdkit_molalign_full_port_validation.md)
+records the source boundary and reproduction commands. O3A and its MMFF/Crippen
+scoring path are separate capabilities and are not included in ordinary
+MolAlign.
 
 ### Morgan And MACCS Fingerprints
 

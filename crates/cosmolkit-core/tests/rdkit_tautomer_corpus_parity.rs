@@ -159,7 +159,7 @@ fn assert_composition(record: &GoldenRecord, branch_name: &str, branch: &GoldenB
 #[test]
 fn focused_profiles_are_repeatable_and_compose_without_state_drift() {
     let records = profile_records("tautomer_focused").collect::<Vec<_>>();
-    assert_eq!(records.len(), 14, "focused fixture row count changed");
+    assert_eq!(records.len(), 18, "focused fixture row count changed");
     for record in &records {
         assert_record(record, 8);
         assert_record(record, 8);
@@ -170,6 +170,7 @@ fn focused_profiles_are_repeatable_and_compose_without_state_drift() {
 }
 
 #[test]
+#[ignore = "full 5,000-row tautomer matrix; run explicitly in the exhaustive parity tier"]
 fn smiles_5000_profiles_match_every_pinned_rdkit_observation() {
     let mut observed = 0usize;
     for record in profile_records("smiles_5000") {
@@ -180,6 +181,7 @@ fn smiles_5000_profiles_match_every_pinned_rdkit_observation() {
 }
 
 #[test]
+#[ignore = "full 5,000-row tautomer batch matrix; run explicitly in the exhaustive parity tier"]
 fn smiles_5000_parallel_batches_preserve_order_and_exact_results() {
     let mut records = profile_records("smiles_5000");
     let mut observed_rows = Vec::with_capacity(5_000);

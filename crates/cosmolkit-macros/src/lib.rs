@@ -523,7 +523,10 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             "multiple-output molecule operations cannot generate an in-place wrapper",
         ));
     }
-    let custom_result = match (op.fields.result_type.clone(), op.fields.assemble_fn.clone()) {
+
+    let operation_result = op.fields.result_type.clone();
+    let assembled_multiple_result = match (operation_result.clone(), op.fields.assemble_fn.clone())
+    {
         (Some(result_type), Some(assemble_fn)) if multiple_output => {
             Some((result_type, assemble_fn))
         }
@@ -533,15 +536,16 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                 "custom result assembly is available only for multiple-output molecule operations",
             ));
         }
-        (Some(path), None) => {
+        (Some(_), None) if !multiple_output => None,
+        (Some(result_type), None) => {
             return Err(syn::Error::new(
-                path.span(),
-                "`result_type` requires `assemble_fn`",
+                result_type.span(),
+                "a multiple-output `result_type` requires `assemble_fn`",
             ));
         }
-        (None, Some(path)) => {
+        (None, Some(assemble_fn)) => {
             return Err(syn::Error::new(
-                path.span(),
+                assemble_fn.span(),
                 "`assemble_fn` requires `result_type`",
             ));
         }
@@ -557,10 +561,12 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let impl_fn_name = impl_fn.to_string();
     let domain_expr = domain_expr(&domain)?;
     let output_expr = output_cardinality_expr(&output)?;
-    let result_type_expr = if let Some((result_type, _)) = &custom_result {
+    let result_type_expr = if let Some((result_type, _)) = &assembled_multiple_result {
         quote!(stringify!(#result_type))
     } else if multiple_output {
         quote!("Vec<Molecule>")
+    } else if let Some(result_type) = &operation_result {
+        quote!(stringify!((crate::molecule::Molecule, #result_type)))
     } else {
         quote!("Molecule")
     };
@@ -638,7 +644,6 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
 
     let method_docs = op.fields.docs.map(|docs| quote!(#[doc = #docs]));
     let inplace_docs = op.fields.inplace_docs.map(|docs| quote!(#[doc = #docs]));
-
     let support_check = quote! {
         if matches!(
             #spec_ident.support,
@@ -650,15 +655,13 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             });
         }
     };
-    let method_def = if let Some((result_type, assemble_fn)) = &custom_result {
+
+    let method_def = if let Some((result_type, assemble_fn)) = &assembled_multiple_result {
         quote! {
             #method_docs
             pub fn #method(&self, #params) -> Result<#result_type, crate::ops::OperationError> {
                 #support_check
-                let mut parts = crate::ops::MultiMoleculeOpParts::new(
-                    self,
-                    &#spec_ident,
-                )?;
+                let mut parts = crate::ops::MultiMoleculeOpParts::new(self, &#spec_ident)?;
                 let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
                 let molecules = parts.finish()?;
                 #assemble_fn(molecules, metadata)
@@ -669,12 +672,20 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             #method_docs
             pub fn #method(&self, #params) -> Result<Vec<crate::molecule::Molecule>, crate::ops::OperationError> {
                 #support_check
-                let mut parts = crate::ops::MultiMoleculeOpParts::new(
-                    self,
-                    &#spec_ident,
-                )?;
+                let mut parts = crate::ops::MultiMoleculeOpParts::new(self, &#spec_ident)?;
                 #impl_fn(&mut parts, #(#call_args),*)?;
                 parts.finish()
+            }
+        }
+    } else if let Some(result_type) = &operation_result {
+        quote! {
+            #method_docs
+            pub fn #method(&self, #params) -> Result<(crate::molecule::Molecule, #result_type), crate::ops::OperationError> {
+                #support_check
+                let mut parts = crate::ops::OpParts::new(self, &#spec_ident)?;
+                let result = #impl_fn(&mut parts, #(#call_args),*)?;
+                let molecule = parts.finish()?;
+                Ok((molecule, result))
             }
         }
     } else {
@@ -693,33 +704,44 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .clone()
         .unwrap_or_else(|| format_ident!("{}_", method));
     let inplace_method = if inplace_enabled {
-        Some(quote! {
-            #inplace_docs
-            pub fn #inplace_method_name(&mut self, #params) -> Result<(), crate::ops::OperationError> {
-                if matches!(
-                    #spec_ident.support,
-                    crate::SupportStatus::Unsupported { .. }
-                ) {
-                    return Err(crate::ops::OperationError::UnsupportedFeature {
-                        operation: &#spec_ident,
-                        source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
-                    });
+        if let Some(result_type) = &operation_result {
+            Some(quote! {
+                #inplace_docs
+                pub fn #inplace_method_name(&mut self, #params) -> Result<#result_type, crate::ops::OperationError> {
+                    #support_check
+                    let mut parts = crate::ops::OpParts::new_in_place(self, &#spec_ident)?;
+                    let result = match #impl_fn(&mut parts, #(#call_args),*) {
+                        Ok(result) => result,
+                        Err(error) => {
+                            parts.abort_in_place();
+                            return Err(error);
+                        }
+                    };
+                    parts.finish_in_place()?;
+                    Ok(result)
                 }
-                let mut parts = crate::ops::OpParts::new_in_place(self, &#spec_ident)?;
-                if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
-                    parts.abort_in_place();
-                    return Err(error);
+            })
+        } else {
+            Some(quote! {
+                #inplace_docs
+                pub fn #inplace_method_name(&mut self, #params) -> Result<(), crate::ops::OperationError> {
+                    #support_check
+                    let mut parts = crate::ops::OpParts::new_in_place(self, &#spec_ident)?;
+                    if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
+                        parts.abort_in_place();
+                        return Err(error);
+                    }
+                    parts.finish_in_place()
                 }
-                parts.finish_in_place()
-            }
-        })
+            })
+        }
     } else {
         None
     };
 
     let default_method = if let Some(default_method) = op.fields.default_method {
         let default_args = op.fields.default_args;
-        if let Some((result_type, _)) = &custom_result {
+        if let Some((result_type, _)) = &assembled_multiple_result {
             Some(quote! {
                 pub fn #default_method(&self) -> Result<#result_type, crate::ops::OperationError> {
                     self.#method(#(#default_args),*)
@@ -728,6 +750,12 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         } else if multiple_output {
             Some(quote! {
                 pub fn #default_method(&self) -> Result<Vec<crate::molecule::Molecule>, crate::ops::OperationError> {
+                    self.#method(#(#default_args),*)
+                }
+            })
+        } else if let Some(result_type) = &operation_result {
+            Some(quote! {
+                pub fn #default_method(&self) -> Result<(crate::molecule::Molecule, #result_type), crate::ops::OperationError> {
                     self.#method(#(#default_args),*)
                 }
             })
@@ -747,11 +775,19 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     {
         let default_inplace_method =
             default_inplace_method_ident.unwrap_or_else(|| format_ident!("{}_", default_method));
-        Some(quote! {
-            pub fn #default_inplace_method(&mut self) -> Result<(), crate::ops::OperationError> {
-                self.#inplace_method_name(#(#default_args_for_inplace),*)
-            }
-        })
+        if let Some(result_type) = &operation_result {
+            Some(quote! {
+                pub fn #default_inplace_method(&mut self) -> Result<#result_type, crate::ops::OperationError> {
+                    self.#inplace_method_name(#(#default_args_for_inplace),*)
+                }
+            })
+        } else {
+            Some(quote! {
+                pub fn #default_inplace_method(&mut self) -> Result<(), crate::ops::OperationError> {
+                    self.#inplace_method_name(#(#default_args_for_inplace),*)
+                }
+            })
+        }
     } else {
         None
     };
@@ -1677,6 +1713,36 @@ mod tests {
         .expect("valid custom multiple-output operation syntax")
     }
 
+    fn typed_single_output_entry() -> OpEntry {
+        syn::parse2(quote! {
+            op test_alignment(reference: &crate::Molecule) {
+                method: test_alignment,
+                impl_fn: test_alignment_impl,
+                result_type: crate::TestResult,
+                inplace: true,
+                inplace_method: test_alignment_,
+                domain: coordinate,
+                kind: weak,
+                topology_edit: none,
+                access: { read: [topology], write: [coordinates] },
+                may_mutate: [coordinates],
+                auto_remap: [],
+                derived_effects: {
+                    recompute: [],
+                    preserve: [],
+                    invalidate: [drawing],
+                },
+                cip_state: preserve,
+                requires_mapping: none,
+                feature: TEST_FEATURE,
+                parity: not_applicable,
+                io_roundtrip: false,
+                invariant_profile: "test_typed_single_output",
+            }
+        })
+        .expect("valid typed single-output operation syntax")
+    }
+
     #[test]
     fn multiple_output_expansion_uses_branch_capability_and_vector_return() {
         let expanded = expand_op(multiple_output_entry(false)).expect("operation expands");
@@ -1699,6 +1765,43 @@ mod tests {
         assert!(method.contains("Result < crate :: TestResult"));
         assert!(method.contains("let metadata = test_result_impl"));
         assert!(method.contains("crate :: assemble_test_result (molecules , metadata)"));
+    }
+
+    #[test]
+    fn typed_single_output_expansion_exposes_results_only_after_contract_finish() {
+        let expanded = expand_op(typed_single_output_entry()).expect("operation expands");
+        let spec = expanded.spec_def.to_string();
+        let method = expanded.method.to_string();
+        let inplace = expanded
+            .inplace_method
+            .expect("typed single-output operation has an in-place wrapper")
+            .to_string();
+
+        assert!(spec.contains(
+            "result_type : stringify ! ((crate :: molecule :: Molecule , crate :: TestResult))"
+        ));
+
+        let value_compute = method
+            .find("let result = test_alignment_impl")
+            .expect("value wrapper computes its typed result");
+        let value_finish = method
+            .find("let molecule = parts . finish () ?")
+            .expect("value wrapper validates its molecule");
+        let value_return = method
+            .find("Ok ((molecule , result))")
+            .expect("value wrapper returns its validated molecule and result");
+        assert!(value_compute < value_finish && value_finish < value_return);
+
+        let inplace_compute = inplace
+            .find("let result = match test_alignment_impl")
+            .expect("in-place wrapper computes its typed result");
+        let inplace_finish = inplace
+            .find("parts . finish_in_place () ?")
+            .expect("in-place wrapper validates its mutation");
+        let inplace_return = inplace
+            .rfind("Ok (result)")
+            .expect("in-place wrapper returns its typed result");
+        assert!(inplace_compute < inplace_finish && inplace_finish < inplace_return);
     }
 
     #[test]

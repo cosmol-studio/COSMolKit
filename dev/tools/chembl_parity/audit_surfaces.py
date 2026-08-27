@@ -15,7 +15,7 @@ from typing import Any, cast
 import cosmolkit
 import numpy as np
 from rdkit import Chem, RDLogger
-from rdkit.Chem import AllChem, rdDistGeom
+from rdkit.Chem import AllChem, rdDistGeom, rdMolAlign
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from .audit_core import (
@@ -1253,6 +1253,410 @@ def audit_inchi_parse(
             audit.mismatch("inchi.parse_branch", record, rd_value, ck_value, name)
 
 
+MOLALIGN_TOLERANCE = 1.0e-8
+
+
+def molalign_coordinates(row: int, atom_count: int) -> np.ndarray[Any, np.dtype[np.float64]]:
+    atom = np.arange(atom_count, dtype=np.float64)
+    phase = float(row % 97) * 0.013
+    return np.column_stack(
+        (
+            atom * 0.37 + 0.05 * np.sin(atom * 0.19 + phase),
+            np.sin(atom * 0.71 + phase),
+            np.cos(atom * 0.43 - phase) + 0.03 * np.remainder(atom, 5.0),
+        )
+    )
+
+
+def molalign_transformed_coordinates(
+    coordinates: np.ndarray[Any, np.dtype[np.float64]], row: int, variant: int
+) -> np.ndarray[Any, np.dtype[np.float64]]:
+    angle = 0.19 + 0.017 * float((row + variant * 11) % 23)
+    cosine = np.cos(angle)
+    sine = np.sin(angle)
+    transformed = coordinates.copy()
+    transformed[:, 0] = cosine * coordinates[:, 0] - sine * coordinates[:, 1]
+    transformed[:, 1] = sine * coordinates[:, 0] + cosine * coordinates[:, 1]
+    transformed[:, 0] += 0.7 + 0.03 * float(row % 17)
+    transformed[:, 1] += -0.4 + 0.02 * float(row % 13)
+    transformed[:, 2] += 0.2 + 0.01 * float(variant % 7)
+    atom = np.arange(len(coordinates), dtype=np.int64)
+    perturbation = 0.0025 * (np.remainder(atom + row + variant, 7) - 3)
+    transformed[:, 0] += perturbation
+    transformed[:, 1] -= perturbation * 0.5
+    transformed[:, 2] += perturbation * 0.25
+    return transformed
+
+
+def rd_with_conformers(
+    molecule: Chem.Mol,
+    coordinate_sets: list[np.ndarray[Any, np.dtype[np.float64]]],
+) -> Chem.Mol:
+    result = Chem.Mol(molecule)
+    result.RemoveAllConformers()
+    for coordinates in coordinate_sets:
+        conformer = Chem.Conformer(result.GetNumAtoms())
+        conformer.Set3D(True)
+        for atom_index, point in enumerate(coordinates):
+            conformer.SetAtomPosition(atom_index, tuple(float(value) for value in point))
+        result.AddConformer(conformer, assignId=True)
+    return result
+
+
+def ck_with_conformers(molecule: Any, coordinate_sets: list[np.ndarray[Any, Any]]) -> Any:
+    result = molecule.with_only_3d_conformer(coordinate_sets[0])
+    for coordinates in coordinate_sets[1:]:
+        result = result.with_added_3d_conformer(coordinates)
+    return result
+
+
+def rd_conformer_snapshot(molecule: Chem.Mol) -> list[np.ndarray[Any, Any]]:
+    return [
+        np.asarray(conformer.GetPositions(), dtype=np.float64)
+        for conformer in molecule.GetConformers()
+    ]
+
+
+def ck_conformer_snapshot(molecule: Any) -> list[np.ndarray[Any, Any]]:
+    return [
+        np.asarray(molecule.coordinates_3d(index), dtype=np.float64)
+        for index in range(molecule.num_conformers())
+    ]
+
+
+def compare_molalign_scalar(
+    audit: Audit,
+    record: dict[str, Any],
+    field: str,
+    rd_value: float,
+    ck_value: float,
+) -> None:
+    delta = abs(float(rd_value) - float(ck_value))
+    if delta <= MOLALIGN_TOLERANCE:
+        audit.count(f"match.molalign.{field}")
+    else:
+        audit.mismatch(
+            f"molalign.{field}",
+            record,
+            float(rd_value),
+            float(ck_value),
+            f"absolute_error={delta}",
+        )
+
+
+def compare_molalign_array(
+    audit: Audit,
+    record: dict[str, Any],
+    field: str,
+    rd_value: Any,
+    ck_value: Any,
+) -> None:
+    rd_array = np.asarray(rd_value, dtype=np.float64)
+    ck_array = np.asarray(ck_value, dtype=np.float64)
+    if rd_array.shape != ck_array.shape:
+        audit.mismatch(
+            f"molalign.{field}.shape", record, rd_array.shape, ck_array.shape
+        )
+        return
+    delta = np.abs(rd_array - ck_array)
+    maximum = float(delta.max(initial=0.0))
+    if maximum <= MOLALIGN_TOLERANCE:
+        audit.count(f"match.molalign.{field}")
+    else:
+        audit.mismatch(
+            f"molalign.{field}",
+            record,
+            rd_array.tolist(),
+            ck_array.tolist(),
+            f"max_absolute_error={maximum}",
+        )
+
+
+def compare_molalign_snapshots(
+    audit: Audit,
+    record: dict[str, Any],
+    field: str,
+    rd_value: list[np.ndarray[Any, Any]],
+    ck_value: list[np.ndarray[Any, Any]],
+) -> None:
+    if len(rd_value) != len(ck_value):
+        audit.mismatch(
+            f"molalign.{field}.conformer_count", record, len(rd_value), len(ck_value)
+        )
+        return
+    for index, (rd_coordinates, ck_coordinates) in enumerate(zip(rd_value, ck_value)):
+        compare_molalign_array(
+            audit, record, f"{field}.conformer_{index}", rd_coordinates, ck_coordinates
+        )
+
+
+def compare_molalign_result(
+    audit: Audit,
+    record: dict[str, Any],
+    branch: str,
+    rd_rmsd: float,
+    rd_transform: Any,
+    rd_map: list[tuple[int, int]],
+    ck_result: Any,
+) -> None:
+    compare_molalign_scalar(
+        audit, record, f"{branch}.rmsd", rd_rmsd, ck_result.rmsd()
+    )
+    compare_molalign_array(
+        audit,
+        record,
+        f"{branch}.transform",
+        rd_transform,
+        ck_result.transform().matrix(),
+    )
+    ck_map = [
+        (pair.probe_atom, pair.reference_atom) for pair in ck_result.atom_map()
+    ]
+    if rd_map == ck_map:
+        audit.count(f"match.molalign.{branch}.atom_map")
+    else:
+        audit.mismatch(f"molalign.{branch}.atom_map", record, rd_map, ck_map)
+
+
+def audit_molalign(
+    audit: Audit, record: dict[str, Any], rd_mol: Chem.Mol, ck_mol: Any
+) -> None:
+    row = int(record["row"])
+    atom_count = rd_mol.GetNumAtoms()
+    coordinates = molalign_coordinates(row, atom_count)
+    probe_coordinates = molalign_transformed_coordinates(coordinates, row, 1)
+    identity = [(index, index) for index in range(atom_count)]
+    ck_identity = [cosmolkit.AlignmentAtomMap(*pair) for pair in identity]
+    weights = [1.0 + 0.25 * float((index + row) % 4) for index in range(atom_count)]
+    reflect = (row // 6) % 2 == 1
+    branch = row % 6
+
+    try:
+        if branch < 4:
+            rd_probe = rd_with_conformers(rd_mol, [probe_coordinates])
+            rd_reference = rd_with_conformers(rd_mol, [coordinates])
+            ck_probe = ck_with_conformers(ck_mol, [probe_coordinates])
+            ck_reference = ck_with_conformers(ck_mol, [coordinates])
+            ck_probe_before = ck_probe.mol_to_binary()
+            ck_reference_before = ck_reference.mol_to_binary()
+
+            if branch == 0:
+                rd_rmsd, rd_transform = rdMolAlign.GetAlignmentTransform(
+                    rd_probe,
+                    rd_reference,
+                    atomMap=identity,
+                    weights=weights,
+                    reflect=reflect,
+                    maxIters=50,
+                )
+                ck_result = ck_probe.alignment_transform_to(
+                    ck_reference,
+                    cosmolkit.AlignmentParameters(
+                        atom_map=ck_identity,
+                        weights=weights,
+                        reflect=reflect,
+                        max_iterations=50,
+                    ),
+                )
+                compare_molalign_result(
+                    audit,
+                    record,
+                    "alignment_transform",
+                    rd_rmsd,
+                    rd_transform,
+                    identity,
+                    ck_result,
+                )
+            elif branch == 1:
+                candidate_maps = [list(reversed(identity)), identity]
+                ck_candidate_maps = [list(reversed(ck_identity)), ck_identity]
+                rd_rmsd, rd_transform, rd_map = rdMolAlign.GetBestAlignmentTransform(
+                    rd_probe,
+                    rd_reference,
+                    map=candidate_maps,
+                    weights=weights,
+                    reflect=reflect,
+                    maxIters=50,
+                    numThreads=1,
+                )
+                ck_result = ck_probe.best_alignment_to(
+                    ck_reference,
+                    cosmolkit.BestAlignmentParameters(
+                        atom_maps=ck_candidate_maps,
+                        weights=weights,
+                        reflect=reflect,
+                        max_iterations=50,
+                        num_threads=1,
+                    ),
+                )
+                compare_molalign_result(
+                    audit,
+                    record,
+                    "best_alignment",
+                    rd_rmsd,
+                    rd_transform,
+                    [tuple(pair) for pair in rd_map],
+                    ck_result,
+                )
+            elif branch == 2:
+                rd_rmsd = rdMolAlign.CalcRMS(
+                    rd_probe, rd_reference, map=[identity], weights=weights
+                )
+                ck_rmsd = ck_probe.coordinate_rmsd_to(
+                    ck_reference,
+                    cosmolkit.CoordinateRmsdParameters(
+                        atom_maps=[ck_identity], weights=weights
+                    ),
+                )
+                compare_molalign_scalar(
+                    audit, record, "coordinate_rmsd.rmsd", rd_rmsd, ck_rmsd
+                )
+            else:
+                rd_rmsd, rd_transform = rdMolAlign.GetAlignmentTransform(
+                    rd_probe,
+                    rd_reference,
+                    atomMap=identity,
+                    weights=weights,
+                    reflect=reflect,
+                    maxIters=50,
+                )
+                rdMolAlign.AlignMol(
+                    rd_probe,
+                    rd_reference,
+                    atomMap=identity,
+                    weights=weights,
+                    reflect=reflect,
+                    maxIters=50,
+                )
+                ck_aligned, ck_result = ck_probe.with_alignment_to(
+                    ck_reference,
+                    cosmolkit.AlignmentParameters(
+                        atom_map=ck_identity,
+                        weights=weights,
+                        reflect=reflect,
+                        max_iterations=50,
+                    ),
+                )
+                compare_molalign_result(
+                    audit,
+                    record,
+                    "align_to",
+                    rd_rmsd,
+                    rd_transform,
+                    identity,
+                    ck_result,
+                )
+                compare_molalign_snapshots(
+                    audit,
+                    record,
+                    "align_to.coordinates",
+                    rd_conformer_snapshot(rd_probe),
+                    ck_conformer_snapshot(ck_aligned),
+                )
+                if ck_probe.mol_to_binary() == ck_probe_before:
+                    audit.count("match.molalign.align_to.source_unchanged")
+                else:
+                    audit.mismatch(
+                        "molalign.align_to.source_mutated",
+                        record,
+                        "unchanged",
+                        "changed",
+                    )
+            if ck_reference.mol_to_binary() == ck_reference_before:
+                audit.count("match.molalign.reference_unchanged")
+            else:
+                audit.mismatch(
+                    "molalign.reference_mutated", record, "unchanged", "changed"
+                )
+            return
+
+        coordinate_sets = [
+            coordinates,
+            molalign_transformed_coordinates(coordinates, row, 2),
+            molalign_transformed_coordinates(coordinates, row, 3),
+        ]
+        rd_multi = rd_with_conformers(rd_mol, coordinate_sets)
+        ck_multi = ck_with_conformers(ck_mol, coordinate_sets)
+        ck_before = ck_multi.mol_to_binary()
+        if branch == 4:
+            rd_rmsds = list(
+                rdMolAlign.GetAllConformerBestRMS(
+                    rd_multi,
+                    numThreads=1,
+                    map=[identity],
+                    weights=weights,
+                )
+            )
+            ck_results = ck_multi.all_conformer_best_rmsds(
+                cosmolkit.AllConformerRmsdParameters(
+                    atom_maps=[ck_identity], weights=weights, num_threads=1
+                )
+            )
+            ck_rmsds = [value.rmsd() for value in ck_results]
+            compare_molalign_array(
+                audit, record, "all_conformer_best_rms.rmsds", rd_rmsds, ck_rmsds
+            )
+            rd_pairs = [(1, 0), (2, 0), (2, 1)]
+            ck_pairs = [
+                (value.probe_conformer_id(), value.reference_conformer_id())
+                for value in ck_results
+            ]
+            if rd_pairs == ck_pairs:
+                audit.count("match.molalign.all_conformer_best_rms.pairs")
+            else:
+                audit.mismatch(
+                    "molalign.all_conformer_best_rms.pairs", record, rd_pairs, ck_pairs
+                )
+        else:
+            rd_rmsds: list[float] = []
+            rdMolAlign.AlignMolConformers(
+                rd_multi,
+                atomIds=list(range(atom_count)),
+                confIds=[1, 2, 0],
+                weights=weights,
+                reflect=reflect,
+                maxIters=50,
+                RMSlist=rd_rmsds,
+            )
+            ck_aligned, ck_report = ck_multi.with_aligned_conformers(
+                cosmolkit.ConformerAlignmentParameters(
+                    atom_indices=list(range(atom_count)),
+                    conformer_ids=[1, 2, 0],
+                    weights=weights,
+                    reflect=reflect,
+                    max_iterations=50,
+                )
+            )
+            compare_molalign_array(
+                audit,
+                record,
+                "align_conformers.rmsds",
+                rd_rmsds,
+                ck_report.rmsds(),
+            )
+            compare_molalign_snapshots(
+                audit,
+                record,
+                "align_conformers.coordinates",
+                rd_conformer_snapshot(rd_multi),
+                ck_conformer_snapshot(ck_aligned),
+            )
+        if ck_multi.mol_to_binary() == ck_before:
+            audit.count("match.molalign.multi_conformer.source_unchanged")
+        else:
+            audit.mismatch(
+                "molalign.multi_conformer.source_mutated", record, "unchanged", "changed"
+            )
+    except Exception as error:
+        audit.mismatch(
+            "molalign.execution",
+            record,
+            "both source-backed calls succeed",
+            f"{type(error).__name__}: {error}",
+            f"branch={branch}",
+        )
+
+
 MODE_FUNCTIONS = {
     "binary_roundtrip": audit_binary_roundtrip,
     "smiles": audit_smiles,
@@ -1262,6 +1666,7 @@ MODE_FUNCTIONS = {
     "conformer": audit_conformer,
     "fragments": audit_fragments,
     "io": audit_io,
+    "molalign": audit_molalign,
     "explicit_h": audit_explicit_h,
     "forcefield": audit_forcefield,
     "inchi_options": audit_inchi_options,

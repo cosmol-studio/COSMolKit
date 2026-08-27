@@ -5203,15 +5203,7 @@ fn rdkit_select_3d_conformer_index(
             "constrained depiction requires an available 3D conformer",
         ));
     }
-    if conf_id == -1 {
-        return Ok(0);
-    }
-    let requested = usize::try_from(conf_id).map_err(|_| {
-        Coordinate2DError::InvalidInput("constrained depiction conformer id must be >= -1")
-    })?;
-    conformers
-        .iter()
-        .position(|conformer| conformer.id() == requested)
+    crate::chemistry::conformer_selection::resolve_3d_conformer_index(conformers, conf_id as i64)
         .ok_or(Coordinate2DError::InvalidInput(
             "constrained depiction conformer id is out of range",
         ))
@@ -5412,251 +5404,7 @@ fn rdkit_remove_all_2d_conformers_but_one(
     Ok(())
 }
 
-const RDKIT_ALIGN_POINTS_TOLERANCE: f64 = 1.0e-6;
 const RDKIT_ALIGN_POINTS_MAX_ITERATIONS: usize = 50;
-
-fn rdkit_transform3d_identity() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
-fn rdkit_transform3d_mul(lhs: &[[f64; 4]; 4], rhs: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
-    let mut out = [[0.0; 4]; 4];
-    for row in 0..4 {
-        for col in 0..4 {
-            out[row][col] = (0..4).map(|k| lhs[row][k] * rhs[k][col]).sum();
-        }
-    }
-    out
-}
-
-fn rdkit_transform3d_transform_point(trans: &[[f64; 4]; 4], point: [f64; 3]) -> [f64; 3] {
-    [
-        trans[0][0] * point[0] + trans[0][1] * point[1] + trans[0][2] * point[2] + trans[0][3],
-        trans[1][0] * point[0] + trans[1][1] * point[1] + trans[1][2] * point[2] + trans[1][3],
-        trans[2][0] * point[0] + trans[2][1] * point[1] + trans[2][2] * point[2] + trans[2][3],
-    ]
-}
-
-fn rdkit_transform3d_set_translation(trans: &mut [[f64; 4]; 4], move_vec: [f64; 3]) {
-    trans[0][3] = move_vec[0];
-    trans[1][3] = move_vec[1];
-    trans[2][3] = move_vec[2];
-}
-
-fn rdkit_transform3d_set_rotation_from_quaternion(trans: &mut [[f64; 4]; 4], quaternion: [f64; 4]) {
-    let q0 = quaternion[0];
-    let q1 = quaternion[1];
-    let q2 = quaternion[2];
-    let q3 = quaternion[3];
-    let n = q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3;
-    let s = if n > 0.0 { 2.0 / n } else { 0.0 };
-    let x = q1 * s;
-    let y = q2 * s;
-    let z = q3 * s;
-    let wx = q0 * x;
-    let wy = q0 * y;
-    let wz = q0 * z;
-    let xx = q1 * x;
-    let xy = q1 * y;
-    let xz = q1 * z;
-    let yy = q2 * y;
-    let yz = q2 * z;
-    let zz = q3 * z;
-
-    *trans = rdkit_transform3d_identity();
-    trans[0][0] = 1.0 - (yy + zz);
-    trans[0][1] = xy - wz;
-    trans[0][2] = xz + wy;
-    trans[1][0] = xy + wz;
-    trans[1][1] = 1.0 - (xx + zz);
-    trans[1][2] = yz - wx;
-    trans[2][0] = xz - wy;
-    trans[2][1] = yz + wx;
-    trans[2][2] = 1.0 - (xx + yy);
-}
-
-fn rdkit_transform3d_reflect(trans: &mut [[f64; 4]; 4]) {
-    for row in trans.iter_mut().take(3) {
-        for cell in row.iter_mut().take(3) {
-            *cell = -*cell;
-        }
-    }
-}
-
-fn rdkit_weighted_sum_of_points(points: &[[f64; 3]]) -> [f64; 3] {
-    points.iter().fold([0.0, 0.0, 0.0], |mut acc, point| {
-        acc[0] += point[0];
-        acc[1] += point[1];
-        acc[2] += point[2];
-        acc
-    })
-}
-
-fn rdkit_weighted_sum_of_len_sq(points: &[[f64; 3]]) -> f64 {
-    points.iter().fold(0.0, |acc, point| {
-        acc + point[0] * point[0] + point[1] * point[1] + point[2] * point[2]
-    })
-}
-
-fn rdkit_compute_covariance_mat(
-    ref_points: &[[f64; 3]],
-    probe_points: &[[f64; 3]],
-) -> [[f64; 3]; 3] {
-    let mut cov_mat = [[0.0; 3]; 3];
-    for (rpt, ppt) in ref_points.iter().zip(probe_points.iter()) {
-        cov_mat[0][0] += ppt[0] * rpt[0];
-        cov_mat[0][1] += ppt[0] * rpt[1];
-        cov_mat[0][2] += ppt[0] * rpt[2];
-        cov_mat[1][0] += ppt[1] * rpt[0];
-        cov_mat[1][1] += ppt[1] * rpt[1];
-        cov_mat[1][2] += ppt[1] * rpt[2];
-        cov_mat[2][0] += ppt[2] * rpt[0];
-        cov_mat[2][1] += ppt[2] * rpt[1];
-        cov_mat[2][2] += ppt[2] * rpt[2];
-    }
-    cov_mat
-}
-
-fn rdkit_reflect_covariance_mat(cov_mat: &mut [[f64; 3]; 3]) {
-    for row in cov_mat.iter_mut() {
-        for cell in row.iter_mut() {
-            *cell = -*cell;
-        }
-    }
-}
-
-fn rdkit_convert_cov_mat_to_quad(
-    cov_mat: &[[f64; 3]; 3],
-    rpt_sum: [f64; 3],
-    ppt_sum: [f64; 3],
-    wts_sum: f64,
-) -> [[f64; 4]; 4] {
-    let px_rx = cov_mat[0][0] - (ppt_sum[0] / wts_sum) * rpt_sum[0];
-    let px_ry = cov_mat[0][1] - (ppt_sum[0] / wts_sum) * rpt_sum[1];
-    let px_rz = cov_mat[0][2] - (ppt_sum[0] / wts_sum) * rpt_sum[2];
-    let py_rx = cov_mat[1][0] - (ppt_sum[1] / wts_sum) * rpt_sum[0];
-    let py_ry = cov_mat[1][1] - (ppt_sum[1] / wts_sum) * rpt_sum[1];
-    let py_rz = cov_mat[1][2] - (ppt_sum[1] / wts_sum) * rpt_sum[2];
-    let pz_rx = cov_mat[2][0] - (ppt_sum[2] / wts_sum) * rpt_sum[0];
-    let pz_ry = cov_mat[2][1] - (ppt_sum[2] / wts_sum) * rpt_sum[1];
-    let pz_rz = cov_mat[2][2] - (ppt_sum[2] / wts_sum) * rpt_sum[2];
-
-    let mut quad = [[0.0; 4]; 4];
-    quad[0][0] = -2.0 * (px_rx + py_ry + pz_rz);
-    quad[1][1] = -2.0 * (px_rx - py_ry - pz_rz);
-    quad[2][2] = -2.0 * (py_ry - pz_rz - px_rx);
-    quad[3][3] = -2.0 * (pz_rz - px_rx - py_ry);
-    quad[0][1] = 2.0 * (py_rz - pz_ry);
-    quad[1][0] = quad[0][1];
-    quad[0][2] = 2.0 * (pz_rx - px_rz);
-    quad[2][0] = quad[0][2];
-    quad[0][3] = 2.0 * (px_ry - py_rx);
-    quad[3][0] = quad[0][3];
-    quad[1][2] = -2.0 * (px_ry + py_rx);
-    quad[2][1] = quad[1][2];
-    quad[1][3] = -2.0 * (pz_rx + px_rz);
-    quad[3][1] = quad[1][3];
-    quad[2][3] = -2.0 * (py_rz + pz_ry);
-    quad[3][2] = quad[2][3];
-    quad
-}
-
-fn rdkit_align_points_jacobi(
-    mut quad: [[f64; 4]; 4],
-    max_iter: usize,
-) -> ([f64; 4], [[f64; 4]; 4]) {
-    let mut eigen_vecs = [[0.0; 4]; 4];
-    let mut eigen_vals = [0.0; 4];
-    for j in 0..4 {
-        eigen_vecs[j][j] = 1.0;
-        eigen_vals[j] = quad[j][j];
-    }
-
-    for _ in 0..max_iter {
-        let mut diag_norm = 0.0;
-        let mut off_diag_norm = 0.0;
-        for j in 0..4 {
-            diag_norm += eigen_vals[j].abs();
-            for row in quad.iter().take(j) {
-                off_diag_norm += row[j].abs();
-            }
-        }
-        if diag_norm.abs() > 1.0e-16 && (off_diag_norm / diag_norm) <= RDKIT_ALIGN_POINTS_TOLERANCE
-        {
-            break;
-        }
-        for j in 1..4 {
-            for i in 0..j {
-                let b = quad[i][j];
-                if b.abs() <= 0.0 {
-                    continue;
-                }
-                let dma = eigen_vals[j] - eigen_vals[i];
-                let t = if (dma.abs() + b.abs()) <= dma.abs() {
-                    b / dma
-                } else {
-                    let q = 0.5 * dma / b;
-                    let mut t = 1.0 / (q.abs() + rdkit_sqrt(1.0 + q * q));
-                    if q < 0.0 {
-                        t = -t;
-                    }
-                    t
-                };
-                let c = 1.0 / rdkit_sqrt(t * t + 1.0);
-                let s = t * c;
-                quad[i][j] = 0.0;
-                for k in 0..i {
-                    let atemp = c * quad[k][i] - s * quad[k][j];
-                    quad[k][j] = s * quad[k][i] + c * quad[k][j];
-                    quad[k][i] = atemp;
-                }
-                for k in (i + 1)..j {
-                    let atemp = c * quad[i][k] - s * quad[k][j];
-                    quad[k][j] = s * quad[i][k] + c * quad[k][j];
-                    quad[i][k] = atemp;
-                }
-                for k in (j + 1)..4 {
-                    let atemp = c * quad[i][k] - s * quad[j][k];
-                    quad[j][k] = s * quad[i][k] + c * quad[j][k];
-                    quad[i][k] = atemp;
-                }
-                for row in &mut eigen_vecs {
-                    let vtemp = c * row[i] - s * row[j];
-                    row[j] = s * row[i] + c * row[j];
-                    row[i] = vtemp;
-                }
-                let dtemp = c * c * eigen_vals[i] + s * s * eigen_vals[j] - 2.0 * c * s * b;
-                eigen_vals[j] = s * s * eigen_vals[i] + c * c * eigen_vals[j] + 2.0 * c * s * b;
-                eigen_vals[i] = dtemp;
-            }
-        }
-    }
-
-    for j in 0..3 {
-        let mut k = j;
-        let mut dtemp = eigen_vals[k];
-        for (i, val) in eigen_vals.iter().enumerate().skip(j + 1) {
-            if *val < dtemp {
-                k = i;
-                dtemp = eigen_vals[k];
-            }
-        }
-        if k > j {
-            eigen_vals[k] = eigen_vals[j];
-            eigen_vals[j] = dtemp;
-            for row in &mut eigen_vecs {
-                row.swap(k, j);
-            }
-        }
-    }
-
-    (eigen_vals, eigen_vecs)
-}
 
 fn rdkit_align_points(
     ref_points: &[[f64; 3]],
@@ -5664,62 +5412,14 @@ fn rdkit_align_points(
     reflect: bool,
     max_iterations: usize,
 ) -> Result<(f64, [[f64; 4]; 4]), Coordinate2DError> {
-    if ref_points.len() != probe_points.len() {
-        return Err(Coordinate2DError::InvalidInput(
-            "alignment requires matching point counts",
-        ));
-    }
-    let npt = ref_points.len();
-    if npt == 0 {
-        return Err(Coordinate2DError::InvalidInput(
-            "alignment requires at least one point",
-        ));
-    }
-
-    let mut trans = rdkit_transform3d_identity();
-    let wts_sum = npt as f64;
-    let mut rpt_sum = rdkit_weighted_sum_of_points(ref_points);
-    let ppt_sum = rdkit_weighted_sum_of_points(probe_points);
-    let rpt_sum_len_sq = rdkit_weighted_sum_of_len_sq(ref_points);
-    let ppt_sum_len_sq = rdkit_weighted_sum_of_len_sq(probe_points);
-
-    let mut cov_mat = rdkit_compute_covariance_mat(ref_points, probe_points);
-    if reflect {
-        rpt_sum = [-rpt_sum[0], -rpt_sum[1], -rpt_sum[2]];
-        rdkit_reflect_covariance_mat(&mut cov_mat);
-    }
-    let quad = rdkit_convert_cov_mat_to_quad(&cov_mat, rpt_sum, ppt_sum, wts_sum);
-    let (eigen_vals, eigen_vecs) = rdkit_align_points_jacobi(quad, max_iterations);
-    let quaternion = [
-        eigen_vecs[0][0],
-        eigen_vecs[1][0],
-        eigen_vecs[2][0],
-        eigen_vecs[3][0],
-    ];
-    rdkit_transform3d_set_rotation_from_quaternion(&mut trans, quaternion);
-    if reflect {
-        rdkit_transform3d_reflect(&mut trans);
-    }
-    let mut ssr = eigen_vals[0]
-        - ((ppt_sum[0] * ppt_sum[0] + ppt_sum[1] * ppt_sum[1] + ppt_sum[2] * ppt_sum[2])
-            + (rpt_sum[0] * rpt_sum[0] + rpt_sum[1] * rpt_sum[1] + rpt_sum[2] * rpt_sum[2]))
-            / wts_sum
-        + rpt_sum_len_sq
-        + ppt_sum_len_sq;
-    if ssr < 0.0 && ssr.abs() < RDKIT_ALIGN_POINTS_TOLERANCE {
-        ssr = 0.0;
-    }
-    if reflect {
-        rpt_sum = [-rpt_sum[0], -rpt_sum[1], -rpt_sum[2]];
-    }
-    let transformed_ppt_sum = rdkit_transform3d_transform_point(&trans, ppt_sum);
-    let move_vec = [
-        (rpt_sum[0] - transformed_ppt_sum[0]) / wts_sum,
-        (rpt_sum[1] - transformed_ppt_sum[1]) / wts_sum,
-        (rpt_sum[2] - transformed_ppt_sum[2]) / wts_sum,
-    ];
-    rdkit_transform3d_set_translation(&mut trans, move_vec);
-    Ok((ssr, trans))
+    crate::chemistry::numerics::alignment::align_points(
+        ref_points,
+        probe_points,
+        None,
+        reflect,
+        max_iterations,
+    )
+    .map_err(Coordinate2DError::InvalidInput)
 }
 
 fn rdkit_apply_transform_to_2d_conformer(
@@ -5730,7 +5430,10 @@ fn rdkit_apply_transform_to_2d_conformer(
     let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
     let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
     for point in coords.iter_mut() {
-        let transformed = rdkit_transform3d_transform_point(trans, [point[0], point[1], 0.0]);
+        let transformed = crate::chemistry::numerics::alignment::transform_point(
+            trans,
+            [point[0], point[1], 0.0],
+        );
         point[0] = transformed[0];
         point[1] = transformed[1];
     }
@@ -5784,7 +5487,7 @@ fn rdkit_get_best_alignment_transform(
     max_matches: usize,
 ) -> Result<([[f64; 4]; 4], Vec<(usize, usize)>), Coordinate2DError> {
     let mut best_rmsd = f64::INFINITY;
-    let mut best_trans = rdkit_transform3d_identity();
+    let mut best_trans = crate::chemistry::numerics::alignment::identity();
     let mut best_match = None;
     for match_vec in matches.iter().take(max_matches) {
         let (rmsd, trans) = rdkit_get_alignment_transform(
@@ -5968,7 +5671,7 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
     let has_existing_coords = !mol.conformers_2d().is_empty();
     let mut should_clear_wedging_info = params.adjust_molblock_wedging && !has_existing_coords;
     let mut should_invert_wedging_if_required = false;
-    let mut trans = rdkit_transform3d_identity();
+    let mut trans = crate::chemistry::numerics::alignment::identity();
 
     if params.align_only {
         if !has_existing_coords {
@@ -11758,7 +11461,7 @@ fn rdkit_compute_canonical_transform_for_2d_coords(
     coords: &[[f64; 2]],
     center: Option<[f64; 2]>,
 ) -> [[f64; 4]; 4] {
-    let mut trans = rdkit_transform3d_identity();
+    let mut trans = crate::chemistry::numerics::alignment::identity();
     let origin = if let Some(center) = center {
         center
     } else if coords.is_empty() {
@@ -11798,8 +11501,9 @@ fn rdkit_compute_canonical_transform_for_2d_coords(
         trans[2][2] = 1.0;
     }
     let neg_origin = [-origin[0], -origin[1], 0.0];
-    let transformed_origin = rdkit_transform3d_transform_point(&trans, neg_origin);
-    rdkit_transform3d_set_translation(&mut trans, transformed_origin);
+    let transformed_origin =
+        crate::chemistry::numerics::alignment::transform_point(&trans, neg_origin);
+    crate::chemistry::numerics::alignment::set_translation(&mut trans, transformed_origin);
     trans
 }
 
@@ -11954,7 +11658,7 @@ pub(crate) fn normalize_depiction(
             None,
         ))
     } else {
-        let mut trans = rdkit_transform3d_identity();
+        let mut trans = crate::chemistry::numerics::alignment::identity();
         let mut centroid = [0.0, 0.0];
         for point in &coords_snapshot {
             centroid[0] += point[0];
@@ -11962,12 +11666,15 @@ pub(crate) fn normalize_depiction(
         }
         centroid[0] /= coords_snapshot.len() as f64;
         centroid[1] /= coords_snapshot.len() as f64;
-        rdkit_transform3d_set_translation(&mut trans, [-centroid[0], -centroid[1], 0.0]);
+        crate::chemistry::numerics::alignment::set_translation(
+            &mut trans,
+            [-centroid[0], -centroid[1], 0.0],
+        );
         Some(trans)
     };
     if canonicalize < 0 {
         let rotate90 = transform2d_set_transform_center_angle((0.0, 0.0), PI / 2.0);
-        let mut rotate90_3d = rdkit_transform3d_identity();
+        let mut rotate90_3d = crate::chemistry::numerics::alignment::identity();
         rotate90_3d[0][0] = rotate90[0];
         rotate90_3d[0][1] = rotate90[1];
         rotate90_3d[0][3] = rotate90[2];
@@ -11975,28 +11682,33 @@ pub(crate) fn normalize_depiction(
         rotate90_3d[1][1] = rotate90[4];
         rotate90_3d[1][3] = rotate90[5];
         if let Some(trans) = canon_trans.as_mut() {
-            *trans = rdkit_transform3d_mul(&rotate90_3d, trans);
+            *trans = crate::chemistry::numerics::alignment::mul(&rotate90_3d, trans);
         }
     }
 
     let is_scale_factor_sane = scale_factor > SCALE_FACTOR_THRESHOLD;
     let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
     if is_scale_factor_sane && (scale_factor - 1.0).abs() > SCALE_FACTOR_THRESHOLD {
-        let mut trans = rdkit_transform3d_identity();
+        let mut trans = crate::chemistry::numerics::alignment::identity();
         trans[0][0] = scale_factor;
         trans[1][1] = scale_factor;
         if let Some(canon_trans) = canon_trans {
-            trans = rdkit_transform3d_mul(&trans, &canon_trans);
+            trans = crate::chemistry::numerics::alignment::mul(&trans, &canon_trans);
         }
         for point in coords.iter_mut() {
-            let transformed = rdkit_transform3d_transform_point(&trans, [point[0], point[1], 0.0]);
+            let transformed = crate::chemistry::numerics::alignment::transform_point(
+                &trans,
+                [point[0], point[1], 0.0],
+            );
             point[0] = transformed[0];
             point[1] = transformed[1];
         }
     } else if let Some(canon_trans) = canon_trans {
         for point in coords.iter_mut() {
-            let transformed =
-                rdkit_transform3d_transform_point(&canon_trans, [point[0], point[1], 0.0]);
+            let transformed = crate::chemistry::numerics::alignment::transform_point(
+                &canon_trans,
+                [point[0], point[1], 0.0],
+            );
             point[0] = transformed[0];
             point[1] = transformed[1];
         }

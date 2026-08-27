@@ -121,11 +121,13 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 }
 
 #[test]
+#[ignore = "full 1,000-row PCS tautomer matrix; run explicitly in the exhaustive parity tier"]
 fn pcs_1k_matches_pinned_rdkit_for_every_full_enumeration_and_endpoint() {
     assert_profile("tautomer_pcs_1k", 1_000);
 }
 
 #[test]
+#[ignore = "full 100,000-row PCS tautomer matrix; run explicitly in the exhaustive parity tier"]
 fn pcs_100k_matches_pinned_rdkit_for_every_full_enumeration_and_endpoint() {
     assert_profile("tautomer_pcs_100k", 99_991);
 }

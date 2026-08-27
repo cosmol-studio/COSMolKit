@@ -34,6 +34,8 @@ PROFILE_INPUTS = {
     / "testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi",
     "pattern_focused": REPO_ROOT
     / "testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi",
+    "molalign_focused": REPO_ROOT
+    / "testdata/alignment/fixtures/molalign_focused.json",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
     "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
@@ -153,6 +155,13 @@ GENERATOR_SPECS = [
         "dg_bounds_matrix.jsonl",
         "distgeom",
         {"default", "strict-corpus"},
+    ),
+    spec(
+        "molalign_golden",
+        "molalign.jsonl",
+        "alignment",
+        {"default", "strict-corpus", "molalign"},
+        profiles={"molalign_focused", "smiles_small", "smiles_5000"},
     ),
     spec(
         "conformer_generation_golden",

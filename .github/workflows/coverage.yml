@@ -115,6 +115,37 @@ jobs:
                       --suite smarts \
                       --jobs 4
 
+            - name: Prepare and validate focused RDKit tautomer expected data
+              run: |
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile tautomer_focused \
+                      --suite tautomer \
+                      --jobs 4
+
+            - name: Prepare exhaustive RDKit tautomer expected data
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true' && env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              run: |
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile smiles_5000 \
+                      --suite tautomer \
+                      --jobs 4
+
+            - name: Prepare exhaustive RDKit PCS tautomer expected data
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              run: |
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile tautomer_pcs_1k \
+                      --suite tautomer \
+                      --jobs 4
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile tautomer_pcs_100k \
+                      --suite tautomer \
+                      --jobs 4
+
             - name: Save validated RDKit expected-data cache
               if: steps.prepare_rdkit_expected.outputs.regenerated == 'true'
               uses: actions/cache/save@v4
@@ -179,6 +210,35 @@ jobs:
               with:
                   path: testdata/stereo/expected/rdkit/ciplabeler_focused
                   key: ${{ steps.focused_ciplabeler_golden_cache.outputs.cache-primary-key }}
+
+            - name: Restore focused MolAlign golden cache
+              id: focused_molalign_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/alignment/expected/rdkit/molalign_focused
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-molalign-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/alignment/fixtures/molalign_focused.json', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-molalign-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/alignment/fixtures/molalign_focused.json', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-
+
+            - name: Prepare and validate focused MolAlign expected data
+              id: prepare_focused_molalign_expected
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile molalign_focused --suite molalign --jobs 1 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated focused MolAlign expected-data cache
+              if: steps.prepare_focused_molalign_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/alignment/expected/rdkit/molalign_focused
+                  key: ${{ steps.focused_molalign_golden_cache.outputs.cache-primary-key }}
 
             - name: Restore focused Layered fingerprint golden cache
               id: focused_layered_golden_cache
@@ -269,6 +329,37 @@ jobs:
                   path: testdata/stereo/expected/rdkit/smiles_5000
                   key: ${{ steps.strict_5000_ciplabeler_golden_cache.outputs.cache-primary-key }}
 
+            - name: Restore strict 5000 MolAlign golden cache
+              id: strict_5000_molalign_golden_cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/alignment/expected/rdkit/smiles_5000
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-molalign-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-molalign-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-
+
+            - name: Prepare and validate strict 5000 MolAlign expected data
+              id: prepare_strict_5000_molalign_expected
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite molalign --jobs 4 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated strict 5000 MolAlign expected-data cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true' && steps.prepare_strict_5000_molalign_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/alignment/expected/rdkit/smiles_5000
+                  key: ${{ steps.strict_5000_molalign_golden_cache.outputs.cache-primary-key }}
+
             - name: Restore strict 5000 fingerprint golden cache
               id: strict_5000_fingerprint_golden_cache
               if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
@@ -322,6 +413,38 @@ jobs:
               shell: bash
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_sdf_read_parity --no-report -- --ignored sdf_read_all_apis_and_parameters_match_rdkit
+
+            - name: Run exhaustive scalar tautomer parity with coverage instrumentation
+              id: tautomer_scalar_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              continue-on-error: true
+              shell: bash
+              run: |
+                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_corpus_parity --no-report -- --ignored smiles_5000_profiles_match_every_pinned_rdkit_observation --exact
+
+            - name: Run exhaustive batch tautomer parity with coverage instrumentation
+              id: tautomer_batch_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              continue-on-error: true
+              shell: bash
+              run: |
+                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_corpus_parity --no-report -- --ignored smiles_5000_parallel_batches_preserve_order_and_exact_results --exact
+
+            - name: Run exhaustive PCS tautomer parity with coverage instrumentation
+              id: tautomer_pcs_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              continue-on-error: true
+              shell: bash
+              run: |
+                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_pcs_parity --no-report -- --ignored
+
+            - name: Run exhaustive MolAlign parity with coverage instrumentation
+              id: molalign_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+              continue-on-error: true
+              shell: bash
+              run: |
+                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_molalign_parity --no-report -- --ignored molalign_matches_all_5000_rows_and_rotated_operation_branches --exact
 
             - name: Run strict 5000 InChI parity with coverage instrumentation
               id: strict_5000_inchi
@@ -394,7 +517,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.tautomer_scalar_full.outcome == 'failure' || steps.tautomer_batch_full.outcome == 'failure' || steps.tautomer_pcs_full.outcome == 'failure' || steps.molalign_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

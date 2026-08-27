@@ -27,8 +27,9 @@ pruning when `symmetrizeConjugatedTerminalGroupsForPruning == true`.
 
 Current COSMolKit status:
 
-- The branch is now source-ported in
-  `crates/cosmolkit-core/src/chemistry/distgeom.rs`.
+- The branch is now source-ported in the shared clone-only helper at
+  `crates/cosmolkit-core/src/chemistry/mol_align_support.rs`, which is used by
+  both distance-geometry pruning and ordinary MolAlign mapping.
 - The helper mutates the query-side clone exactly along the RDKit source shape:
   neutralize terminal formal charge and replace the matched terminal bond with a
   single-or-double query bond before self-matching.

@@ -421,6 +421,50 @@ pub(super) fn with_3d_coordinates_impl(
     Ok(())
 }
 
+#[mol_op_body(with_aligned_conformers, parts)]
+pub(super) fn with_aligned_conformers_impl(
+    params: crate::ConformerAlignmentParameters,
+) -> Result<crate::ConformerAlignmentReport, OperationError> {
+    let atom_count = parts.begin_topology_read()?.num_atoms();
+    let rmsds = parts.with_coordinates_mut(|_parts, coordinates| {
+        crate::mol_align::align_conformers_in_coordinate_block(coordinates, atom_count, &params)
+            .map_err(|source| OperationError::Alignment {
+                operation: &WITH_ALIGNED_CONFORMERS_SPEC,
+                source,
+            })
+    })?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(crate::ConformerAlignmentReport { rmsds })
+}
+
+#[mol_op_body(with_alignment_to, parts)]
+pub(super) fn with_alignment_to_impl(
+    reference: &crate::Molecule,
+    params: &crate::AlignmentParameters,
+) -> Result<crate::AlignmentResult, OperationError> {
+    let result = parts.with_coordinate_update_read_parts(|read| {
+        crate::mol_align::alignment_result_from_read_parts(read, reference, params).map_err(
+            |source| OperationError::Alignment {
+                operation: &WITH_ALIGNMENT_TO_SPEC,
+                source,
+            },
+        )
+    })?;
+    parts.with_coordinates_mut(|_parts, coordinates| {
+        crate::mol_align::apply_alignment_result_to_coordinate_block(
+            coordinates,
+            params.probe_conformer_id,
+            &result,
+        )
+        .map_err(|source| OperationError::Alignment {
+            operation: &WITH_ALIGNMENT_TO_SPEC,
+            source,
+        })
+    })?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(result)
+}
+
 #[mol_op_body(with_atom_position, parts)]
 pub(super) fn with_atom_position_impl(
     atom: usize,

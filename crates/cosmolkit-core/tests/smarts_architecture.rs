@@ -39,6 +39,7 @@ const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
     "src/chemistry/forcefield/crystalff/torsion_preferences.rs::expand_crystalff_smarts_bonds",
     "src/chemistry/forcefield/crystalff/torsion_preferences.rs::map_pattern_atom_indices",
     "src/chemistry/forcefield/crystalff/torsion_preferences.rs::smarts",
+    "src/chemistry/tautomer.rs::smarts",
     "src/io/sdf.rs::parse_marvin_smarts_line",
     "src/io/sdf/postprocess.rs::process_smartsq",
     "src/notation/smiles_write.rs::canonicalize_fragment_stack_for_smarts",

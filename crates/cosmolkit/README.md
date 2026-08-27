@@ -15,7 +15,7 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 31 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 34 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
 Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
@@ -319,6 +319,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Molecular Alignment And RMSD
+
+Ordinary molecular alignment uses the source-backed RDKit MolAlign boundary.
+Transform queries, best RMSD, coordinate-frame RMSD, and all-conformer pair
+measurements are read-only. Coordinate changes are exposed only through a
+value-style method or an explicit trailing-underscore method.
+
+```rust
+use cosmolkit::{AlignmentAtomMap, AlignmentParameters, Molecule};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let reference = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
+        true,
+    )?;
+    let probe = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
+        vec![[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]],
+        true,
+    )?;
+    let params = AlignmentParameters {
+        atom_map: Some(
+            (0..3)
+                .map(|index| AlignmentAtomMap {
+                    probe_atom: index,
+                    reference_atom: index,
+                })
+                .collect(),
+        ),
+        ..Default::default()
+    };
+
+    let measured = probe.alignment_transform_to(&reference, &params)?;
+    let (aligned, applied) = probe.with_alignment_to(&reference, &params)?;
+    assert_eq!(probe.conformers_3d()[0].coordinates()[0], [3.0, -2.0, 1.0]);
+    assert!(measured.rmsd < 1.0e-8 && applied.rmsd < 1.0e-8);
+    assert_eq!(aligned.conformers_3d()[0].coordinates()[0], [0.0, 0.0, 0.0]);
+    Ok(())
+}
+```
+
+Weighted and reflected alignment, automatic or explicit atom maps, conformer
+IDs, iteration limits, best-map selection, and conformer-set alignment use
+typed parameter objects. O3A and MMFF/Crippen scoring are separate capabilities
+and are not implied by this ordinary MolAlign API.
+
 ## Examples
 
 ```bash
@@ -328,6 +373,7 @@ cargo run -p cosmolkit --example draw_png
 cargo run -p cosmolkit --example sdf_to_smiles
 cargo run -p cosmolkit --example protein_from_pdb
 cargo run -p cosmolkit --example read_xyz
+cargo run -p cosmolkit --example molalign_rmsd
 cargo run -p cosmolkit --example conformer_generation
 cargo run -p cosmolkit --example forcefield_optimization
 ```

@@ -338,6 +338,12 @@ pub enum OperationError {
         #[source]
         source: crate::mol_transforms::MolTransformError,
     },
+    #[error("{operation}: molecule alignment failed: {source}")]
+    Alignment {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: crate::AlignmentError,
+    },
     #[error("{operation}: {source}")]
     UnsupportedFeature {
         operation: &'static MoleculeOpSpec,
@@ -931,6 +937,61 @@ molecule_ops! {
         parity_profile: "set_3d_coordinates_manual",
     }
 
+    op with_alignment_to(reference: &crate::Molecule, params: &crate::AlignmentParameters) {
+        method: with_alignment_to,
+        impl_fn: with_alignment_to_impl,
+        result_type: crate::AlignmentResult,
+        inplace: true,
+        inplace_method: align_to_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology, properties, derived_cache], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: MOLALIGN_FEATURE,
+        parity: required_now,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_align_molecule",
+        parity_profile: "align_mol_rdkit",
+    }
+
+    op with_aligned_conformers(params: crate::ConformerAlignmentParameters) {
+        method: with_aligned_conformers_with_params,
+        impl_fn: with_aligned_conformers_impl,
+        result_type: crate::ConformerAlignmentReport,
+        default_method: with_aligned_conformers,
+        default_args: [crate::ConformerAlignmentParameters::default()],
+        inplace: true,
+        inplace_method: align_conformers_with_params_,
+        default_inplace_method: align_conformers_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: MOLALIGN_FEATURE,
+        parity: required_now,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_align_conformers",
+        parity_profile: "align_mol_conformers_rdkit",
+    }
+
     op with_atom_position(atom: usize, position: [f64; 3], conformer_index: usize) {
         method: with_atom_position,
         impl_fn: with_atom_position_impl,
@@ -1435,6 +1496,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn conformer_alignment_operation_calls_the_alignment_core_once() {
+        let molecule = crate::Molecule::from_smiles("CCC").expect("molecule graph");
+        let mut builder = molecule.to_builder();
+        builder
+            .add_conformer(crate::Conformer3D::new(
+                7,
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
+                true,
+            ))
+            .expect("reference conformer");
+        builder
+            .add_conformer(crate::Conformer3D::new(
+                17,
+                vec![[3.0, 4.0, 5.0], [4.0, 4.0, 5.0], [3.0, 6.0, 5.0]],
+                true,
+            ))
+            .expect("probe conformer");
+        let molecule = builder.build().expect("multi-conformer molecule");
+
+        crate::mol_align::reset_align_conformers_call_count();
+        let (_aligned, report) = molecule
+            .with_aligned_conformers()
+            .expect("value conformer alignment");
+        assert_eq!(report.rmsds.len(), 1);
+        assert_eq!(crate::mol_align::align_conformers_call_count(), 1);
+
+        let mut inplace = molecule;
+        crate::mol_align::reset_align_conformers_call_count();
+        let report = inplace
+            .align_conformers_()
+            .expect("in-place conformer alignment");
+        assert_eq!(report.rmsds.len(), 1);
+        assert_eq!(crate::mol_align::align_conformers_call_count(), 1);
     }
 
     #[test]
@@ -2092,6 +2189,33 @@ mod tests {
         assert!(parity_matrix_contains(&WITH_CLEARED_3D_CONFORMERS_SPEC));
         assert!(parity_matrix_contains(&WITH_ADDED_3D_CONFORMER_SPEC));
         assert!(parity_matrix_contains(&WITH_ONLY_3D_CONFORMER_SPEC));
+    }
+
+    #[test]
+    fn molalign_operations_have_their_own_feature_boundary() {
+        let molalign_operations = MOLECULE_OPS
+            .iter()
+            .copied()
+            .filter(|operation| {
+                support_feature_for(operation).map(|feature| feature.name)
+                    == Some(crate::MOLALIGN_FEATURE.name)
+            })
+            .map(|operation| operation.method)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            molalign_operations,
+            vec![
+                WITH_ALIGNMENT_TO_SPEC.method,
+                WITH_ALIGNED_CONFORMERS_SPEC.method,
+            ]
+        );
+        for operation in [&WITH_ALIGNMENT_TO_SPEC, &WITH_ALIGNED_CONFORMERS_SPEC] {
+            assert_eq!(operation.domain, OperationDomain::Coordinate);
+            assert_eq!(operation.parity, ParityPolicy::RequiredNow);
+            assert!(support_matrix_contains(operation));
+            assert!(invariant_matrix_contains(operation));
+            assert!(parity_matrix_contains(operation));
+        }
     }
 
     #[test]

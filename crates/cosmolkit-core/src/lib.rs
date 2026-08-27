@@ -105,12 +105,17 @@ pub(crate) use cosmolkit_test_support as test_data;
 pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;
 pub use chemistry::{
-    aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_transforms, rings,
-    stereo, stereo_enumerate, tautomer, valence,
+    aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_align,
+    mol_transforms, rings, stereo, stereo_enumerate, tautomer, valence,
 };
 pub use io::pdb_writer;
 pub(crate) use model::invariants;
 pub use model::{adjacency, atom, bond, builder, derived, error, molecule, read_parts, sgroup};
+pub use mol_align::{
+    AlignmentAtomMap, AlignmentError, AlignmentParameters, AlignmentResult, AlignmentTransform,
+    AllConformerRmsdParameters, BestAlignmentParameters, ConformerAlignmentParameters,
+    ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters,
+};
 pub(crate) use notation::{canon_rank, smiles};
 pub use notation::{canon_smiles, fragment, sequence, smiles_write};
 pub use operations::{ops, sanitize};
@@ -324,11 +329,11 @@ pub use support::{
     BIO_STRUCTURE_FEATURE, CIP_LABELER_FEATURE, CONFORMER_GENERATION_FEATURE,
     COORDINATE_2D_FEATURE, COORDINATE_EDIT_FEATURE, DESCRIPTORS_FEATURE, DG_BOUNDS_FEATURE,
     DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec, HYDROGENS_FEATURE,
-    INCHI_FEATURE, KEKULIZE_FEATURE, LAYERED_FINGERPRINT_FEATURE, MOLBLOCK_IO_FEATURE,
-    PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE, SANITIZE_FEATURE,
-    SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE, SUBSTRUCTURE_FEATURE,
-    SupportStatus, TAUTOMER_ENUMERATION_FEATURE, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
-    UnsupportedFeatureError, VALENCE_FEATURE,
+    INCHI_FEATURE, KEKULIZE_FEATURE, LAYERED_FINGERPRINT_FEATURE, MOLALIGN_FEATURE,
+    MOLBLOCK_IO_FEATURE, PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
+    SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
+    SUBSTRUCTURE_FEATURE, SupportStatus, TAUTOMER_ENUMERATION_FEATURE,
+    TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE, UnsupportedFeatureError, VALENCE_FEATURE,
 };
 #[allow(deprecated)]
 pub use support::{

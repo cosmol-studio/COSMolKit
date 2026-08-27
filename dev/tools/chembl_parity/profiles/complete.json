@@ -28,6 +28,7 @@
     {"name": "composition-scalar", "script": "audit_combinations.py", "mode": "scalar", "max_atoms": 80, "records_per_shard": 4096, "expected_processed": 516650},
     {"name": "composition-batch", "script": "audit_combinations.py", "mode": "batch", "max_atoms": 80, "records_per_shard": 8192, "worker_divisor": 8, "batch_size": 128, "expected_processed": 1027660},
     {"name": "conformer", "script": "audit_surfaces.py", "mode": "conformer", "max_atoms": 50, "records_per_shard": 4096, "expected_processed": 524288},
+    {"name": "molalign", "script": "audit_surfaces.py", "mode": "molalign", "max_atoms": 80, "expected_processed": 2854362},
     {"name": "forcefield", "script": "audit_surfaces.py", "mode": "forcefield", "max_atoms": 40, "records_per_shard": 4096, "expected_processed": 524288},
     {"name": "composition-concurrent", "script": "audit_combinations.py", "mode": "concurrent", "max_atoms": 80, "records_per_shard": 512, "worker_divisor": 8, "expected_processed": 64524},
     {"name": "repeat-core", "script": "audit_core.py", "mode": "core", "expected_processed": 2897819},

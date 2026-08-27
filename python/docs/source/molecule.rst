@@ -420,6 +420,50 @@ the source-ported RDKit path.
    pruned = mol.with_3d_conformers(5, params)
    print(pruned.num_conformers())
 
+Molecular Alignment And RMSD
+----------------------------
+
+MolAlign measurement methods do not change either molecule. Use
+``alignment_transform_to()`` for an explicit or automatic first-match
+transform, ``best_alignment_to()`` or ``best_rmsd_to()`` for symmetry-aware
+best-map alignment, and ``coordinate_rmsd_to()`` to measure coordinates in
+their existing frames without alignment.
+
+.. code-block:: python
+
+   import numpy as np
+   from cosmolkit import AlignmentAtomMap, AlignmentParameters, Molecule
+
+   reference_coords = np.array(
+       [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+   )
+   probe_coords = reference_coords + np.array([3.0, -2.0, 1.0])
+   reference = Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coords)
+   probe = Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coords)
+   params = AlignmentParameters(
+       atom_map=[AlignmentAtomMap(index, index) for index in range(3)]
+   )
+
+   measured = probe.alignment_transform_to(reference, params)
+   aligned, applied = probe.with_alignment_to(reference, params)
+
+   assert np.array_equal(probe.coordinates_3d(), probe_coords)
+   assert measured.rmsd() < 1.0e-8
+   assert applied.rmsd() < 1.0e-8
+   assert np.allclose(aligned.coordinates_3d(), reference_coords)
+
+``with_alignment_to()`` returns a new molecule and result. ``align_to_()`` is
+the explicit in-place form. ``all_conformer_best_rmsds()`` is read-only and
+returns RDKit's triangular pair order; ``with_aligned_conformers()`` and
+``align_conformers_()`` expose value-style and in-place conformer-set
+alignment. Its ``AllConformerRmsdParameters`` exposes exactly the source call's
+map, weight, match-limit, terminal-symmetry, hydrogen, and threading controls;
+reflection and iteration count are fixed by that RDKit path. Weighted and
+reflected pair alignment, stored conformer IDs, match limits, terminal-group
+symmetry, and iteration limits are available through the other typed parameter
+classes. O3A and MMFF/Crippen alignment scoring are separate capabilities
+outside this ordinary MolAlign boundary.
+
 UFF and MMFF optimization APIs operate on existing or generated 3D conformers
 and return new molecule values through result objects. They do not mutate the
 source molecule.

@@ -9,7 +9,8 @@ use crate::chemistry::forcefield::{
     ForceField, ForceFieldContrib, ForceFieldSnapshot, ForceFieldVec3,
 };
 use crate::{
-    AtomSpec, BondSpec, Element, Molecule, ValenceModel, assign_valence, read_mol2_from_str,
+    AtomSpec, BondQueryPredicate, BondSpec, Element, Molecule, QueryNode, ValenceModel,
+    assign_valence, read_mol2_from_str,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -4902,7 +4903,8 @@ fn embedder_mol_self_matches_uses_heavy_atoms_or_all_atoms_like_rdkit() {
 #[test]
 fn symmetrize_terminal_atoms_for_pruning_matches_rdkit_terminal_group_query() {
     let mol = terminal_group_symmetry_molecule();
-    let symmetrized = symmetrize_terminal_atoms_for_pruning(&mol).expect("symmetrized");
+    let symmetrized =
+        crate::chemistry::mol_align_support::symmetrize_terminal_atoms(&mol).expect("symmetrized");
 
     assert_eq!(symmetrized.atoms()[0].formal_charge(), 0);
     assert_eq!(symmetrized.atoms()[2].formal_charge(), 0);

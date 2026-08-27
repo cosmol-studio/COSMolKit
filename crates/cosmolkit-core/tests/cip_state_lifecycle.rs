@@ -1,7 +1,7 @@
 use cosmolkit_core::{
     AddHsParams, AtomSpec, BondOrder, BondSpec, ChiralTag, CipStatePolicy, Element, MOLECULE_OPS,
-    Molecule, MoleculeBuilder, OperationDomain, RemoveHsParams, SanitizeOps, mol_from_binary,
-    mol_to_binary,
+    Molecule, MoleculeBuilder, OperationDomain, RemoveHsParams, SanitizeOps,
+    chemistry::tautomer::TautomerEnumerator, mol_from_binary, mol_to_binary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,8 +141,8 @@ fn lifecycle_seed() -> Molecule {
         .expect("lifecycle molecule CIP state must be assignable")
 }
 
-fn run_topology_operation(method: &str, molecule: &Molecule) -> Molecule {
-    match method {
+fn run_topology_operation(method: &str, molecule: &Molecule) -> Vec<Molecule> {
+    let single = match method {
         "with_hydrogens_with_params" => molecule.with_hydrogens_with_params(AddHsParams::default()),
         "without_hydrogens_with_sanitize" => molecule.without_hydrogens_with_sanitize(true),
         "without_hydrogens_with_params" => {
@@ -157,9 +157,15 @@ fn run_topology_operation(method: &str, molecule: &Molecule) -> Molecule {
         "with_assigned_radicals" => molecule.with_assigned_radicals(),
         "with_chiral_tags_from_structure" => molecule.with_chiral_tags_from_structure(-1, true),
         "with_cip_labels_with_options" => molecule.with_cip_labels(),
+        "enumerate_tautomers_with_options" => {
+            return TautomerEnumerator::new()
+                .enumerate(molecule)
+                .unwrap_or_else(|error| panic!("topology operation `{method}` failed: {error}"))
+                .molecules();
+        }
         other => panic!("topology operation `{other}` is missing from the CIP lifecycle runner"),
-    }
-    .unwrap_or_else(|error| panic!("topology operation `{method}` failed: {error}"))
+    };
+    vec![single.unwrap_or_else(|error| panic!("topology operation `{method}` failed: {error}"))]
 }
 
 #[test]
@@ -174,18 +180,27 @@ fn cip_state_lifecycle_matrix_executes_every_registered_topology_operation() {
         .filter(|operation| operation.domain == OperationDomain::Topology)
     {
         executed += 1;
-        let result = run_topology_operation(operation.method, &source);
-        let state = CipState::from_molecule(&result);
-        match operation.cip_state {
-            CipStatePolicy::Preserve => assert_eq!(state, source_state, "{}", operation.method),
-            CipStatePolicy::ClearComputed => {
-                state.assert_computed_cleared();
-                assert_eq!(state.atom_codes.first(), source_state.atom_codes.first());
-                assert_eq!(state.bond_codes.first(), source_state.bond_codes.first());
-            }
-            CipStatePolicy::Assign => assert_eq!(state.computed.as_deref(), Some("1")),
-            CipStatePolicy::TautomerSourceTransition => {
-                assert_eq!(operation.method, "enumerate_tautomers_with_options");
+        let results = run_topology_operation(operation.method, &source);
+        assert!(
+            !results.is_empty(),
+            "{} emitted no branches",
+            operation.method
+        );
+        for result in results {
+            let state = CipState::from_molecule(&result);
+            match operation.cip_state {
+                CipStatePolicy::Preserve => {
+                    assert_eq!(state, source_state, "{}", operation.method)
+                }
+                CipStatePolicy::ClearComputed => {
+                    state.assert_computed_cleared();
+                    assert_eq!(state.atom_codes.first(), source_state.atom_codes.first());
+                    assert_eq!(state.bond_codes.first(), source_state.bond_codes.first());
+                }
+                CipStatePolicy::Assign => assert_eq!(state.computed.as_deref(), Some("1")),
+                CipStatePolicy::TautomerSourceTransition => {
+                    assert_eq!(operation.method, "enumerate_tautomers_with_options");
+                }
             }
         }
         assert_eq!(

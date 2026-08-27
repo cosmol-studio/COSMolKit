@@ -78,6 +78,49 @@ pub fn version() -> &'static str {
 mod tests {
     use super::*;
 
+    fn is_prime(value: u64) -> bool {
+        if value < 2 {
+            return false;
+        }
+        if value == 2 {
+            return true;
+        }
+        if value.is_multiple_of(2) {
+            return false;
+        }
+
+        let mut divisor = 3;
+        while divisor <= value / divisor {
+            if value.is_multiple_of(divisor) {
+                return false;
+            }
+            divisor += 2;
+        }
+        true
+    }
+
+    #[test]
+    fn minor_compatibility_series_uses_a_prime_number() {
+        let minor = env!("CARGO_PKG_VERSION_MINOR")
+            .parse::<u64>()
+            .expect("Cargo must expose the numeric SemVer minor component");
+
+        assert!(
+            is_prime(minor),
+            "COSMolKit minor compatibility series {minor} is not prime"
+        );
+    }
+
+    #[test]
+    fn prime_version_policy_rejects_composites_and_semver_zero_one() {
+        for prime in [2, 3, 5, 7, 11, 97] {
+            assert!(is_prime(prime), "{prime} should be prime");
+        }
+        for non_prime in [0, 1, 4, 9, 25, 121] {
+            assert!(!is_prime(non_prime), "{non_prime} should not be prime");
+        }
+    }
+
     fn methane() -> Molecule {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::C));

@@ -50,6 +50,7 @@ SCRIPT_MODES = {
         "inchi_options",
         "inchi_parse",
         "io",
+        "molalign",
         "smiles",
         "svg",
         "topology_operations",

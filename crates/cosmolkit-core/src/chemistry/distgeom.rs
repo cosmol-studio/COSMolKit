@@ -29,9 +29,9 @@ use crate::chemistry::stereo::{get_ideal_angle_between_ligands, has_non_tetrahed
 use crate::molecule::CoordinateBlock as MoleculeCoordinateBlock;
 use crate::read_parts::MoleculeReadParts;
 use crate::{
-    Atom, AtomId, Bond, BondId, BondOrder, BondQueryPredicate, BondStereo, ChiralTag, Conformer3D,
-    DerivedState, Hybridization, Molecule, MoleculeBuildError, QueryNode, SubstructMatchParams,
-    ValenceModel, assign_valence, get_substruct_matches_with_params, rdkit_valence_list,
+    Atom, AtomId, Bond, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D, Hybridization,
+    Molecule, MoleculeBuildError, SubstructMatchParams, ValenceModel, assign_valence,
+    get_substruct_matches_with_params, rdkit_valence_list,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
@@ -2812,295 +2812,28 @@ fn embedder_fill_atom_positions(
     }
 }
 
-fn alignments_weighted_sum_of_points(points: &[ForceFieldVec3]) -> ForceFieldVec3 {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfPoints unweighted path (AlignPoints.cpp:19-34)
-    // RDKit✔️✔️: RDGeom::Point3D _weightedSumOfPoints(const RDGeom::Point3DConstPtrVect &points,
-    // RDKit✔️✔️:                                      const DoubleVector *weights) {
-    // RDKit✔️✔️:   PRECONDITION(!weights || points.size() == weights->size(), "");
-    // RDKit✔️✔️:   RDGeom::Point3DConstPtrVect_CI pti;
-    // RDKit✔️✔️:   RDGeom::Point3D tmpPt, res;
-    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
-    // RDKit✔️✔️:   unsigned int i = 0;
-    // RDKit✔️✔️:   for (pti = points.begin(); pti != points.end(); pti++) {
-    // RDKit✔️✔️:     tmpPt = (*(*pti));
-    // RDKit✔️✔️:     if (weights) {
-    // RDKit✔️✔️:       tmpPt *= wData[i];
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     res += tmpPt;
-    // RDKit✔️✔️:     i++;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfPoints
-    points
-        .iter()
-        .copied()
-        .fold(ForceFieldVec3::default(), |acc, point| acc + point)
-}
-
-fn alignments_weighted_sum_of_len_sq(points: &[ForceFieldVec3]) -> f64 {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfLenSq unweighted path (AlignPoints.cpp:36-49)
-    // RDKit✔️✔️: double _weightedSumOfLenSq(const RDGeom::Point3DConstPtrVect &points,
-    // RDKit✔️✔️:                            const DoubleVector *weights) {
-    // RDKit✔️✔️:   PRECONDITION(!weights || (points.size() == weights->size()), "");
-    // RDKit✔️✔️:   double res = 0.0;
-    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
-    // RDKit✔️✔️:   unsigned int i = 0;
-    // RDKit✔️✔️:   for (const auto &pti : points) {
-    // RDKit✔️✔️:     auto l = pti->lengthSq();
-    // RDKit✔️✔️:     if (weights) {
-    // RDKit✔️✔️:       l *= wData[i];
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     res += l;
-    // RDKit✔️✔️:     i++;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfLenSq
-    points.iter().map(|point| point.length_sq()).sum()
-}
-
-fn alignments_compute_covariance_mat(
-    ref_points: &[ForceFieldVec3],
-    probe_points: &[ForceFieldVec3],
-) -> [[f64; 3]; 3] {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_computeCovarianceMat unweighted path (AlignPoints.cpp:61-88)
-    // RDKit✔️✔️: void _computeCovarianceMat(const RDGeom::Point3DConstPtrVect &refPoints,
-    // RDKit✔️✔️:                            const RDGeom::Point3DConstPtrVect &probePoints,
-    // RDKit✔️✔️:                            const DoubleVector *weights, double covMat[3][3]) {
-    // RDKit✔️✔️:   memset(static_cast<void *>(covMat), 0, 9 * sizeof(double));
-    // RDKit✔️✔️:   unsigned int npt = refPoints.size();
-    // RDKit✔️✔️:   CHECK_INVARIANT(npt == probePoints.size(), "Number of points mismatch");
-    // RDKit✔️✔️:   CHECK_INVARIANT(!weights || (npt == weights->size()),
-    // RDKit✔️✔️:                   "Number of points and number of weights do not match");
-    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   const RDGeom::Point3D *rpt, *ppt;
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < npt; i++) {
-    // RDKit✔️✔️:     rpt = refPoints[i];
-    // RDKit✔️✔️:     ppt = probePoints[i];
-    // RDKit✔️✔️:     double w = weights ? wData[i] : 1.0;
-    assert_eq!(
-        ref_points.len(),
-        probe_points.len(),
-        "Number of points mismatch"
-    );
-    let mut cov_mat = [[0.0; 3]; 3];
-    for (rpt, ppt) in ref_points.iter().zip(probe_points) {
-        let w = 1.0;
-        // RDKit✔️✔️:     covMat[0][0] += w * (ppt->x) * (rpt->x);
-        // RDKit✔️✔️:     covMat[0][1] += w * (ppt->x) * (rpt->y);
-        // RDKit✔️✔️:     covMat[0][2] += w * (ppt->x) * (rpt->z);
-        cov_mat[0][0] += w * ppt.x * rpt.x;
-        cov_mat[0][1] += w * ppt.x * rpt.y;
-        cov_mat[0][2] += w * ppt.x * rpt.z;
-        // RDKit✔️✔️:     covMat[1][0] += w * (ppt->y) * (rpt->x);
-        // RDKit✔️✔️:     covMat[1][1] += w * (ppt->y) * (rpt->y);
-        // RDKit✔️✔️:     covMat[1][2] += w * (ppt->y) * (rpt->z);
-        cov_mat[1][0] += w * ppt.y * rpt.x;
-        cov_mat[1][1] += w * ppt.y * rpt.y;
-        cov_mat[1][2] += w * ppt.y * rpt.z;
-        // RDKit✔️✔️:     covMat[2][0] += w * (ppt->z) * (rpt->x);
-        // RDKit✔️✔️:     covMat[2][1] += w * (ppt->z) * (rpt->y);
-        // RDKit✔️✔️:     covMat[2][2] += w * (ppt->z) * (rpt->z);
-        cov_mat[2][0] += w * ppt.z * rpt.x;
-        cov_mat[2][1] += w * ppt.z * rpt.y;
-        cov_mat[2][2] += w * ppt.z * rpt.z;
-    }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_computeCovarianceMat
-    cov_mat
-}
-
-fn alignments_convert_cov_mat_to_quad(
-    cov_mat: [[f64; 3]; 3],
-    rpt_sum: ForceFieldVec3,
-    ppt_sum: ForceFieldVec3,
-    wts_sum: f64,
-) -> [[f64; 4]; 4] {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_covertCovMatToQuad (AlignPoints.cpp:90-129)
-    // RDKit✔️✔️: void _covertCovMatToQuad(const double covMat[3][3],
-    // RDKit✔️✔️:                          const RDGeom::Point3D &rptSum,
-    // RDKit✔️✔️:                          const RDGeom::Point3D &pptSum, double wtsSum,
-    // RDKit✔️✔️:                          double quad[4][4]) {
-    let temp = ppt_sum.x / wts_sum;
-    let px_rx = cov_mat[0][0] - temp * rpt_sum.x;
-    let px_ry = cov_mat[0][1] - temp * rpt_sum.y;
-    let px_rz = cov_mat[0][2] - temp * rpt_sum.z;
-
-    let temp = ppt_sum.y / wts_sum;
-    let py_rx = cov_mat[1][0] - temp * rpt_sum.x;
-    let py_ry = cov_mat[1][1] - temp * rpt_sum.y;
-    let py_rz = cov_mat[1][2] - temp * rpt_sum.z;
-
-    let temp = ppt_sum.z / wts_sum;
-    let pz_rx = cov_mat[2][0] - temp * rpt_sum.x;
-    let pz_ry = cov_mat[2][1] - temp * rpt_sum.y;
-    let pz_rz = cov_mat[2][2] - temp * rpt_sum.z;
-
-    let mut quad = [[0.0; 4]; 4];
-    // RDKit✔️✔️:   quad[0][0] = -2.0 * (PxRx + PyRy + PzRz);
-    quad[0][0] = -2.0 * (px_rx + py_ry + pz_rz);
-    quad[1][1] = -2.0 * (px_rx - py_ry - pz_rz);
-    quad[2][2] = -2.0 * (py_ry - pz_rz - px_rx);
-    quad[3][3] = -2.0 * (pz_rz - px_rx - py_ry);
-    quad[0][1] = 2.0 * (py_rz - pz_ry);
-    quad[1][0] = quad[0][1];
-    quad[0][2] = 2.0 * (pz_rx - px_rz);
-    quad[2][0] = quad[0][2];
-    quad[0][3] = 2.0 * (px_ry - py_rx);
-    quad[3][0] = quad[0][3];
-    quad[1][2] = -2.0 * (px_ry + py_rx);
-    quad[2][1] = quad[1][2];
-    quad[1][3] = -2.0 * (pz_rx + px_rz);
-    quad[3][1] = quad[1][3];
-    quad[2][3] = -2.0 * (py_rz + pz_ry);
-    quad[3][2] = quad[2][3];
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_covertCovMatToQuad
-    quad
-}
-
-fn alignments_jacobi(
-    mut quad: [[f64; 4]; 4],
-    eigen_vals: &mut [f64; 4],
-    eigen_vecs: &mut [[f64; 4]; 4],
-    max_iter: u32,
-) -> u32 {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::jacobi (AlignPoints.cpp:148-270)
-    // RDKit✔️✔️: unsigned int jacobi(double quad[4][4], double eigenVals[4],
-    // RDKit✔️✔️:                     double eigenVecs[4][4], unsigned int maxIter) {
-    const TOLERANCE: f64 = 1.0e-6;
-    for j in 0..=3 {
-        for row in eigen_vecs.iter_mut().take(4) {
-            row[j] = 0.0;
-        }
-        eigen_vecs[j][j] = 1.0;
-        eigen_vals[j] = quad[j][j];
-    }
-    let mut l = 0;
-    'outer: while l < max_iter {
-        let mut diag_norm = 0.0;
-        let mut off_diag_norm = 0.0;
-        for j in 0..=3 {
-            diag_norm += eigen_vals[j].abs();
-            for row in quad.iter().take(j) {
-                off_diag_norm += row[j].abs();
-            }
-        }
-        if diag_norm.abs() > 1.0e-16 && (off_diag_norm / diag_norm) <= TOLERANCE {
-            break 'outer;
-        }
-        for j in 1..=3 {
-            for i in 0..=j - 1 {
-                let b = quad[i][j];
-                if b.abs() > 0.0 {
-                    let dma = eigen_vals[j] - eigen_vals[i];
-                    let t = if dma.abs() + b.abs() <= dma.abs() {
-                        b / dma
-                    } else {
-                        let q = 0.5 * dma / b;
-                        let mut t = 1.0 / (q.abs() + (1.0 + q * q).sqrt());
-                        if q < 0.0 {
-                            t = -t;
-                        }
-                        t
-                    };
-                    let c = 1.0 / (t * t + 1.0).sqrt();
-                    let s = t * c;
-                    quad[i][j] = 0.0;
-                    for k in 0..i {
-                        let atemp = c * quad[k][i] - s * quad[k][j];
-                        quad[k][j] = s * quad[k][i] + c * quad[k][j];
-                        quad[k][i] = atemp;
-                    }
-                    for k in i + 1..=j - 1 {
-                        let atemp = c * quad[i][k] - s * quad[k][j];
-                        quad[k][j] = s * quad[i][k] + c * quad[k][j];
-                        quad[i][k] = atemp;
-                    }
-                    for k in j + 1..=3 {
-                        let atemp = c * quad[i][k] - s * quad[j][k];
-                        quad[j][k] = s * quad[i][k] + c * quad[j][k];
-                        quad[i][k] = atemp;
-                    }
-                    for row in eigen_vecs.iter_mut().take(4) {
-                        let vtemp = c * row[i] - s * row[j];
-                        row[j] = s * row[i] + c * row[j];
-                        row[i] = vtemp;
-                    }
-                    let dtemp = c * c * eigen_vals[i] + s * s * eigen_vals[j] - 2.0 * c * s * b;
-                    eigen_vals[j] = s * s * eigen_vals[i] + c * c * eigen_vals[j] + 2.0 * c * s * b;
-                    eigen_vals[i] = dtemp;
-                }
-            }
-        }
-        l += 1;
-    }
-    for j in 0..=2 {
-        let mut k = j;
-        let mut dtemp = eigen_vals[k];
-        for (i, &val) in eigen_vals.iter().enumerate().take(4).skip(j + 1) {
-            if val < dtemp {
-                k = i;
-                dtemp = val;
-            }
-        }
-        if k > j {
-            eigen_vals[k] = eigen_vals[j];
-            eigen_vals[j] = dtemp;
-            for row in eigen_vecs.iter_mut().take(4) {
-                let dtemp = row[k];
-                row[k] = row[j];
-                row[j] = dtemp;
-            }
-        }
-    }
-    // RDKit✔️✔️:   return l + 1;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::jacobi
-    l + 1
-}
-
 fn alignments_align_points_ssr(
     ref_points: &[ForceFieldVec3],
     probe_points: &[ForceFieldVec3],
 ) -> f64 {
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::AlignPoints unweighted no-reflect SSR path (AlignPoints.cpp:272-329)
-    // RDKit✔️✔️: double AlignPoints(const RDGeom::Point3DConstPtrVect &refPoints,
-    // RDKit✔️✔️:                    const RDGeom::Point3DConstPtrVect &probePoints,
-    // RDKit✔️✔️:                    RDGeom::Transform3D &trans, const DoubleVector *weights,
-    // RDKit✔️✔️:                    bool reflect, unsigned int maxIterations) {
-    // RDKit✔️✔️:   unsigned int npt = refPoints.size();
-    // RDKit✔️✔️:   PRECONDITION(npt == probePoints.size(), "Mismatch in number of points");
+    // RDKit❗✔️: auto ssr =
+    // RDKit❗✔️:     RDNumeric::Alignments::AlignPoints(refPoints, prbPoints, trans);
     assert_eq!(
         ref_points.len(),
         probe_points.len(),
         "Mismatch in number of points"
     );
-    let npt = ref_points.len();
-    let wts_sum = npt as f64;
-    let rpt_sum = alignments_weighted_sum_of_points(ref_points);
-    let ppt_sum = alignments_weighted_sum_of_points(probe_points);
-    let rpt_sum_len_sq = alignments_weighted_sum_of_len_sq(ref_points);
-    let ppt_sum_len_sq = alignments_weighted_sum_of_len_sq(probe_points);
-    let cov_mat = alignments_compute_covariance_mat(ref_points, probe_points);
-    let quad = alignments_convert_cov_mat_to_quad(cov_mat, rpt_sum, ppt_sum, wts_sum);
-    let mut eigen_vecs = [[0.0; 4]; 4];
-    let mut eigen_vals = [0.0; 4];
-    alignments_jacobi(quad, &mut eigen_vals, &mut eigen_vecs, 50);
-    // RDKit✔️✔️:   double ssr = eigenVals[0] - (pptSum.lengthSq() + rptSum.lengthSq()) / wtsSum +
-    // RDKit✔️✔️:                rptSumLenSq + pptSumLenSq;
-    let mut ssr = eigen_vals[0] - (ppt_sum.length_sq() + rpt_sum.length_sq()) / wts_sum
-        + rpt_sum_len_sq
-        + ppt_sum_len_sq;
-    if ssr < 0.0 && ssr.abs() < 1.0e-6 {
-        ssr = 0.0;
-    }
-    // RDKit✔️✔️:   return ssr;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Alignments::AlignPoints
-    ssr
+    let reference: Vec<_> = ref_points
+        .iter()
+        .map(|point| [point.x, point.y, point.z])
+        .collect();
+    let probe: Vec<_> = probe_points
+        .iter()
+        .map(|point| [point.x, point.y, point.z])
+        .collect();
+    crate::chemistry::numerics::alignment::align_points(&reference, &probe, None, false, 50)
+        .expect("distgeom passes equally sized non-empty point sets")
+        .0
 }
 
 #[cfg(test)]
@@ -3226,7 +2959,10 @@ fn embedder_get_mol_self_matches(
         // RDKit✔️✔️:     const auto &prbMolForMatch = prbMolSymm ? *prbMolSymm : tmol;
         let prb_mol_symm = params
             .symmetrize_conjugated_terminal_groups_for_pruning
-            .then(|| symmetrize_terminal_atoms_for_pruning(&tmol))
+            .then(|| {
+                crate::chemistry::mol_align_support::symmetrize_terminal_atoms(&tmol)
+                    .map_err(|message| DgBoundsError::GenerationFailed(message.to_string()))
+            })
             .transpose()?;
         let prb_mol_for_match = prb_mol_symm.as_ref().unwrap_or(&tmol);
 
@@ -3291,110 +3027,6 @@ fn embedder_get_mol_self_matches(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::detail::getMolSelfMatches
     Ok(res)
-}
-
-fn symmetrize_terminal_atoms_for_pruning(mol: &Molecule) -> Result<Molecule, DgBoundsError> {
-    // BEGIN RDKIT CPP FUNCTION MolAlign::details::symmetrizeTerminalAtoms (AlignMolecules.cpp:29-54)
-    // RDKit✔️✔️: void symmetrizeTerminalAtoms(RWMol &mol) {
-    // RDKit✔️✔️:   // clang-format off
-    // RDKit✔️✔️:   static const std::string qsmarts =
-    // RDKit✔️✔️:       "[{atomPattern};$([{atomPattern}]-[*]=[{atomPattern}]),$([{atomPattern}]=[*]-[{atomPattern}])]~[*]";
-    // RDKit✔️✔️:   static std::map<std::string, std::string> replacements = {
-    // RDKit✔️✔️:       {"{atomPattern}", "O,N;D1"}};
-    // RDKit✔️✔️:   // clang-format on
-    // RDKit✔️✔️:   static SmartsParserParams ps;
-    // RDKit✔️✔️:   ps.replacements = &replacements;
-    // RDKit✔️✔️:   static const std::unique_ptr<RWMol> qry{SmartsToMol(qsmarts, ps)};
-    // RDKit✔️✔️:   CHECK_INVARIANT(qry, "bad query pattern");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto matches = SubstructMatch(mol, *qry);
-    // RDKit✔️✔️:   if (matches.empty()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   QueryBond qb;
-    // RDKit✔️✔️:   qb.setQuery(makeSingleOrDoubleBondQuery());
-    // RDKit✔️✔️:   for (const auto &match : matches) {
-    // RDKit✔️✔️:     mol.getAtomWithIdx(match[0].second)->setFormalCharge(0);
-    // RDKit✔️✔️:     auto obond = mol.getBondBetweenAtoms(match[0].second, match[1].second);
-    // RDKit✔️✔️:     CHECK_INVARIANT(obond, "could not find expected bond");
-    // RDKit✔️✔️:     mol.replaceBond(obond->getIdx(), &qb);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolAlign::details::symmetrizeTerminalAtoms
-    let mut symmetrized = mol.clone();
-    let mut matched_pairs = Vec::new();
-    for atom_idx in 0..mol.num_atoms() {
-        if !matches_rdkit_terminal_atom_pattern(mol, atom_idx) {
-            continue;
-        }
-        let neighbors = neighbors_for_atom(mol, atom_idx);
-        debug_assert_eq!(neighbors.len(), 1);
-        let neighbor_idx = neighbors[0];
-        if matches_rdkit_terminal_group_symmetry_query(mol, atom_idx, neighbor_idx) {
-            matched_pairs.push((atom_idx, neighbor_idx));
-        }
-    }
-    if matched_pairs.is_empty() {
-        return Ok(symmetrized);
-    }
-
-    {
-        let topology = symmetrized.topology_block_mut();
-        for (terminal_atom_idx, neighbor_idx) in matched_pairs {
-            topology.atoms[terminal_atom_idx].set_formal_charge(0);
-            let Some(bond) = topology.bonds.iter_mut().find(|bond| {
-                (bond.begin().index() == terminal_atom_idx && bond.end().index() == neighbor_idx)
-                    || (bond.begin().index() == neighbor_idx
-                        && bond.end().index() == terminal_atom_idx)
-            }) else {
-                return Err(DgBoundsError::GenerationFailed(
-                    "MolAlign::details::symmetrizeTerminalAtoms could not find expected bond"
-                        .to_string(),
-                ));
-            };
-            bond.set_query(Some(QueryNode::predicate(BondQueryPredicate::OrderIn(
-                vec![BondOrder::Single, BondOrder::Double],
-            ))));
-        }
-    }
-    symmetrized
-        .derived_cache_mut()
-        .invalidate(DerivedState::VALENCE | DerivedState::AROMATICITY | DerivedState::STEREO);
-    Ok(symmetrized)
-}
-
-fn matches_rdkit_terminal_group_symmetry_query(
-    mol: &Molecule,
-    terminal_atom_idx: usize,
-    neighbor_idx: usize,
-) -> bool {
-    let Some(terminal_bond) = bond_between(mol, terminal_atom_idx, neighbor_idx) else {
-        return false;
-    };
-    let opposite_order = match terminal_bond.order() {
-        BondOrder::Single => BondOrder::Double,
-        BondOrder::Double => BondOrder::Single,
-        _ => return false,
-    };
-    for remote_terminal_idx in neighbors_for_atom(mol, neighbor_idx) {
-        if remote_terminal_idx == terminal_atom_idx
-            || !matches_rdkit_terminal_atom_pattern(mol, remote_terminal_idx)
-        {
-            continue;
-        }
-        if let Some(remote_bond) = bond_between(mol, neighbor_idx, remote_terminal_idx)
-            && remote_bond.order() == opposite_order
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn matches_rdkit_terminal_atom_pattern(mol: &Molecule, atom_idx: usize) -> bool {
-    let atom = &mol.atoms()[atom_idx];
-    matches!(atom.atomic_number(), 7 | 8) && neighbors_for_atom(mol, atom_idx).len() == 1
 }
 
 fn embedder_embed_helper(

@@ -53,6 +53,54 @@ class WorkflowTests(unittest.TestCase):
             phases["topology-operations"]["expected_processed"], 2_854_376
         )
 
+    def test_molalign_phase_uses_the_complete_supported_coordinate_boundary(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phase = {item["name"]: item for item in profile["phases"]}["molalign"]
+        self.assertEqual(phase["script"], "audit_surfaces.py")
+        self.assertEqual(phase["mode"], "molalign")
+        self.assertEqual(phase["max_atoms"], 80)
+        self.assertEqual(phase["expected_processed"], 2_854_362)
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/molalign/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(command[command.index("--mode") + 1], "molalign")
+        self.assertEqual(command[command.index("--max-atoms") + 1], "80")
+        self.assertEqual(command[command.index("--limit") + 1], "123")
+
+    def test_molalign_auditor_exercises_every_source_call_family(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_surfaces.Audit(Path(temporary) / "summary.json", 4)
+            for row in range(6):
+                record = {
+                    "row": row,
+                    "chembl_id": f"HARNESS{row}",
+                    "smiles": "CCCO",
+                }
+                rd_mol = audit_surfaces.Chem.MolFromSmiles(record["smiles"])
+                ck_mol = audit_surfaces.cosmolkit.Molecule.from_smiles(
+                    record["smiles"]
+                )
+                self.assertIsNotNone(rd_mol)
+                audit_surfaces.audit_molalign(audit, record, rd_mol, ck_mol)
+            self.assertFalse(
+                [key for key in audit.counts if key.startswith("mismatch.")]
+            )
+            required = {
+                "match.molalign.alignment_transform.rmsd",
+                "match.molalign.best_alignment.rmsd",
+                "match.molalign.coordinate_rmsd.rmsd",
+                "match.molalign.align_to.coordinates.conformer_0",
+                "match.molalign.all_conformer_best_rms.rmsds",
+                "match.molalign.align_conformers.rmsds",
+            }
+            self.assertTrue(required.issubset(audit.counts))
+            audit.finish(6, "molalign", 0, 1)
+
     def test_ciplabeler_phase_is_complete_and_source_backed(self) -> None:
         profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
         phase = {item["name"]: item for item in profile["phases"]}["ciplabeler"]

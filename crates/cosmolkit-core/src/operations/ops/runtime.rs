@@ -498,17 +498,13 @@ impl<'a> OpParts<'a> {
             self.working.properties(),
             self.working.derived_cache(),
             self.working.capabilities(),
-            self.declared_read_access(),
+            self.read_access(),
         );
         f(read)
     }
 
     fn read_access(&self) -> crate::read_parts::MoleculeReadAccess {
         Self::read_access_for_spec(self.spec)
-    }
-
-    fn declared_read_access(&self) -> crate::read_parts::MoleculeReadAccess {
-        Self::read_access_for_blocks(self.spec.access.read())
     }
 
     fn read_access_for_blocks(blocks: BlockSet) -> crate::read_parts::MoleculeReadAccess {

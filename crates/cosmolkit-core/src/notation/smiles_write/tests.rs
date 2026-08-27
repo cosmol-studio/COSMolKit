@@ -1598,7 +1598,9 @@ fn writer_fragment_reassignment_sets_double_bond_stereo_from_directions_like_rdk
         .set_direction(BondDirection::EndDownRight);
     molecule.topology_block_mut().bonds[double_bond.index()].set_stereo(BondStereo::None);
     molecule.topology_block_mut().bonds[double_bond.index()].set_stereo_atoms(None);
-    molecule.properties_mut().set_prop("_StereochemDone", "1");
+    molecule
+        .properties_mut()
+        .set_computed_prop("_StereochemDone", "1");
 
     prepare_plain_smiles_molecule(&mut molecule, &SmilesWriteParams::default()).unwrap();
 

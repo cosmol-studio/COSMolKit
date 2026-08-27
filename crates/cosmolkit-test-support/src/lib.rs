@@ -117,6 +117,7 @@ pub fn expected_family_dir(domain: &str, reference: &str) -> PathBuf {
 
 pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
     match file_name {
+        "molalign.jsonl" => "alignment",
         "inchi.jsonl" => "inchi",
         "molblock_v2000_kekulized.jsonl"
         | "molblock_v2000_minimal.jsonl"
@@ -375,33 +376,35 @@ fn reference_identity(reference: &str) -> Result<ReferenceIdentity, String> {
 }
 
 fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Result<(), String> {
-    let current_path =
-        match expected_profile {
-            "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
-            profile if profile == profile_name() => smiles_path(),
-            "atom_pair_focused" => repo_root()
-                .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
-            "layered_focused" => repo_root()
-                .join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi"),
-            "pattern_focused" => repo_root()
-                .join("testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi"),
-            "ciplabeler_focused" => {
-                repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
-            }
-            "tautomer_focused" => {
-                repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json")
-            }
-            "tautomer_pcs_1k" => {
-                repo_root().join("testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz")
-            }
-            "tautomer_pcs_100k" => {
-                repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz")
-            }
-            "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
-            "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
-            "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
-            other => return Err(format!("unknown expected-data profile '{other}'")),
-        };
+    let current_path = match expected_profile {
+        "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
+        profile if profile == profile_name() => smiles_path(),
+        "atom_pair_focused" => repo_root()
+            .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        "layered_focused" => {
+            repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi")
+        }
+        "pattern_focused" => {
+            repo_root().join("testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi")
+        }
+        "molalign_focused" => repo_root().join("testdata/alignment/fixtures/molalign_focused.json"),
+        "ciplabeler_focused" => {
+            repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
+        }
+        "tautomer_focused" => {
+            repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json")
+        }
+        "tautomer_pcs_1k" => {
+            repo_root().join("testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz")
+        }
+        "tautomer_pcs_100k" => {
+            repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz")
+        }
+        "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
+        "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
+        "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
+        other => return Err(format!("unknown expected-data profile '{other}'")),
+    };
     let current = normalize_existing_path(&current_path)?;
     let declared = normalize_existing_path(&identity_path(input)?)?;
     if current != declared {

@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.03.1",
+  "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+  "cases": [
+    {
+      "case_id": "explicit-map-weighted-translation",
+      "probe": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 7, "coordinates": [[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]]}
+        ]
+      },
+      "reference": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 17, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "alignment_transform",
+          "probe_conformer_id": 7,
+          "reference_conformer_id": 17,
+          "atom_map": [[0, 0], [1, 1], [2, 2]],
+          "weights": [1.0, 2.0, 3.0],
+          "reflect": false,
+          "max_iterations": 0
+        },
+        {
+          "operation": "coordinate_rmsd",
+          "probe_conformer_id": 7,
+          "reference_conformer_id": 17,
+          "atom_maps": [[[0, 0], [1, 1], [2, 2]]],
+          "weights": [1.0, 2.0, 3.0]
+        }
+      ]
+    },
+    {
+      "case_id": "reflection-branch",
+      "probe": {
+        "smiles": "CCCC",
+        "conformers": [
+          {"id": 0, "coordinates": [[0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}
+        ]
+      },
+      "reference": {
+        "smiles": "CCCC",
+        "conformers": [
+          {"id": 0, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "alignment_transform",
+          "atom_map": [[0, 0], [1, 1], [2, 2], [3, 3]],
+          "reflect": false,
+          "max_iterations": 50
+        },
+        {
+          "operation": "alignment_transform",
+          "atom_map": [[0, 0], [1, 1], [2, 2], [3, 3]],
+          "reflect": true,
+          "max_iterations": 50
+        }
+      ]
+    },
+    {
+      "case_id": "explicit-candidate-map-order",
+      "probe": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 7, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.2, 0.0], [2.0, 0.0, 0.0]]}
+        ]
+      },
+      "reference": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 17, "coordinates": [[2.0, 0.0, 0.0], [1.0, 0.2, 0.0], [0.0, 0.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "best_alignment",
+          "probe_conformer_id": 7,
+          "reference_conformer_id": 17,
+          "atom_maps": [
+            [[0, 0], [1, 1], [2, 2]],
+            [[0, 2], [1, 1], [2, 0]]
+          ],
+          "num_threads": 1
+        },
+        {
+          "operation": "best_alignment",
+          "probe_conformer_id": 7,
+          "reference_conformer_id": 17,
+          "atom_maps": [
+            [[0, 0], [1, 1], [2, 2]],
+            [[0, 2], [1, 1], [2, 0]]
+          ],
+          "num_threads": 2
+        }
+      ]
+    },
+    {
+      "case_id": "automatic-terminal-symmetry",
+      "probe": {
+        "smiles": "CC(=O)[O-]",
+        "conformers": [
+          {"id": 0, "coordinates": [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [2.2, 1.0, 0.0], [2.2, -1.0, 0.0]]}
+        ]
+      },
+      "reference": {
+        "smiles": "CC(=O)[O-]",
+        "conformers": [
+          {"id": 0, "coordinates": [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [2.2, -1.0, 0.0], [2.2, 1.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "best_alignment",
+          "symmetrize_conjugated_terminal_groups": true,
+          "ignore_hydrogens": true,
+          "num_threads": 1
+        },
+        {
+          "operation": "coordinate_rmsd",
+          "symmetrize_conjugated_terminal_groups": true
+        }
+      ]
+    },
+    {
+      "case_id": "all-conformer-sparse-ids",
+      "molecule": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 7, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]},
+          {"id": 27, "coordinates": [[1.0, 2.0, 0.0], [1.0, 3.0, 0.0], [1.0, 4.0, 0.0]]},
+          {"id": 17, "coordinates": [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.2, 2.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "all_conformer_best_rms",
+          "atom_maps": [[[0, 0], [1, 1], [2, 2]]],
+          "num_threads": 2
+        }
+      ]
+    },
+    {
+      "case_id": "align-conformers-selected-order",
+      "molecule": {
+        "smiles": "CCC",
+        "conformers": [
+          {"id": 7, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]},
+          {"id": 27, "coordinates": [[3.0, 1.0, 0.0], [3.0, 2.0, 0.0], [3.0, 3.0, 0.0]]},
+          {"id": 17, "coordinates": [[-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {
+          "operation": "align_conformers",
+          "atom_indices": [0, 1, 2],
+          "conformer_ids": [27, 17, 7],
+          "weights": [1.0, 2.0, 1.0],
+          "reflect": false,
+          "max_iterations": 50
+        }
+      ]
+    },
+    {
+      "case_id": "empty-conformer-selection",
+      "molecule": {
+        "smiles": "CC",
+        "conformers": [
+          {"id": 7, "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]},
+          {"id": 17, "coordinates": [[2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]}
+        ]
+      },
+      "calls": [
+        {"operation": "align_conformers", "conformer_ids": []}
+      ]
+    },
+    {
+      "case_id": "structured-errors",
+      "probe": {
+        "smiles": "C",
+        "conformers": [{"id": 7, "coordinates": [[0.0, 0.0, 0.0]]}]
+      },
+      "reference": {
+        "smiles": "O",
+        "conformers": [{"id": 17, "coordinates": [[0.0, 0.0, 0.0]]}]
+      },
+      "calls": [
+        {
+          "operation": "alignment_transform",
+          "probe_conformer_id": 999,
+          "reference_conformer_id": 17,
+          "atom_map": [[0, 0]]
+        },
+        {"operation": "best_alignment"},
+        {
+          "operation": "alignment_transform",
+          "probe_conformer_id": 7,
+          "reference_conformer_id": 17,
+          "atom_map": [[0, 0]],
+          "weights": [1.0, 2.0]
+        }
+      ]
+    }
+  ]
+}

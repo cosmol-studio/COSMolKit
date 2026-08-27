@@ -41,8 +41,8 @@ pub enum MolTransformError {
     IdenticalCoordinates { i: usize, j: usize },
     #[error("no 3D conformer available for molecule")]
     NoConformer3D,
-    #[error("conformer index {id} out of bounds: max={max}")]
-    ConformerIndexOutOfBounds { id: usize, max: usize },
+    #[error("conformer id {id} was not found")]
+    ConformerNotFound { id: usize },
     #[error("bond ({i},{j}) and ({j},{k}) must not both belong to a ring")]
     BondsBothInRing { i: usize, j: usize, k: usize },
     #[error("atoms {i} and {j} have identical 3D coordinates (zero-length vector)")]
@@ -55,18 +55,17 @@ pub enum MolTransformError {
 // Internal helpers
 // ──────────────────────────────────────────────
 
-/// RDKit❗✔️: Extract 3D coordinates from the first (or specified) conformer.
+/// RDKit❗✔️: Extract 3D coordinates from the conformer with the specified ID.
 ///
 /// In RDKit, functions take a `Conformer &` directly. Here we extract from
-/// `Molecule` by conformer index.
+/// `Molecule` by conformer ID.
 fn conf_coords(mol: &Molecule, conf_id: usize) -> Result<&[[f64; 3]], MolTransformError> {
     let confs = mol.conformers_3d();
-    let conf = confs
-        .get(conf_id)
-        .ok_or(MolTransformError::ConformerIndexOutOfBounds {
-            id: conf_id,
-            max: confs.len(),
-        })?;
+    let requested =
+        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(confs, requested)
+        .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
+    let conf = &confs[index];
     Ok(conf.coordinates())
 }
 
@@ -80,13 +79,14 @@ fn conf_coords_mut(
     conf_id: usize,
 ) -> Result<&mut [[f64; 3]], MolTransformError> {
     let coord_block = mol.coordinate_block_mut();
-    let n_confs = coord_block.conformers_3d.len();
-    let conf = coord_block.conformers_3d.get_mut(conf_id).ok_or(
-        MolTransformError::ConformerIndexOutOfBounds {
-            id: conf_id,
-            max: n_confs,
-        },
-    )?;
+    let requested =
+        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(
+        &coord_block.conformers_3d,
+        requested,
+    )
+    .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
+    let conf = &mut coord_block.conformers_3d[index];
     // We need mutable access to the inner Vec<[f64; 3]>.
     // Since Conformer3D's coords field is private, we rely on a pub(crate) method.
     Ok(conf.coordinates_mut())
@@ -949,13 +949,14 @@ pub(crate) fn set_atom_position_in_coordinate_block(
     pos: [f64; 3],
     conf_id: usize,
 ) -> Result<bool, MolTransformError> {
-    let conformer_count = coordinates.conformers_3d.len();
-    let conformer = coordinates.conformers_3d.get_mut(conf_id).ok_or(
-        MolTransformError::ConformerIndexOutOfBounds {
-            id: conf_id,
-            max: conformer_count,
-        },
-    )?;
+    let requested =
+        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(
+        &coordinates.conformers_3d,
+        requested,
+    )
+    .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
+    let conformer = &mut coordinates.conformers_3d[index];
     let atom_count = conformer.coordinates().len();
     if atom >= atom_count {
         return Err(MolTransformError::AtomIndexOutOfBounds {
@@ -1015,16 +1016,7 @@ pub fn transform_conformer(
     let coords = conf_coords_mut(&mut mol, conf_id)?;
 
     for pt in coords.iter_mut() {
-        // RDGeom::Transform3D::TransformPoint:
-        //   x' = t[0][0]*x + t[0][1]*y + t[0][2]*z + t[0][3]
-        //   y' = t[1][0]*x + t[1][1]*y + t[1][2]*z + t[1][3]
-        //   z' = t[2][0]*x + t[2][1]*y + t[2][2]*z + t[2][3]
-        let x = pt[0];
-        let y = pt[1];
-        let z = pt[2];
-        pt[0] = transform[0][0] * x + transform[0][1] * y + transform[0][2] * z + transform[0][3];
-        pt[1] = transform[1][0] * x + transform[1][1] * y + transform[1][2] * z + transform[1][3];
-        pt[2] = transform[2][0] * x + transform[2][1] * y + transform[2][2] * z + transform[2][3];
+        *pt = crate::chemistry::numerics::alignment::transform_point(transform, *pt);
     }
 
     Ok(mol)

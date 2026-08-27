@@ -357,6 +357,14 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
             ranks = crate::stereo::rerank_atoms_in_place(mol, &ranks)?;
         }
     }
+    // RDKit✔️✔️: if (cleanIt) {
+    // Every remaining transition in legacyStereoPerception belongs to this
+    // source branch. The fixed-point assignment above still runs for
+    // cleanIt=false, but ring-special-case and terminal cleanup do not.
+    if !clean_it {
+        return Ok(());
+    }
+
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt atom cleanup subset
     // RDKit❗✔️:   boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());
     // RDKit❗✔️:   Chirality::findChiralAtomSpecialCases(mol, possibleSpecialCases, atomRanks);

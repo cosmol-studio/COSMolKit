@@ -23,6 +23,7 @@ jobs:
           set -euo pipefail
           release_version="${GITHUB_REF_NAME#v}"
           release_header="$RUNNER_TEMP/release-header.md"
+          release_footer="$RUNNER_TEMP/release-footer.md"
           version_notes="$RUNNER_TEMP/version-notes.md"
           release_notes="$RUNNER_TEMP/release-notes.md"
           if ! awk '
@@ -51,6 +52,34 @@ jobs:
           fi
           if ! grep -q '[^[:space:]]' "$release_header"; then
             echo "CHANGELOG.md has an empty release-header block" >&2
+            exit 1
+          fi
+          if ! awk '
+              $0 == "<!-- release-footer:start -->" {
+                found_start = 1
+                copying = 1
+                next
+              }
+              $0 == "<!-- release-footer:end -->" {
+                if (copying) {
+                  found_end = 1
+                  exit
+                }
+              }
+              copying {
+                print
+              }
+              END {
+                if (!found_start || !found_end) {
+                  exit 2
+                }
+              }
+            ' CHANGELOG.md > "$release_footer"; then
+            echo "CHANGELOG.md has no complete release-footer block" >&2
+            exit 1
+          fi
+          if ! grep -q '[^[:space:]]' "$release_footer"; then
+            echo "CHANGELOG.md has an empty release-footer block" >&2
             exit 1
           fi
           if ! awk -v version="$release_version" '
@@ -85,6 +114,8 @@ jobs:
             cat "$release_header"
             printf '\n'
             cat "$version_notes"
+            printf '\n'
+            cat "$release_footer"
           } > "$release_notes"
 
       - name: Create GitHub Release

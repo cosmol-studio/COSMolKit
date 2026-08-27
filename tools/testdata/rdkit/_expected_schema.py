@@ -30,6 +30,9 @@ def _schema(required: str, optional: str = "") -> OutputSchema:
 
 
 SCHEMAS = {
+    "molalign.jsonl": _schema(
+        "after:object,before:object,call_index:integer,case_id:string,error_kind:null|string,error_message:null|string,error_type:null|string,operation:string,parameters:object,result:null|object,schema_version:integer,source:object,status:string"
+    ),
     "ciplabeler.jsonl": _schema(
         "calls:array,case_id:string,initial_state:null|object,parse_error:null|string,parse_status:string,schema_version:integer,source:object"
     ),

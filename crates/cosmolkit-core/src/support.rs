@@ -139,6 +139,16 @@ pub const COORDINATE_EDIT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Edit 2D and 3D coordinate blocks through registered value-style and explicit in-place operations, including replacement, clearing, and appending conformers with operation-contract validation.",
 };
 
+pub const MOLALIGN_FEATURE: FeatureSpec = FeatureSpec {
+    name: "coordinates.molalign",
+    category: FeatureCategory::TopologyOperation,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Measure and align 3D conformers through the source-backed ordinary RDKit MolAlign boundary, including explicit and automatic atom maps, weighted and reflected alignment, best-map selection, coordinate-frame RMSD, and all-conformer ordering. Measurement APIs are read-only; coordinate changes use registered value-style or explicitly named in-place operations. O3A is a separate capability.",
+};
+
 pub const CONFORMER_GENERATION_FEATURE: FeatureSpec = FeatureSpec {
     name: "coordinates.3d.conformer_generation",
     category: FeatureCategory::TopologyOperation,
@@ -380,6 +390,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &HYDROGENS_FEATURE,
     &COORDINATE_2D_FEATURE,
     &COORDINATE_EDIT_FEATURE,
+    &MOLALIGN_FEATURE,
     &CONFORMER_GENERATION_FEATURE,
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,

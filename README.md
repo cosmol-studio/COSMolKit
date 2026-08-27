@@ -44,7 +44,7 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 33 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 34 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
 Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
@@ -253,6 +253,8 @@ inputs until a trusted graph has been constructed.
   callbacks, current and V1 transform catalogs, and ordered result provenance
 - 2D coordinate generation and SVG/PNG depiction
 - Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
+- Read-only molecular alignment/RMSD measurement and explicit value-style or
+  trailing-underscore coordinate alignment
 - UFF/MMFF optimization of generated or imported 3D conformers
 - Morgan, MACCS, RDKit topological, Avalon, Pattern, AtomPair, and Topological Torsion
   fingerprints for the validated exact-parity branches, including sparse/count
