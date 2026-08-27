@@ -614,6 +614,28 @@ fn writer_uses_parser_persisted_ring_stereo_props_without_local_reconstruction()
 }
 
 #[test]
+fn ring_stereo_special_case_properties_are_computed_and_sanitize_clears_them_like_rdkit() {
+    let molecule = Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
+
+    for atom_index in [1, 5] {
+        let atom = &molecule.atoms()[atom_index];
+        assert_eq!(atom.prop("_ringStereochemCand"), Some("1"));
+        assert!(atom.computed_prop_names().contains("_ringStereochemCand"));
+        assert!(atom.prop("_ringStereoAtoms").is_some());
+        assert!(atom.computed_prop_names().contains("_ringStereoAtoms"));
+    }
+
+    let sanitized = molecule
+        .sanitize_with_ops(crate::SanitizeOps::NONE)
+        .expect("sanitize with an empty mask still clears computed properties");
+    for atom_index in [1, 5] {
+        let atom = &sanitized.atoms()[atom_index];
+        assert_eq!(atom.prop("_ringStereochemCand"), None);
+        assert_eq!(atom.prop("_ringStereoAtoms"), None);
+    }
+}
+
+#[test]
 fn writer_rejects_ring_stereo_candidate_missing_ring_neighbors_prop() {
     let mut molecule =
         Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
@@ -1484,12 +1506,70 @@ fn prepare_plain_smiles_molecule_initializes_fast_ring_info_for_fused_ring_stere
 
 #[test]
 fn writer_fragment_temp_graph_resets_ring_info_like_rdkit() {
-    let mut molecule = Molecule::from_smiles("C1CCCCC1.[Na+]").unwrap();
-    assert!(molecule.derived_cache().rings.is_some());
+    for (input, clears_computed) in [("C1CCCCC1", false), ("C1CCCCC1.[Na+]", true)] {
+        let mut molecule = Molecule::from_smiles(input).unwrap();
+        assert!(molecule.derived_cache().rings.is_some());
+        molecule
+            .properties_mut()
+            .set_computed_prop("computed-molecule", "remove");
+        molecule
+            .properties_mut()
+            .set_prop("ordinary-molecule", "keep");
+        molecule.topology_block_mut().atoms[0].set_computed_prop("computed-atom", "remove");
+        molecule.topology_block_mut().atoms[0].set_prop("ordinary-atom", "keep");
+        molecule.topology_block_mut().bonds[0].set_computed_prop("computed-bond", "remove");
+        molecule.topology_block_mut().bonds[0].set_prop("ordinary-bond", "keep");
 
-    clear_fragment_temp_molecule_computed_stereo_props_for_writer(&mut molecule);
+        clear_fragment_temp_molecule_computed_stereo_props_for_writer(&mut molecule);
 
-    assert!(molecule.derived_cache().rings.is_none());
+        assert_eq!(
+            molecule.derived_cache().rings.is_none(),
+            clears_computed,
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.prop("computed-molecule"),
+            if clears_computed {
+                None
+            } else {
+                Some("remove")
+            },
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.prop("ordinary-molecule"),
+            Some("keep"),
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.atoms()[0].prop("computed-atom"),
+            if clears_computed {
+                None
+            } else {
+                Some("remove")
+            },
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.atoms()[0].prop("ordinary-atom"),
+            Some("keep"),
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.bonds()[0].prop("computed-bond"),
+            if clears_computed {
+                None
+            } else {
+                Some("remove")
+            },
+            "input={input}"
+        );
+        assert_eq!(
+            molecule.bonds()[0].prop("ordinary-bond"),
+            Some("keep"),
+            "input={input}"
+        );
+    }
 }
 
 #[test]

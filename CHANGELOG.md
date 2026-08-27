@@ -146,11 +146,17 @@ and pinned parity validation.
   ordinary molecule and ordered batch model. The behavioral parity claim does
   not include performance parity: representative warm benchmarks retain a
   measured `1.508-3.104x` constant-factor runtime gap.
-- The initial complete ChEMBL 37 tautomer run processed all 2,897,819 inputs
-  across 128 shards and compared 211,539,707 output and state observations.
-  It identified 95,364 mismatches for source-level correction, concentrated in
-  the `reassign_stereo=false` intermediate hydrogen and stereochemistry state;
-  this run is diagnostic evidence and is not a completed parity claim.
+- The complete ChEMBL 37 tautomer validation processed all 2,897,819 inputs
+  across 128 shards and covered 211,539,707 exact output and molecular-state
+  observations with zero mismatch. The matrix covers parse behavior plus
+  default, V1, one-tautomer, one-transform, retained atom stereo, retained bond
+  stereo, retained isotopic hydrogen, and disabled stereo-reassignment
+  profiles.
+- Every row identified during source alignment was exhaustively replayed after
+  correction, and a deterministic 524,288-record regression drawn across all
+  128 ChEMBL shards re-executed the complete branch matrix. Focused fixtures
+  permanently lock the distinct legacy/modern stereo-center predicates, ring
+  stereo cleanup, canonical traversal, and fragment computed-state lifecycle.
 
 ## [0.2.13] - 2026-08-24
 

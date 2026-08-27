@@ -55,7 +55,7 @@ fn read_jsonl<T: for<'de> Deserialize<'de>>(output: &str) -> Vec<T> {
 #[test]
 fn focused_tautomer_profiles_match_every_pinned_rdkit_observation() {
     let records = read_jsonl::<GoldenRecord>("tautomer.jsonl");
-    assert_eq!(records.len(), 14, "focused fixture row count changed");
+    assert_eq!(records.len(), 18, "focused fixture row count changed");
     for record in records {
         let expected_parse = record.parse["ok"].as_bool().unwrap();
         match parse_record(&record) {

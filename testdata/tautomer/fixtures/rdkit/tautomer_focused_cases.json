@@ -14,6 +14,10 @@
     {"case_id": "catch-asymmetric-imine", "smiles": "C-C=N", "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1002"},
     {"case_id": "catch-unsanitized", "smiles": "Cc1[nH]ncc1.[Cl]", "sanitize": false, "remove_hs": false, "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1067"},
     {"case_id": "pcs-100k-row-1427-fused-conjugated-limit", "smiles": "Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2", "source": "testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz:1428"},
+    {"case_id": "chembl37-CHEMBL4435612", "smiles": "O=C(c1ccnc2ccc(OC3CCC3)cc12)[C@@H]1C[C@@H]2CC[N@@]1C/C2=C\\CO", "source": "ChEMBL 37:CHEMBL4435612"},
+    {"case_id": "chembl37-CHEMBL4639179", "smiles": "CC[C@H]1C[C@H]2C[C@@]3(C(=O)OC)c4[nH]c5cc(OC)ccc5c4CC[N@@](C2CC(C)=O)[C@@H]13", "source": "ChEMBL 37:CHEMBL4639179"},
+    {"case_id": "chembl37-CHEMBL4645050", "smiles": "CC[C@H]1C[C@H]2C[C@@]3(C(=O)OC)c4[nH]c5ccccc5c4CC[N@@](C2CC(C)=O)[C@@H]13", "source": "ChEMBL 37:CHEMBL4645050"},
+    {"case_id": "chembl37-CHEMBL27220", "smiles": "COc1ccc([C@]2(C#N)CC[C@H](C(=O)O)CC2)cc1OC1CCCC1", "source": "ChEMBL 37:CHEMBL27220"},
     {"case_id": "wrapper-invalid-input", "smiles": "not-a-smiles", "source": "Code/GraphMol/MolStandardize/Wrap/Tautomer.cpp"}
   ]
 }

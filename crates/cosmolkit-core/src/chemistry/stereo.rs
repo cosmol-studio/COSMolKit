@@ -4679,31 +4679,168 @@ fn find_atom_neighbor_dir_helper(
 }
 
 // BEGIN RDKIT CPP FUNCTION: isAtomPotentialChiralCenter (Chirality.cpp:1651-1736)
-// RDKit❗✔️: std::pair<bool, bool> isAtomPotentialChiralCenter(
-// RDKit❗✔️:     const Atom *atom, const ROMol &mol, const UINT_VECT &ranks,
-// RDKit❗✔️:     Chirality::INT_PAIR_VECT &nbrs) {
-// RDKit❗✔️:   // Check if an atom could be a tetrahedral chiral center.
-// RDKit❗✔️:   // Returns (legal_center, has_duplicates). Populates nbrs with (rank, bond_idx).
-// RDKit❗✔️: }
+// RDKit✔️✔️: std::pair<bool, bool> isAtomPotentialChiralCenter(
+// RDKit✔️✔️:     const Atom *atom, const ROMol &mol, const UINT_VECT &ranks,
+// RDKit✔️✔️:     Chirality::INT_PAIR_VECT &nbrs) {
+// RDKit✔️✔️:   // loop over all neighbors and form a decorated list of their
+// RDKit✔️✔️:   // ranks:
+// RDKit✔️✔️:   bool legalCenter = true;
+// RDKit✔️✔️:   bool hasDupes = false;
+// RDKit✔️✔️:
+// RDKit✔️✔️:   auto nzDegree = Chirality::detail::getAtomNonzeroDegree(atom);
+// RDKit✔️✔️:   auto tnzDegree = nzDegree + atom->getTotalNumHs();
+// RDKit✔️✔️:   if (tnzDegree > 4) {
+// RDKit✔️✔️:     // we only know tetrahedral chirality
+// RDKit✔️✔️:     legalCenter = false;
+// RDKit✔️✔️:   } else {
+// RDKit✔️✔️:     // cases we can exclude immediately without having to look at neighbors
+// RDKit✔️✔️:     // ranks:
+// RDKit✔️✔️:     if (tnzDegree < 3) {
+// RDKit✔️✔️:       legalCenter = false;
+// RDKit✔️✔️:     } else if (nzDegree < 3 &&
+// RDKit✔️✔️:                (atom->getAtomicNum() != 15 && atom->getAtomicNum() != 33)) {
+// RDKit✔️✔️:       // less than three neighbors is never stereogenic
+// RDKit✔️✔️:       // unless it is a phosphine/arsine with implicit H (this is from InChI)
+// RDKit✔️✔️:       legalCenter = false;
+// RDKit✔️✔️:     } else if (nzDegree == 3) {
+// RDKit✔️✔️:       if (atom->getTotalNumHs() == 1) {
+// RDKit✔️✔️:         // three-coordinate with more than one H is never stereogenic
+// RDKit✔️✔️:         if (detail::has_protium_neighbor(mol, atom)) {
+// RDKit✔️✔️:           legalCenter = false;
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:       } else {
+// RDKit✔️✔️:         // assume something that's really three coordinate isn't potentially
+// RDKit✔️✔️:         // chiral, then look for exceptions
+// RDKit✔️✔️:         legalCenter = false;
+// RDKit✔️✔️:         if (atom->getAtomicNum() == 7) {
+// RDKit✔️✔️:           // three-coordinate N additional requirements:
+// RDKit✔️✔️:           //   in a ring of size 3  (from InChI)
+// RDKit✔️✔️:           // OR
+// RDKit✔️✔️:           //   is a bridgehead atom (RDKit extension)
+// RDKit✔️✔️:           // Also: cannot be SP2 hybridized or have a conjugated bond
+// RDKit✔️✔️:           //   (this was Github #7434)
+// RDKit✔️✔️:           if (atom->getHybridization() == Atom::HybridizationType::SP3 &&
+// RDKit✔️✔️:               !MolOps::atomHasConjugatedBond(atom) &&
+// RDKit✔️✔️:               (mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3) ||
+// RDKit✔️✔️:                queryIsAtomBridgehead(atom))) {
+// RDKit✔️✔️:             legalCenter = true;
+// RDKit✔️✔️:           }
+// RDKit✔️✔️:         } else if (atom->getAtomicNum() == 15 || atom->getAtomicNum() == 33) {
+// RDKit✔️✔️:           // three-coordinate phosphines and arsines
+// RDKit✔️✔️:           // are always treated as stereogenic even with H atom neighbors.
+// RDKit✔️✔️:           // (this is from InChI)
+// RDKit✔️✔️:           legalCenter = true;
+// RDKit✔️✔️:         } else if (atom->getAtomicNum() == 16 || atom->getAtomicNum() == 34) {
+// RDKit✔️✔️:           if (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
+// RDKit✔️✔️:               (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
+// RDKit✔️✔️:                atom->getFormalCharge() == 1)) {
+// RDKit✔️✔️:             // we also accept sulfur or selenium with either a positive charge
+// RDKit✔️✔️:             // or a double bond:
+// RDKit✔️✔️:             legalCenter = true;
+// RDKit✔️✔️:           }
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:
+// RDKit✔️✔️:     if (legalCenter && !ranks.empty()) {
+// RDKit✔️✔️:       boost::dynamic_bitset<> codesSeen(mol.getNumAtoms());
+// RDKit✔️✔️:       for (const auto bond : mol.atomBonds(atom)) {
+// RDKit✔️✔️:         unsigned int otherIdx = bond->getOtherAtom(atom)->getIdx();
+// RDKit✔️✔️:         nbrs.push_back(std::make_pair(ranks[otherIdx], bond->getIdx()));
+// RDKit✔️✔️:         if (!Chirality::detail::bondAffectsAtomChirality(bond, atom)) {
+// RDKit✔️✔️:           continue;
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:         CHECK_INVARIANT(ranks[otherIdx] < mol.getNumAtoms(),
+// RDKit✔️✔️:                         "CIP rank higher than the number of atoms.");
+// RDKit✔️✔️:         // watch for neighbors with duplicate ranks, which would mean
+// RDKit✔️✔️:         // that we cannot be chiral:
+// RDKit✔️✔️:         if (codesSeen[ranks[otherIdx]]) {
+// RDKit✔️✔️:           // we've already seen this code, it's a dupe
+// RDKit✔️✔️:           hasDupes = true;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:         codesSeen[ranks[otherIdx]] = 1;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return std::make_pair(legalCenter, hasDupes);
+// RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: isAtomPotentialChiralCenter
-/// Check if an atom could be a tetrahedral chiral center.
-/// Returns (legal_center, has_duplicates, neighbors: Vec<(rank, idx)>).
-/// neighbors contains (CIP_rank, neighbor_atom_idx) pairs.
-pub fn is_atom_potential_chiral_center(
-    mol: &Molecule,
-    atom_idx: usize,
-    ranks: &[u32],
-) -> (bool, bool, Vec<(u32, usize)>) {
-    let atom = &mol.atoms()[atom_idx];
-    let mut legal_center = true;
-    let mut has_dupes = false;
-    let mut nbrs: Vec<(u32, usize)> = Vec::new();
-
-    if atom_idx >= mol.num_atoms() {
-        return (false, false, nbrs);
-    }
-
-    // Non-zero degree (exclude bonds that don't affect chirality)
+// BEGIN RDKIT CPP FUNCTION Chirality::detail::isAtomPotentialTetrahedralCenter
+// (FindStereo.cpp:50-115)
+// RDKit✔️✔️: bool isAtomPotentialTetrahedralCenter(const Atom *atom) {
+// RDKit✔️✔️:   PRECONDITION(atom, "atom is null");
+// RDKit✔️✔️:   auto nzDegree = getAtomNonzeroDegree(atom);
+// RDKit✔️✔️:   auto tnzDegree = nzDegree + atom->getTotalNumHs();
+// RDKit✔️✔️:   if (tnzDegree > 4) {
+// RDKit✔️✔️:     return false;
+// RDKit✔️✔️:   } else {
+// RDKit✔️✔️:     const auto &mol = atom->getOwningMol();
+// RDKit✔️✔️:     if (nzDegree == 4) {
+// RDKit✔️✔️:       // chirality is always possible with 4 nbrs
+// RDKit✔️✔️:       return true;
+// RDKit✔️✔️:     } else if (nzDegree <= 1) {
+// RDKit✔️✔️:       // chirality is never possible with 0 or 1 nbr
+// RDKit✔️✔️:       return false;
+// RDKit✔️✔️:     } else if (nzDegree < 3 &&
+// RDKit✔️✔️:                (atom->getAtomicNum() != 15 && atom->getAtomicNum() != 33)) {
+// RDKit✔️✔️:       // less than three neighbors is never stereogenic
+// RDKit✔️✔️:       // unless it is a phosphine/arsine with implicit H
+// RDKit✔️✔️:       return false;
+// RDKit✔️✔️:     } else if (atom->getAtomicNum() == 15 || atom->getAtomicNum() == 33) {
+// RDKit✔️✔️:       // from logical flow: degree is 2 or 3 (implicit H)
+// RDKit✔️✔️:       // Since InChI Software v. 1.02-standard (2009), phosphines and arsines
+// RDKit✔️✔️:       // are always treated as stereogenic even with H atom neighbors.
+// RDKit✔️✔️:       // Accept automatically.
+// RDKit✔️✔️:       return true;
+// RDKit✔️✔️:     } else if (nzDegree == 3) {
+// RDKit✔️✔️:       // three-coordinate with a single H we'll accept automatically:
+// RDKit✔️✔️:       if (atom->getTotalNumHs() == 1) {
+// RDKit✔️✔️:         if (detail::has_protium_neighbor(mol, atom)) {
+// RDKit✔️✔️:           // more than one H is never stereogenic
+// RDKit✔️✔️:           return false;
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:         return true;
+// RDKit✔️✔️:       } else {
+// RDKit✔️✔️:         // otherwise we default to not being a legal center
+// RDKit✔️✔️:         bool legalCenter = false;
+// RDKit✔️✔️:         // but there are a few special cases we'll accept
+// RDKit✔️✔️:         // sulfur or selenium with either a positive charge or a double
+// RDKit✔️✔️:         // bond:
+// RDKit✔️✔️:         if ((atom->getAtomicNum() == 16 || atom->getAtomicNum() == 34) &&
+// RDKit✔️✔️:             (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
+// RDKit✔️✔️:              (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
+// RDKit✔️✔️:               atom->getFormalCharge() == 1))) {
+// RDKit✔️✔️:           legalCenter = true;
+// RDKit✔️✔️:         } else if (atom->getAtomicNum() == 7) {
+// RDKit✔️✔️:           // three-coordinate N additional requirements:
+// RDKit✔️✔️:           //   in a ring of size 3  (from InChI)
+// RDKit✔️✔️:           // OR
+// RDKit✔️✔️:           /// is a bridgehead atom (RDKit extension)
+// RDKit✔️✔️:           // Also: cannot be SP2 hybridized or have a conjugated bond
+// RDKit✔️✔️:           //   (this was Github #7434)
+// RDKit✔️✔️:           if (atom->getHybridization() == Atom::HybridizationType::SP3 &&
+// RDKit✔️✔️:               !MolOps::atomHasConjugatedBond(atom) &&
+// RDKit✔️✔️:               (mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3) ||
+// RDKit✔️✔️:                queryIsAtomBridgehead(atom))) {
+// RDKit✔️✔️:             legalCenter = true;
+// RDKit✔️✔️:           }
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:         return legalCenter;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     } else {
+// RDKit✔️✔️:       return false;
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION Chirality::detail::isAtomPotentialTetrahedralCenter
+/// Source-level tetrahedral-center eligibility used by modern stereo discovery
+/// and canonical SMILES traversal. Legacy CIP assignment intentionally uses
+/// RDKit's distinct `isAtomPotentialChiralCenter()` implementation below.
+pub(crate) fn is_atom_potential_tetrahedral_center(mol: &Molecule, atom_idx: usize) -> bool {
+    let Some(atom) = mol.atoms().get(atom_idx) else {
+        return false;
+    };
     let nz_degree = atom_nonzero_degree(mol, atom_idx);
     let implicit_hydrogens = mol
         .derived_cache()
@@ -4717,65 +4854,112 @@ pub fn is_atom_potential_chiral_center(
     let total_nz_degree = nz_degree + total_num_hs;
 
     if total_nz_degree > 4 {
-        // we only know tetrahedral chirality
-        legal_center = false;
-    } else if total_nz_degree < 3 {
+        return false;
+    }
+    if nz_degree == 4 {
+        return true;
+    }
+    if nz_degree <= 1 {
+        return false;
+    }
+    if nz_degree < 3 && atom.atomic_number() != 15 && atom.atomic_number() != 33 {
+        return false;
+    }
+    if matches!(atom.atomic_number(), 15 | 33) {
+        return true;
+    }
+    if nz_degree != 3 {
+        return false;
+    }
+    if total_num_hs == 1 {
+        return !has_protium_neighbor(mol, atom_idx);
+    }
+
+    match atom.atomic_number() {
+        7 => {
+            let Some(rings) = mol.derived_cache().rings.as_ref() else {
+                return false;
+            };
+            let has_conjugated_bond = mol
+                .topology_block()
+                .adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .any(|neighbor| mol.bonds()[neighbor.bond.index()].is_conjugated());
+            atom.hybridization() == crate::Hybridization::Sp3
+                && !has_conjugated_bond
+                && (rings.is_atom_in_ring_of_size(atom.id(), 3)
+                    || query_is_atom_bridgehead(mol, atom_idx, rings) != 0)
+        }
+        16 | 34 => {
+            let explicit_valence = mol
+                .derived_cache()
+                .valence
+                .as_ref()
+                .and_then(|valence| valence.explicit_valence.get(atom_idx))
+                .copied()
+                .unwrap_or_default();
+            explicit_valence == 4 || (explicit_valence == 3 && atom.formal_charge() == 1)
+        }
+        _ => false,
+    }
+}
+
+/// Check if an atom could be a tetrahedral chiral center.
+/// Returns (legal_center, has_duplicates, neighbors: Vec<(rank, idx)>).
+/// neighbors contains (CIP_rank, neighbor_atom_idx) pairs.
+pub fn is_atom_potential_chiral_center(
+    mol: &Molecule,
+    atom_idx: usize,
+    ranks: &[u32],
+) -> (bool, bool, Vec<(u32, usize)>) {
+    let Some(atom) = mol.atoms().get(atom_idx) else {
+        return (false, false, Vec::new());
+    };
+    let mut legal_center = true;
+    let mut has_dupes = false;
+    let mut nbrs: Vec<(u32, usize)> = Vec::new();
+
+    let nz_degree = atom_nonzero_degree(mol, atom_idx);
+    let implicit_hydrogens = mol
+        .derived_cache()
+        .valence
+        .as_ref()
+        .and_then(|valence| valence.implicit_hydrogens.get(atom_idx))
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let total_num_hs = atom.explicit_hydrogens() as usize + implicit_hydrogens;
+    let total_nz_degree = nz_degree + total_num_hs;
+
+    if total_nz_degree > 4 || total_nz_degree < 3 {
         legal_center = false;
     } else if nz_degree < 3 && atom.atomic_number() != 15 && atom.atomic_number() != 33 {
-        // less than three neighbors is never stereogenic
-        // unless it is a phosphine/arsine with implicit H (this is from InChI)
         legal_center = false;
     } else if nz_degree == 3 {
-        // Check if exactly one H neighbor using explicit_hydrogens
         if total_num_hs == 1 {
-            // three-coordinate with exactly one H
-            // if it has a protium neighbor, not stereogenic
             if has_protium_neighbor(mol, atom_idx) {
                 legal_center = false;
             }
         } else {
-            // assume something that's really three-coordinate isn't potentially chiral
-            // then look for exceptions
-            legal_center = false;
-            match atom.atomic_number() {
+            legal_center = match atom.atomic_number() {
                 7 => {
-                    // RDKit✔️✔️: if (atom->getHybridization() == Atom::HybridizationType::SP3 &&
-                    // RDKit✔️✔️:     !MolOps::atomHasConjugatedBond(atom) &&
-                    // RDKit✔️✔️:     (mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3) ||
-                    // RDKit✔️✔️:      queryIsAtomBridgehead(atom))) {
-                    // RDKit✔️✔️:   legalCenter = true;
-                    // RDKit✔️✔️: }
-                    let in_three_membered_ring = mol
-                        .derived_cache()
-                        .rings
-                        .as_ref()
-                        .is_some_and(|ri| ri.is_atom_in_ring_of_size(atom.id(), 3));
-                    let atom_has_conjugated_bond = mol.bonds().iter().any(|bond| {
-                        (bond.begin().index() == atom_idx || bond.end().index() == atom_idx)
-                            && bond.is_conjugated()
-                    });
-                    let is_bridgehead = mol
-                        .derived_cache()
-                        .rings
-                        .as_ref()
-                        .is_some_and(|ri| query_is_atom_bridgehead(mol, atom_idx, ri) != 0);
-                    if atom.hybridization() == crate::Hybridization::Sp3
-                        && !atom_has_conjugated_bond
-                        && (in_three_membered_ring || is_bridgehead)
-                    {
-                        legal_center = true;
-                    }
+                    let Some(rings) = mol.derived_cache().rings.as_ref() else {
+                        return (false, false, nbrs);
+                    };
+                    let has_conjugated_bond = mol
+                        .topology_block()
+                        .adjacency
+                        .neighbors_of(atom_idx)
+                        .iter()
+                        .any(|neighbor| mol.bonds()[neighbor.bond.index()].is_conjugated());
+                    atom.hybridization() == crate::Hybridization::Sp3
+                        && !has_conjugated_bond
+                        && (rings.is_atom_in_ring_of_size(atom.id(), 3)
+                            || query_is_atom_bridgehead(mol, atom_idx, rings) != 0)
                 }
-                15 | 33 => {
-                    // phosphines and arsines are always stereogenic
-                    legal_center = true;
-                }
+                15 | 33 => true,
                 16 | 34 => {
-                    // RDKit✔️✔️: if (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
-                    // RDKit✔️✔️:     (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
-                    // RDKit✔️✔️:      atom->getFormalCharge() == 1)) {
-                    // RDKit✔️✔️:   legalCenter = true;
-                    // RDKit✔️✔️: }
                     let explicit_valence = mol
                         .derived_cache()
                         .valence
@@ -4783,13 +4967,10 @@ pub fn is_atom_potential_chiral_center(
                         .and_then(|valence| valence.explicit_valence.get(atom_idx))
                         .copied()
                         .unwrap_or_default();
-                    if explicit_valence == 4 || (explicit_valence == 3 && atom.formal_charge() == 1)
-                    {
-                        legal_center = true;
-                    }
+                    explicit_valence == 4 || (explicit_valence == 3 && atom.formal_charge() == 1)
                 }
-                _ => {}
-            }
+                _ => false,
+            };
         }
     }
 
@@ -4809,13 +4990,15 @@ pub fn is_atom_potential_chiral_center(
                 continue;
             }
             let rank = ranks[other_idx] as usize;
-            if rank < codes_seen.len() {
-                if codes_seen[rank] {
-                    has_dupes = true;
-                    break;
-                }
-                codes_seen[rank] = true;
+            assert!(
+                rank < codes_seen.len(),
+                "CIP rank higher than the number of atoms"
+            );
+            if codes_seen[rank] {
+                has_dupes = true;
+                break;
             }
+            codes_seen[rank] = true;
         }
     }
 
@@ -4963,14 +5146,8 @@ fn is_wiggly_bond(bond: &crate::Bond, atom_idx: usize) -> Result<bool, StereoErr
 
 /// Check if an atom has a protium (regular H) neighbor.
 fn has_protium_neighbor(mol: &Molecule, atom_idx: usize) -> bool {
-    for b in mol.bonds() {
-        let other_idx = if b.begin().index() == atom_idx {
-            b.end().index()
-        } else if b.end().index() == atom_idx {
-            b.begin().index()
-        } else {
-            continue;
-        };
+    for neighbor in mol.topology_block().adjacency.neighbors_of(atom_idx).iter() {
+        let other_idx = neighbor.atom_index;
         let other = &mol.atoms()[other_idx];
         if other.atomic_number() == 1 && other.isotope().map_or(true, |iso| iso == 0) {
             return true;
@@ -7098,6 +7275,22 @@ mod tests {
         assert!(
             !has_dupes,
             "distinct halogen substituents must not collapse to duplicate ranks"
+        );
+    }
+
+    #[test]
+    fn modern_and_legacy_tetrahedral_center_boundaries_follow_their_distinct_sources() {
+        let tetrahedral = Molecule::from_smiles("C(F)(Cl)(Br)I").unwrap();
+        assert!(super::is_atom_potential_tetrahedral_center(&tetrahedral, 0));
+
+        let terminal = Molecule::from_smiles("CF").unwrap();
+        assert!(!super::is_atom_potential_tetrahedral_center(&terminal, 1));
+
+        let phosphine = Molecule::from_smiles_with_sanitize("[P](F)Cl", false).unwrap();
+        assert!(super::is_atom_potential_tetrahedral_center(&phosphine, 0));
+        assert!(
+            !is_atom_potential_chiral_center(&phosphine, 0, &[]).0,
+            "legacy Chirality.cpp rejects total nonzero degree below three"
         );
     }
 

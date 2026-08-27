@@ -44,13 +44,13 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 32 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 33 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
 Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
 The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
 
-See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
+See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, source-traced regression evidence, and upstream surfaces outside the current claim.
 
 ## Installation
 
@@ -249,6 +249,8 @@ inputs until a trusted graph has been constructed.
 - Stable 3D atom-chiral-tag assignment with exact pinned-RDKit full-state parity
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
+- Source-backed Rust tautomer enumeration, canonical selection, scoring,
+  callbacks, current and V1 transform catalogs, and ordered result provenance
 - 2D coordinate generation and SVG/PNG depiction
 - Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
 - UFF/MMFF optimization of generated or imported 3D conformers
@@ -335,6 +337,8 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Ring perception, valence handling, aromaticity, and Kekulization
 - ✅ Hydrogen addition and removal
 - ✅ Sanitization for supported chemistry workflows
+- ✅ Tautomer enumeration, canonical selection, scoring, and source-defined
+  stereochemistry and isotopic-hydrogen options
 - ✅ Stereochemistry inspection for supported atom and bond states
 - ✅ Atom chiral-tag assignment from selected 3D conformers, with exact
   pinned-RDKit `assignChiralTypesFrom3D` parity across 77 fixed full-state

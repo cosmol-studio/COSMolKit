@@ -400,8 +400,11 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
             .into_iter()
             .map(|case| {
                 if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(case.atom_idx) {
-                    atom_mut.set_prop("_ringStereochemCand", "1");
-                    atom_mut.set_prop(
+                    // RDKit✔️✔️: atom->setProp(common_properties::_ringStereochemCand, res, 1);
+                    atom_mut.set_computed_prop("_ringStereochemCand", "1");
+                    // RDKit✔️✔️: ratom->setProp(common_properties::_ringStereoAtoms, oringatoms, true);
+                    // RDKit✔️✔️: atom->setProp(common_properties::_ringStereoAtoms, ringStereoAtoms, true);
+                    atom_mut.set_computed_prop(
                         "_ringStereoAtoms",
                         crate::notation::smiles_write::serialize_ring_stereo_atoms(
                             &case.ring_stereo_atoms,
@@ -417,13 +420,15 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         let atom = &mol.atoms()[atom_id.index()];
         if matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
             || crate::chemistry::stereo::has_non_tetrahedral_stereo(atom)
-            || special_case_atoms.contains(&atom_id.index())
+            // RDKit✔️✔️:         !atom->hasProp(common_properties::_CIPCode) &&
+            // RDKit tests the label assigned against the original SSSR basis;
+            // it does not reconsider center legality after symmetrizeSSSR().
+            || atom.prop("_CIPCode").is_some()
+            // RDKit✔️✔️:         (!possibleSpecialCases[atom->getIdx()] ||
+            // RDKit✔️✔️:          !atom->hasProp(common_properties::_ringStereoAtoms))) {
+            || (special_case_atoms.contains(&atom_id.index())
+                && atom.prop("_ringStereoAtoms").is_some())
         {
-            continue;
-        }
-        let (legal_center, has_dupes, _) =
-            crate::stereo::is_atom_potential_chiral_center(mol, atom_id.index(), &ranks);
-        if legal_center && !has_dupes {
             continue;
         }
         let atom_mut = &mut mol.topology_block_mut().atoms[atom_id.index()];

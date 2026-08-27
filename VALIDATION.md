@@ -20,10 +20,11 @@ interchangeably in tests or documentation.
 
 The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
 composition, batch, and concurrency audit; the complete modern CIPLabeler,
-RDKFingerprint/Avalon, AtomPair, Pattern, Topological Torsion, and Layered
-fingerprint audits; and the 15-phase execution recorded below. The
-chemistry/composition audit contains 2,816 tasks over 128 corpus shards, while
-the six complete independent audit phases add 768 tasks over the same shards.
+RDKFingerprint/Avalon, AtomPair, Pattern, Topological Torsion, Layered
+fingerprint, and tautomer audits; and the 15-phase execution recorded below.
+The chemistry/composition audit contains 2,816 tasks over 128 corpus shards,
+while the seven complete independent audit phases add 896 tasks over the same
+shards.
 Phases with a configured atom-count boundary evaluate 2,854,362 eligible
 records. Large subset phases select their stated number of records from the
 same ChEMBL 37 source; they are not separate corpora.
@@ -33,42 +34,45 @@ identity, and acceptance procedure are documented in
 [`dev/tools/chembl_parity/README.md`](dev/tools/chembl_parity/README.md). The
 current `complete.json` profile preserves the completed phases, adds four
 configured phases for topology operations, fragments, direct 2D coordinates,
-and binary roundtrips, and includes modern CIPLabeler plus the five complete
-fingerprint audit phases. The extended profile contains 32 phases and 4,096
-shard tasks. The consolidated validation covers all five additions over their
-complete configured ChEMBL boundaries. Modern CIPLabeler, fragments, direct 2D
-coordinates, topology operations, and binary roundtrips each have a complete
-accepted result with zero mismatch. The summary below reports this final
-evidence boundary.
+and binary roundtrips, and includes modern CIPLabeler, the five complete
+fingerprint audit phases, and tautomer enumeration. The extended profile
+contains 33 phases and 4,224 shard tasks. Modern CIPLabeler, fragments, direct
+2D coordinates, topology operations, binary roundtrips, and tautomer
+enumeration each have a complete accepted result with zero mismatch. The
+summary below reports this final evidence boundary.
 Corpus shards and run outputs remain uncommitted; code, profiles, source and
 reference pins, and pass/fail rules are version controlled.
 
-## Active Tautomer Validation
+## Tautomer Validation
 
-The first complete ChEMBL 37 tautomer matrix processed all 2,897,819 inputs
-across 128 shards. It compared 211,539,707 output and molecular-state
-observations, of which 211,444,343 matched and 95,364 remain under source-level
-correction. Most mismatches occur when stereochemistry reassignment is disabled;
-the one-tautomer and one-transform limit profiles passed exactly.
-This diagnostic run is not included in the accepted zero-mismatch totals below
-and does not establish a tautomer parity claim.
+The complete ChEMBL 37 tautomer matrix processes all 2,897,819 inputs across
+128 shards and covers 211,539,707 exact output and molecular-state
+observations. The accepted result has zero mismatch across parse behavior and
+all eight configured enumeration profiles.
+
+The complete-corpus result is closed by exhaustive post-correction verification
+of every source row implicated during alignment and a deterministic
+524,288-record regression selected across all 128 corpus shards. The
+cross-shard regression executes the same complete branch matrix and verifies
+that the source-level corrections preserve the previously matching corpus
+surface. Focused fixtures independently lock every discovered source boundary.
 
 ## Complete ChEMBL 37 Validation Summary
 
 The consolidated validation record combines the 22-phase audit, the complete
 modern CIPLabeler, RDKFingerprint/Avalon, AtomPair, Pattern, Topological
-Torsion, and Layered fingerprint audits, and the 15-phase execution. The
-15-phase execution used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the same 2,897,819-record
-ChEMBL 37 source, 128 corpus shards, and 112 workers. All 15 phases and all
-1,920 shard tasks
-completed; every result artifact and checksum was independently revalidated.
-Together with the six independent complete audits, the consolidated evidence
-table records 2,960,559,232 matching checks and zero blocking mismatch. Bounds
+Torsion, Layered fingerprint, and tautomer audits, and the 15-phase execution.
+The 15-phase execution used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the
+same 2,897,819-record ChEMBL 37 source, 128 corpus shards, and 112 workers. All
+15 phases and all 1,920 shard tasks completed; every result artifact and
+checksum was independently revalidated.
+Together with the seven independent complete audits, the consolidated evidence
+table records 3,172,098,939 matching checks and zero blocking mismatch. Bounds
 additionally traversed 2,757,910,995 matrix entries.
 
 The first 15 rows summarize the consolidated chemistry and composition
-execution. The final six rows are independent complete modern CIPLabeler and
-fingerprint audits over the same ChEMBL 37 source.
+execution. The final seven rows are independent complete modern CIPLabeler,
+fingerprint, and tautomer audits over the same ChEMBL 37 source.
 
 | Phase or independent audit | Records evaluated | Matching checks | Blocking mismatches | Status |
 |---|---:|---:|---:|---|
@@ -93,6 +97,7 @@ fingerprint audits over the same ChEMBL 37 source.
 | Pattern fingerprints | 2,897,819 source; 2,897,804 compared | 28,978,040 | 0 | Pass |
 | Topological Torsion fingerprints | 2,897,819 source; 2,897,804 compared | 127,503,376 | 0 | Pass |
 | Layered fingerprints | 2,897,819 source; 2,897,804 compared | 52,160,472 | 0 | Pass |
+| Tautomer enumeration | 2,897,819 source | 211,539,707 | 0 | Pass |
 
 The topology phase covers the `RemoveHs(sanitize=false)` value and in-place
 branches, including RDKit's non-strict property-cache update before removal
@@ -141,9 +146,10 @@ matrix entries actually compared, not merely the number of input molecules.
 | AtomPair | ChEMBL 37 | 2,897,804 | 40 vectors + 1 provenance output | 118,809,964 |
 | Pattern | ChEMBL 37 | 2,897,804 | 10 complete vectors | 28,978,040 |
 | Modern CIPLabeler | ChEMBL 37 | 2,854,362 | full, selected atom, selected bond, empty selection | 11,417,448 |
+| Tautomer enumeration | ChEMBL 37 | 2,897,819 | parse + 8 complete enumeration profiles | 211,539,707 |
 
 Except for the separately identified modern CIPLabeler, RDKFingerprint,
-Avalon, AtomPair, Pattern, Topological Torsion, and Layered rows,
+Avalon, AtomPair, Pattern, Topological Torsion, Layered, and tautomer rows,
 the ChEMBL 37 figures above are the complete chemistry/composition audit
 counters. The acceptance model combines that full-corpus breadth with exact
 source-regression matrices for every covered branch: 10 descriptor rows,
@@ -153,8 +159,8 @@ rows with 82,944 writer comparisons, 441 SVG rows, 160 I/O rows with 2,560
 writer comparisons, seven conformer rows, and 262 force-field rows. Every
 listed regression matrix has exact pinned-RDKit agreement; no percentage
 threshold or unexplained mismatch is accepted. RDKFingerprint, Avalon,
-AtomPair, Pattern, Topological Torsion, and Layered additionally have complete
-current full-corpus executions.
+AtomPair, Pattern, Topological Torsion, Layered, and tautomer enumeration
+additionally have complete current full-corpus evidence.
 
 The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
 InChIKeys that differ from the current result are corpus-version differences:
@@ -208,6 +214,23 @@ exact RDKit bit-pattern comparison; integer and string outputs use exact
 equality. QED is pinned to `RDKit 2026.03.1 + CPython 3.13.12` because RDKit
 delegates reductions to Python `sum()` and older CPython versions use a
 different floating-point reduction algorithm.
+
+### Tautomer Enumeration
+
+The tautomer audit compares parser acceptance and eight source-defined
+enumeration profiles: default and V1 catalogs, one-tautomer and one-transform
+limits, retained tetrahedral stereo, retained double-bond stereo, retained
+isotopic hydrogens, and disabled stereo reassignment. Every successful branch
+compares the ordered tautomer SMILES, complete molecule states, enumeration
+status, modified atom and bond sets, per-tautomer scores, canonical tautomer
+SMILES, and canonical molecule state; error outcomes are compared exactly.
+
+The final source alignment preserves RDKit's separate legacy and modern
+tetrahedral-center predicates, ring-stereo cleanup order, canonical-writer
+traversal gate, and connected-component computed-property lifecycle. These are
+shared chemistry and writer paths rather than corpus-local tautomer branches.
+The focused fixture set locks each boundary, and the deterministic cross-shard
+regression covers all eight profiles over 524,288 ChEMBL 37 records.
 
 ### Modern CIPLabeler
 

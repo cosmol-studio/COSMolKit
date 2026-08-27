@@ -128,15 +128,15 @@ fn map_pruning_error(error: TautomerPruningError<OperationError>) -> OperationEr
 pub(super) fn enumerate_tautomers_with_options_impl(
     enumerator: &TautomerEnumerator<'_>,
 ) -> Result<TautomerEnumerationMetadata, OperationError> {
-    // RDKit❗❌: TautomerEnumeratorResult TautomerEnumerator::enumerate(const ROMol &mol) const {
-    // RDKit❗❌:   PRECONDITION(dp_catalog, "no catalog!");
-    // RDKit❗❌:   const TautomerCatalogParams *tautparams = dp_catalog->getCatalogParams();
-    // RDKit❗❌:   PRECONDITION(tautparams, "");
-    // RDKit❗❌:
-    // RDKit❗❌:   TautomerEnumeratorResult res;
-    // RDKit❗❌:
-    // RDKit❗❌:   const std::vector<TautomerTransform> &transforms =
-    // RDKit❗❌:       tautparams->getTransforms();
+    // RDKit✔️❌: TautomerEnumeratorResult TautomerEnumerator::enumerate(const ROMol &mol) const {
+    // RDKit✔️❌:   PRECONDITION(dp_catalog, "no catalog!");
+    // RDKit✔️❌:   const TautomerCatalogParams *tautparams = dp_catalog->getCatalogParams();
+    // RDKit✔️❌:   PRECONDITION(tautparams, "");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   TautomerEnumeratorResult res;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const std::vector<TautomerTransform> &transforms =
+    // RDKit✔️❌:       tautparams->getTransforms();
     let initialization = parts.with_source_read_parts(|read| {
         plan_tautomer_initialization(read)
             .map_err(TautomerRunError::from)
@@ -168,10 +168,10 @@ pub(super) fn enumerate_tautomers_with_options_impl(
     let transforms = enumerator.catalog().transforms();
     let executor = RefCell::new(parts);
 
-    // RDKit❗❌:   bool completed = false;
-    // RDKit❗❌:   bool bailOut = false;
-    // RDKit❗❌:   unsigned int nTransforms = 0;
-    // RDKit❗❌:   while (!completed && !bailOut) {
+    // RDKit✔️❌:   bool completed = false;
+    // RDKit✔️❌:   bool bailOut = false;
+    // RDKit✔️❌:   unsigned int nTransforms = 0;
+    // RDKit✔️❌:   while (!completed && !bailOut) {
     let mut completed = false;
     let mut bailed_out = false;
     while !completed && !bailed_out {
@@ -330,8 +330,8 @@ pub(super) fn enumerate_tautomers_with_options_impl(
         bailed_out = pruning.bailed_out;
     }
 
-    // RDKit❗❌:   res.fillTautomersItVec();
-    // RDKit❗❌:   return res;
+    // RDKit✔️❌:   res.fillTautomersItVec();
+    // RDKit✔️❌:   return res;
     let ordered = materialize_tautomer_candidates_in_source_order(state.candidates)
         .map_err(TautomerRunError::from)
         .map_err(tautomer_operation_error)?;

@@ -1132,8 +1132,8 @@ impl<'callback> TautomerEnumerator<'callback> {
         &self,
         molecule: &Molecule,
     ) -> Result<TautomerEnumeration, crate::OperationError> {
-        // RDKit❗❌: TautomerEnumeratorResult TautomerEnumerator::enumerate(
-        // RDKit❗❌:     const ROMol &mol) const;
+        // RDKit✔️❌: TautomerEnumeratorResult TautomerEnumerator::enumerate(
+        // RDKit✔️❌:     const ROMol &mol) const;
         molecule.enumerate_tautomers_with_options(self)
     }
 
@@ -1449,16 +1449,17 @@ where
         best_molecule.ok_or(TautomerRunError::NoCanonicalTautomer)?
     };
 
-    // RDKit❗✔️:   ROMol *res = new ROMol(*bestMol);
-    // RDKit❗✔️:   static const bool cleanIt = true;
-    // RDKit❗✔️:   static const bool force = true;
-    // RDKit❗✔️:   MolOps::assignStereochemistry(*res, cleanIt, force);
-    // RDKit❗✔️:
-    // RDKit❗✔️:   return res;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️:   ROMol *res = new ROMol(*bestMol);
+    // RDKit✔️✔️:   static const bool cleanIt = true;
+    // RDKit✔️✔️:   static const bool force = true;
+    // RDKit✔️✔️:   MolOps::assignStereochemistry(*res, cleanIt, force);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
     // The shared stereo implementation always executes here, reproducing the
-    // source's `force=true` call shape. Its source marker remains partial until
-    // the full shared `assignStereochemistry()` surface is proven.
+    // source's `force=true` call shape for the tautomer canonicalization
+    // boundary. This does not widen the claim to unrelated coordinate-driven
+    // `assignStereochemistry()` entrypoints.
     let mut result = selected.clone();
     crate::smiles::assign_stereochemistry_cleanup_subset(&mut result, true)?;
     Ok(result)
@@ -1478,16 +1479,16 @@ fn canonical_candidate_smiles(
 pub(crate) fn plan_tautomer_initialization(
     read: MoleculeReadParts<'_>,
 ) -> Result<TautomerInitializationPlan, TautomerInitializationError> {
-    // RDKit❗✔️:   TautomerEnumeratorResult res;
-    // RDKit❗✔️:
-    // RDKit❗✔️:   const std::vector<TautomerTransform> &transforms =
-    // RDKit❗✔️:       tautparams->getTransforms();
+    // RDKit✔️✔️:   TautomerEnumeratorResult res;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const std::vector<TautomerTransform> &transforms =
+    // RDKit✔️✔️:       tautparams->getTransforms();
     // The result and transform references are owned by later state-machine
     // stages. This helper reproduces the complete input/candidate block only.
 
-    // RDKit❗✔️:   // Enumerate all possible tautomers and return them as a vector.
-    // RDKit❗✔️:   // smi is the input molecule SMILES
-    // RDKit❗✔️:   std::string smi = MolToSmiles(mol, true);
+    // RDKit✔️✔️:   // Enumerate all possible tautomers and return them as a vector.
+    // RDKit✔️✔️:   // smi is the input molecule SMILES
+    // RDKit✔️✔️:   std::string smi = MolToSmiles(mol, true);
     let canonical_smiles = read.canonical_isomeric_smiles()?;
     plan_tautomer_initialization_with_canonical_smiles(read, canonical_smiles)
 }
@@ -1496,24 +1497,24 @@ fn plan_tautomer_initialization_with_canonical_smiles(
     read: MoleculeReadParts<'_>,
     canonical_smiles: String,
 ) -> Result<TautomerInitializationPlan, TautomerInitializationError> {
-    // RDKit❗✔️:   // taut is a copy of the input molecule
-    // RDKit❗✔️:   ROMOL_SPTR taut(new ROMol(mol));
+    // RDKit✔️✔️:   // taut is a copy of the input molecule
+    // RDKit✔️✔️:   ROMOL_SPTR taut(new ROMol(mol));
     // Copy-on-write branch materialization is deliberately deferred to
     // `MultiMoleculeOpParts`; this plan contains only source-derived updates.
 
-    // RDKit❗✔️:   // do whatever sanitization bits are required
-    // RDKit❗✔️:   if (taut->needsUpdatePropertyCache()) {
-    // RDKit❗✔️:     taut->updatePropertyCache(false);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   // do whatever sanitization bits are required
+    // RDKit✔️✔️:   if (taut->needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:     taut->updatePropertyCache(false);
+    // RDKit✔️✔️:   }
     let valence_update = if crate::valence::needs_update_property_cache(read) {
         Some(read.assign_valence_with_options(crate::ValenceModel::RdkitLike, false)?)
     } else {
         None
     };
 
-    // RDKit❗✔️:   if (!taut->getRingInfo()->isSymmSssr()) {
-    // RDKit❗✔️:     MolOps::symmetrizeSSSR(*taut);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   if (!taut->getRingInfo()->isSymmSssr()) {
+    // RDKit✔️✔️:     MolOps::symmetrizeSSSR(*taut);
+    // RDKit✔️✔️:   }
     let rings_update = match read.derived_cache().rings.as_ref() {
         Some(rings) if rings.is_symm_sssr() => None,
         _ => Some(read.symmetrize_sssr()?),
@@ -1527,11 +1528,11 @@ fn plan_tautomer_initialization_with_canonical_smiles(
         .or(read.derived_cache().rings.as_ref())
         .expect("SymmSSSR is either retained or computed above");
 
-    // RDKit❗✔️:   // Create a kekulized form of the molecule to match the SMARTS against.
-    // RDKit❗✔️:   // canonical=true is required so that tautomer deduplication is independent
-    // RDKit❗✔️:   // of atom ordering in the molecule.
-    // RDKit❗✔️:   RWMOL_SPTR kekulized(new RWMol(*taut));
-    // RDKit❗✔️:   MolOps::Kekulize(*kekulized, false, true);
+    // RDKit✔️✔️:   // Create a kekulized form of the molecule to match the SMARTS against.
+    // RDKit✔️✔️:   // canonical=true is required so that tautomer deduplication is independent
+    // RDKit✔️✔️:   // of atom ordering in the molecule.
+    // RDKit✔️✔️:   RWMOL_SPTR kekulized(new RWMol(*taut));
+    // RDKit✔️✔️:   MolOps::Kekulize(*kekulized, false, true);
     let kekulize_assignment = read.kekulize_assignment_with_valence(
         Some(effective_rings),
         effective_valence,
@@ -1540,9 +1541,9 @@ fn plan_tautomer_initialization_with_canonical_smiles(
         100,
     )?;
 
-    // RDKit❗✔️:   res.d_tautomers = {{smi, Tautomer(taut, kekulized, 0, 0)}};
-    // RDKit❗✔️:   res.d_modifiedAtoms.resize(mol.getNumAtoms());
-    // RDKit❗✔️:   res.d_modifiedBonds.resize(mol.getNumBonds());
+    // RDKit✔️✔️:   res.d_tautomers = {{smi, Tautomer(taut, kekulized, 0, 0)}};
+    // RDKit✔️✔️:   res.d_modifiedAtoms.resize(mol.getNumAtoms());
+    // RDKit✔️✔️:   res.d_modifiedBonds.resize(mol.getNumBonds());
     // `into_candidate_map()` performs the same one-entry ordered-map
     // insertion once the operation layer supplies its validated branch
     // handles. Typed modified sets are sparse, so their valid source index
@@ -1626,15 +1627,15 @@ pub(crate) fn apply_tautomer_transform_match(
     existing_smiles: &BTreeSet<String>,
     options: TautomerOptions,
 ) -> Result<TautomerTransformAttempt, TautomerTransformApplicationError> {
-    // RDKit❗❌:           // Create a copy of in the input molecule so we can modify it
-    // RDKit❗❌:           // Use kekule form so bonds are explicitly single/double instead of
-    // RDKit❗❌:           // aromatic
-    // RDKit❗❌:           RWMOL_SPTR product(new RWMol(*kmol));
+    // RDKit✔️❌:           // Create a copy of in the input molecule so we can modify it
+    // RDKit✔️❌:           // Use kekule form so bonds are explicitly single/double instead of
+    // RDKit✔️❌:           // aromatic
+    // RDKit✔️❌:           RWMOL_SPTR product(new RWMol(*kmol));
     // The operation-local scratch value is built only inside this narrowed
     // helper and never crosses back into an operation body. This currently
     // deep-clones block state before the nested shared sanitize operation, so
-    // the behavior axis remains provisional until parity and the complexity
-    // axis remains explicitly below the source shared-pointer clone path.
+    // the complexity axis remains explicitly below the source shared-pointer
+    // clone path even though the behavior axis is source-validated.
     let source = Molecule::from_operation_blocks(
         source_read.topology().clone(),
         source_read.coordinates().clone(),
@@ -1680,14 +1681,14 @@ pub(crate) fn apply_tautomer_transform_match(
         }
     }
 
-    // RDKit❗❌:           // Remove a hydrogen from the first matched atom and add one to the
-    // RDKit❗❌:           // last
-    // RDKit❗❌:           int firstIdx = match.front().second;
-    // RDKit❗❌:           int lastIdx = match.back().second;
-    // RDKit❗❌:           Atom *first = product->getAtomWithIdx(firstIdx);
-    // RDKit❗❌:           Atom *last = product->getAtomWithIdx(lastIdx);
-    // RDKit❗❌:           res.d_modifiedAtoms.set(firstIdx);
-    // RDKit❗❌:           res.d_modifiedAtoms.set(lastIdx);
+    // RDKit✔️❌:           // Remove a hydrogen from the first matched atom and add one to the
+    // RDKit✔️❌:           // last
+    // RDKit✔️❌:           int firstIdx = match.front().second;
+    // RDKit✔️❌:           int lastIdx = match.back().second;
+    // RDKit✔️❌:           Atom *first = product->getAtomWithIdx(firstIdx);
+    // RDKit✔️❌:           Atom *last = product->getAtomWithIdx(lastIdx);
+    // RDKit✔️❌:           res.d_modifiedAtoms.set(firstIdx);
+    // RDKit✔️❌:           res.d_modifiedAtoms.set(lastIdx);
     let first = AtomId::new(match_result.atom_mapping[0]);
     let last = AtomId::new(match_result.atom_mapping[match_result.atom_mapping.len() - 1]);
     let mut modified_atoms = current_modified_atoms.clone();
@@ -1695,9 +1696,9 @@ pub(crate) fn apply_tautomer_transform_match(
     modified_atoms.insert(first);
     modified_atoms.insert(last);
 
-    // RDKit❗❌:           first->setNumExplicitHs(
-    // RDKit❗❌:               std::max(0, static_cast<int>(first->getTotalNumHs()) - 1));
-    // RDKit❗❌:           last->setNumExplicitHs(last->getTotalNumHs() + 1);
+    // RDKit✔️❌:           first->setNumExplicitHs(
+    // RDKit✔️❌:               std::max(0, static_cast<int>(first->getTotalNumHs()) - 1));
+    // RDKit✔️❌:           last->setNumExplicitHs(last->getTotalNumHs() + 1);
     let first_hydrogens = crate::valence::total_num_hydrogens(&candidate, first, false)?;
     let last_hydrogens = crate::valence::total_num_hydrogens(&candidate, last, false)?;
     let first_explicit = u8::try_from(first_hydrogens.saturating_sub(1)).map_err(|_| {
@@ -1721,39 +1722,39 @@ pub(crate) fn apply_tautomer_transform_match(
     topology.atoms[first.index()].set_explicit_hydrogens(first_explicit);
     topology.atoms[last.index()].set_explicit_hydrogens(last_explicit);
 
-    // RDKit❗❌:           // Remove any implicit hydrogens from the first and last atoms
-    // RDKit❗❌:           // now we have set the count explicitly
-    // RDKit❗❌:           first->setNoImplicit(true);
-    // RDKit❗❌:           last->setNoImplicit(true);
+    // RDKit✔️❌:           // Remove any implicit hydrogens from the first and last atoms
+    // RDKit✔️❌:           // now we have set the count explicitly
+    // RDKit✔️❌:           first->setNoImplicit(true);
+    // RDKit✔️❌:           last->setNoImplicit(true);
     topology.atoms[first.index()].set_no_implicit(true);
     topology.atoms[last.index()].set_no_implicit(true);
 
-    // RDKit❗❌:           // Adjust bond orders
-    // RDKit❗❌:           unsigned int bi = 0;
-    // RDKit❗❌:           for (size_t i = 0; i < transform.Mol->getNumBonds(); ++i) {
-    // RDKit❗❌:             const auto tbond = transform.Mol->getBondWithIdx(i);
-    // RDKit❗❌:             Bond *bond = product->getBondBetweenAtoms(
-    // RDKit❗❌:                 match[tbond->getBeginAtomIdx()].second,
-    // RDKit❗❌:                 match[tbond->getEndAtomIdx()].second);
-    // RDKit❗❌:             ASSERT_INVARIANT(bond, "required bond not found");
+    // RDKit✔️❌:           // Adjust bond orders
+    // RDKit✔️❌:           unsigned int bi = 0;
+    // RDKit✔️❌:           for (size_t i = 0; i < transform.Mol->getNumBonds(); ++i) {
+    // RDKit✔️❌:             const auto tbond = transform.Mol->getBondWithIdx(i);
+    // RDKit✔️❌:             Bond *bond = product->getBondBetweenAtoms(
+    // RDKit✔️❌:                 match[tbond->getBeginAtomIdx()].second,
+    // RDKit✔️❌:                 match[tbond->getEndAtomIdx()].second);
+    // RDKit✔️❌:             ASSERT_INVARIANT(bond, "required bond not found");
     for (query_bond, &target_bond) in match_result.bond_mapping.iter().enumerate() {
         let bond_id = BondId::new(target_bond);
         let bond = &mut topology.bonds[target_bond];
-        // RDKit❗❌:             // check if bonds is specified in tautomer.in file
-        // RDKit❗❌:             if (!transform.BondTypes.empty()) {
-        // RDKit❗❌:               bond->setBondType(transform.BondTypes[bi]);
-        // RDKit❗❌:               ++bi;
-        // RDKit❗❌:             } else {
+        // RDKit✔️❌:             // check if bonds is specified in tautomer.in file
+        // RDKit✔️❌:             if (!transform.BondTypes.empty()) {
+        // RDKit✔️❌:               bond->setBondType(transform.BondTypes[bi]);
+        // RDKit✔️❌:               ++bi;
+        // RDKit✔️❌:             } else {
         if let Some(&bond_type) = transform.bond_types().get(query_bond) {
             bond.set_order(bond_type);
         } else {
-            // RDKit❗❌:               Bond::BondType bondtype = bond->getBondType();
-            // RDKit❗❌:               if (bondtype == Bond::SINGLE) {
-            // RDKit❗❌:                 bond->setBondType(Bond::DOUBLE);
-            // RDKit❗❌:               }
-            // RDKit❗❌:               if (bondtype == Bond::DOUBLE) {
-            // RDKit❗❌:                 bond->setBondType(Bond::SINGLE);
-            // RDKit❗❌:               }
+            // RDKit✔️❌:               Bond::BondType bondtype = bond->getBondType();
+            // RDKit✔️❌:               if (bondtype == Bond::SINGLE) {
+            // RDKit✔️❌:                 bond->setBondType(Bond::DOUBLE);
+            // RDKit✔️❌:               }
+            // RDKit✔️❌:               if (bondtype == Bond::DOUBLE) {
+            // RDKit✔️❌:                 bond->setBondType(Bond::SINGLE);
+            // RDKit✔️❌:               }
             let bond_type = bond.order();
             if bond_type == BondOrder::Single {
                 bond.set_order(BondOrder::Double);
@@ -1762,21 +1763,21 @@ pub(crate) fn apply_tautomer_transform_match(
                 bond.set_order(BondOrder::Single);
             }
         }
-        // RDKit❗❌:             }
-        // RDKit❗❌:             res.d_modifiedBonds.set(bond->getIdx());
+        // RDKit✔️❌:             }
+        // RDKit✔️❌:             res.d_modifiedBonds.set(bond->getIdx());
         modified_bonds.insert(bond_id);
-        // RDKit❗❌:           }
+        // RDKit✔️❌:           }
     }
 
-    // RDKit❗❌:           // TODO adjust charges
-    // RDKit❗❌:           if (!transform.Charges.empty()) {
-    // RDKit❗❌:             unsigned int ci = 0;
-    // RDKit❗❌:             for (const auto &pair : match) {
-    // RDKit❗❌:               Atom *atom = product->getAtomWithIdx(pair.second);
-    // RDKit❗❌:               atom->setFormalCharge(atom->getFormalCharge() +
-    // RDKit❗❌:                                     transform.Charges[ci++]);
-    // RDKit❗❌:             }
-    // RDKit❗❌:           }
+    // RDKit✔️❌:           // TODO adjust charges
+    // RDKit✔️❌:           if (!transform.Charges.empty()) {
+    // RDKit✔️❌:             unsigned int ci = 0;
+    // RDKit✔️❌:             for (const auto &pair : match) {
+    // RDKit✔️❌:               Atom *atom = product->getAtomWithIdx(pair.second);
+    // RDKit✔️❌:               atom->setFormalCharge(atom->getFormalCharge() +
+    // RDKit✔️❌:                                     transform.Charges[ci++]);
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
     for (&target_atom, &delta) in match_result.atom_mapping.iter().zip(transform.charges()) {
         let atom_id = AtomId::new(target_atom);
         let charge = i32::from(topology.atoms[target_atom].formal_charge()) + delta;
@@ -1802,17 +1803,17 @@ pub(crate) fn apply_tautomer_transform_match(
         | crate::SanitizeOps::SET_HYBRIDIZATION
         | crate::SanitizeOps::ADJUST_HYDROGENS;
 
-    // RDKit❗❌:           unsigned int failedOp;
-    // RDKit❗❌:           try {
-    // RDKit❗❌:             MolOps::sanitizeMol(*product, failedOp,
-    // RDKit❗❌:                                 MolOps::SANITIZE_KEKULIZE |
-    // RDKit❗❌:                                     MolOps::SANITIZE_SETAROMATICITY |
-    // RDKit❗❌:                                     MolOps::SANITIZE_SETCONJUGATION |
-    // RDKit❗❌:                                     MolOps::SANITIZE_SETHYBRIDIZATION |
-    // RDKit❗❌:                                     MolOps::SANITIZE_ADJUSTHS);
-    // RDKit❗❌:           } catch (const KekulizeException &) {
-    // RDKit❗❌:             continue;
-    // RDKit❗❌:           }
+    // RDKit✔️❌:           unsigned int failedOp;
+    // RDKit✔️❌:           try {
+    // RDKit✔️❌:             MolOps::sanitizeMol(*product, failedOp,
+    // RDKit✔️❌:                                 MolOps::SANITIZE_KEKULIZE |
+    // RDKit✔️❌:                                     MolOps::SANITIZE_SETAROMATICITY |
+    // RDKit✔️❌:                                     MolOps::SANITIZE_SETCONJUGATION |
+    // RDKit✔️❌:                                     MolOps::SANITIZE_SETHYBRIDIZATION |
+    // RDKit✔️❌:                                     MolOps::SANITIZE_ADJUSTHS);
+    // RDKit✔️❌:           } catch (const KekulizeException &) {
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
     let mut product = match product.sanitize_with_ops(sanitize_ops) {
         Ok(product) => product,
         Err(error) => {
@@ -1829,7 +1830,7 @@ pub(crate) fn apply_tautomer_transform_match(
             return Err(TautomerTransformApplicationError::Sanitize(error));
         }
     };
-    // RDKit❗❌:           setTautomerStereoAndIsoHs(mol, *product, res);
+    // RDKit✔️❌:           setTautomerStereoAndIsoHs(mol, *product, res);
     set_tautomer_stereo_and_isotopic_hydrogens(
         &source,
         &mut product,
@@ -1837,13 +1838,13 @@ pub(crate) fn apply_tautomer_transform_match(
         &modified_bonds,
         options,
     )?;
-    // RDKit❗❌:           tsmiles = MolToSmiles(*product, true);
+    // RDKit✔️❌:           tsmiles = MolToSmiles(*product, true);
     let canonical_smiles =
         MoleculeReadParts::from_molecule(&product).canonical_isomeric_smiles()?;
 
-    // RDKit❗❌:           if (res.d_tautomers.find(tsmiles) != res.d_tautomers.end()) {
-    // RDKit❗❌:             continue;
-    // RDKit❗❌:           }
+    // RDKit✔️❌:           if (res.d_tautomers.find(tsmiles) != res.d_tautomers.end()) {
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
     if existing_smiles.contains(&canonical_smiles) {
         return Ok(TautomerTransformAttempt::Duplicate {
             canonical_smiles,
@@ -1852,15 +1853,15 @@ pub(crate) fn apply_tautomer_transform_match(
         });
     }
 
-    // RDKit❗❌:           // in addition to the above transformations, sanitization may modify
-    // RDKit❗❌:           // bonds, e.g. Cc1nc2ccccc2[nH]1
-    // RDKit❗❌:           for (size_t i = 0; i < mol.getNumBonds(); i++) {
-    // RDKit❗❌:             auto molBondType = mol.getBondWithIdx(i)->getBondType();
-    // RDKit❗❌:             auto tautBondType = product->getBondWithIdx(i)->getBondType();
-    // RDKit❗❌:             if (molBondType != tautBondType && !res.d_modifiedBonds.test(i)) {
-    // RDKit❗❌:               res.d_modifiedBonds.set(i);
-    // RDKit❗❌:             }
-    // RDKit❗❌:           }
+    // RDKit✔️❌:           // in addition to the above transformations, sanitization may modify
+    // RDKit✔️❌:           // bonds, e.g. Cc1nc2ccccc2[nH]1
+    // RDKit✔️❌:           for (size_t i = 0; i < mol.getNumBonds(); i++) {
+    // RDKit✔️❌:             auto molBondType = mol.getBondWithIdx(i)->getBondType();
+    // RDKit✔️❌:             auto tautBondType = product->getBondWithIdx(i)->getBondType();
+    // RDKit✔️❌:             if (molBondType != tautBondType && !res.d_modifiedBonds.test(i)) {
+    // RDKit✔️❌:               res.d_modifiedBonds.set(i);
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
     for (index, (source_bond, product_bond)) in
         source.bonds().iter().zip(product.bonds()).enumerate()
     {
@@ -1869,9 +1870,9 @@ pub(crate) fn apply_tautomer_transform_match(
         }
     }
 
-    // RDKit❗❌:           RWMOL_SPTR kekulized_product(new RWMol(*product));
-    // RDKit❗❌:           // canonical=true for order-independent tautomer deduplication
-    // RDKit❗❌:           MolOps::Kekulize(*kekulized_product, false, true);
+    // RDKit✔️❌:           RWMOL_SPTR kekulized_product(new RWMol(*product));
+    // RDKit✔️❌:           // canonical=true for order-independent tautomer deduplication
+    // RDKit✔️❌:           MolOps::Kekulize(*kekulized_product, false, true);
     let product_read = MoleculeReadParts::from_molecule(&product);
     let owned_rings;
     let rings = match product_read.derived_cache().rings.as_ref() {
@@ -1889,9 +1890,9 @@ pub(crate) fn apply_tautomer_transform_match(
         100,
     )?;
 
-    // RDKit❗❌:           res.d_tautomers[tsmiles] = Tautomer(
-    // RDKit❗❌:               std::move(product), std::move(kekulized_product),
-    // RDKit❗❌:               res.d_modifiedAtoms.count(), res.d_modifiedBonds.count());
+    // RDKit✔️❌:           res.d_tautomers[tsmiles] = Tautomer(
+    // RDKit✔️❌:               std::move(product), std::move(kekulized_product),
+    // RDKit✔️❌:               res.d_modifiedAtoms.count(), res.d_modifiedBonds.count());
     Ok(TautomerTransformAttempt::Product(TautomerProductPlan {
         topology: product.topology_block().clone(),
         properties: product.properties().clone(),
@@ -1918,18 +1919,18 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
     ) -> Result<TautomerExpansionAttempt<M>, E>,
     mut callback: impl FnMut(&TautomerExpansionState<M>) -> Result<bool, E>,
 ) -> Result<TautomerExpansionPass, TautomerExpansionError<E>> {
-    // RDKit❗✔️:   bool completed = false;
-    // RDKit❗✔️:   bool bailOut = false;
-    // RDKit❗✔️:   unsigned int nTransforms = 0;
+    // RDKit✔️✔️:   bool completed = false;
+    // RDKit✔️✔️:   bool bailOut = false;
+    // RDKit✔️✔️:   unsigned int nTransforms = 0;
     // `completed` belongs to the post-expansion pruning/rekeying stage. This
     // helper owns one exact ordered expansion pass and retains the other two
     // source variables as its return flag and cumulative state counter.
     let mut bail_out = false;
 
-    // RDKit❗✔️:   while (!completed && !bailOut) {
-    // RDKit❗✔️:     // std::map automatically sorts res.d_tautomers into alphabetical order
-    // RDKit❗✔️:     // (SMILES)
-    // RDKit❗✔️:     for (auto &smilesTautomerPair : res.d_tautomers) {
+    // RDKit✔️✔️:   while (!completed && !bailOut) {
+    // RDKit✔️✔️:     // std::map automatically sorts res.d_tautomers into alphabetical order
+    // RDKit✔️✔️:     // (SMILES)
+    // RDKit✔️✔️:     for (auto &smilesTautomerPair : res.d_tautomers) {
     // A BTreeMap range cursor, rather than a snapshot of keys, reproduces
     // std::map iterator behavior when a transform inserts during traversal:
     // later keys are visible in this pass and earlier keys wait for the next.
@@ -1948,9 +1949,9 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         };
         previous_key = Some(current_key.clone());
 
-        // RDKit❗✔️:       if (smilesTautomerPair.second.d_done) {
-        // RDKit❗✔️:         continue;
-        // RDKit❗✔️:       }
+        // RDKit✔️✔️:       if (smilesTautomerPair.second.d_done) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
         let (done, kekulized) = {
             let candidate = &state.candidates[&current_key];
             (candidate.done, candidate.kekulized.clone())
@@ -1963,50 +1964,50 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                 canonical_smiles: current_key.clone(),
             })?;
 
-        // RDKit❗✔️:       // tautomer not yet done
-        // RDKit❗✔️:       for (const auto &transform : transforms) {
+        // RDKit✔️✔️:       // tautomer not yet done
+        // RDKit✔️✔️:       for (const auto &transform : transforms) {
         for transform in transforms {
-            // RDKit❗✔️:         if (bailOut) {
-            // RDKit❗✔️:           break;
-            // RDKit❗✔️:         }
+            // RDKit✔️✔️:         if (bailOut) {
+            // RDKit✔️✔️:           break;
+            // RDKit✔️✔️:         }
             if bail_out {
                 break;
             }
 
-            // RDKit❗✔️:         // kmol is the kekulized version of the tautomer
-            // RDKit❗✔️:         const auto &kmol = smilesTautomerPair.second.kekulized;
-            // RDKit❗✔️:         std::vector<MatchVectType> matches;
-            // RDKit❗✔️:         unsigned int matched =
-            // RDKit❗✔️:             SubstructMatch(*kmol, *(transform.Mol), matches);
+            // RDKit✔️✔️:         // kmol is the kekulized version of the tautomer
+            // RDKit✔️✔️:         const auto &kmol = smilesTautomerPair.second.kekulized;
+            // RDKit✔️✔️:         std::vector<MatchVectType> matches;
+            // RDKit✔️✔️:         unsigned int matched =
+            // RDKit✔️✔️:             SubstructMatch(*kmol, *(transform.Mol), matches);
             let matches =
                 find_matches(&kekulized, transform).map_err(TautomerExpansionError::Backend)?;
 
-            // RDKit❗✔️:         if (!matched) {
-            // RDKit❗✔️:           continue;
-            // RDKit❗✔️:         }
+            // RDKit✔️✔️:         if (!matched) {
+            // RDKit✔️✔️:           continue;
+            // RDKit✔️✔️:         }
             if matches.is_empty() {
                 continue;
             }
 
-            // RDKit❗✔️:         ++nTransforms;
+            // RDKit✔️✔️:         ++nTransforms;
             state.num_transforms = state.num_transforms.wrapping_add(1);
 
-            // RDKit❗✔️:         // loop over transform matches
-            // RDKit❗✔️:         for (const auto &match : matches) {
+            // RDKit✔️✔️:         // loop over transform matches
+            // RDKit✔️✔️:         for (const auto &match : matches) {
             for matched in &matches {
-                // RDKit❗✔️:           if (nTransforms >= d_maxTransforms) {
-                // RDKit❗✔️:             res.d_status =
-                // RDKit❗✔️:                 TautomerEnumeratorStatus::MaxTransformsReached;
-                // RDKit❗✔️:             bailOut = true;
-                // RDKit❗✔️:           } else if (res.d_tautomers.size() >= d_maxTautomers) {
-                // RDKit❗✔️:             res.d_status =
-                // RDKit❗✔️:                 TautomerEnumeratorStatus::MaxTautomersReached;
-                // RDKit❗✔️:             bailOut = true;
-                // RDKit❗✔️:           } else if (d_callback.get() &&
-                // RDKit❗✔️:                      !(*d_callback)(mol, res)) {
-                // RDKit❗✔️:             res.d_status = TautomerEnumeratorStatus::Canceled;
-                // RDKit❗✔️:             bailOut = true;
-                // RDKit❗✔️:           }
+                // RDKit✔️✔️:           if (nTransforms >= d_maxTransforms) {
+                // RDKit✔️✔️:             res.d_status =
+                // RDKit✔️✔️:                 TautomerEnumeratorStatus::MaxTransformsReached;
+                // RDKit✔️✔️:             bailOut = true;
+                // RDKit✔️✔️:           } else if (res.d_tautomers.size() >= d_maxTautomers) {
+                // RDKit✔️✔️:             res.d_status =
+                // RDKit✔️✔️:                 TautomerEnumeratorStatus::MaxTautomersReached;
+                // RDKit✔️✔️:             bailOut = true;
+                // RDKit✔️✔️:           } else if (d_callback.get() &&
+                // RDKit✔️✔️:                      !(*d_callback)(mol, res)) {
+                // RDKit✔️✔️:             res.d_status = TautomerEnumeratorStatus::Canceled;
+                // RDKit✔️✔️:             bailOut = true;
+                // RDKit✔️✔️:           }
                 if state.num_transforms >= options.max_transforms() {
                     state.status = TautomerEnumerationStatus::MaxTransformsReached;
                     bail_out = true;
@@ -2018,9 +2019,9 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                     bail_out = true;
                 }
 
-                // RDKit❗✔️:           if (bailOut) {
-                // RDKit❗✔️:             break;
-                // RDKit❗✔️:           }
+                // RDKit✔️✔️:           if (bailOut) {
+                // RDKit✔️✔️:             break;
+                // RDKit✔️✔️:           }
                 if bail_out {
                     break;
                 }
@@ -2061,11 +2062,11 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                         state.modified_bonds = product.modified_bonds;
                         let canonical_smiles = product.canonical_smiles;
 
-                        // RDKit❗✔️:           res.d_tautomers[tsmiles] = Tautomer(
-                        // RDKit❗✔️:               std::move(product),
-                        // RDKit❗✔️:               std::move(kekulized_product),
-                        // RDKit❗✔️:               res.d_modifiedAtoms.count(),
-                        // RDKit❗✔️:               res.d_modifiedBonds.count());
+                        // RDKit✔️✔️:           res.d_tautomers[tsmiles] = Tautomer(
+                        // RDKit✔️✔️:               std::move(product),
+                        // RDKit✔️✔️:               std::move(kekulized_product),
+                        // RDKit✔️✔️:               res.d_modifiedAtoms.count(),
+                        // RDKit✔️✔️:               res.d_modifiedBonds.count());
                         if state.candidates.contains_key(&canonical_smiles) {
                             return Err(TautomerExpansionError::DuplicateProductKey {
                                 canonical_smiles,
@@ -2086,8 +2087,8 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
             }
         }
 
-        // RDKit❗✔️:       smilesTautomerPair.second.d_done = true;
-        // RDKit❗✔️:     }
+        // RDKit✔️✔️:       smilesTautomerPair.second.d_done = true;
+        // RDKit✔️✔️:     }
         state
             .candidates
             .get_mut(&current_key)
@@ -2111,14 +2112,14 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
     ) -> Result<bool, E>,
     mut canonical_isomeric_smiles: impl FnMut(&M) -> Result<String, E>,
 ) -> Result<TautomerPruningPass, TautomerPruningError<E>> {
-    // RDKit❗✔️:     completed = true;
-    // RDKit❗✔️:     size_t maxNumModifiedAtoms = res.d_modifiedAtoms.count();
-    // RDKit❗✔️:     size_t maxNumModifiedBonds = res.d_modifiedBonds.count();
+    // RDKit✔️✔️:     completed = true;
+    // RDKit✔️✔️:     size_t maxNumModifiedAtoms = res.d_modifiedAtoms.count();
+    // RDKit✔️✔️:     size_t maxNumModifiedBonds = res.d_modifiedBonds.count();
     let mut completed = true;
     let max_num_modified_atoms = state.modified_atoms.len();
     let max_num_modified_bonds = state.modified_bonds.len();
 
-    // RDKit❗✔️:     for (auto it = res.d_tautomers.begin(); it != res.d_tautomers.end();) {
+    // RDKit✔️✔️:     for (auto it = res.d_tautomers.begin(); it != res.d_tautomers.end();) {
     let mut current_key = state.candidates.keys().next().cloned();
     while let Some(key) = current_key {
         let (done, num_modified_atoms, num_modified_bonds) = {
@@ -2130,17 +2131,17 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
             )
         };
 
-        // RDKit❗✔️:       auto &taut = it->second;
-        // RDKit❗✔️:       if (!taut.d_done) {
-        // RDKit❗✔️:         completed = false;
-        // RDKit❗✔️:       }
+        // RDKit✔️✔️:       auto &taut = it->second;
+        // RDKit✔️✔️:       if (!taut.d_done) {
+        // RDKit✔️✔️:         completed = false;
+        // RDKit✔️✔️:       }
         if !done {
             completed = false;
         }
 
-        // RDKit❗✔️:       if ((taut.d_numModifiedAtoms < maxNumModifiedAtoms ||
-        // RDKit❗✔️:            taut.d_numModifiedBonds < maxNumModifiedBonds) &&
-        // RDKit❗✔️:           setTautomerStereoAndIsoHs(mol, *taut.tautomer, res)) {
+        // RDKit✔️✔️:       if ((taut.d_numModifiedAtoms < maxNumModifiedAtoms ||
+        // RDKit✔️✔️:            taut.d_numModifiedBonds < maxNumModifiedBonds) &&
+        // RDKit✔️✔️:           setTautomerStereoAndIsoHs(mol, *taut.tautomer, res)) {
         let needs_stereo_update = num_modified_atoms < max_num_modified_atoms
             || num_modified_bonds < max_num_modified_bonds;
         let stereo_changed = if needs_stereo_update {
@@ -2173,9 +2174,8 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 })?;
                 canonical_isomeric_smiles(tautomer).map_err(TautomerPruningError::Backend)?
             };
-
-            // RDKit❗✔️:         Tautomer tautStored = std::move(taut);
-            // RDKit❗✔️:         it = res.d_tautomers.erase(it);
+            // RDKit✔️✔️:         Tautomer tautStored = std::move(taut);
+            // RDKit✔️✔️:         it = res.d_tautomers.erase(it);
             let mut candidate = state
                 .candidates
                 .remove(&key)
@@ -2189,15 +2189,15 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 .next()
                 .map(|(next_key, _)| next_key.clone());
 
-            // RDKit❗✔️:         tautStored.d_numModifiedAtoms = maxNumModifiedAtoms;
-            // RDKit❗✔️:         tautStored.d_numModifiedBonds = maxNumModifiedBonds;
+            // RDKit✔️✔️:         tautStored.d_numModifiedAtoms = maxNumModifiedAtoms;
+            // RDKit✔️✔️:         tautStored.d_numModifiedBonds = maxNumModifiedBonds;
             candidate.update_modified_counts(max_num_modified_atoms, max_num_modified_bonds);
 
-            // RDKit❗✔️:         auto insertRes = res.d_tautomers.insert(std::make_pair(
-            // RDKit❗✔️:             MolToSmiles(*tautStored.tautomer), std::move(tautStored)));
-            // RDKit❗✔️:         if (insertRes.second) {
-            // RDKit❗✔️:           it = insertRes.first;
-            // RDKit❗✔️:         }
+            // RDKit✔️✔️:         auto insertRes = res.d_tautomers.insert(std::make_pair(
+            // RDKit✔️✔️:             MolToSmiles(*tautStored.tautomer), std::move(tautStored)));
+            // RDKit✔️✔️:         if (insertRes.second) {
+            // RDKit✔️✔️:           it = insertRes.first;
+            // RDKit✔️✔️:         }
             if state.candidates.contains_key(&new_key) {
                 current_key = next_after_erased;
             } else {
@@ -2205,9 +2205,9 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 current_key = Some(new_key);
             }
         } else {
-            // RDKit❗✔️:       } else {
-            // RDKit❗✔️:         ++it;
-            // RDKit❗✔️:       }
+            // RDKit✔️✔️:       } else {
+            // RDKit✔️✔️:         ++it;
+            // RDKit✔️✔️:       }
             current_key = state
                 .candidates
                 .range::<str, _>((
@@ -2217,14 +2217,14 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 .next()
                 .map(|(next_key, _)| next_key.clone());
         }
-        // RDKit❗✔️:     }
+        // RDKit✔️✔️:     }
     }
 
-    // RDKit❗✔️:     if (bailOut && res.d_tautomers.size() < d_maxTautomers &&
-    // RDKit❗✔️:         res.d_status == TautomerEnumeratorStatus::MaxTautomersReached) {
-    // RDKit❗✔️:       res.d_status = TautomerEnumeratorStatus::Completed;
-    // RDKit❗✔️:       bailOut = false;
-    // RDKit❗✔️:     }
+    // RDKit✔️✔️:     if (bailOut && res.d_tautomers.size() < d_maxTautomers &&
+    // RDKit✔️✔️:         res.d_status == TautomerEnumeratorStatus::MaxTautomersReached) {
+    // RDKit✔️✔️:       res.d_status = TautomerEnumeratorStatus::Completed;
+    // RDKit✔️✔️:       bailOut = false;
+    // RDKit✔️✔️:     }
     if bail_out
         && state.candidates.len() < options.max_tautomers() as usize
         && state.status == TautomerEnumerationStatus::MaxTautomersReached
@@ -2242,12 +2242,12 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
 pub(crate) fn materialize_tautomer_candidates_in_source_order<M>(
     candidates: SmilesTautomerMap<M>,
 ) -> Result<Vec<(String, M)>, TautomerEnumerationError> {
-    // RDKit❗✔️:   res.fillTautomersItVec();
-    // RDKit❗✔️:   void fillTautomersItVec() {
-    // RDKit❗✔️:     for (auto it = d_tautomers.begin(); it != d_tautomers.end(); ++it) {
-    // RDKit❗✔️:       d_tautomersItVec.push_back(it);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   res.fillTautomersItVec();
+    // RDKit✔️✔️:   void fillTautomersItVec() {
+    // RDKit✔️✔️:     for (auto it = d_tautomers.begin(); it != d_tautomers.end(); ++it) {
+    // RDKit✔️✔️:       d_tautomersItVec.push_back(it);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
     let mut entries = Vec::with_capacity(candidates.len());
     for (canonical_smiles, candidate) in candidates {
         let tautomer = candidate.tautomer.ok_or_else(|| {
@@ -2300,14 +2300,13 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
     modified_bonds: &BTreeSet<BondId>,
     options: TautomerOptions,
 ) -> Result<bool, TautomerStereoTransitionError> {
-    // RDKit❗❌: bool TautomerEnumerator::setTautomerStereoAndIsoHs(
-    // RDKit❗❌:     const ROMol &mol, ROMol &taut, const TautomerEnumeratorResult &res) const {
-    // RDKit❗❌:   bool modified = false;
-    // The source transition is reproduced below. Its behavior marker remains
-    // provisional until the focused upstream stereo matrix proves the shared
-    // legacy assignStereochemistry() dependency. BTreeSet membership is O(log
-    // n), versus the source dynamic_bitset's O(1), so the complexity axis is
-    // intentionally not claimed equivalent yet.
+    // RDKit✔️❌: bool TautomerEnumerator::setTautomerStereoAndIsoHs(
+    // RDKit✔️❌:     const ROMol &mol, ROMol &taut, const TautomerEnumeratorResult &res) const {
+    // RDKit✔️❌:   bool modified = false;
+    // The source transition is reproduced below and validated through the
+    // complete tautomer stereo matrix. BTreeSet membership is O(log n), versus
+    // the source dynamic_bitset's O(1), so the complexity axis is intentionally
+    // not claimed equivalent.
     if tautomer.num_atoms() != source.num_atoms() {
         return Err(TautomerStereoTransitionError::AtomCountMismatch {
             expected: source.num_atoms(),
@@ -2322,11 +2321,11 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
     }
     let mut modified = false;
 
-    // RDKit❗❌:   for (auto atom : mol.atoms()) {
-    // RDKit❗❌:     auto atomIdx = atom->getIdx();
-    // RDKit❗❌:     if (!res.d_modifiedAtoms.test(atomIdx)) {
-    // RDKit❗❌:       continue;
-    // RDKit❗❌:     }
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     auto atomIdx = atom->getIdx();
+    // RDKit✔️❌:     if (!res.d_modifiedAtoms.test(atomIdx)) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
     for atom_id in source.atoms().iter().map(crate::Atom::id) {
         if !modified_atoms.contains(&atom_id) {
             continue;
@@ -2340,63 +2339,63 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
         };
         let tautomer_atom = &mut tautomer.topology_block_mut().atoms[atom_id.index()];
 
-        // RDKit❗❌:     auto tautAtom = taut.getAtomWithIdx(atomIdx);
-        // RDKit❗❌:     // clear chiral tag on sp2 atoms (also sp3 if d_removeSp3Stereo is true)
-        // RDKit❗❌:     if (tautAtom->getHybridization() == Atom::SP2 || d_removeSp3Stereo) {
+        // RDKit✔️❌:     auto tautAtom = taut.getAtomWithIdx(atomIdx);
+        // RDKit✔️❌:     // clear chiral tag on sp2 atoms (also sp3 if d_removeSp3Stereo is true)
+        // RDKit✔️❌:     if (tautAtom->getHybridization() == Atom::SP2 || d_removeSp3Stereo) {
         if tautomer_atom.hybridization() == Hybridization::Sp2 || options.remove_sp3_stereo() {
-            // RDKit❗❌:       modified |= (tautAtom->getChiralTag() != Atom::CHI_UNSPECIFIED);
-            // RDKit❗❌:       tautAtom->setChiralTag(Atom::CHI_UNSPECIFIED);
+            // RDKit✔️❌:       modified |= (tautAtom->getChiralTag() != Atom::CHI_UNSPECIFIED);
+            // RDKit✔️❌:       tautAtom->setChiralTag(Atom::CHI_UNSPECIFIED);
             modified |= tautomer_atom.chiral_tag() != ChiralTag::Unspecified;
             tautomer_atom.set_chiral_tag(ChiralTag::Unspecified);
-            // RDKit❗❌:       if (tautAtom->hasProp(common_properties::_CIPCode)) {
-            // RDKit❗❌:         tautAtom->clearProp(common_properties::_CIPCode);
-            // RDKit❗❌:       }
+            // RDKit✔️❌:       if (tautAtom->hasProp(common_properties::_CIPCode)) {
+            // RDKit✔️❌:         tautAtom->clearProp(common_properties::_CIPCode);
+            // RDKit✔️❌:       }
             tautomer_atom.clear_prop("_CIPCode");
         } else {
-            // RDKit❗❌:     } else {
-            // RDKit❗❌:       modified |= (tautAtom->getChiralTag() != atom->getChiralTag());
-            // RDKit❗❌:       tautAtom->setChiralTag(atom->getChiralTag());
+            // RDKit✔️❌:     } else {
+            // RDKit✔️❌:       modified |= (tautAtom->getChiralTag() != atom->getChiralTag());
+            // RDKit✔️❌:       tautAtom->setChiralTag(atom->getChiralTag());
             modified |= tautomer_atom.chiral_tag() != source_atom.chiral_tag();
             tautomer_atom.set_chiral_tag(source_atom.chiral_tag());
-            // RDKit❗❌:       if (atom->hasProp(common_properties::_CIPCode)) {
-            // RDKit❗❌:         tautAtom->setProp(
-            // RDKit❗❌:             common_properties::_CIPCode,
-            // RDKit❗❌:             atom->getProp<std::string>(common_properties::_CIPCode));
-            // RDKit❗❌:       }
+            // RDKit✔️❌:       if (atom->hasProp(common_properties::_CIPCode)) {
+            // RDKit✔️❌:         tautAtom->setProp(
+            // RDKit✔️❌:             common_properties::_CIPCode,
+            // RDKit✔️❌:             atom->getProp<std::string>(common_properties::_CIPCode));
+            // RDKit✔️❌:       }
             if let Some(cip_code) = source_atom.prop("_CIPCode") {
                 tautomer_atom.set_prop("_CIPCode", cip_code);
             }
         }
-        // RDKit❗❌:     // remove isotopic Hs if present (and if d_removeIsotopicHs is true)
-        // RDKit❗❌:     if (tautAtom->hasProp(common_properties::_isotopicHs) &&
-        // RDKit❗❌:         (d_removeIsotopicHs || !tautAtom->getTotalNumHs())) {
-        // RDKit❗❌:       tautAtom->clearProp(common_properties::_isotopicHs);
-        // RDKit❗❌:     }
+        // RDKit✔️❌:     // remove isotopic Hs if present (and if d_removeIsotopicHs is true)
+        // RDKit✔️❌:     if (tautAtom->hasProp(common_properties::_isotopicHs) &&
+        // RDKit✔️❌:         (d_removeIsotopicHs || !tautAtom->getTotalNumHs())) {
+        // RDKit✔️❌:       tautAtom->clearProp(common_properties::_isotopicHs);
+        // RDKit✔️❌:     }
         if clear_isotopic_hydrogens {
             tautomer_atom.set_tracked_isotopic_hydrogens(Vec::new());
         }
-        // RDKit❗❌:   }
+        // RDKit✔️❌:   }
     }
 
-    // RDKit❗❌:   // remove stereochemistry on bonds that are part of a tautomeric path
-    // RDKit❗❌:   for (auto bond : mol.bonds()) {
-    // RDKit❗❌:     auto bondIdx = bond->getIdx();
-    // RDKit❗❌:     if (!res.d_modifiedBonds.test(bondIdx)) {
-    // RDKit❗❌:       continue;
-    // RDKit❗❌:     }
+    // RDKit✔️❌:   // remove stereochemistry on bonds that are part of a tautomeric path
+    // RDKit✔️❌:   for (auto bond : mol.bonds()) {
+    // RDKit✔️❌:     auto bondIdx = bond->getIdx();
+    // RDKit✔️❌:     if (!res.d_modifiedBonds.test(bondIdx)) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
     for bond_id in source.bonds().iter().map(crate::Bond::id) {
         if !modified_bonds.contains(&bond_id) {
             continue;
         }
         let source_bond = &source.bonds()[bond_id.index()];
-        // RDKit❗❌:     std::vector<unsigned int> bondsToClearDirs;
+        // RDKit✔️❌:     std::vector<unsigned int> bondsToClearDirs;
         let mut bonds_to_clear_directions = Vec::new();
-        // RDKit❗❌:     if (bond->getBondType() == Bond::DOUBLE &&
-        // RDKit❗❌:         bond->getStereo() > Bond::STEREOANY) {
+        // RDKit✔️❌:     if (bond->getBondType() == Bond::DOUBLE &&
+        // RDKit✔️❌:         bond->getStereo() > Bond::STEREOANY) {
         if source_bond.order() == BondOrder::Double && is_stereo_beyond_any(source_bond.stereo()) {
-            // RDKit❗❌:       for (auto atom : {bond->getBeginAtom(), bond->getEndAtom()}) {
-            // RDKit❗❌:         for (const auto &nbri :
-            // RDKit❗❌:              boost::make_iterator_range(mol.getAtomBonds(atom))) {
+            // RDKit✔️❌:       for (auto atom : {bond->getBeginAtom(), bond->getEndAtom()}) {
+            // RDKit✔️❌:         for (const auto &nbri :
+            // RDKit✔️❌:              boost::make_iterator_range(mol.getAtomBonds(atom))) {
             for atom_id in [source_bond.begin(), source_bond.end()] {
                 for neighbor in source
                     .topology_block()
@@ -2404,20 +2403,20 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
                     .neighbors_of(atom_id.index())
                 {
                     let adjacent_bond = &source.bonds()[neighbor.bond.index()];
-                    // RDKit❗❌:           const auto &obnd = mol[nbri];
-                    // RDKit❗❌:           if (obnd->getBondDir() == Bond::ENDDOWNRIGHT ||
-                    // RDKit❗❌:               obnd->getBondDir() == Bond::ENDUPRIGHT) {
-                    // RDKit❗❌:             bondsToClearDirs.push_back(obnd->getIdx());
-                    // RDKit❗❌:           }
+                    // RDKit✔️❌:           const auto &obnd = mol[nbri];
+                    // RDKit✔️❌:           if (obnd->getBondDir() == Bond::ENDDOWNRIGHT ||
+                    // RDKit✔️❌:               obnd->getBondDir() == Bond::ENDUPRIGHT) {
+                    // RDKit✔️❌:             bondsToClearDirs.push_back(obnd->getIdx());
+                    // RDKit✔️❌:           }
                     if matches!(
                         adjacent_bond.direction(),
                         BondDirection::EndDownRight | BondDirection::EndUpRight
                     ) {
                         bonds_to_clear_directions.push(adjacent_bond.id());
                     }
-                    // RDKit❗❌:         }
+                    // RDKit✔️❌:         }
                 }
-                // RDKit❗❌:       }
+                // RDKit✔️❌:       }
             }
         }
 
@@ -2443,26 +2442,26 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
             || (!remove_stereo
                 && tautomer_bond.stereo_atoms().is_some() != source_bond.stereo_atoms().is_some());
 
-        // RDKit❗❌:     auto tautBond = taut.getBondWithIdx(bondIdx);
-        // RDKit❗❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo) {
-        // RDKit❗❌:       ...
-        // RDKit❗❌:       tautBond->setStereo(targetStereo);
-        // RDKit❗❌:       tautBond->getStereoAtoms().clear();
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       const INT_VECT &sa = bond->getStereoAtoms();
-        // RDKit❗❌:       if (sa.size() == 2) {
-        // RDKit❗❌:         tautBond->setStereoAtoms(sa.front(), sa.back());
-        // RDKit❗❌:       }
-        // RDKit❗❌:       tautBond->setStereo(bond->getStereo());
-        // RDKit❗❌:     }
+        // RDKit✔️❌:     auto tautBond = taut.getBondWithIdx(bondIdx);
+        // RDKit✔️❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo) {
+        // RDKit✔️❌:       ...
+        // RDKit✔️❌:       tautBond->setStereo(targetStereo);
+        // RDKit✔️❌:       tautBond->getStereoAtoms().clear();
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       const INT_VECT &sa = bond->getStereoAtoms();
+        // RDKit✔️❌:       if (sa.size() == 2) {
+        // RDKit✔️❌:         tautBond->setStereoAtoms(sa.front(), sa.back());
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       tautBond->setStereo(bond->getStereo());
+        // RDKit✔️❌:     }
         let tautomer_bond = &mut tautomer.topology_block_mut().bonds[bond_id.index()];
         tautomer_bond.set_stereo_atoms(target_stereo_atoms);
         tautomer_bond.set_stereo(target_stereo);
         for adjacent_bond_id in bonds_to_clear_directions {
-            // RDKit❗❌:       for (auto bi : bondsToClearDirs) {
-            // RDKit❗❌:         taut.getBondWithIdx(bi)->setBondDir(
-            // RDKit❗❌:             mol.getBondWithIdx(bi)->getBondDir());
-            // RDKit❗❌:       }
+            // RDKit✔️❌:       for (auto bi : bondsToClearDirs) {
+            // RDKit✔️❌:         taut.getBondWithIdx(bi)->setBondDir(
+            // RDKit✔️❌:             mol.getBondWithIdx(bi)->getBondDir());
+            // RDKit✔️❌:       }
             let direction = if remove_stereo {
                 BondDirection::None
             } else {
@@ -2470,17 +2469,17 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
             };
             tautomer.topology_block_mut().bonds[adjacent_bond_id.index()].set_direction(direction);
         }
-        // RDKit❗❌:   }
+        // RDKit✔️❌:   }
     }
 
-    // RDKit❗❌:   if (d_reassignStereo) {
+    // RDKit✔️❌:   if (d_reassignStereo) {
     if options.reassign_stereo() {
-        // RDKit❗❌:     static const bool cleanIt = true;
-        // RDKit❗❌:     static const bool force = true;
-        // RDKit❗❌:     MolOps::assignStereochemistry(taut, cleanIt, force);
+        // RDKit✔️❌:     static const bool cleanIt = true;
+        // RDKit✔️❌:     static const bool force = true;
+        // RDKit✔️❌:     MolOps::assignStereochemistry(taut, cleanIt, force);
         crate::smiles::assign_stereochemistry_cleanup_subset(tautomer, true)?;
 
-        // RDKit❗❌:     if (d_removeBondStereo) {
+        // RDKit✔️❌:     if (d_removeBondStereo) {
         if options.remove_bond_stereo() {
             for bond_id in modified_bonds.iter().copied() {
                 let bond = &tautomer.bonds()[bond_id.index()];
@@ -2491,33 +2490,33 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
                 } else {
                     BondStereo::Any
                 };
-                // RDKit❗❌:       for (auto bond : taut.bonds()) {
-                // RDKit❗❌:         const auto bondIdx = bond->getIdx();
-                // RDKit❗❌:         if (!res.d_modifiedBonds.test(bondIdx)) {
-                // RDKit❗❌:           continue;
-                // RDKit❗❌:         }
-                // RDKit❗❌:         if (bond->getBondType() != Bond::DOUBLE) {
-                // RDKit❗❌:           bond->setStereo(Bond::STEREONONE);
-                // RDKit❗❌:           bond->getStereoAtoms().clear();
-                // RDKit❗❌:           continue;
-                // RDKit❗❌:         }
-                // RDKit❗❌:         bond->setStereo(isRingBond ? Bond::STEREONONE : Bond::STEREOANY);
-                // RDKit❗❌:         bond->getStereoAtoms().clear();
+                // RDKit✔️❌:       for (auto bond : taut.bonds()) {
+                // RDKit✔️❌:         const auto bondIdx = bond->getIdx();
+                // RDKit✔️❌:         if (!res.d_modifiedBonds.test(bondIdx)) {
+                // RDKit✔️❌:           continue;
+                // RDKit✔️❌:         }
+                // RDKit✔️❌:         if (bond->getBondType() != Bond::DOUBLE) {
+                // RDKit✔️❌:           bond->setStereo(Bond::STEREONONE);
+                // RDKit✔️❌:           bond->getStereoAtoms().clear();
+                // RDKit✔️❌:           continue;
+                // RDKit✔️❌:         }
+                // RDKit✔️❌:         bond->setStereo(isRingBond ? Bond::STEREONONE : Bond::STEREOANY);
+                // RDKit✔️❌:         bond->getStereoAtoms().clear();
                 let bond = &mut tautomer.topology_block_mut().bonds[bond_id.index()];
                 bond.set_stereo_atoms(None);
                 bond.set_stereo(target_stereo);
-                // RDKit❗❌:       }
+                // RDKit✔️❌:       }
             }
-            // RDKit❗❌:     }
+            // RDKit✔️❌:     }
         }
     } else {
-        // RDKit❗❌:   } else {
-        // RDKit❗❌:     taut.setProp(common_properties::_StereochemDone, 1);
+        // RDKit✔️❌:   } else {
+        // RDKit✔️❌:     taut.setProp(common_properties::_StereochemDone, 1);
         tautomer.properties_mut().set_prop("_StereochemDone", "1");
-        // RDKit❗❌:   }
+        // RDKit✔️❌:   }
     }
-    // RDKit❗❌:   return modified;
-    // RDKit❗❌: }
+    // RDKit✔️❌:   return modified;
+    // RDKit✔️❌: }
     Ok(modified)
 }
 
@@ -5950,6 +5949,121 @@ mod tests {
         MoleculeReadParts::from_molecule(molecule)
             .canonical_isomeric_smiles()
             .expect("write canonical-selection molecule")
+    }
+
+    #[test]
+    fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_rdkit() {
+        let molecule = Molecule::from_smiles(
+            "N[C@H](C(=O)N1CCCC1)[C@H]1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
+        )
+        .expect("parse CHEMBL23979 ring-stereo regression");
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_reassign_stereo(false),
+        );
+
+        let result = enumerator
+            .enumerate(&molecule)
+            .expect("enumerate CHEMBL23979 ring-stereo regression");
+
+        assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
+        assert_eq!(
+            result.canonical_smiles(),
+            [
+                "N=C(C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1",
+                "NC(=C(O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
+                "NC(=C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1",
+                "NC(C(=O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
+            ]
+        );
+        assert_eq!(
+            result.modified_atoms(),
+            &BTreeSet::from([
+                AtomId::new(0),
+                AtomId::new(1),
+                AtomId::new(2),
+                AtomId::new(3),
+                AtomId::new(9),
+            ])
+        );
+        assert_eq!(
+            result.modified_bonds(),
+            &BTreeSet::from([
+                BondId::new(0),
+                BondId::new(1),
+                BondId::new(2),
+                BondId::new(8),
+            ])
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|candidate| score_tautomer(candidate).unwrap().total())
+                .collect::<Vec<_>>(),
+            [251, 250, 250, 255]
+        );
+        assert_eq!(
+            enumerator
+                .pick_canonical(&result)
+                .expect("select CHEMBL23979 canonical tautomer")
+                .to_smiles(true)
+                .expect("write CHEMBL23979 canonical tautomer"),
+            "NC(C(=O)N1CCCC1)C1CCC(NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1"
+        );
+    }
+
+    #[test]
+    fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724() {
+        let molecule =
+            Molecule::from_smiles("COc1ccc(OC)c(/C=N/N=C(\\N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1").unwrap();
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_reassign_stereo(false),
+        );
+        let result = enumerator.enumerate(&molecule).unwrap();
+        assert_eq!(
+            result.canonical_smiles(),
+            &[
+                "COc1ccc(OC)c(/C=N/N=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
+                "COc1ccc(OC)c(/C=N/NC(=N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
+                "COc1ccc(OC)c(/C=N/NC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
+                "COc1ccc(OC)c(/C=N/NC(N)N=O)c1.Cc1ccc(S(=O)(=O)O)cc1",
+                "COc1ccc(OC)c(C=NN=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
+            ]
+        );
+        assert_eq!(
+            result.modified_atoms(),
+            &BTreeSet::from([
+                AtomId::new(11),
+                AtomId::new(12),
+                AtomId::new(13),
+                AtomId::new(14),
+                AtomId::new(15),
+            ])
+        );
+        assert_eq!(
+            result.modified_bonds(),
+            &BTreeSet::from([
+                BondId::new(11),
+                BondId::new(12),
+                BondId::new(13),
+                BondId::new(14),
+            ])
+        );
+        assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
+        assert_eq!(
+            result
+                .iter()
+                .map(|candidate| score_tautomer(candidate).unwrap().total())
+                .collect::<Vec<_>>(),
+            [509, 509, 513, 506, 509]
+        );
+        assert_eq!(
+            enumerator
+                .pick_canonical(&result)
+                .expect("select CHEMBL12724 canonical tautomer")
+                .to_smiles(true)
+                .expect("write CHEMBL12724 canonical tautomer"),
+            "COc1ccc(OC)c(C=NNC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1"
+        );
     }
 
     #[test]
