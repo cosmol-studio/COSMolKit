@@ -1301,6 +1301,28 @@ fn set_double_bond_neighbor_directions_materializes_symm_sssr_ring_cache_like_rd
 }
 
 #[test]
+fn legacy_stereo_cleanup_persists_symm_sssr_from_chiral_special_case_scan_like_rdkit() {
+    let mut molecule = Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1C(=C3C=CC1CC3)C2=O")
+        .expect("parse fused-ring regression molecule");
+    molecule.derived_cache_mut().rings =
+        Some(crate::find_sssr(&molecule).expect("materialize the pre-cleanup SSSR state"));
+
+    let rings_before = molecule.derived_cache().rings.as_ref().expect("SSSR cache");
+    assert_eq!(rings_before.find_type(), crate::RingFindType::Sssr);
+    assert_eq!(rings_before.num_atom_rings(AtomId::new(10)), 2);
+
+    assign_stereochemistry_cleanup_subset(&mut molecule, true).expect("run legacy stereo cleanup");
+
+    let rings_after = molecule
+        .derived_cache()
+        .rings
+        .as_ref()
+        .expect("legacy cleanup should retain materialized SymmSSSR state");
+    assert!(rings_after.is_symm_sssr());
+    assert_eq!(rings_after.num_atom_rings(AtomId::new(10)), 3);
+}
+
+#[test]
 fn set_double_bond_neighbor_directions_without_conformer_uses_existing_stereo_like_rdkit() {
     let mut molecule = stereogenic_double_bond_molecule_without_conformer();
     molecule.topology_block_mut().bonds[0].set_stereo_atoms(Some([AtomId::new(2), AtomId::new(3)]));

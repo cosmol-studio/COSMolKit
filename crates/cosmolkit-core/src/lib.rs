@@ -106,7 +106,7 @@ pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;
 pub use chemistry::{
     aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_transforms, rings,
-    stereo, stereo_enumerate, valence,
+    stereo, stereo_enumerate, tautomer, valence,
 };
 pub use io::pdb_writer;
 pub(crate) use model::invariants;
@@ -188,6 +188,14 @@ pub use chemistry::forcefield::{
     compute_dihedral_from_flat, compute_dihedral_from_points, compute_dihedral_from_position_vec,
     normalize_angle_deg,
 };
+pub use chemistry::tautomer::{
+    TautomerCanonicalizationError, TautomerCatalog, TautomerCatalogError, TautomerEnumeration,
+    TautomerEnumerationCallback, TautomerEnumerationError, TautomerEnumerationStatus,
+    TautomerEnumerator, TautomerOptions, TautomerRunError, TautomerScore, TautomerScoreError,
+    TautomerScoreTerm, TautomerTransform, TautomerTransformError, default_tautomer_score_terms,
+    score_tautomer, score_tautomer_hetero_hydrogens, score_tautomer_rings,
+    score_tautomer_substructures, score_tautomer_with_terms,
+};
 pub use confseq::{
     ConfSeqBatchDecodeResult, ConfSeqDecodeError, ConfSeqDecodeOptions, ConfSeqFastGeometryError,
     ConfSeqTemplateBackend, decode_confseq, decode_confseq_batch,
@@ -268,14 +276,15 @@ pub use molecule::{
 pub use notation::smiles::SmilesParseParams;
 pub use ops::{
     ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,
-    ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, CipStatePolicy, InvariantCheckSet, MOLECULE_OPS,
-    MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX,
-    OperationDomain, OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX,
-    ParityMatrixEntry, ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SemanticPrecondition,
-    SemanticPreconditionSet, SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC,
-    WITH_3D_CONFORMER_SPEC, WITH_3D_CONFORMERS_SPEC, WITH_ADDED_3D_CONFORMER_SPEC,
-    WITH_CLEARED_3D_CONFORMERS_SPEC, WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC,
-    WITH_ONLY_3D_CONFORMER_SPEC, WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
+    ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, CipStatePolicy,
+    ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC, InvariantCheckSet, MOLECULE_OPS, MappingRequirement,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationDomain,
+    OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX, ParityMatrixEntry,
+    ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SemanticPrecondition, SemanticPreconditionSet,
+    SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_3D_CONFORMER_SPEC,
+    WITH_3D_CONFORMERS_SPEC, WITH_ADDED_3D_CONFORMER_SPEC, WITH_CLEARED_3D_CONFORMERS_SPEC,
+    WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC, WITH_ONLY_3D_CONFORMER_SPEC,
+    WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
 pub use properties::descriptors::{
     CrippenDescriptorValues, DescriptorError, DescriptorResult, NumRotatableBondsOptions,
@@ -318,8 +327,8 @@ pub use support::{
     INCHI_FEATURE, KEKULIZE_FEATURE, LAYERED_FINGERPRINT_FEATURE, MOLBLOCK_IO_FEATURE,
     PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE, SANITIZE_FEATURE,
     SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE, SUBSTRUCTURE_FEATURE,
-    SupportStatus, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE, UnsupportedFeatureError,
-    VALENCE_FEATURE,
+    SupportStatus, TAUTOMER_ENUMERATION_FEATURE, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
+    UnsupportedFeatureError, VALENCE_FEATURE,
 };
 #[allow(deprecated)]
 pub use support::{

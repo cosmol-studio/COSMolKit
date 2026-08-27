@@ -21,10 +21,11 @@ empty.
 
 ## [Unreleased]
 
-This release adds the public modern RDKit CIPLabeler and source-backed Pattern
-and Layered fingerprints, and completes the ordinary-molecule SMARTS parser,
-query, writer, and substructure-matching path through source-backed Rust
-implementations with explicit state lifecycle and pinned parity validation.
+This release adds the public modern RDKit CIPLabeler, source-backed Pattern and
+Layered fingerprints, and the Rust tautomer-enumeration surface, and completes
+the ordinary-molecule SMARTS parser, query, writer, and substructure-matching
+path through source-backed Rust implementations with explicit state lifecycle
+and pinned parity validation.
 
 ### Added
 
@@ -58,6 +59,10 @@ implementations with explicit state lifecycle and pinned parity validation.
 - Added deterministic Pattern oracle generation, focused/small/5,000-row exact
   regression gates, screening and architecture guards, composition tests, a
   reproducible ChEMBL 37 phase, and representative cross-engine benchmarks.
+- Added source-backed Rust tautomer catalogs, enumeration options, ordered
+  multi-molecule results, canonical selection and scoring, callbacks, current
+  and V1 transform sets, structured errors, and focused, PCS, 5,000-row, and
+  ChEMBL 37 validation workflows.
 
 ### Changed
 
@@ -75,6 +80,9 @@ implementations with explicit state lifecycle and pinned parity validation.
   and public SMARTS consumer onto one typed query model, parser, writer, and
   matcher, removing the parallel `SmartsMolecule` representation and
   consumer-local conversion paths.
+- Extended the operation-contract system with validated ordered multi-molecule
+  output while retaining the existing value-style and in-place separation for
+  single-molecule operations.
 - Preserved RDKit's experimental classification for Layered fingerprints.
   COSMolKit returns the source-documented bond-path result for unrooted linear
   calls instead of reproducing the pinned implementation's input-dependent
@@ -138,6 +146,11 @@ implementations with explicit state lifecycle and pinned parity validation.
   ordinary molecule and ordered batch model. The behavioral parity claim does
   not include performance parity: representative warm benchmarks retain a
   measured `1.508-3.104x` constant-factor runtime gap.
+- The initial complete ChEMBL 37 tautomer run processed all 2,897,819 inputs
+  across 128 shards and compared 211,539,707 output and state observations.
+  It identified 95,364 mismatches for source-level correction, concentrated in
+  the `reassign_stereo=false` intermediate hydrogen and stereochemistry state;
+  this run is diagnostic evidence and is not a completed parity claim.
 
 ## [0.2.13] - 2026-08-24
 

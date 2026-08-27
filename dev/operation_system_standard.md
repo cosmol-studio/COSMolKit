@@ -113,6 +113,8 @@ Every generated `MoleculeOpSpec` contains:
 ```text
 method
 impl_fn
+output
+result_type
 domain
 kind
 topology_edit
@@ -135,6 +137,18 @@ as `domain`, `topology_edit`, `may_mutate`, `auto_remap`,
 `semantic_preconditions`, `requires_mapping`, and `io_roundtrip`; entries
 should still spell out behaviorally meaningful values when omission would make
 review ambiguous.
+
+`output` declares wrapper cardinality. Its default is `single`; `multiple`
+generates an ordered `Vec<Molecule>` wrapper and cannot be combined with an
+in-place wrapper. Cardinality changes wrapper shape only and grants no block or
+derived-state authority.
+
+Multiple-output operations that need status, provenance, or other domain
+metadata may declare `result_type` together with `assemble_fn`. The operation
+body returns metadata separately, all molecule values are finalized by
+`MultiMoleculeOpParts`, and the assembler receives only those finalized values
+plus the metadata. Supplying only one of these fields, or using them on a
+single-output operation, is a compile-time error.
 
 Strong topology operations must also define their migration surface, including fields such as:
 
@@ -172,6 +186,8 @@ current ownership is:
 
 | Field | Execution or evidence owner |
 |---|---|
+| `output` | macro-selected single or multiple capability lifecycle; compile-time rejection of multiple-output in-place wrappers |
+| `result_type` / `assemble_fn` | macro-generated typed assembly after every emitted molecule has completed branch finalization |
 | `access` | `OpParts` capability construction; strict runtime access checks |
 | `may_mutate` | strict runtime consistency and mutation-trace checks |
 | `derived_effects` | strict cache APIs, preservation proofs, and `finish()` trace validation |
@@ -318,6 +334,37 @@ mutation method is legal.
 
 Strong operations must record the declared topology edit kind after the edit.
 Weak operations may record only local stable-index topology edits.
+
+### Multiple-output lifecycle
+
+A registry entry with `output: multiple` uses this lifecycle:
+
+```text
+public method entry
+registry spec selection
+MultiMoleculeOpParts::new(source, spec)
+derive a branch from the immutable source or a validated parent branch
+run one complete OpParts mutation and finish lifecycle for that branch
+retain the resulting opaque MoleculeBranchId
+emit selected validated branch handles in result order
+MultiMoleculeOpParts::finish()
+return Vec<Molecule>
+```
+
+`MultiMoleculeOpParts` stores candidate molecules privately. Operation bodies
+cannot insert raw molecules, recover raw molecule references, or emit an
+unknown handle. Candidate reads use registry-derived `MoleculeReadParts`.
+Intermediate branches need not be emitted, while an unchanged source result is
+represented by a no-write branch that still completes `OpParts::finish()`.
+
+Each child branch validates its contract against its immediate validated
+parent, so a later branch cannot inherit an unclosed write lifecycle, missing
+topology edit, missing mapping, missing derived-state handling, or invariant
+failure from an earlier candidate. The immutable public input is never an
+in-place target. Ordering, duplication, empty-result policy, algorithm status,
+and operation-specific result metadata remain responsibilities of the domain
+operation and its tests. Typed result assembly cannot observe or recover
+unemitted intermediate branches.
 
 ---
 

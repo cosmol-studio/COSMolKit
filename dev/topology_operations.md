@@ -101,6 +101,8 @@ Every generated `MoleculeOpSpec` contains:
 ```text
 method
 impl_fn
+output
+result_type
 domain
 kind
 topology_edit
@@ -134,6 +136,16 @@ operation body
 parts.finish()
 return new Molecule
 ```
+
+For `output: multiple`, the generated value wrapper instead uses
+`MultiMoleculeOpParts`. Every candidate is derived from the immutable input or
+an already validated parent branch, completes its own `OpParts::finish()`, and
+is returned only after its opaque branch handle is explicitly emitted. Multiple
+output operations do not have an in-place wrapper.
+
+If the public operation returns domain metadata as well as molecules,
+`result_type` and `assemble_fn` combine body-produced metadata with the already
+finalized emitted molecules; the assembler is not a second mutation path.
 
 The in-place wrapper performs the same source-port body through
 `OpParts::new_in_place`. It does not keep a full old molecule solely for

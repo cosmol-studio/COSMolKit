@@ -43,6 +43,16 @@ evidence boundary.
 Corpus shards and run outputs remain uncommitted; code, profiles, source and
 reference pins, and pass/fail rules are version controlled.
 
+## Active Tautomer Validation
+
+The first complete ChEMBL 37 tautomer matrix processed all 2,897,819 inputs
+across 128 shards. It compared 211,539,707 output and molecular-state
+observations, of which 211,444,343 matched and 95,364 remain under source-level
+correction. Most mismatches occur when stereochemistry reassignment is disabled;
+the one-tautomer and one-transform limit profiles passed exactly.
+This diagnostic run is not included in the accepted zero-mismatch totals below
+and does not establish a tautomer parity claim.
+
 ## Complete ChEMBL 37 Validation Summary
 
 The consolidated validation record combines the 22-phase audit, the complete

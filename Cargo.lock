@@ -185,6 +185,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmolkit-chembl-tautomer-oracle"
+version = "0.2.13"
+dependencies = [
+ "cosmolkit-core",
+ "serde_json",
+]
+
+[[package]]
 name = "cosmolkit-core"
 version = "0.2.13"
 dependencies = [

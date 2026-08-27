@@ -247,6 +247,14 @@ pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Match ordinary-molecule query-bearing Molecule values through the canonical VF2 matcher, including SMARTS parser/writer round trips, recursive query execution, atom/bond predicates, stereo, callbacks, match ordering, counts, errors, and parameters covered by the pinned RDKit SMARTS and substructure corpora. Reaction SMARTS and database/container SMARTS remain separate unsupported capability boundaries.",
 };
 
+pub const TAUTOMER_ENUMERATION_FEATURE: FeatureSpec = FeatureSpec {
+    name: "tautomer.enumeration",
+    category: FeatureCategory::Core,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Enumerate source-ordered molecular tautomers through the registered multi-molecule operation path. The implementation is under source-level RDKit parity validation and is not promoted to a parity-supported status until the complete tautomer plan finishes.",
+};
+
 pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
     name: "drawing.depiction",
     category: FeatureCategory::Drawing,
@@ -383,6 +391,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &LAYERED_FINGERPRINT_FEATURE,
     &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,
+    &TAUTOMER_ENUMERATION_FEATURE,
     &DRAWING_FEATURE,
     &STEREO_FEATURE,
     &CIP_LABELER_FEATURE,

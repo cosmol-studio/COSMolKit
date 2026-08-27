@@ -387,6 +387,14 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     // ring-stereochemistry special cases via `findChiralAtomSpecialCases()`,
     // but it still does not port the full `findPotentialStereo()` cleanup
     // pipeline.
+    // RDKit✔️✔️: if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit✔️✔️:   VECT_INT_VECT sssrs;
+    // RDKit✔️✔️:   MolOps::symmetrizeSSSR(mol, sssrs);
+    // RDKit✔️✔️: }
+    // `findChiralAtomSpecialCases()` mutates the source molecule's RingInfo.
+    // Materialize that transition before the read-only shared helper so later
+    // stereo and SMARTS consumers observe the same SymmSSSR state.
+    ensure_symm_sssr_for_stereo(mol)?;
     let special_case_atoms: BTreeSet<usize> =
         crate::stereo::find_chiral_atom_special_cases(mol, &ranks)?
             .into_iter()
@@ -441,6 +449,54 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
                     })
                 })?;
         mol.derived_cache_mut().valence = Some(valence);
+    }
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception cleanIt terminal double-bond cleanup
+    // RDKit✔️✔️:       // if we have either a double bond that involves a degree one atom and
+    // RDKit✔️✔️:       // that is either crossed or STEREOANY, we need to clear the stereo and,
+    // RDKit✔️✔️:       // possibly, direction. This can happen with imines that just have an
+    // RDKit✔️✔️:       // implicit H on the N
+    // RDKit✔️✔️:       if (bond->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:           (bond->getBondDir() == Bond::EITHERDOUBLE ||
+    // RDKit✔️✔️:            bond->getStereo() == Bond::STEREOANY) &&
+    // RDKit✔️✔️:           (bond->getBeginAtom()->getDegree() == 1 ||
+    // RDKit✔️✔️:            bond->getEndAtom()->getDegree() == 1)) {
+    // RDKit✔️✔️:         if (bond->getBondDir() == Bond::EITHERDOUBLE) {
+    // RDKit✔️✔️:           bond->setBondDir(Bond::NONE);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         bond->setStereo(Bond::STEREONONE);
+    // RDKit✔️✔️:       }
+    // END RDKIT CPP FUNCTION legacyStereoPerception cleanIt terminal double-bond cleanup
+    if clean_it {
+        let bond_ids = mol.bonds().iter().map(crate::Bond::id).collect::<Vec<_>>();
+        for bond_id in bond_ids {
+            let Some(bond) = mol.bonds().get(bond_id.index()).cloned() else {
+                continue;
+            };
+            let has_terminal_endpoint = mol
+                .topology_block()
+                .adjacency
+                .neighbors_of(bond.begin().index())
+                .len()
+                == 1
+                || mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(bond.end().index())
+                    .len()
+                    == 1;
+            if bond.order() != BondOrder::Double
+                || !matches!(bond.direction(), BondDirection::EitherDouble)
+                    && bond.stereo() != BondStereo::Any
+                || !has_terminal_endpoint
+            {
+                continue;
+            }
+            let bond_mut = &mut mol.topology_block_mut().bonds[bond_id.index()];
+            if bond_mut.direction() == BondDirection::EitherDouble {
+                bond_mut.set_direction(BondDirection::None);
+            }
+            bond_mut.set_stereo(BondStereo::None);
+        }
     }
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt bond-dir cleanup subset
     // RDKit✔️✔️:       // check for directionality on single bonds around
@@ -817,9 +873,7 @@ pub(super) fn ensure_valence_for_stereo(mol: &mut Molecule) -> Result<(), Stereo
     Ok(())
 }
 
-pub(super) fn ensure_symm_sssr_for_double_bond_stereo(
-    mol: &mut Molecule,
-) -> Result<(), StereoError> {
+pub(super) fn ensure_symm_sssr_for_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
     if mol
         .derived_cache()
         .rings
@@ -867,7 +921,7 @@ pub(super) fn set_double_bond_neighbor_directions_impl(
     // RDKit✔️✔️:   if (!mol.getRingInfo()->isSymmSssr()) {
     // RDKit✔️✔️:     RDKit::MolOps::symmetrizeSSSR(mol);
     // RDKit✔️✔️:   }
-    ensure_symm_sssr_for_double_bond_stereo(mol)?;
+    ensure_symm_sssr_for_stereo(mol)?;
     let coords_ptr = conf_id.and_then(|wanted_id| {
         mol.conformers_3d()
             .iter()

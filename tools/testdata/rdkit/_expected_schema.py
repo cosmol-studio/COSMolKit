@@ -105,6 +105,13 @@ SCHEMAS = {
     "pattern_fingerprint.jsonl": _schema(
         "branches:object,error:null|string,input_kind:string,rdkit_ok:boolean,row:integer,smiles:string"
     ),
+    "tautomer.jsonl": _schema(
+        "branches:object,case_id:string,expected_canonical_smiles:null|string,parse:object,remove_hs:boolean,row:integer,sanitize:boolean,schema_version:integer,smiles:string,source:string",
+        "atom_order_permutation:object,input_tautomer:object",
+    ),
+    "tautomer_catalog.jsonl": _schema(
+        "bonds:string,catalog:string,charges:string,index:integer,name:string,schema_version:integer,smarts:string,source_line:integer,source_path:string"
+    ),
     "maccs_fingerprint.jsonl": _schema(
         "error:null|string,label:null|string,public_n_bits:integer,public_on_bits:null|array,raw_n_bits:integer,raw_on_bits:null|array,rdkit_ok:boolean,record_type:string,smiles:string"
     ),

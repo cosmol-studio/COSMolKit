@@ -4,6 +4,9 @@
 //! modules, so Rust privacy prevents them from accessing `OpParts` fields.
 
 use super::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_MULTI_MOLECULE_EXECUTOR_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationTrace {
@@ -249,8 +252,58 @@ pub struct OpParts<'a> {
     trace: OperationTrace,
 }
 
+/// Opaque handle to a contract-validated molecule branch.
+///
+/// Operation bodies can retain and revisit handles, but cannot construct a
+/// branch from an unvalidated raw `Molecule` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoleculeBranchId {
+    executor_id: u64,
+    index: usize,
+}
+
+/// Capability object for registered operations that derive multiple molecules.
+///
+/// Every stored branch is produced by a complete `OpParts` lifecycle using the
+/// same registry specification. A branch may be derived from the immutable
+/// public input or from an earlier validated branch. Only explicitly emitted
+/// branches are returned by `finish()`.
+pub struct MultiMoleculeOpParts<'a> {
+    spec: &'static MoleculeOpSpec,
+    source: &'a Molecule,
+    executor_id: u64,
+    branches: Vec<Molecule>,
+    emitted: Vec<MoleculeBranchId>,
+}
+
 impl<'a> OpParts<'a> {
     pub(crate) fn new(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        if spec.output != crate::ops::MoleculeOpOutput::Single {
+            return Err(OperationError::InvalidInput {
+                operation: spec,
+                message: "single-output OpParts used with a multiple-output operation",
+            });
+        }
+        Self::new_with_output(source, spec)
+    }
+
+    fn new_multi_branch(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        if spec.output != crate::ops::MoleculeOpOutput::Multiple {
+            return Err(OperationError::InvalidInput {
+                operation: spec,
+                message: "multiple-output branch used with a single-output operation",
+            });
+        }
+        Self::new_with_output(source, spec)
+    }
+
+    fn new_with_output(
         source: &'a Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
@@ -285,6 +338,12 @@ impl<'a> OpParts<'a> {
         target: &'a mut Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
+        if spec.output != crate::ops::MoleculeOpOutput::Single {
+            return Err(OperationError::InvalidInput {
+                operation: spec,
+                message: "multiple-output operations cannot run in place",
+            });
+        }
         validate_semantic_preconditions(target, spec)?;
         #[cfg(feature = "op-contracts")]
         let contract_source =
@@ -445,8 +504,7 @@ impl<'a> OpParts<'a> {
     }
 
     fn read_access(&self) -> crate::read_parts::MoleculeReadAccess {
-        let blocks = self.spec.access.read().union(self.spec.access.write());
-        Self::read_access_for_blocks(blocks)
+        Self::read_access_for_spec(self.spec)
     }
 
     fn declared_read_access(&self) -> crate::read_parts::MoleculeReadAccess {
@@ -468,6 +526,12 @@ impl<'a> OpParts<'a> {
             access = access.union(crate::read_parts::MoleculeReadAccess::DERIVED_CACHE);
         }
         access
+    }
+
+    fn read_access_for_spec(
+        spec: &'static MoleculeOpSpec,
+    ) -> crate::read_parts::MoleculeReadAccess {
+        Self::read_access_for_blocks(spec.access.read().union(spec.access.write()))
     }
 
     fn read_parts_for_topology(&self, topology: TopologyBlock) -> Result<Molecule, OperationError> {
@@ -963,51 +1027,73 @@ impl<'a> OpParts<'a> {
 
     #[cfg(feature = "op-contracts")]
     fn validate_access_spec(&self) -> Result<(), OperationError> {
-        if self.spec.access.has_overlapping_read_write() {
+        Self::validate_access_spec_for(self.spec)
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_access_spec_for(spec: &'static MoleculeOpSpec) -> Result<(), OperationError> {
+        if spec.access.has_overlapping_read_write() {
             return Err(OperationError::InvalidInput {
-                operation: self.spec,
+                operation: spec,
                 message: "operation access declares the same block as both read and write",
             });
         }
-        if self.spec.access.write() != self.spec.may_mutate {
+        if spec.access.write() != spec.may_mutate {
             return Err(OperationError::InvalidInput {
-                operation: self.spec,
+                operation: spec,
                 message: "operation access write set must match may_mutate",
             });
         }
-        let operation_defined = self.spec.derived_effects.operation_defined();
+        let operation_defined = spec.derived_effects.operation_defined();
         if operation_defined != DerivedState::NONE {
             let approved_operation = matches!(
-                self.spec.method,
+                spec.method,
                 "without_hydrogens_with_sanitize" | "without_hydrogens_with_params"
             );
             if !approved_operation || operation_defined != DerivedState::VALENCE {
                 return Err(OperationError::InvalidInput {
-                    operation: self.spec,
+                    operation: spec,
                     message: "operation-defined derived effects are currently permitted only for valence in the hydrogen-removal operation family",
                 });
             }
-            if !self.spec.access.can_write(BlockSet::DERIVED_CACHE) {
+            if !spec.access.can_write(BlockSet::DERIVED_CACHE) {
                 return Err(OperationError::InvalidInput {
-                    operation: self.spec,
+                    operation: spec,
                     message: "operation-defined derived effects require derived-cache write access",
                 });
             }
         }
-        match self.spec.cip_state {
-            CipStatePolicy::Assign if self.spec.method != "with_cip_labels_with_options" => {
+        match spec.cip_state {
+            CipStatePolicy::Assign if spec.method != "with_cip_labels_with_options" => {
                 return Err(OperationError::InvalidInput {
-                    operation: self.spec,
+                    operation: spec,
                     message: "modern CIP assignment state is owned only by with_cip_labels_with_options",
                 });
             }
             CipStatePolicy::ClearComputed
-                if !self.spec.access.can_write(BlockSet::TOPOLOGY)
-                    || !self.spec.access.can_write(BlockSet::PROPERTIES) =>
+                if !spec.access.can_write(BlockSet::TOPOLOGY)
+                    || !spec.access.can_write(BlockSet::PROPERTIES) =>
             {
                 return Err(OperationError::InvalidInput {
-                    operation: self.spec,
+                    operation: spec,
                     message: "clearing computed CIP state requires topology and properties write access",
+                });
+            }
+            CipStatePolicy::TautomerSourceTransition
+                if spec.method != "enumerate_tautomers_with_options" =>
+            {
+                return Err(OperationError::InvalidInput {
+                    operation: spec,
+                    message: "source-defined tautomer CIP transitions are owned only by enumerate_tautomers_with_options",
+                });
+            }
+            CipStatePolicy::TautomerSourceTransition
+                if !spec.access.can_write(BlockSet::TOPOLOGY)
+                    || !spec.access.can_write(BlockSet::PROPERTIES) =>
+            {
+                return Err(OperationError::InvalidInput {
+                    operation: spec,
+                    message: "source-defined tautomer CIP transitions require topology and properties write access",
                 });
             }
             _ => {}
@@ -1017,6 +1103,11 @@ impl<'a> OpParts<'a> {
 
     #[cfg(not(feature = "op-contracts"))]
     fn validate_access_spec(&self) -> Result<(), OperationError> {
+        Ok(())
+    }
+
+    #[cfg(not(feature = "op-contracts"))]
+    fn validate_access_spec_for(_spec: &'static MoleculeOpSpec) -> Result<(), OperationError> {
         Ok(())
     }
 
@@ -1256,6 +1347,7 @@ impl<'a> OpParts<'a> {
         let after = CipStateSnapshot::from_molecule(&self.working);
         match self.spec.cip_state {
             CipStatePolicy::Assign => Ok(()),
+            CipStatePolicy::TautomerSourceTransition => Ok(()),
             CipStatePolicy::Preserve if before == after => Ok(()),
             CipStatePolicy::Preserve => Err(OperationError::InvalidInput {
                 operation: self.spec,
@@ -1395,6 +1487,210 @@ impl<'a> OpParts<'a> {
         {
             let _ = block;
         }
+    }
+}
+
+impl<'a> MultiMoleculeOpParts<'a> {
+    pub(crate) fn new(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        if spec.output != crate::ops::MoleculeOpOutput::Multiple {
+            return Err(OperationError::InvalidInput {
+                operation: spec,
+                message: "multiple-output capability used with a single-output operation",
+            });
+        }
+        validate_semantic_preconditions(source, spec)?;
+        let executor_id = NEXT_MULTI_MOLECULE_EXECUTOR_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .map_err(|_| OperationError::InvalidInput {
+                operation: spec,
+                message: "multiple-output executor identity space is exhausted",
+            })?;
+        Ok(Self {
+            spec,
+            source,
+            executor_id,
+            branches: Vec::new(),
+            emitted: Vec::new(),
+        })
+    }
+
+    /// Create a validated branch from the immutable public input.
+    pub(crate) fn derive_from_source(
+        &mut self,
+        derive: impl FnOnce(&mut OpParts<'_>) -> Result<(), OperationError>,
+    ) -> Result<MoleculeBranchId, OperationError> {
+        let molecule = Self::finish_branch(self.source, self.spec, derive)?;
+        Ok(self.store_branch(molecule))
+    }
+
+    /// Create a validated branch from an earlier validated branch.
+    pub(crate) fn derive_from_branch(
+        &mut self,
+        parent: MoleculeBranchId,
+        derive: impl FnOnce(&mut OpParts<'_>) -> Result<(), OperationError>,
+    ) -> Result<MoleculeBranchId, OperationError> {
+        let source = self.branch(parent)?;
+        let molecule = Self::finish_branch(source, self.spec, derive)?;
+        Ok(self.store_branch(molecule))
+    }
+
+    fn finish_branch(
+        source: &Molecule,
+        spec: &'static MoleculeOpSpec,
+        derive: impl FnOnce(&mut OpParts<'_>) -> Result<(), OperationError>,
+    ) -> Result<Molecule, OperationError> {
+        let mut parts = OpParts::new_multi_branch(source, spec)?;
+        derive(&mut parts)?;
+        parts.finish()
+    }
+
+    fn store_branch(&mut self, molecule: Molecule) -> MoleculeBranchId {
+        let id = MoleculeBranchId {
+            executor_id: self.executor_id,
+            index: self.branches.len(),
+        };
+        self.branches.push(molecule);
+        id
+    }
+
+    fn branch(&self, branch: MoleculeBranchId) -> Result<&Molecule, OperationError> {
+        if branch.executor_id != self.executor_id {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "multiple-output operation used a branch handle from another execution",
+            });
+        }
+        self.branches
+            .get(branch.index)
+            .ok_or(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "multiple-output operation used an unknown branch handle",
+            })
+    }
+
+    /// Read the immutable public input through the registry-derived block
+    /// capability surface.
+    pub(crate) fn with_source_read_parts<R>(
+        &self,
+        read: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        OpParts::validate_access_spec_for(self.spec)?;
+        let view = MoleculeReadParts::from_molecule_with_access(
+            self.source,
+            OpParts::read_access_for_spec(self.spec),
+        );
+        read(view)
+    }
+
+    /// Read a branch through the registry-derived block capability surface.
+    pub(crate) fn with_branch_read_parts<R>(
+        &self,
+        branch: MoleculeBranchId,
+        read: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let molecule = self.branch(branch)?;
+        OpParts::validate_access_spec_for(self.spec)?;
+        let view = MoleculeReadParts::from_molecule_with_access(
+            molecule,
+            OpParts::read_access_for_spec(self.spec),
+        );
+        read(view)
+    }
+
+    /// Read the immutable public input and one validated branch together.
+    pub(crate) fn with_source_and_branch_read_parts<R>(
+        &self,
+        branch: MoleculeBranchId,
+        read: impl FnOnce(MoleculeReadParts<'_>, MoleculeReadParts<'_>) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let molecule = self.branch(branch)?;
+        OpParts::validate_access_spec_for(self.spec)?;
+        let access = OpParts::read_access_for_spec(self.spec);
+        read(
+            MoleculeReadParts::from_molecule_with_access(self.source, access),
+            MoleculeReadParts::from_molecule_with_access(molecule, access),
+        )
+    }
+
+    /// Read the immutable public input and an ordered set of validated
+    /// branches together. The returned views cannot outlive this call.
+    pub(crate) fn with_source_and_branches_read_parts<R>(
+        &self,
+        branches: &[MoleculeBranchId],
+        read: impl FnOnce(
+            MoleculeReadParts<'_>,
+            Vec<MoleculeReadParts<'_>>,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        OpParts::validate_access_spec_for(self.spec)?;
+        let molecules = branches
+            .iter()
+            .copied()
+            .map(|branch| self.branch(branch))
+            .collect::<Result<Vec<_>, _>>()?;
+        let access = OpParts::read_access_for_spec(self.spec);
+        let branch_views = molecules
+            .into_iter()
+            .map(|molecule| MoleculeReadParts::from_molecule_with_access(molecule, access))
+            .collect();
+        read(
+            MoleculeReadParts::from_molecule_with_access(self.source, access),
+            branch_views,
+        )
+    }
+
+    /// Mark a validated branch as part of the public result sequence.
+    pub(crate) fn emit(&mut self, branch: MoleculeBranchId) -> Result<(), OperationError> {
+        self.branch(branch)?;
+        self.emitted.push(branch);
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Result<Vec<Molecule>, OperationError> {
+        let mut remaining = vec![0usize; self.branches.len()];
+        for branch in &self.emitted {
+            if branch.executor_id != self.executor_id {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "multiple-output operation finished with a branch handle from another execution",
+                });
+            }
+            let count = remaining
+                .get_mut(branch.index)
+                .ok_or(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "multiple-output operation finished with an unknown branch handle",
+                })?;
+            *count = count.checked_add(1).ok_or(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "multiple-output branch emission count overflowed",
+            })?;
+        }
+
+        let mut branches = self.branches.into_iter().map(Some).collect::<Vec<_>>();
+        let mut outputs = Vec::with_capacity(self.emitted.len());
+        for branch in self.emitted {
+            remaining[branch.index] -= 1;
+            if remaining[branch.index] == 0 {
+                outputs.push(branches[branch.index].take().ok_or(
+                    OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "multiple-output operation emitted a consumed branch handle",
+                    },
+                )?);
+            } else {
+                outputs.push(branches[branch.index].as_ref().cloned().ok_or(
+                    OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "multiple-output operation emitted a consumed branch handle",
+                    },
+                )?);
+            }
+        }
+        Ok(outputs)
     }
 }
 

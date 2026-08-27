@@ -158,6 +158,8 @@ Every generated `MoleculeOpSpec` contains:
 ```text
 method
 impl_fn
+output
+result_type
 domain
 kind
 topology_edit
@@ -177,6 +179,15 @@ Registry entries explicitly provide `method`, `impl_fn`, `kind`, `access`,
 policy other than `not_applicable` also requires `parity_profile`. Other
 inputs have defined macro defaults, although behaviorally meaningful
 non-defaults should remain explicit for review.
+
+`output` defaults to `single`. An operation declared with `output: multiple`
+returns an ordered `Vec<Molecule>` containing only contract-validated emitted
+branches, and cannot generate an in-place wrapper.
+
+A multiple-output entry may additionally declare `result_type` and
+`assemble_fn`. Its body returns operation metadata, `finish()` returns only the
+validated molecules, and the assembler combines those two values into the
+typed public result without gaining mutation authority.
 
 For molecule operations, `derived_effects` has four independent,
 pairwise-disjoint categories: `recompute`, `preserve`, `invalidate`, and the
@@ -249,6 +260,13 @@ prove_preserved(...)
 Low-level `begin_*_mut()` / `commit_*()` methods implement and test the scoped
 lifecycle; fallible operation bodies must not leave a block checked out across
 an error. The macro-generated wrapper, not the operation body, owns `finish()`.
+
+Multiple-output bodies receive `MultiMoleculeOpParts` through
+`#[mol_multi_op_body(...)]`. They may derive a candidate only from the immutable
+input or an earlier validated branch, read candidates only through
+`MoleculeReadParts`, and return only branches explicitly passed to `emit()`.
+Every candidate completes an independent `OpParts` lifecycle under the same
+registry spec before it can be retained or emitted.
 
 Operation bodies must not recover a raw `Molecule` or raw `&Molecule` through
 helper APIs. Helpers called from operation bodies must accept narrowed inputs

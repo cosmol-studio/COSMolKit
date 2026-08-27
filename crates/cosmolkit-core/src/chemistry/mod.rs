@@ -18,4 +18,6 @@ pub mod mol_transforms;
 pub mod rings;
 pub mod stereo;
 pub mod stereo_enumerate;
+pub mod tautomer;
+mod tautomer_transforms;
 pub mod valence;

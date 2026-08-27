@@ -30,6 +30,7 @@ impl MoleculeReadAccess {
 
 #[derive(Clone, Copy)]
 pub(crate) struct MoleculeReadParts<'a> {
+    source: Option<&'a Molecule>,
     topology: &'a TopologyBlock,
     coordinates: &'a CoordinateBlock,
     properties: &'a MoleculeProperties,
@@ -56,14 +57,16 @@ impl<'a> MoleculeReadParts<'a> {
         molecule: &'a Molecule,
         access: MoleculeReadAccess,
     ) -> Self {
-        Self::from_blocks_with_access(
-            molecule.topology_block(),
-            molecule.coordinate_block(),
-            molecule.properties(),
-            molecule.derived_cache(),
-            molecule.capabilities(),
+        Self {
+            source: Some(molecule),
+            topology: molecule.topology_block(),
+            coordinates: molecule.coordinate_block(),
+            properties: molecule.properties(),
+            derived_cache: molecule.derived_cache(),
+            capabilities: molecule.capabilities(),
+            #[cfg(feature = "op-contracts")]
             access,
-        )
+        }
     }
 
     #[must_use]
@@ -96,6 +99,7 @@ impl<'a> MoleculeReadParts<'a> {
         #[cfg(not(feature = "op-contracts"))]
         let _ = access;
         Self {
+            source: None,
             topology,
             coordinates,
             properties,
@@ -244,6 +248,10 @@ impl<'a> MoleculeReadParts<'a> {
         crate::rings::symmetrize_sssr_from_read_parts(self)
     }
 
+    pub(crate) fn find_sssr(self) -> Result<crate::RingInfo, crate::RingFindingError> {
+        crate::rings::find_sssr_from_parts(self.num_atoms(), self.bonds(), self.adjacency())
+    }
+
     pub(crate) fn find_ring_families(
         self,
         include_dative_bonds: bool,
@@ -281,5 +289,46 @@ impl<'a> MoleculeReadParts<'a> {
 
     pub(crate) fn rank_mol_atoms(self) -> Result<Vec<usize>, crate::KekulizeError> {
         crate::canon_rank::rank_mol_atoms_from_read_parts(self)
+    }
+
+    pub(crate) fn canonical_isomeric_smiles(self) -> Result<String, crate::SmilesWriteError> {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
+        self.assert_access(MoleculeReadAccess::COORDINATES, "coordinates");
+        self.assert_access(MoleculeReadAccess::PROPERTIES, "properties");
+        self.assert_access(MoleculeReadAccess::DERIVED_CACHE, "derived cache");
+
+        let owned;
+        let molecule = if let Some(source) = self.source {
+            source
+        } else {
+            owned = Molecule::from_operation_blocks(
+                self.topology.clone(),
+                self.coordinates.clone(),
+                self.properties.clone(),
+                self.derived_cache.clone(),
+                self.capabilities,
+            )
+            .map_err(|source| crate::SmilesWriteError::MoleculeInvariant { source })?;
+            &owned
+        };
+        crate::smiles_write::mol_to_smiles(molecule, &crate::SmilesWriteParams::default())
+    }
+
+    pub(crate) fn kekulize_assignment_with_valence(
+        self,
+        ring_info: Option<&crate::RingInfo>,
+        valence: Option<&crate::ValenceAssignment>,
+        clear_aromatic_flags: bool,
+        canonical: bool,
+        max_backtracks: usize,
+    ) -> Result<crate::kekulize::KekulizeAssignment, crate::KekulizeError> {
+        crate::kekulize::kekulize_assignment_from_read_parts_with_valence(
+            self,
+            ring_info,
+            valence,
+            clear_aromatic_flags,
+            canonical,
+            max_backtracks,
+        )
     }
 }

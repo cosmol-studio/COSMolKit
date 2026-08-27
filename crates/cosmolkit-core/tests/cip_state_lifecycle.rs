@@ -184,6 +184,9 @@ fn cip_state_lifecycle_matrix_executes_every_registered_topology_operation() {
                 assert_eq!(state.bond_codes.first(), source_state.bond_codes.first());
             }
             CipStatePolicy::Assign => assert_eq!(state.computed.as_deref(), Some("1")),
+            CipStatePolicy::TautomerSourceTransition => {
+                assert_eq!(operation.method, "enumerate_tautomers_with_options");
+            }
         }
         assert_eq!(
             source,

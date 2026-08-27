@@ -48,6 +48,7 @@ pub(crate) struct KekulizeAssignment {
     atom_aromatic_flags: Vec<Option<bool>>,
     atom_explicit_hydrogens: Vec<Option<u8>>,
     atom_no_implicit: Vec<Option<bool>>,
+    discovered_rings: Option<RingInfo>,
 }
 
 struct KekulizeCandidateState {
@@ -78,6 +79,7 @@ impl KekulizeAssignment {
             atom_aromatic_flags: vec![None; num_atoms],
             atom_explicit_hydrogens: vec![None; num_atoms],
             atom_no_implicit: vec![None; num_atoms],
+            discovered_rings: None,
         }
     }
 
@@ -103,6 +105,10 @@ impl KekulizeAssignment {
 
     pub(crate) fn atom_no_implicit(&self, atom: AtomId) -> Option<bool> {
         self.atom_no_implicit[atom.index()]
+    }
+
+    pub(crate) fn discovered_rings(&self) -> Option<&RingInfo> {
+        self.discovered_rings.as_ref()
     }
 
     #[cfg(test)]
@@ -236,27 +242,6 @@ fn kekulize_assignment_from_parts_with_valence(
     // RDKit✔️✔️:                             canonical, maxBackTracks);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolOps::Kekulize
-    let owned_rings;
-    let rings = if let Some(rings) = rings {
-        rings
-    } else {
-        // RDKit✔️✔️:     VECT_INT_VECT allringsSSSR;
-        // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
-        // RDKit✔️✔️:       MolOps::findSSSR(mol, allringsSSSR);
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     const VECT_INT_VECT &allrings =
-        // RDKit✔️✔️:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
-        //
-        // The value-style port has no mutable RingInfo on-molecule, so when the
-        // caller does not provide rings we must materialize the same SSSR-level
-        // snapshot RDKit would compute here, not SymmSSSR.
-        owned_rings = crate::rings::find_sssr_from_parts(
-            topology.atoms.len(),
-            &topology.bonds,
-            &topology.adjacency,
-        )?;
-        &owned_rings
-    };
     let atoms_to_use = vec![true; topology.atoms.len()];
     let bonds_to_use = vec![true; topology.bonds.len()];
     kekulize_fragment_assignment(
@@ -279,10 +264,29 @@ pub(crate) fn kekulize_assignment_from_read_parts(
     canonical: bool,
     max_backtracks: usize,
 ) -> Result<KekulizeAssignment, KekulizeError> {
-    kekulize_assignment_from_parts(
+    kekulize_assignment_from_read_parts_with_valence(
+        read,
+        rings,
+        None,
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    )
+}
+
+pub(crate) fn kekulize_assignment_from_read_parts_with_valence(
+    read: MoleculeReadParts<'_>,
+    rings: Option<&RingInfo>,
+    cached_valence: Option<&ValenceAssignment>,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    kekulize_assignment_from_parts_with_valence(
         read.topology(),
         read.stereo_groups(),
         rings,
+        cached_valence,
         clear_aromatic_flags,
         canonical,
         max_backtracks,
@@ -292,7 +296,7 @@ pub(crate) fn kekulize_assignment_from_read_parts(
 pub(crate) fn kekulize_fragment_assignment(
     topology: &TopologyBlock,
     stereo_groups: &[crate::stereo::StereoGroup],
-    rings: &RingInfo,
+    rings: Option<&RingInfo>,
     cached_valence: Option<&ValenceAssignment>,
     atoms_to_use: &[bool],
     mut bonds_to_use: Vec<bool>,
@@ -375,6 +379,25 @@ pub(crate) fn kekulize_fragment_assignment(
     if !found_aromatic {
         return Ok(assignment);
     }
+
+    // RDKit✔️✔️:     VECT_INT_VECT allringsSSSR;
+    // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:       MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     const VECT_INT_VECT &allrings =
+    // RDKit✔️✔️:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+    let discovered_rings = if rings.is_none() {
+        Some(crate::rings::find_sssr_from_parts(
+            topology.atoms.len(),
+            &topology.bonds,
+            &topology.adjacency,
+        )?)
+    } else {
+        None
+    };
+    let rings = rings
+        .or(discovered_rings.as_ref())
+        .expect("Kekulize has either cached or newly discovered ring information");
 
     // RDKit✔️✔️:   UINT_VECT atomRanks(mol.getNumAtoms());
     // RDKit✔️✔️:   if (canonical) {
@@ -608,6 +631,7 @@ pub(crate) fn kekulize_fragment_assignment(
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION details::KekulizeFragment
+    assignment.discovered_rings = discovered_rings;
     Ok(assignment)
 }
 
@@ -1883,7 +1907,7 @@ mod tests {
         super::kekulize_fragment_assignment(
             molecule.topology_block(),
             molecule.stereo_groups(),
-            rings,
+            Some(rings),
             None,
             atoms_to_use,
             bonds_to_use,
@@ -1907,6 +1931,94 @@ mod tests {
             bonds_to_use,
             wedged_atoms,
         )
+    }
+
+    #[test]
+    fn nonaromatic_fused_product_defers_ring_discovery_to_aromaticity_like_rdkit() {
+        let mut molecule =
+            Molecule::from_smiles_with_sanitize("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2", false)
+                .unwrap();
+        let explicit_hydrogens = [3, 0, 1, 1, 0, 0, 0, 3, 0, 1, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1];
+        let no_implicit = [
+            true, false, true, true, false, true, false, true, false, true, true, false, false,
+            true, true, true, false, true, true, true,
+        ];
+        let bond_orders = [
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Double,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Double,
+            BondOrder::Single,
+            BondOrder::Single,
+            BondOrder::Single,
+        ];
+        {
+            let topology = molecule.topology_block_mut();
+            for (atom, (&hydrogens, &no_implicit)) in topology
+                .atoms
+                .iter_mut()
+                .zip(explicit_hydrogens.iter().zip(&no_implicit))
+            {
+                atom.set_aromatic(false);
+                atom.set_explicit_hydrogens(hydrogens);
+                atom.set_no_implicit(no_implicit);
+            }
+            for (bond, &order) in topology.bonds.iter_mut().zip(&bond_orders) {
+                bond.set_order(order);
+                bond.set_aromatic(false);
+            }
+        }
+        let valence =
+            crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
+        molecule.derived_cache_mut().rings = None;
+        molecule.derived_cache_mut().valence = Some(valence);
+
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::KEKULIZE | crate::SanitizeOps::SET_AROMATICITY)
+            .unwrap();
+
+        let rings = result
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("SetAromaticity should initialize symmetric ring information");
+        assert_eq!(rings.find_type(), crate::RingFindType::SymmSssr);
+        assert_eq!(rings.num_rings(), 5);
+        assert_eq!(
+            result
+                .atoms()
+                .iter()
+                .filter(|atom| atom.is_aromatic())
+                .map(|atom| atom.id().index())
+                .collect::<Vec<_>>(),
+            vec![10, 11, 14, 17, 18, 19]
+        );
+        assert_eq!(
+            result
+                .bonds()
+                .iter()
+                .filter(|bond| bond.is_aromatic())
+                .map(|bond| bond.id().index())
+                .collect::<Vec<_>>(),
+            vec![10, 13, 17, 18, 20, 22]
+        );
     }
 
     fn mark_double_bond_candidates(

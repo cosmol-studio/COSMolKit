@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.3.1",
+  "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+  "source_paths": [
+    "Code/GraphMol/MolStandardize/Tautomer.cpp",
+    "Code/GraphMol/MolStandardize/Tautomer.h",
+    "Code/GraphMol/MolStandardize/TautomerCatalog/TautomerCatalogParams.cpp",
+    "Code/GraphMol/MolStandardize/TautomerCatalog/TautomerCatalogUtils.cpp",
+    "Code/GraphMol/MolStandardize/TautomerCatalog/tautomerTransforms.in",
+    "Code/GraphMol/MolStandardize/TautomerCatalog/tautomerTransforms.v1.in",
+    "Code/GraphMol/MolStandardize/Wrap/Tautomer.cpp"
+  ],
+  "comparison_fields": [
+    "parse",
+    "enumeration_outcome",
+    "ordered_smiles",
+    "molecule_states",
+    "status",
+    "modified_atoms",
+    "modified_bonds",
+    "scores",
+    "canonical_smiles",
+    "canonical_state"
+  ],
+  "branches": [
+    {
+      "name": "default",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "v1",
+      "catalog": "v1",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "max_tautomers_1",
+      "catalog": "current",
+      "max_tautomers": 1,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "max_transforms_1",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_sp3_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": false,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_bond_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": false,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_isotopic_hydrogens",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": false,
+      "reassign_stereo": true
+    },
+    {
+      "name": "no_reassign_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": false
+    }
+  ],
+  "corpus_branches": ["default", "v1"],
+  "chembl_branches": [
+    "default",
+    "v1",
+    "max_tautomers_1",
+    "max_transforms_1",
+    "retain_sp3_stereo",
+    "retain_bond_stereo",
+    "retain_isotopic_hydrogens",
+    "no_reassign_stereo"
+  ]
+}

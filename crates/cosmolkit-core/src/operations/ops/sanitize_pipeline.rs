@@ -237,26 +237,15 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     // RDKit✔️✔️:     Kekulize(mol, true, false);
     // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::KEKULIZE) {
-        if sanitize_read!(read => read.derived_cache().rings.is_none()) {
-            let rings = sanitize_stage(
-                crate::SanitizeStep::Kekulize,
-                || sanitize_read!(read => read.symmetrize_sssr()),
-                |step, source| sanitize_ring_finding_error(operation, step, source),
-            )?;
-            parts.set_rings_cache(rings);
-        }
-        let ring_info = sanitize_read!(read => {
-            read.derived_cache()
-                .rings
-                .as_ref()
-                .expect("rings were recomputed immediately above")
-                .clone()
-        });
+        let ring_info = sanitize_read!(read => read.derived_cache().rings.clone());
         let assignment = sanitize_stage(
             crate::SanitizeStep::Kekulize,
-            || sanitize_read!(read => read.kekulize_assignment(Some(&ring_info), true, false, 100)),
+            || sanitize_read!(read => read.kekulize_assignment(ring_info.as_ref(), true, false, 100)),
             |step, source| sanitize_kekulize_error(operation, step, source),
         )?;
+        if let Some(rings) = assignment.discovered_rings() {
+            parts.set_rings_cache(rings.clone());
+        }
         let kekulize_changed = crate::kekulize::apply_kekulize_assignment(topology, &assignment);
         if kekulize_changed {
             sanitize_stage(
@@ -472,9 +461,9 @@ pub(super) fn run_sanitize_pipeline_on_topology(
             sanitize_read!(read => adjust_hydrogens_changes_molecule(read, &hydrogen_adjustment));
         if hydrogen_adjustment_changed {
             apply_sanitize_adjust_hydrogens_assignment(topology, &hydrogen_adjustment);
-            parts.clear_cache(DerivedState::VALENCE);
             parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
         }
+        parts.set_valence_cache(hydrogen_adjustment.valence);
         changed |= hydrogen_adjustment_changed;
     }
 
@@ -1746,9 +1735,14 @@ fn apply_sanitize_cleanup_chirality_assignment(
     }
 }
 
+struct SanitizeAdjustHydrogensAssignment {
+    explicit_hydrogens: Vec<u8>,
+    valence: crate::ValenceAssignment,
+}
+
 fn sanitize_adjust_hydrogens_assignment(
     read_parts: MoleculeReadParts<'_>,
-) -> Result<Vec<u8>, crate::ValenceError> {
+) -> Result<SanitizeAdjustHydrogensAssignment, crate::ValenceError> {
     let molecule = read_parts;
     // BEGIN RDKIT CPP FUNCTION adjustHs
     // RDKit✔️✔️: void adjustHs(RWMol &mol) {
@@ -1758,7 +1752,7 @@ fn sanitize_adjust_hydrogens_assignment(
     // RDKit✔️✔️:     int origExplicitV = atom->getNumExplicitHs();
     // RDKit✔️✔️:     int newImplicitV = atom->calcImplicitValence(false);
     let original_valence = sanitize_valence_facts(molecule)?;
-    let current_valence =
+    let mut current_valence =
         molecule.assign_valence_with_options(crate::ValenceModel::RdkitLike, false)?;
     let mut explicit_hydrogens = molecule
         .atoms()
@@ -1779,33 +1773,49 @@ fn sanitize_adjust_hydrogens_assignment(
                     reason: "adjustHs implicit hydrogen delta out of range",
                 }
             })?;
-            explicit_hydrogens[atom.id().index()] =
-                explicit_hydrogens[atom.id().index()].saturating_add(delta);
+            let index = atom.id().index();
+            explicit_hydrogens[index] = explicit_hydrogens[index].checked_add(delta).ok_or(
+                crate::ValenceError::UnsupportedBranch {
+                    reason: "adjustHs explicit hydrogen count out of range",
+                },
+            )?;
+            current_valence.explicit_valence[index] = current_valence.explicit_valence[index]
+                .checked_add(i32::from(delta))
+                .ok_or(crate::ValenceError::UnsupportedBranch {
+                    reason: "adjustHs explicit valence out of range",
+                })?;
         }
     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION adjustHs
-    Ok(explicit_hydrogens)
+    Ok(SanitizeAdjustHydrogensAssignment {
+        explicit_hydrogens,
+        valence: current_valence,
+    })
 }
 
 fn adjust_hydrogens_changes_molecule(
     read_parts: MoleculeReadParts<'_>,
-    explicit_hydrogens: &[u8],
+    assignment: &SanitizeAdjustHydrogensAssignment,
 ) -> bool {
     let molecule = read_parts;
     molecule
         .atoms()
         .iter()
-        .zip(explicit_hydrogens.iter().copied())
+        .zip(assignment.explicit_hydrogens.iter().copied())
         .any(|(atom, explicit_hydrogens)| atom.explicit_hydrogens() != explicit_hydrogens)
 }
 
 fn apply_sanitize_adjust_hydrogens_assignment(
     topology: &mut TopologyBlock,
-    explicit_hydrogens: &[u8],
+    assignment: &SanitizeAdjustHydrogensAssignment,
 ) {
-    for (atom, explicit_hydrogens) in topology.atoms.iter_mut().zip(explicit_hydrogens.iter()) {
+    for (atom, explicit_hydrogens) in topology
+        .atoms
+        .iter_mut()
+        .zip(assignment.explicit_hydrogens.iter())
+    {
         atom.set_explicit_hydrogens(*explicit_hydrogens);
     }
 }

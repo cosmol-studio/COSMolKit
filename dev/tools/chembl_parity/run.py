@@ -31,6 +31,7 @@ KNOWN_SCRIPTS = {
     "audit_surfaces.py",
     "audit_combinations.py",
     "audit_fingerprints.py",
+    "audit_tautomer.py",
 }
 SCRIPT_MODULES = {
     script: f"dev.tools.chembl_parity.{Path(script).stem}"
@@ -61,6 +62,7 @@ SCRIPT_MODES = {
         "topological_avalon",
         "topological_torsion",
     },
+    "audit_tautomer.py": {"tautomer"},
 }
 
 
@@ -109,6 +111,29 @@ def extension_artifacts() -> list[Path]:
         if path.is_file()
     )
     return candidates or [module_path]
+
+
+def tautomer_oracle_path(root: Path) -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    return root / "target/release" / f"cosmolkit-chembl-tautomer-oracle{suffix}"
+
+
+def build_tautomer_oracle(root: Path, profile: dict[str, Any]) -> None:
+    if not any(phase["script"] == "audit_tautomer.py" for phase in profile["phases"]):
+        return
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "-p",
+            "cosmolkit-chembl-tautomer-oracle",
+        ],
+        cwd=root,
+        check=True,
+    )
+    if not tautomer_oracle_path(root).is_file():
+        raise ValueError("tautomer oracle build completed without producing its binary")
 
 
 def validate_profile(profile: dict[str, Any]) -> None:
@@ -270,6 +295,9 @@ def build_identity(
     status: bytes,
 ) -> dict[str, Any]:
     artifacts = extension_artifacts()
+    oracle_path = tautomer_oracle_path(root)
+    if oracle_path.is_file():
+        artifacts.append(oracle_path)
     scripts = sorted(KNOWN_SCRIPTS | {"run.py"})
     effective_profile = json.dumps(
         profile, sort_keys=True, separators=(",", ":")
@@ -308,6 +336,7 @@ def build_identity(
                 root
                 / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/layered_fingerprint_profile.json",
+                root / "tools/testdata/rdkit/tautomer_profile.json",
             )
         },
     }
@@ -399,6 +428,17 @@ def command_for(
                 ),
                 "--layered-profile",
                 str(root / "tools/testdata/rdkit/layered_fingerprint_profile.json"),
+                "--mode",
+                str(phase["mode"]),
+            )
+        )
+    elif script == "audit_tautomer.py":
+        command.extend(
+            (
+                "--tautomer-profile",
+                str(root / "tools/testdata/rdkit/tautomer_profile.json"),
+                "--cosmolkit-oracle",
+                str(tautomer_oracle_path(root)),
                 "--mode",
                 str(phase["mode"]),
             )
@@ -628,6 +668,7 @@ def main() -> None:
             phase for phase in profile["phases"] if phase["name"] in requested
         ]
     installed_version = validate_runtime(root, profile)
+    build_tautomer_oracle(root, profile)
     corpus_manifest, corpus_manifest_sha = validate_corpus(
         corpus_dir, profile, verify_files=True
     )

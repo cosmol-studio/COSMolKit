@@ -37,6 +37,12 @@ PROFILE_INPUTS = {
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
     "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
+    "tautomer_focused": REPO_ROOT
+    / "testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json",
+    "tautomer_pcs_1k": REPO_ROOT
+    / "testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz",
+    "tautomer_pcs_100k": REPO_ROOT
+    / "testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz",
 }
 
 
@@ -230,6 +236,32 @@ GENERATOR_SPECS = [
         "fingerprint",
         {"default", "strict-corpus", "fingerprint", "pattern"},
         generator_dependencies=("pattern_fingerprint_profile.json",),
+    ),
+    spec(
+        "tautomer_golden",
+        "tautomer.jsonl",
+        "tautomer",
+        {"tautomer"},
+        generator_dependencies=("_tautomer_oracle.py", "tautomer_profile.json"),
+        deterministic_shards=16,
+        profiles={
+            "tautomer_focused",
+            "tautomer_pcs_1k",
+            "tautomer_pcs_100k",
+            "smiles_5000",
+        },
+    ),
+    spec(
+        "tautomer_catalog_golden",
+        "tautomer_catalog.jsonl",
+        "tautomer",
+        {"tautomer"},
+        extra_inputs=(
+            "third_party/rdkit/Code/GraphMol/MolStandardize/TautomerCatalog/tautomerTransforms.in",
+            "third_party/rdkit/Code/GraphMol/MolStandardize/TautomerCatalog/tautomerTransforms.v1.in",
+        ),
+        generator_dependencies=("_tautomer_oracle.py", "tautomer_profile.json"),
+        profiles={"tautomer_focused"},
     ),
     spec(
         "maccs_fingerprint_golden",
@@ -491,6 +523,7 @@ def manifest_identity(
     domain: str,
     profile: str,
     version: str,
+    source_revision: str,
     runtime: dict[str, str],
     input_path: Path,
     checksums: dict[Path, str],
@@ -501,7 +534,11 @@ def manifest_identity(
         "family": "rdkit",
         "domain": domain,
         "profile": profile,
-        "reference_implementation": {"name": "rdkit", "version": version},
+        "reference_implementation": {
+            "name": "rdkit",
+            "version": version,
+            "source_revision": source_revision,
+        },
         "reference_runtime": runtime,
         "input": file_identities([input_resolved], checksums)[0],
     }
@@ -654,7 +691,13 @@ def main() -> None:
     stale: dict[str, tuple[list[GeneratorSpec], dict[str, Any], list[dict[str, Any]]]] = {}
     for domain, items in by_domain.items():
         top_identity = manifest_identity(
-            domain, args.profile, version, runtime, input_path, checksums
+            domain,
+            args.profile,
+            version,
+            reference["source_revision"],
+            runtime,
+            input_path,
+            checksums,
         )
         identities = [
             output_identity(item, input_path, args.profile, platform_id, checksums)

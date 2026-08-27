@@ -1,0 +1,10 @@
+[package]
+name = "cosmolkit-chembl-tautomer-oracle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+cosmolkit-core = { path = "../../../../crates/cosmolkit-core", features = ["op-contracts-strict"] }
+serde_json = "1"

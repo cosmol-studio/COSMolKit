@@ -1,9 +1,10 @@
 //! Macro-controlled molecule operations.
 //!
 //! This module is the canonical operation-contract surface for molecular state
-//! migration. Operation bodies must be annotated with
-//! `#[mol_op_body(op_name, parts)]`; the attribute macro injects the only
-//! allowed mutable capability object while preserving declared operation
+//! migration. Single-output operation bodies use
+//! `#[mol_op_body(op_name, parts)]`; multiple-output bodies use
+//! `#[mol_multi_op_body(op_name, parts)]`. Both attribute macros inject the
+//! only allowed capability object while preserving declared operation
 //! parameters.
 //!
 //! Agent guardrail: operation bodies must not take `&mut Molecule`, must not
@@ -16,6 +17,8 @@
 
 use std::fmt;
 
+#[allow(unused_imports)]
+use cosmolkit_macros::mol_multi_op_body;
 use cosmolkit_macros::{mol_op_body, molecule_ops};
 
 use crate::{
@@ -31,6 +34,17 @@ pub(crate) use crate::read_parts::MoleculeReadParts;
 pub enum MoleculeOpKind {
     Strong,
     Weak,
+}
+
+/// Number of molecule values produced by a registered operation wrapper.
+///
+/// Multiple-output operations still validate every emitted molecule through
+/// an independent `OpParts` lifecycle; this field does not relax mutation or
+/// derived-state authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoleculeOpOutput {
+    Single,
+    Multiple,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +84,10 @@ pub enum CipStatePolicy {
     ClearComputed,
     /// The operation is the sole modern CIP assignment producer.
     Assign,
+    /// Reproduce the selective source-defined CIP/stereo lifecycle of
+    /// tautomer enumeration. This policy is allow-listed to that operation;
+    /// it grants no block access or mutation capability by itself.
+    TautomerSourceTransition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +273,8 @@ impl SemanticPreconditionSet {
 pub struct MoleculeOpSpec {
     pub method: &'static str,
     pub impl_fn: &'static str,
+    pub output: MoleculeOpOutput,
+    pub result_type: &'static str,
     pub domain: OperationDomain,
     pub kind: MoleculeOpKind,
     pub topology_edit: TopologyEditKind,
@@ -377,6 +397,12 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         #[source]
         source: crate::AddHydrogensError,
+    },
+    #[error("{operation}: tautomer enumeration failed: {source}")]
+    Tautomer {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: Box<crate::chemistry::tautomer::TautomerRunError>,
     },
     #[error("{operation}: invariant violation: {failure}")]
     InvariantViolation {
@@ -1004,16 +1030,49 @@ molecule_ops! {
         invariant_profile: "coordinate_set_single_3d_conformer",
         parity_profile: "remove_all_then_add_conformer_manual",
     }
+
+    op enumerate_tautomers_with_options(enumerator: &crate::chemistry::tautomer::TautomerEnumerator<'_>) {
+        method: enumerate_tautomers_with_options,
+        impl_fn: enumerate_tautomers_with_options_impl,
+        default_method: enumerate_tautomers,
+        default_args: [&crate::chemistry::tautomer::TautomerEnumerator::new()],
+        output: multiple,
+        result_type: crate::chemistry::tautomer::TautomerEnumeration,
+        assemble_fn: assemble_tautomer_enumeration,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [coordinates], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [rings, ring_families, valence, aromaticity, stereo],
+            preserve: [],
+            invalidate: [drawing, fingerprint],
+        },
+        cip_state: tautomer_source_transition,
+        requires_mapping: none,
+        feature: TAUTOMER_ENUMERATION_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "tautomer_enumeration_multi_output",
+        parity_profile: "rdkit_tautomer_enumeration_full_plan",
+        docs: "Enumerate ordered tautomers with the configured source-aligned enumerator.",
+    }
 }
 
 mod bodies;
 pub(crate) mod hydrogens;
 mod runtime;
 mod sanitize_pipeline;
+mod tautomer;
 
+// These names are resolved by macro-expanded multiple-output wrappers and
+// bodies once the registry contains its first multiple-output operation.
+pub(crate) use self::runtime::MultiMoleculeOpParts;
 use self::runtime::OpParts;
 pub use self::runtime::OperationTrace;
-use self::{bodies::*, hydrogens::*, sanitize_pipeline::*};
+use self::{bodies::*, hydrogens::*, sanitize_pipeline::*, tautomer::*};
 
 pub(crate) use self::sanitize_pipeline::{
     sanitize_conjugation_assignment, sanitize_hybridization_assignment,
@@ -1026,9 +1085,87 @@ mod tests {
     use super::*;
     use crate::{BondOrder, BondQueryPredicate, QueryNode};
 
+    mod generated_multiple_output_wrapper {
+        use super::*;
+
+        #[cosmolkit_macros::mol_multi_op_body(test_generated_multiple_output, parts)]
+        fn test_generated_multiple_output_impl() -> Result<usize, OperationError> {
+            let first = parts.derive_from_source(|_branch| Ok(()))?;
+            parts.emit(first)?;
+            let second = parts.derive_from_branch(first, |branch| {
+                branch.with_topology_mut(|_branch, topology| {
+                    topology.atoms[0].set_formal_charge(1);
+                    Ok(())
+                })?;
+                branch.record_topology_edit(TopologyEditKind::Local)?;
+                branch.clear_cache(TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.needs_update());
+                Ok(())
+            })?;
+            parts.emit(second)?;
+            Ok(2)
+        }
+
+        fn assemble_test_generated_multiple_output(
+            molecules: Vec<Molecule>,
+            count: usize,
+        ) -> Result<(Vec<Molecule>, usize), OperationError> {
+            Ok((molecules, count))
+        }
+
+        cosmolkit_macros::molecule_ops! {
+            op test_generated_multiple_output() {
+                method: test_generated_multiple_output,
+                impl_fn: test_generated_multiple_output_impl,
+                output: multiple,
+                result_type: (Vec<crate::Molecule>, usize),
+                assemble_fn: assemble_test_generated_multiple_output,
+                domain: topology,
+                kind: weak,
+                topology_edit: local,
+                access: { read: [], write: [topology, derived_cache] },
+                may_mutate: [topology, derived_cache],
+                auto_remap: [],
+                derived_effects: {
+                    recompute: [],
+                    preserve: [],
+                    invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
+                },
+                cip_state: preserve,
+                requires_mapping: none,
+                feature: HYDROGENS_FEATURE,
+                parity: not_applicable,
+                io_roundtrip: false,
+                invariant_profile: "test_multiple_output",
+            }
+        }
+
+        #[test]
+        fn generated_multiple_output_wrapper_validates_and_assembles_typed_results() {
+            let source = crate::Molecule::from_smiles("C").unwrap();
+
+            let (molecules, count) = source.test_generated_multiple_output().unwrap();
+
+            assert_eq!(count, 2);
+            assert_eq!(molecules.len(), 2);
+            assert_eq!(molecules[0].atoms()[0].formal_charge(), 0);
+            assert_eq!(molecules[1].atoms()[0].formal_charge(), 1);
+            assert_eq!(source.atoms()[0].formal_charge(), 0);
+            assert_eq!(
+                TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.output,
+                MoleculeOpOutput::Multiple
+            );
+            assert_eq!(
+                TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.result_type,
+                "(Vec < crate :: Molecule > , usize)"
+            );
+        }
+    }
+
     const TEST_NEEDS_VALENCE_UPDATE_SPEC: MoleculeOpSpec = MoleculeOpSpec {
         method: "test_needs_valence_update",
         impl_fn: "test_needs_valence_update_impl",
+        output: MoleculeOpOutput::Single,
+        result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::None,
@@ -1052,6 +1189,8 @@ mod tests {
     const TEST_RECOMPUTE_VALENCE_SPEC: MoleculeOpSpec = MoleculeOpSpec {
         method: "test_recompute_valence",
         impl_fn: "test_recompute_valence_impl",
+        output: MoleculeOpOutput::Single,
+        result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::None,
@@ -1075,6 +1214,8 @@ mod tests {
     const TEST_OVERLAPPING_ACCESS_SPEC: MoleculeOpSpec = MoleculeOpSpec {
         method: "test_overlapping_access",
         impl_fn: "test_overlapping_access_impl",
+        output: MoleculeOpOutput::Single,
+        result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::Local,
@@ -1084,6 +1225,76 @@ mod tests {
         semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::NONE,
         cip_state: CipStatePolicy::Preserve,
+        requires_mapping: MappingRequirement::None,
+        support: SupportStatus::Experimental,
+        parity: ParityPolicy::NotApplicable,
+        io_roundtrip: false,
+    };
+
+    const TEST_MULTIPLE_OUTPUT_SPEC: MoleculeOpSpec = MoleculeOpSpec {
+        method: "test_multiple_output",
+        impl_fn: "test_multiple_output_impl",
+        output: MoleculeOpOutput::Multiple,
+        result_type: "Vec<Molecule>",
+        domain: OperationDomain::Topology,
+        kind: MoleculeOpKind::Weak,
+        topology_edit: TopologyEditKind::Local,
+        access: BlockAccess::new(
+            BlockSet::NONE,
+            BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
+        ),
+        may_mutate: BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
+        auto_remap: BlockSet::NONE,
+        semantic_preconditions: SemanticPreconditionSet::NONE,
+        derived_effects: DerivedEffects::new(
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::VALENCE
+                .union(DerivedState::AROMATICITY)
+                .union(DerivedState::STEREO)
+                .union(DerivedState::DRAWING)
+                .union(DerivedState::FINGERPRINT),
+            DerivedState::NONE,
+        ),
+        cip_state: CipStatePolicy::Preserve,
+        requires_mapping: MappingRequirement::None,
+        support: SupportStatus::Experimental,
+        parity: ParityPolicy::NotApplicable,
+        io_roundtrip: false,
+    };
+
+    const TEST_TAUTOMER_CIP_SPEC: MoleculeOpSpec = MoleculeOpSpec {
+        method: "enumerate_tautomers_with_options",
+        impl_fn: "test_tautomer_cip_impl",
+        output: MoleculeOpOutput::Multiple,
+        result_type: "Vec<Molecule>",
+        domain: OperationDomain::Topology,
+        kind: MoleculeOpKind::Weak,
+        topology_edit: TopologyEditKind::Local,
+        access: BlockAccess::new(
+            BlockSet::NONE,
+            BlockSet::TOPOLOGY
+                .union(BlockSet::PROPERTIES)
+                .union(BlockSet::DERIVED_CACHE),
+        ),
+        may_mutate: BlockSet::TOPOLOGY
+            .union(BlockSet::PROPERTIES)
+            .union(BlockSet::DERIVED_CACHE),
+        auto_remap: BlockSet::NONE,
+        semantic_preconditions: SemanticPreconditionSet::NONE,
+        derived_effects: DerivedEffects::new(
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::VALENCE
+                .union(DerivedState::RINGS)
+                .union(DerivedState::RING_FAMILIES)
+                .union(DerivedState::AROMATICITY)
+                .union(DerivedState::STEREO)
+                .union(DerivedState::DRAWING)
+                .union(DerivedState::FINGERPRINT),
+            DerivedState::NONE,
+        ),
+        cip_state: CipStatePolicy::TautomerSourceTransition,
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
@@ -1101,7 +1312,7 @@ mod tests {
         assert!(!read_parts_source.contains(concat!("pub(crate) fn ", "molecule")));
     }
 
-    fn op_body_sources() -> [(&'static str, &'static str); 3] {
+    fn op_body_sources() -> [(&'static str, &'static str); 4] {
         [
             ("bodies.rs", include_str!("ops/bodies.rs")),
             ("hydrogens.rs", include_str!("ops/hydrogens.rs")),
@@ -1109,6 +1320,7 @@ mod tests {
                 "sanitize_pipeline.rs",
                 include_str!("ops/sanitize_pipeline.rs"),
             ),
+            ("tautomer.rs", include_str!("ops/tautomer.rs")),
         ]
     }
 
@@ -1199,12 +1411,20 @@ mod tests {
             "set_ring_families_cache",
             "set_valence_cache",
             "mark_aromaticity_valid",
+            "mark_stereo_handled",
             "prove_preserved",
             "with_topology_read_parts",
             "with_block_read_parts",
             "with_optional_block_read_parts",
             "with_borrowed_optional_block_read_parts",
             "with_coordinate_update_read_parts",
+            "derive_from_source",
+            "derive_from_branch",
+            "with_source_read_parts",
+            "with_branch_read_parts",
+            "with_source_and_branch_read_parts",
+            "with_source_and_branches_read_parts",
+            "emit",
         ];
 
         for (source_name, source) in op_body_sources() {
@@ -1271,6 +1491,148 @@ mod tests {
     }
 
     #[test]
+    fn multiple_output_branches_preserve_source_and_validate_each_emitted_molecule() {
+        let source = crate::Molecule::from_smiles("C").unwrap();
+        let mut parts = MultiMoleculeOpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC).unwrap();
+
+        let unchanged = parts
+            .derive_from_source(|_branch| Ok(()))
+            .expect("the unchanged source is a valid branch");
+        parts.emit(unchanged).unwrap();
+
+        let charged = parts
+            .derive_from_branch(unchanged, |branch| {
+                branch.with_topology_mut(|_branch, topology| {
+                    topology.atoms[0].set_formal_charge(1);
+                    Ok(())
+                })?;
+                branch.record_topology_edit(TopologyEditKind::Local)?;
+                branch.clear_cache(TEST_MULTIPLE_OUTPUT_SPEC.needs_update());
+                Ok(())
+            })
+            .expect("a child branch must complete its own contract lifecycle");
+
+        let observed_charge = parts
+            .with_branch_read_parts(charged, |read| Ok(read.atoms()[0].formal_charge()))
+            .unwrap();
+        assert_eq!(observed_charge, 1);
+        parts.emit(charged).unwrap();
+
+        let outputs = parts.finish().unwrap();
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].atoms()[0].formal_charge(), 0);
+        assert_eq!(outputs[1].atoms()[0].formal_charge(), 1);
+        assert_eq!(source.atoms()[0].formal_charge(), 0);
+        for output in &outputs {
+            enforce_molecule_invariants(output)
+                .expect("every emitted branch must satisfy molecule invariants");
+        }
+    }
+
+    #[test]
+    fn multiple_output_executor_rejects_cardinality_and_unknown_branch_misuse() {
+        let source = crate::Molecule::from_smiles("C").unwrap();
+
+        assert!(matches!(
+            MultiMoleculeOpParts::new(&source, &TEST_RECOMPUTE_VALENCE_SPEC),
+            Err(OperationError::InvalidInput {
+                message: "multiple-output capability used with a single-output operation",
+                ..
+            })
+        ));
+        assert!(matches!(
+            OpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC),
+            Err(OperationError::InvalidInput {
+                message: "single-output OpParts used with a multiple-output operation",
+                ..
+            })
+        ));
+
+        let mut other = MultiMoleculeOpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC).unwrap();
+        let foreign_branch = other.derive_from_source(|_branch| Ok(())).unwrap();
+        let mut parts = MultiMoleculeOpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC).unwrap();
+        parts
+            .derive_from_source(|_branch| Ok(()))
+            .expect("the local branch deliberately occupies the same index");
+        assert!(matches!(
+            parts.emit(foreign_branch),
+            Err(OperationError::InvalidInput {
+                message: "multiple-output operation used a branch handle from another execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn tautomer_multiple_output_spec_rejects_foreign_handles_after_source_and_child_derivation() {
+        let source = crate::Molecule::from_smiles("CC(C)=O").unwrap();
+        let mut foreign =
+            MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
+        let foreign_branch = foreign.derive_from_source(|_branch| Ok(())).unwrap();
+
+        let mut parts =
+            MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
+        let source_branch = parts.derive_from_source(|_branch| Ok(())).unwrap();
+        let child_branch = parts
+            .derive_from_branch(source_branch, |_branch| Ok(()))
+            .unwrap();
+        parts.emit(source_branch).unwrap();
+        parts.emit(child_branch).unwrap();
+        assert!(matches!(
+            parts.emit(foreign_branch),
+            Err(OperationError::InvalidInput {
+                message: "multiple-output operation used a branch handle from another execution",
+                ..
+            })
+        ));
+
+        let outputs = parts.finish().unwrap();
+        assert_eq!(outputs, [source.clone(), source]);
+    }
+
+    #[test]
+    fn multiple_output_duplicate_emissions_preserve_requested_order() {
+        let source = crate::Molecule::from_smiles("C").unwrap();
+        let mut parts = MultiMoleculeOpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC).unwrap();
+        let branch = parts.derive_from_source(|_branch| Ok(())).unwrap();
+
+        parts.emit(branch).unwrap();
+        parts.emit(branch).unwrap();
+
+        let outputs = parts.finish().unwrap();
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].to_smiles(true).unwrap(), "C");
+        assert_eq!(outputs[1].to_smiles(true).unwrap(), "C");
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn multiple_output_branch_cannot_bypass_per_branch_contract_validation() {
+        let source = crate::Molecule::from_smiles("C").unwrap();
+        let mut parts = MultiMoleculeOpParts::new(&source, &TEST_MULTIPLE_OUTPUT_SPEC).unwrap();
+
+        let error = parts
+            .derive_from_source(|branch| {
+                branch.with_topology_mut(|_branch, topology| {
+                    topology.atoms[0].set_formal_charge(1);
+                    Ok(())
+                })?;
+                Ok(())
+            })
+            .expect_err("an unrecorded topology edit must fail branch finalization");
+
+        assert!(matches!(
+            error,
+            OperationError::InvalidInput {
+                message: "operation body did not clear or update every required cache state",
+                ..
+            }
+        ));
+        assert!(parts.finish().unwrap().is_empty());
+        assert_eq!(source.atoms()[0].formal_charge(), 0);
+    }
+
+    #[test]
     fn distgeom_operation_bodies_use_coordinate_update_boundary() {
         let bodies_source = include_str!("ops/bodies.rs");
         assert!(bodies_source.contains("embed_molecule_coordinate_update"));
@@ -1281,16 +1643,19 @@ mod tests {
     }
 
     #[test]
-    fn mol_op_body_functions_live_outside_runtime_module() {
+    fn operation_body_functions_live_outside_runtime_module() {
         let runtime_source = include_str!("ops/runtime.rs");
         let bodies_source = include_str!("ops/bodies.rs");
         let hydrogens_source = include_str!("ops/hydrogens.rs");
         let sanitize_source = include_str!("ops/sanitize_pipeline.rs");
+        let tautomer_source = include_str!("ops/tautomer.rs");
 
         assert!(!runtime_source.contains("#[mol_op_body"));
+        assert!(!runtime_source.contains("#[mol_multi_op_body"));
         assert!(bodies_source.contains("#[mol_op_body"));
         assert!(hydrogens_source.contains("#[mol_op_body"));
         assert!(sanitize_source.contains("#[mol_op_body"));
+        assert!(tautomer_source.contains("#[cosmolkit_macros::mol_multi_op_body"));
     }
 
     #[cfg(feature = "op-contracts")]
@@ -1497,6 +1862,102 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn tautomer_cip_registry_policy_is_absent_or_owned_by_the_single_named_operation() {
+        let owners = MOLECULE_OPS
+            .iter()
+            .copied()
+            .filter(|operation| operation.cip_state == CipStatePolicy::TautomerSourceTransition)
+            .collect::<Vec<_>>();
+
+        assert!(owners.len() <= 1);
+        assert!(
+            owners
+                .iter()
+                .all(|operation| operation.method == "enumerate_tautomers_with_options")
+        );
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn tautomer_cip_strict_runtime_accepts_unchanged_and_source_defined_changed_branches() {
+        let source = crate::Molecule::from_smiles("C").unwrap();
+        let mut parts = MultiMoleculeOpParts::new(&source, &TEST_TAUTOMER_CIP_SPEC).unwrap();
+
+        let unchanged = parts.derive_from_source(|_branch| Ok(())).unwrap();
+        parts.emit(unchanged).unwrap();
+        let changed = parts
+            .derive_from_source(|branch| {
+                branch.with_topology_and_properties_mut(|_branch, topology, properties| {
+                    topology.atoms[0].set_prop("_CIPCode", "R");
+                    properties.set_prop("_StereochemDone", "1");
+                    Ok(())
+                })?;
+                branch.record_topology_edit(TopologyEditKind::Local)?;
+                branch.clear_cache(TEST_TAUTOMER_CIP_SPEC.needs_update());
+                Ok(())
+            })
+            .unwrap();
+        parts.emit(changed).unwrap();
+
+        let outputs = parts.finish().unwrap();
+        assert_eq!(outputs.len(), 2);
+        assert!(outputs[0].atoms()[0].prop("_CIPCode").is_none());
+        assert_eq!(outputs[1].atoms()[0].prop("_CIPCode"), Some("R"));
+        assert_eq!(outputs[1].prop("_StereochemDone"), Some("1"));
+        assert!(source.atoms()[0].prop("_CIPCode").is_none());
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn tautomer_cip_strict_runtime_rejects_every_registered_non_tautomer_operation() {
+        let molecule = crate::Molecule::from_smiles("C").unwrap();
+        for registered in MOLECULE_OPS.iter().copied() {
+            if registered.method == "enumerate_tautomers_with_options" {
+                continue;
+            }
+            let mut unapproved = *registered;
+            unapproved.cip_state = CipStatePolicy::TautomerSourceTransition;
+            let unapproved = Box::leak(Box::new(unapproved));
+            let error = OpParts::new(&molecule, unapproved)
+                .and_then(OpParts::finish)
+                .expect_err("non-tautomer operation must reject the tautomer CIP policy");
+            assert!(matches!(
+                error,
+                OperationError::InvalidInput {
+                    message: "source-defined tautomer CIP transitions are owned only by enumerate_tautomers_with_options",
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn tautomer_cip_strict_runtime_requires_both_write_capabilities() {
+        let molecule = crate::Molecule::from_smiles("C").unwrap();
+        for write in [
+            BlockSet::PROPERTIES.union(BlockSet::DERIVED_CACHE),
+            BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
+        ] {
+            let mut invalid = TEST_TAUTOMER_CIP_SPEC;
+            invalid.access = BlockAccess::new(BlockSet::NONE, write);
+            invalid.may_mutate = invalid.access.write();
+            let invalid = Box::leak(Box::new(invalid));
+            let mut parts = MultiMoleculeOpParts::new(&molecule, invalid).unwrap();
+            let error = parts
+                .derive_from_source(|_branch| Ok(()))
+                .expect_err("missing CIP write capability must fail");
+            assert!(matches!(
+                error,
+                OperationError::InvalidInput {
+                    message: "source-defined tautomer CIP transitions require topology and properties write access",
+                    ..
+                }
+            ));
+        }
     }
 
     #[test]
@@ -2619,17 +3080,44 @@ mod tests {
 
     #[test]
     fn sanitized_kekulize_materializes_ring_cache_without_explicit_symmrings_step_like_rdkit() {
-        let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let molecule =
+            crate::Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").unwrap();
+        assert_eq!(
+            molecule
+                .derived_cache()
+                .rings
+                .as_ref()
+                .expect("default sanitize should initialize SymmSSSR")
+                .find_type(),
+            crate::RingFindType::SymmSssr
+        );
 
         let result = molecule
             .sanitize_with_ops(crate::SanitizeOps::KEKULIZE)
             .unwrap();
 
-        assert!(result.derived_cache().rings.is_some());
+        let rings = result
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("Kekulize should initialize ordinary SSSR ring information");
+        assert_eq!(rings.find_type(), crate::RingFindType::Sssr);
+        assert_eq!(rings.num_rings(), 4);
         assert!(result.bonds().iter().all(|bond| matches!(
             bond.order(),
             crate::BondOrder::Single | crate::BondOrder::Double
         )));
+
+        let symmetrized = molecule
+            .sanitize_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::KEKULIZE)
+            .unwrap();
+        let rings = symmetrized
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("explicit SymmSSSR should initialize symmetric ring information");
+        assert_eq!(rings.find_type(), crate::RingFindType::SymmSssr);
+        assert_eq!(rings.num_rings(), 5);
     }
 
     #[test]
@@ -3889,6 +4377,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             explicit_hs
         );
+    }
+
+    #[test]
+    fn sanitize_adjust_hydrogens_repopulates_property_cache_without_properties_flag_like_rdkit() {
+        let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
+
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
+            .unwrap();
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
+
+        assert_eq!(result.derived_cache().valence, Some(expected));
+        assert!(!crate::valence::needs_update_property_cache(
+            crate::read_parts::MoleculeReadParts::from_molecule(&result)
+        ));
     }
 
     #[test]

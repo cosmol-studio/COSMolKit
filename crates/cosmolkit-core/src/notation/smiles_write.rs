@@ -155,6 +155,11 @@ impl SmilesPlanStage {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmilesWriteError {
+    #[error("molecule invariant failed while preparing SMILES output: {source}")]
+    MoleculeInvariant {
+        #[from]
+        source: crate::InvariantError,
+    },
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
     #[error(transparent)]

@@ -1,0 +1,19 @@
+{
+  "schema": "cosmolkit-rdkit-tautomer-focused-v1",
+  "cases": [
+    {"case_id": "testTautomer-keto-enol", "smiles": "CC(C)=O", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:80"},
+    {"case_id": "testTautomer-aromatic-shift", "smiles": "O=c1cccc[nH]1", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:116"},
+    {"case_id": "testTautomer-isocyanide", "smiles": "C#N", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:305"},
+    {"case_id": "testTautomer-phosphonic-acid", "smiles": "[PH](=O)(O)(O)", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:311"},
+    {"case_id": "testTautomer-double-bond-stereo", "smiles": "c1(ccccc1)/C=C(/O)\\C", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:317"},
+    {"case_id": "testTautomer-large-limit", "smiles": "C(CO)(NC(=O)C1=C(O)C(O)=CC=C1)C(O)=O", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:390"},
+    {"case_id": "testTautomer-sp3-stereo", "smiles": "C[C@H](N)C(=O)O", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:417"},
+    {"case_id": "testTautomer-isotopic-h", "smiles": "C/C=C(O)/[2H]", "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:766"},
+    {"case_id": "catch-custom-keto-enol", "smiles": "CCC=O", "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:831"},
+    {"case_id": "catch-phosphorus-nontransform", "smiles": "NP(=O)(O)N(CCCl)CCCl", "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:959"},
+    {"case_id": "catch-asymmetric-imine", "smiles": "C-C=N", "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1002"},
+    {"case_id": "catch-unsanitized", "smiles": "Cc1[nH]ncc1.[Cl]", "sanitize": false, "remove_hs": false, "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1067"},
+    {"case_id": "pcs-100k-row-1427-fused-conjugated-limit", "smiles": "Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2", "source": "testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz:1428"},
+    {"case_id": "wrapper-invalid-input", "smiles": "not-a-smiles", "source": "Code/GraphMol/MolStandardize/Wrap/Tautomer.cpp"}
+  ]
+}

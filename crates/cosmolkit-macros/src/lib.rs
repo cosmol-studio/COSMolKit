@@ -2,8 +2,8 @@ use proc_macro::{Ident as MacroIdent, Literal, Spacing, TokenStream, TokenTree};
 use quote::{format_ident, quote};
 use std::path::PathBuf;
 use syn::{
-    Expr, FnArg, Ident, ItemFn, LitBool, LitStr, Pat, PatType, Path, Token, braced, bracketed,
-    parenthesized, parse::Parse, parse::ParseStream, parse_macro_input, parse_quote,
+    Expr, FnArg, Ident, ItemFn, LitBool, LitStr, Pat, PatType, Path, Token, Type, braced,
+    bracketed, parenthesized, parse::Parse, parse::ParseStream, parse_macro_input, parse_quote,
     punctuated::Punctuated, spanned::Spanned,
 };
 
@@ -28,6 +28,9 @@ struct OpFields {
     method: Option<Ident>,
     docs: Option<LitStr>,
     impl_fn: Option<Ident>,
+    output: Option<Ident>,
+    result_type: Option<Type>,
+    assemble_fn: Option<Path>,
     domain: Option<Ident>,
     kind: Option<Ident>,
     topology_edit: Option<Ident>,
@@ -108,6 +111,9 @@ impl Parse for OpEntry {
                 "method" => fields.method = Some(content.parse()?),
                 "docs" => fields.docs = Some(content.parse()?),
                 "impl_fn" => fields.impl_fn = Some(content.parse()?),
+                "output" => fields.output = Some(content.parse()?),
+                "result_type" => fields.result_type = Some(content.parse()?),
+                "assemble_fn" => fields.assemble_fn = Some(content.parse()?),
                 "domain" => fields.domain = Some(content.parse()?),
                 "kind" => fields.kind = Some(content.parse()?),
                 "topology_edit" => fields.topology_edit = Some(content.parse()?),
@@ -286,6 +292,32 @@ fn validate_operation_defined_guardrail(
     ))
 }
 
+fn validate_cip_state_guardrail(
+    operation: &Ident,
+    method: &Ident,
+    output: &Ident,
+    access: &AccessFields,
+    cip_state: &Ident,
+) -> syn::Result<()> {
+    if cip_state != "tautomer_source_transition" && cip_state != "TautomerSourceTransition" {
+        return Ok(());
+    }
+
+    let is_tautomer_operation = operation == "enumerate_tautomers_with_options"
+        && method == "enumerate_tautomers_with_options";
+    let is_multiple_output = output == "multiple" || output == "Multiple";
+    let writes_topology = access.write.iter().any(|block| block == "topology");
+    let writes_properties = access.write.iter().any(|block| block == "properties");
+    if is_tautomer_operation && is_multiple_output && writes_topology && writes_properties {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        cip_state.span(),
+        "`cip_state: tautomer_source_transition` is permitted only for the multiple-output `enumerate_tautomers_with_options` operation with topology and properties write access",
+    ))
+}
+
 fn parse_expr_list(input: ParseStream<'_>) -> syn::Result<Vec<Expr>> {
     let content;
     bracketed!(content in input);
@@ -315,6 +347,33 @@ pub fn mol_op_body(attr: TokenStream, item: TokenStream) -> TokenStream {
     func.sig
         .inputs
         .push(parse_quote!(#parts_name: &mut crate::ops::OpParts<'_>));
+    func.sig.inputs.extend(operation_params);
+
+    quote!(#func).into()
+}
+
+#[proc_macro_attribute]
+pub fn mol_multi_op_body(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = parse_macro_input!(attr as MolOpBodyAttr);
+    let mut func = parse_macro_input!(item as ItemFn);
+
+    for input in &func.sig.inputs {
+        if matches!(input, FnArg::Receiver(_)) {
+            return syn::Error::new(
+                input.span(),
+                "mol_multi_op_body operation bodies must not receive self",
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
+    let _op_name = attr.op_name;
+    let parts_name = attr.parts_name;
+    let operation_params = std::mem::take(&mut func.sig.inputs);
+    func.sig
+        .inputs
+        .push(parse_quote!(#parts_name: &mut crate::ops::MultiMoleculeOpParts<'_>));
     func.sig.inputs.extend(operation_params);
 
     quote!(#func).into()
@@ -435,6 +494,10 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .fields
         .domain
         .map_or_else(|| ident_with_span("topology", op.name.span()), Ok)?;
+    let output = op
+        .fields
+        .output
+        .map_or_else(|| ident_with_span("single", op.name.span()), Ok)?;
     let topology_edit = op
         .fields
         .topology_edit
@@ -443,6 +506,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let derived_effects = required_field(op.fields.derived_effects, &op.name, "derived_effects")?;
     let cip_state = required_field(op.fields.cip_state, &op.name, "cip_state")?;
     validate_operation_defined_guardrail(&op.name, &derived_effects)?;
+    validate_cip_state_guardrail(&op.name, &method, &output, &access, &cip_state)?;
     let requires_mapping = op
         .fields
         .requires_mapping
@@ -452,6 +516,37 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .io_roundtrip
         .map_or_else(|| parse_quote!(false), |value| value);
     let inplace_enabled = op.fields.inplace.as_ref().is_some_and(|value| value.value);
+    let multiple_output = matches!(output.to_string().as_str(), "multiple" | "Multiple");
+    if multiple_output && inplace_enabled {
+        return Err(syn::Error::new(
+            output.span(),
+            "multiple-output molecule operations cannot generate an in-place wrapper",
+        ));
+    }
+    let custom_result = match (op.fields.result_type.clone(), op.fields.assemble_fn.clone()) {
+        (Some(result_type), Some(assemble_fn)) if multiple_output => {
+            Some((result_type, assemble_fn))
+        }
+        (Some(_), Some(_)) => {
+            return Err(syn::Error::new(
+                output.span(),
+                "custom result assembly is available only for multiple-output molecule operations",
+            ));
+        }
+        (Some(path), None) => {
+            return Err(syn::Error::new(
+                path.span(),
+                "`result_type` requires `assemble_fn`",
+            ));
+        }
+        (None, Some(path)) => {
+            return Err(syn::Error::new(
+                path.span(),
+                "`assemble_fn` requires `result_type`",
+            ));
+        }
+        (None, None) => None,
+    };
     let inplace_method_ident = op.fields.inplace_method.clone();
     let default_inplace_method_ident = op.fields.default_inplace_method.clone();
     let default_method_ident = op.fields.default_method.clone();
@@ -461,6 +556,14 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let method_name = method.to_string();
     let impl_fn_name = impl_fn.to_string();
     let domain_expr = domain_expr(&domain)?;
+    let output_expr = output_cardinality_expr(&output)?;
+    let result_type_expr = if let Some((result_type, _)) = &custom_result {
+        quote!(stringify!(#result_type))
+    } else if multiple_output {
+        quote!("Vec<Molecule>")
+    } else {
+        quote!("Molecule")
+    };
     let kind_expr = kind_expr(&kind)?;
     let topology_edit_expr = topology_edit_expr(&topology_edit)?;
     let access_expr = access_expr(&access)?;
@@ -482,6 +585,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         pub const #spec_ident: crate::ops::MoleculeOpSpec = crate::ops::MoleculeOpSpec {
             method: #method_name,
             impl_fn: #impl_fn_name,
+            output: #output_expr,
+            result_type: #result_type_expr,
             domain: #domain_expr,
             kind: #kind_expr,
             topology_edit: #topology_edit_expr,
@@ -534,21 +639,53 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let method_docs = op.fields.docs.map(|docs| quote!(#[doc = #docs]));
     let inplace_docs = op.fields.inplace_docs.map(|docs| quote!(#[doc = #docs]));
 
-    let method_def = quote! {
-        #method_docs
-        pub fn #method(&self, #params) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
-            if matches!(
-                crate::ops::#spec_ident.support,
-                crate::SupportStatus::Unsupported { .. }
-            ) {
-                return Err(crate::ops::OperationError::UnsupportedFeature {
-                    operation: &crate::ops::#spec_ident,
-                    source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
-                });
+    let support_check = quote! {
+        if matches!(
+            #spec_ident.support,
+            crate::SupportStatus::Unsupported { .. }
+        ) {
+            return Err(crate::ops::OperationError::UnsupportedFeature {
+                operation: &#spec_ident,
+                source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
+            });
+        }
+    };
+    let method_def = if let Some((result_type, assemble_fn)) = &custom_result {
+        quote! {
+            #method_docs
+            pub fn #method(&self, #params) -> Result<#result_type, crate::ops::OperationError> {
+                #support_check
+                let mut parts = crate::ops::MultiMoleculeOpParts::new(
+                    self,
+                    &#spec_ident,
+                )?;
+                let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
+                let molecules = parts.finish()?;
+                #assemble_fn(molecules, metadata)
             }
-            let mut parts = crate::ops::OpParts::new(self, &crate::ops::#spec_ident)?;
-            #impl_fn(&mut parts, #(#call_args),*)?;
-            parts.finish()
+        }
+    } else if multiple_output {
+        quote! {
+            #method_docs
+            pub fn #method(&self, #params) -> Result<Vec<crate::molecule::Molecule>, crate::ops::OperationError> {
+                #support_check
+                let mut parts = crate::ops::MultiMoleculeOpParts::new(
+                    self,
+                    &#spec_ident,
+                )?;
+                #impl_fn(&mut parts, #(#call_args),*)?;
+                parts.finish()
+            }
+        }
+    } else {
+        quote! {
+            #method_docs
+            pub fn #method(&self, #params) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
+                #support_check
+                let mut parts = crate::ops::OpParts::new(self, &#spec_ident)?;
+                #impl_fn(&mut parts, #(#call_args),*)?;
+                parts.finish()
+            }
         }
     };
 
@@ -560,15 +697,15 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             #inplace_docs
             pub fn #inplace_method_name(&mut self, #params) -> Result<(), crate::ops::OperationError> {
                 if matches!(
-                    crate::ops::#spec_ident.support,
+                    #spec_ident.support,
                     crate::SupportStatus::Unsupported { .. }
                 ) {
                     return Err(crate::ops::OperationError::UnsupportedFeature {
-                        operation: &crate::ops::#spec_ident,
+                        operation: &#spec_ident,
                         source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
                     });
                 }
-                let mut parts = crate::ops::OpParts::new_in_place(self, &crate::ops::#spec_ident)?;
+                let mut parts = crate::ops::OpParts::new_in_place(self, &#spec_ident)?;
                 if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
                     parts.abort_in_place();
                     return Err(error);
@@ -582,11 +719,25 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
 
     let default_method = if let Some(default_method) = op.fields.default_method {
         let default_args = op.fields.default_args;
-        Some(quote! {
-            pub fn #default_method(&self) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
-                self.#method(#(#default_args),*)
-            }
-        })
+        if let Some((result_type, _)) = &custom_result {
+            Some(quote! {
+                pub fn #default_method(&self) -> Result<#result_type, crate::ops::OperationError> {
+                    self.#method(#(#default_args),*)
+                }
+            })
+        } else if multiple_output {
+            Some(quote! {
+                pub fn #default_method(&self) -> Result<Vec<crate::molecule::Molecule>, crate::ops::OperationError> {
+                    self.#method(#(#default_args),*)
+                }
+            })
+        } else {
+            Some(quote! {
+                pub fn #default_method(&self) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
+                    self.#method(#(#default_args),*)
+                }
+            })
+        }
     } else {
         None
     };
@@ -657,6 +808,17 @@ fn domain_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
     }
 }
 
+fn output_cardinality_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
+    match ident.to_string().as_str() {
+        "single" | "Single" => Ok(quote!(crate::ops::MoleculeOpOutput::Single)),
+        "multiple" | "Multiple" => Ok(quote!(crate::ops::MoleculeOpOutput::Multiple)),
+        other => Err(syn::Error::new(
+            ident.span(),
+            format!("unknown molecule operation output cardinality `{other}`"),
+        )),
+    }
+}
+
 fn kind_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
     match ident.to_string().as_str() {
         "strong" | "Strong" => Ok(quote!(crate::ops::MoleculeOpKind::Strong)),
@@ -716,6 +878,9 @@ fn cip_state_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
         "preserve" | "Preserve" => Ok(quote!(crate::ops::CipStatePolicy::Preserve)),
         "clear_computed" | "ClearComputed" => Ok(quote!(crate::ops::CipStatePolicy::ClearComputed)),
         "assign" | "Assign" => Ok(quote!(crate::ops::CipStatePolicy::Assign)),
+        "tautomer_source_transition" | "TautomerSourceTransition" => {
+            Ok(quote!(crate::ops::CipStatePolicy::TautomerSourceTransition))
+        }
         other => Err(syn::Error::new(
             ident.span(),
             format!("unknown CIP state policy `{other}`"),
@@ -1444,4 +1609,108 @@ fn bio_derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStre
             )),
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn multiple_output_entry(inplace: bool) -> OpEntry {
+        let inplace = LitBool::new(inplace, proc_macro2::Span::call_site());
+        syn::parse2(quote! {
+            op test_branches(limit: usize) {
+                method: test_branches,
+                impl_fn: test_branches_impl,
+                output: multiple,
+                inplace: #inplace,
+                domain: topology,
+                kind: weak,
+                topology_edit: local,
+                access: { read: [], write: [topology, derived_cache] },
+                may_mutate: [topology, derived_cache],
+                auto_remap: [],
+                derived_effects: {
+                    recompute: [],
+                    preserve: [],
+                    invalidate: [valence],
+                },
+                cip_state: preserve,
+                semantic_preconditions: [trusted_bond_topology],
+                requires_mapping: none,
+                feature: TEST_FEATURE,
+                parity: not_applicable,
+                io_roundtrip: false,
+                invariant_profile: "test_multiple_output",
+            }
+        })
+        .expect("valid multiple-output operation syntax")
+    }
+
+    fn custom_multiple_output_entry() -> OpEntry {
+        syn::parse2(quote! {
+            op test_result(limit: usize) {
+                method: test_result,
+                impl_fn: test_result_impl,
+                output: multiple,
+                result_type: crate::TestResult,
+                assemble_fn: crate::assemble_test_result,
+                domain: topology,
+                kind: weak,
+                topology_edit: local,
+                access: { read: [], write: [topology, derived_cache] },
+                may_mutate: [topology, derived_cache],
+                auto_remap: [],
+                derived_effects: {
+                    recompute: [],
+                    preserve: [],
+                    invalidate: [valence],
+                },
+                cip_state: preserve,
+                semantic_preconditions: [trusted_bond_topology],
+                requires_mapping: none,
+                feature: TEST_FEATURE,
+                parity: not_applicable,
+                io_roundtrip: false,
+                invariant_profile: "test_custom_multiple_output",
+            }
+        })
+        .expect("valid custom multiple-output operation syntax")
+    }
+
+    #[test]
+    fn multiple_output_expansion_uses_branch_capability_and_vector_return() {
+        let expanded = expand_op(multiple_output_entry(false)).expect("operation expands");
+        let spec = expanded.spec_def.to_string();
+        let method = expanded.method.to_string();
+
+        assert!(spec.contains("MoleculeOpOutput :: Multiple"));
+        assert!(method.contains("MultiMoleculeOpParts :: new"));
+        assert!(method.contains("Result < Vec < crate :: molecule :: Molecule >"));
+        assert!(!method.contains("OpParts :: new ( self"));
+    }
+
+    #[test]
+    fn custom_multiple_output_expansion_assembles_validated_molecules_with_metadata() {
+        let expanded = expand_op(custom_multiple_output_entry()).expect("operation expands");
+        let spec = expanded.spec_def.to_string();
+        let method = expanded.method.to_string();
+
+        assert!(spec.contains("result_type : stringify ! (crate :: TestResult)"));
+        assert!(method.contains("Result < crate :: TestResult"));
+        assert!(method.contains("let metadata = test_result_impl"));
+        assert!(method.contains("crate :: assemble_test_result (molecules , metadata)"));
+    }
+
+    #[test]
+    fn multiple_output_expansion_rejects_in_place_wrappers() {
+        let error = match expand_op(multiple_output_entry(true)) {
+            Ok(_) => panic!("multiple-output operations cannot be in-place"),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains(
+                "multiple-output molecule operations cannot generate an in-place wrapper"
+            )
+        );
+    }
 }

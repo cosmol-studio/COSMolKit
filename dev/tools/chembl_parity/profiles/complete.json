@@ -41,6 +41,7 @@
     {"name": "atom-pair", "script": "audit_fingerprints.py", "mode": "atom_pair", "expected_processed": 2897819, "expected_profiles": {"atom_pair_sparse_count": 10, "atom_pair_count": 10, "atom_pair_sparse_bit": 10, "atom_pair_explicit_bit": 10, "atom_pair_additional_output": 1}},
     {"name": "pattern", "script": "audit_fingerprints.py", "mode": "pattern", "expected_processed": 2897819, "expected_profiles": {"pattern": 10}},
     {"name": "topological-torsion", "script": "audit_fingerprints.py", "mode": "topological_torsion", "expected_processed": 2897819, "expected_profiles": {"topological_torsion_sparse_count": 9, "topological_torsion_count": 9, "topological_torsion_sparse_bit": 9, "topological_torsion_explicit_bit": 9, "topological_torsion_sparse_count_additional_output": 2, "topological_torsion_count_additional_output": 2, "topological_torsion_sparse_bit_additional_output": 2, "topological_torsion_explicit_bit_additional_output": 2}},
-    {"name": "layered", "script": "audit_fingerprints.py", "mode": "layered", "expected_processed": 2897819, "expected_profiles": {"layered": 18}}
+    {"name": "layered", "script": "audit_fingerprints.py", "mode": "layered", "expected_processed": 2897819, "expected_profiles": {"layered": 18}},
+    {"name": "tautomer", "script": "audit_tautomer.py", "mode": "tautomer", "expected_processed": 2897819, "expected_profiles": {"tautomer_parse": 1, "tautomer_default": 9, "tautomer_v1": 9, "tautomer_max_tautomers_1": 9, "tautomer_max_transforms_1": 9, "tautomer_retain_sp3_stereo": 9, "tautomer_retain_bond_stereo": 9, "tautomer_retain_isotopic_hydrogens": 9, "tautomer_no_reassign_stereo": 9}}
   ]
 }

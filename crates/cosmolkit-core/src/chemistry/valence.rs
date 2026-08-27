@@ -34,6 +34,8 @@ pub enum ValenceError {
     UnsupportedBranch { reason: &'static str },
     #[error("explicit valence cache is not initialized at atom {atom}")]
     ExplicitValenceCacheNotInitialized { atom: crate::AtomId },
+    #[error("implicit valence cache is not initialized at atom {atom}")]
+    ImplicitValenceCacheNotInitialized { atom: crate::AtomId },
     #[error("radical electron count out of range at atom {atom}: {count}")]
     RadicalCountOutOfRange { atom: crate::AtomId, count: i32 },
     #[error("{message}")]
@@ -314,6 +316,85 @@ pub fn cached_valence_assignment(molecule: &Molecule) -> Option<&ValenceAssignme
     // RDKit✔️✔️:   return df_noImplicit ? 0 : d_implicitValence;
     // RDKit✔️✔️: }
     molecule.derived_cache().valence.as_ref()
+}
+
+pub(crate) fn needs_update_property_cache(read: MoleculeReadParts<'_>) -> bool {
+    // BEGIN RDKIT CPP FUNCTION Atom::needsUpdatePropertyCache
+    // RDKit✔️✔️: bool Atom::needsUpdatePropertyCache() const {
+    // RDKit✔️✔️:   return !(this->d_explicitValence >= 0 &&
+    // RDKit✔️✔️:            (this->df_noImplicit || this->d_implicitValence >= 0));
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::needsUpdatePropertyCache
+    // BEGIN RDKIT CPP FUNCTION ROMol::needsUpdatePropertyCache
+    // RDKit✔️✔️: bool ROMol::needsUpdatePropertyCache() const {
+    // RDKit✔️✔️:   for (const auto atom : atoms()) {
+    // RDKit✔️✔️:     if (atom->needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // there is no test for bonds yet since they do not obtain a valence property
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION ROMol::needsUpdatePropertyCache
+    let Some(valence) = read.derived_cache().valence.as_ref() else {
+        return true;
+    };
+    read.atoms().iter().any(|atom| {
+        let index = atom.id().index();
+        valence.explicit_valence.get(index).copied().unwrap_or(-1) < 0
+            || (!atom.no_implicit()
+                && valence.implicit_hydrogens.get(index).copied().unwrap_or(-1) < 0)
+    })
+}
+
+pub(crate) fn total_num_hydrogens(
+    molecule: &Molecule,
+    atom_id: AtomId,
+    include_neighbors: bool,
+) -> Result<u32, ValenceError> {
+    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    let atom = atom_from_parts(molecule.atoms(), atom_id)?;
+    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
+    // RDKit✔️✔️:   if (df_noImplicit) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   PRECONDITION(d_implicitValence > -1,
+    // RDKit✔️✔️:                "getNumImplicitHs() called without preceding call to "
+    // RDKit✔️✔️:                "calcImplicitValence()");
+    // RDKit✔️✔️:   return getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    let implicit_hydrogens = if atom.no_implicit() {
+        0
+    } else {
+        molecule
+            .derived_cache()
+            .valence
+            .as_ref()
+            .and_then(|valence| valence.implicit_hydrogens.get(atom_id.index()))
+            .copied()
+            .filter(|&count| count >= 0)
+            .ok_or(ValenceError::ImplicitValenceCacheNotInitialized { atom: atom_id })?
+    };
+    let mut result = i32::from(atom.explicit_hydrogens()) + implicit_hydrogens;
+    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
+    if include_neighbors {
+        // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+        // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+        // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
+        // RDKit✔️✔️:     });
+        result += molecule
+            .topology_block()
+            .adjacency
+            .neighbors_of(atom_id.index())
+            .iter()
+            .filter(|neighbor| molecule.atoms()[neighbor.atom_index].atomic_number() == 1)
+            .count() as i32;
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    Ok(result as u32)
 }
 
 pub fn assign_valence_with_options(
@@ -3529,6 +3610,41 @@ mod tests {
                 implicit_hydrogens: vec![3, 2, 1],
             })
         );
+    }
+
+    #[test]
+    fn needs_update_property_cache_checks_each_atom_cache_like_rdkit() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        let mut molecule = builder.build().unwrap();
+        molecule.derived_cache_mut().valence = Some(ValenceAssignment {
+            explicit_valence: vec![0],
+            implicit_hydrogens: vec![-1],
+        });
+        assert!(super::needs_update_property_cache(
+            crate::read_parts::MoleculeReadParts::from_molecule(&molecule)
+        ));
+
+        molecule
+            .derived_cache_mut()
+            .valence
+            .as_mut()
+            .unwrap()
+            .implicit_hydrogens[0] = 4;
+        assert!(!super::needs_update_property_cache(
+            crate::read_parts::MoleculeReadParts::from_molecule(&molecule)
+        ));
+
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let mut no_implicit = builder.build().unwrap();
+        no_implicit.derived_cache_mut().valence = Some(ValenceAssignment {
+            explicit_valence: vec![0],
+            implicit_hydrogens: vec![-1],
+        });
+        assert!(!super::needs_update_property_cache(
+            crate::read_parts::MoleculeReadParts::from_molecule(&no_implicit)
+        ));
     }
 
     #[test]

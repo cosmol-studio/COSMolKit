@@ -2174,7 +2174,8 @@ fn apply_huckel_to_fused(
                 }
             })
             .collect::<Vec<_>>();
-        if apply_huckel(&included_atoms, electron_donors, min_ring_size) {
+        let is_aromatic = apply_huckel(&included_atoms, electron_donors, min_ring_size);
+        if is_aromatic {
             mark_atoms_bonds_aromatic(
                 bond_rings,
                 &current_rings,

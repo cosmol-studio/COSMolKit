@@ -388,6 +388,15 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
             "ciplabeler_focused" => {
                 repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
             }
+            "tautomer_focused" => {
+                repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json")
+            }
+            "tautomer_pcs_1k" => {
+                repo_root().join("testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz")
+            }
+            "tautomer_pcs_100k" => {
+                repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz")
+            }
             "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
             "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
             "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
