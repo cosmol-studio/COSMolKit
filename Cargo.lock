@@ -179,14 +179,14 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cosmolkit"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "cosmolkit-core",
 ]
 
 [[package]]
 name = "cosmolkit-chembl-tautomer-oracle"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "cosmolkit-core",
  "serde_json",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "cosmolkit-inchi",
  "cosmolkit-macros",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "cosmolkit-core",
  "glam",
@@ -252,14 +252,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-test-support"
-version = "0.2.13"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",

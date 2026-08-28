@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cosmolkit"
-version = "0.2.13"
+version = "0.3.0"
 description = "Python bindings for the COSMolKit Rust-native cheminformatics toolkit"
 readme = "../README.md"
 requires-python = ">=3.9"

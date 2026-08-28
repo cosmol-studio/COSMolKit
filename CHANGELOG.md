@@ -26,6 +26,8 @@ empty.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
 This release adds the public modern RDKit CIPLabeler, ordinary molecular
 alignment and RMSD, source-backed Pattern and Layered fingerprints, and the
 Rust tautomer-enumeration surface; adds typed potential-stereo and lazy
@@ -237,6 +239,8 @@ lifecycle and pinned parity validation.
   RDKit across 903,237,331 exact scalar, vector, contribution, custom-bin, and
   cache-sequence observations; finite floating-point values compare by exact
   IEEE-754 bits, with zero mismatch.
+
+Full comparison: [v0.2.13...v0.3.0](https://github.com/cosmol-studio/COSMolKit/compare/v0.2.13...v0.3.0)
 
 ## [0.2.13] - 2026-08-24
 
