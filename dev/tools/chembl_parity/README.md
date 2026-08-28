@@ -68,14 +68,20 @@ Run the command from the repository root. Worker processes are launched as
 `dev.tools.chembl_parity` modules so their shared comparison helpers use
 normal package imports rather than depending on the current script directory.
 
-`profiles/complete.json` is the default 34-phase profile. It retains the 22
+`profiles/complete.json` is the default 35-phase profile. It retains the 22
 phases from the original completed audit, the later full-corpus modern
 CIPLabeler phase, the RDKFingerprint/Avalon, AtomPair, Pattern, Topological
 Torsion, and Layered fingerprint phases, and the ordinary MolAlign and tautomer
 enumeration phases. Four additional phases cover topology operations,
 connected fragments, direct 2D coordinate generation, and COSMolKit binary
-roundtrips. The complete profile therefore contains 4,352 ordered shard tasks
-over the 128-shard corpus.
+roundtrips. A dedicated stereo phase compares all four
+`clean`/`flag_possible` potential-stereo branches and four source-defined
+enumeration profiles for every ChEMBL row. It always compares the exact
+theoretical count; exhaustive output is compared when that count is at most
+eight, while the fixed-seed branch uses the source `max_isomers=3` sampler.
+This bounds output growth without filtering molecules or chemistry branches.
+The complete profile therefore contains 4,480 ordered shard tasks over the
+128-shard corpus.
 The existing batch phase also compares scalar and batch sanitize, both
 kekulize branches, and direct 2D coordinates. The profile records phase order,
 selection boundaries, branch modes, fixed repeat phases, reference version,

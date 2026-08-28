@@ -498,6 +498,7 @@ struct ComputedPropertyCache {
     crippen: RwLock<Option<[f64; 2]>>,
     topological_distance_matrix: RwLock<Option<Arc<[f64]>>>,
     distance_matrices_3d: RwLock<BTreeMap<usize, Arc<[f64]>>>,
+    potential_stereo: RwLock<Option<Arc<[crate::StereoInfo]>>>,
 }
 
 impl Clone for ComputedPropertyCache {
@@ -506,6 +507,7 @@ impl Clone for ComputedPropertyCache {
             crippen: RwLock::new(self.crippen()),
             topological_distance_matrix: RwLock::new(self.topological_distance_matrix()),
             distance_matrices_3d: RwLock::new(self.distance_matrices_3d()),
+            potential_stereo: RwLock::new(self.potential_stereo()),
         }
     }
 }
@@ -565,6 +567,20 @@ impl ComputedPropertyCache {
             .clone()
     }
 
+    fn potential_stereo(&self) -> Option<Arc<[crate::StereoInfo]>> {
+        self.potential_stereo
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_potential_stereo(&self, values: Arc<[crate::StereoInfo]>) {
+        *self
+            .potential_stereo
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
     fn distance_matrix_3d_or_init(
         &self,
         conformer_id: usize,
@@ -605,6 +621,10 @@ impl ComputedPropertyCache {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         *self
             .topological_distance_matrix
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .potential_stereo
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         self.clear_coordinate_dependent();
@@ -1323,6 +1343,38 @@ impl Molecule {
         crate::stereo::perceive_stereochemistry(self)
     }
 
+    /// Analyze potential stereochemistry without mutating this molecule.
+    ///
+    /// The result contains the isolated source-defined cleanup state and
+    /// ordered typed potential-stereo records.
+    pub fn analyze_potential_stereo(
+        &self,
+        options: crate::PotentialStereoOptions,
+    ) -> Result<crate::PotentialStereoAnalysis, crate::PotentialStereoError> {
+        crate::potential_stereo::analyze_potential_stereo(self, options)
+    }
+
+    /// Enumerate stereoisomers lazily without mutating this molecule.
+    ///
+    /// Candidate discovery happens when the iterator is created. Configuration
+    /// application, uniqueness, optional embedding, and their errors are
+    /// deferred until the iterator is consumed.
+    pub fn stereoisomers(
+        &self,
+        options: crate::StereoisomerOptions,
+    ) -> Result<crate::StereoisomerIterator, crate::EnumerationError> {
+        crate::stereo_enumerate::enumerate_stereoisomers(self, options)
+    }
+
+    /// Return the source-defined arbitrary-width upper bound for stereoisomer
+    /// enumeration under `options`.
+    pub fn stereoisomer_count(
+        &self,
+        options: &crate::StereoisomerOptions,
+    ) -> Result<num_bigint::BigUint, crate::EnumerationError> {
+        crate::stereo_enumerate::stereoisomer_count(self, options)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn topology_block(&self) -> &TopologyBlock {
         &self.topology
@@ -1333,6 +1385,16 @@ impl Molecule {
     #[allow(dead_code)]
     pub(crate) fn topology_block_mut(&mut self) -> &mut TopologyBlock {
         self.clear_computed_property_cache();
+        Arc::make_mut(&mut self.topology)
+    }
+
+    /// Detach topology for private source-port workspaces whose mutation is
+    /// limited to atom/bond properties that do not underlie derived state.
+    ///
+    /// This is not an operation-body escape hatch. Public molecule operations
+    /// must continue to use `OpParts`; callers here must own an isolated value
+    /// and must not change topology, chemistry state, or computed properties.
+    pub(crate) fn topology_properties_mut_for_private_workspace(&mut self) -> &mut TopologyBlock {
         Arc::make_mut(&mut self.topology)
     }
 
@@ -1418,6 +1480,14 @@ impl Molecule {
 
     pub(crate) fn set_crippen_descriptor_cache(&self, values: [f64; 2]) {
         self.computed_properties.set_crippen(values);
+    }
+
+    pub(crate) fn potential_stereo_cache(&self) -> Option<Arc<[crate::StereoInfo]>> {
+        self.computed_properties.potential_stereo()
+    }
+
+    pub(crate) fn set_potential_stereo_cache(&self, values: Arc<[crate::StereoInfo]>) {
+        self.computed_properties.set_potential_stereo(values);
     }
 
     pub(crate) fn topological_distance_matrix_cache_or_init(

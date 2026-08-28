@@ -32,6 +32,7 @@ KNOWN_SCRIPTS = {
     "audit_combinations.py",
     "audit_fingerprints.py",
     "audit_tautomer.py",
+    "audit_stereo.py",
 }
 SCRIPT_MODULES = {
     script: f"dev.tools.chembl_parity.{Path(script).stem}"
@@ -64,6 +65,7 @@ SCRIPT_MODES = {
         "topological_torsion",
     },
     "audit_tautomer.py": {"tautomer"},
+    "audit_stereo.py": {"stereo"},
 }
 
 

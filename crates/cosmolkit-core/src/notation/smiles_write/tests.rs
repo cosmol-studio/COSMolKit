@@ -636,19 +636,17 @@ fn ring_stereo_special_case_properties_are_computed_and_sanitize_clears_them_lik
 }
 
 #[test]
-fn writer_rejects_ring_stereo_candidate_missing_ring_neighbors_prop() {
-    let mut molecule =
-        Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
-    molecule.topology_block_mut().atoms[1].clear_prop("_ringStereoAtoms");
-
-    let error = mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap_err();
-
+fn writer_accepts_ring_stereo_candidate_without_ring_neighbors_like_rdkit() {
+    let mut molecule = Molecule::from_smiles_with_sanitize("F[C@@H]1O[C@H](Cl)S1", true).unwrap();
+    molecule.topology_block_mut().atoms[1].set_computed_prop("_ringStereochemCand", "1");
+    assert!(molecule.atoms()[1].prop("_ringStereoAtoms").is_none());
     assert_eq!(
-        error,
-        SmilesWriteError::InvalidRingStereoState {
-            atom: 1,
-            requirement: "`_ringStereochemCand` requires `_ringStereoAtoms`",
-        }
+        writer_ring_stereo_atoms(&molecule.atoms()[1], AtomId::new(1)).unwrap(),
+        None
+    );
+    assert_eq!(
+        mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap(),
+        "F[C@@H]1O[C@H](Cl)S1"
     );
 }
 

@@ -283,6 +283,16 @@ pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Inspect modeled atom and bond stereo state and assign atom ChiralTag values from a selected 3D conformer through the registered with_chiral_tags_from_structure operation. This stable 3D assignment surface has exact full-state parity with pinned RDKit 2026.03.1 assignChiralTypesFrom3D across all 77 fixed oracle records, covering default or explicit conformer selection, replacement control, tetrahedral C/S/Se centers, environment-enabled square-planar/trigonal-bipyramidal/octahedral centers, property updates, no-op paths, and source-defined errors. It preserves topology and coordinates and commits no partial state on error. The broader assignStereochemistryFrom3D workflow, 3D double-bond direction/E-Z assignment, CIP orchestration, and distinct-substituent validation are separate capabilities and are not claimed by this feature.",
 };
 
+pub const STEREOISOMER_ENUMERATION_FEATURE: FeatureSpec = FeatureSpec {
+    name: "stereo.enumeration",
+    category: FeatureCategory::Stereo,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Find typed potential stereo and lazily enumerate stereoisomers through the source-backed RDKit Python EnumerateStereoisomers path. The project-native value API covers source option defaults, atom, double-bond, and enhanced-stereo-group flippers, arbitrary-width counts, exhaustive and seeded or custom random configurations, canonical uniqueness, optional embedding, source preservation, and structured lazy errors. Focused, small, maintained 5,000-row, and complete ChEMBL 37 validation includes 89,831,939 exact ChEMBL observations with zero mismatch. The separate newer C++ enumerator and atropisomer enumeration are outside this Python-parity boundary.",
+};
+
 pub const CIP_LABELER_FEATURE: FeatureSpec = FeatureSpec {
     name: "stereo.cip_labeler",
     category: FeatureCategory::Stereo,
@@ -405,6 +415,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &TAUTOMER_ENUMERATION_FEATURE,
     &DRAWING_FEATURE,
     &STEREO_FEATURE,
+    &STEREOISOMER_ENUMERATION_FEATURE,
     &CIP_LABELER_FEATURE,
     &VALENCE_FEATURE,
     &RINGS_FEATURE,
@@ -440,7 +451,8 @@ pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {
 #[cfg(test)]
 mod tests {
     use super::{
-        ATOM_PAIR_FINGERPRINT_FEATURE, PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, SupportStatus,
+        ATOM_PAIR_FINGERPRINT_FEATURE, PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES,
+        STEREOISOMER_ENUMERATION_FEATURE, SupportStatus,
     };
 
     #[test]
@@ -470,6 +482,23 @@ mod tests {
             PUBLIC_FEATURES
                 .iter()
                 .any(|feature| **feature == PATTERN_FINGERPRINT_FEATURE)
+        );
+    }
+
+    #[test]
+    fn stereoisomer_enumeration_support_metadata_records_the_validated_rdkit_boundary() {
+        assert_eq!(
+            STEREOISOMER_ENUMERATION_FEATURE.status,
+            SupportStatus::SupportedWithRdkitParity {
+                rdkit_version: "2026.03.1",
+            }
+        );
+        assert_eq!(STEREOISOMER_ENUMERATION_FEATURE.name, "stereo.enumeration");
+        assert!(STEREOISOMER_ENUMERATION_FEATURE.parity_sensitive);
+        assert!(
+            PUBLIC_FEATURES
+                .iter()
+                .any(|feature| **feature == STEREOISOMER_ENUMERATION_FEATURE)
         );
     }
 }

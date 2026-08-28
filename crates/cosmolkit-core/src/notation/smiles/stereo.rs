@@ -406,21 +406,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     let special_case_atoms: BTreeSet<usize> =
         crate::stereo::find_chiral_atom_special_cases(mol, &ranks)?
             .into_iter()
-            .map(|case| {
-                if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(case.atom_idx) {
-                    // RDKit✔️✔️: atom->setProp(common_properties::_ringStereochemCand, res, 1);
-                    atom_mut.set_computed_prop("_ringStereochemCand", "1");
-                    // RDKit✔️✔️: ratom->setProp(common_properties::_ringStereoAtoms, oringatoms, true);
-                    // RDKit✔️✔️: atom->setProp(common_properties::_ringStereoAtoms, ringStereoAtoms, true);
-                    atom_mut.set_computed_prop(
-                        "_ringStereoAtoms",
-                        crate::notation::smiles_write::serialize_ring_stereo_atoms(
-                            &case.ring_stereo_atoms,
-                        ),
-                    );
-                }
-                case.atom_idx
-            })
+            .map(|case| case.atom_idx)
             .collect();
     let atom_ids: Vec<AtomId> = mol.atoms().iter().map(|atom| atom.id()).collect();
     let mut explicit_h_to_implicit_updates = false;

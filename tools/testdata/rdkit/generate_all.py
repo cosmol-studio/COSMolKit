@@ -36,6 +36,12 @@ PROFILE_INPUTS = {
     / "testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi",
     "molalign_focused": REPO_ROOT
     / "testdata/alignment/fixtures/molalign_focused.json",
+    "python_stereoisomer_focused": REPO_ROOT
+    / "testdata/stereo/fixtures/rdkit_python_stereoisomer_cases.json",
+    "python_stereoisomer_small": REPO_ROOT
+    / "testdata/smiles/corpus/smiles_small.smi",
+    "python_stereoisomer_5000": REPO_ROOT
+    / "testdata/smiles/corpus/smiles_5000.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
     "smarts_source": REPO_ROOT / "testdata/smarts/corpus/rdkit_source_cases.json",
@@ -58,6 +64,7 @@ class GeneratorSpec:
     generator_dependencies: tuple[str, ...] = ()
     deterministic_shards: int | None = None
     profiles: frozenset[str] | None = None
+    output_schema_version: int = 1
 
 
 def spec(
@@ -70,6 +77,7 @@ def spec(
     generator_dependencies: tuple[str, ...] = (),
     deterministic_shards: int | None = None,
     profiles: set[str] | None = None,
+    output_schema_version: int = 1,
 ) -> GeneratorSpec:
     return GeneratorSpec(
         script=f"_generate_{script}.py",
@@ -80,6 +88,7 @@ def spec(
         generator_dependencies=generator_dependencies,
         deterministic_shards=deterministic_shards,
         profiles=None if profiles is None else frozenset(profiles),
+        output_schema_version=output_schema_version,
     )
 
 
@@ -133,6 +142,7 @@ GENERATOR_SPECS = [
         "tetrahedral_stereo_geometry.jsonl",
         "stereo",
         {"iterative"},
+        profiles={"smiles_small", "smiles_5000"},
     ),
     spec(
         "tetrahedral_stereo_geometry",
@@ -142,6 +152,7 @@ GENERATOR_SPECS = [
         extra_inputs=(
             "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
         ),
+        profiles={"smiles_small", "smiles_5000"},
     ),
     spec(
         "ciplabeler_golden",
@@ -149,6 +160,26 @@ GENERATOR_SPECS = [
         "stereo",
         {"ciplabeler", "default", "strict-corpus"},
         deterministic_shards=16,
+        profiles={"ciplabeler_focused", "smiles_small", "smiles_5000"},
+    ),
+    spec(
+        "python_stereoisomer_golden",
+        "python_stereoisomer.jsonl",
+        "stereo",
+        {"python-stereoisomer"},
+        extra_inputs=(
+            "testdata/stereo/fixtures/rdkit/two_centers_or.mol",
+            "testdata/stereo/fixtures/rdkit/simple_either.mol",
+        ),
+        profiles={"python_stereoisomer_focused"},
+    ),
+    spec(
+        "python_stereoisomer_corpus_golden",
+        "python_stereoisomer_corpus.jsonl",
+        "stereo",
+        {"python-stereoisomer-corpus"},
+        profiles={"python_stereoisomer_small", "python_stereoisomer_5000"},
+        output_schema_version=2,
     ),
     spec(
         "dg_bounds_golden",
@@ -513,7 +544,7 @@ def output_identity(
         arguments.extend(["--shards", str(item.deterministic_shards)])
     return {
         "path": item.output,
-        "output_schema_version": 1,
+        "output_schema_version": item.output_schema_version,
         "generator": file_identities(generator_paths, checksums),
         "inputs": file_identities(input_paths, checksums),
         "options": {

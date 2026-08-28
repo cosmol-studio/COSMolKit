@@ -273,6 +273,20 @@ fn stereo_pyerr(error: cosmolkit_core::StereoError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
 
+fn enumeration_pyerr(error: cosmolkit_core::EnumerationError) -> PyErr {
+    match &error {
+        cosmolkit_core::EnumerationError::Operation(
+            cosmolkit_core::OperationError::Unsupported { .. }
+            | cosmolkit_core::OperationError::UnsupportedFeature { .. },
+        ) => PyNotImplementedError::new_err(error.to_string()),
+        _ => PyValueError::new_err(error.to_string()),
+    }
+}
+
+fn potential_stereo_pyerr(error: cosmolkit_core::PotentialStereoError) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
 fn chiral_tag_assignment_pyerr(error: cosmolkit_core::OperationError) -> PyErr {
     match &error {
         cosmolkit_core::OperationError::Unsupported { .. }
@@ -1681,6 +1695,343 @@ impl PyConformerAlignmentParameters {
             reflect,
             max_iterations,
         }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "StereoisomerOptions", skip_from_py_object)]
+struct PyStereoisomerOptions {
+    try_embedding: bool,
+    only_unassigned: bool,
+    only_stereo_groups: bool,
+    max_isomers: usize,
+    rand: Option<Py<PyAny>>,
+    unique: bool,
+}
+
+impl Default for PyStereoisomerOptions {
+    fn default() -> Self {
+        let options = cosmolkit_core::StereoisomerOptions::default();
+        Self {
+            try_embedding: options.try_embedding,
+            only_unassigned: options.only_unassigned,
+            only_stereo_groups: options.only_stereo_groups,
+            max_isomers: options.max_isomers,
+            rand: None,
+            unique: options.unique,
+        }
+    }
+}
+
+impl PyStereoisomerOptions {
+    fn core_options(&self) -> cosmolkit_core::StereoisomerOptions {
+        cosmolkit_core::StereoisomerOptions {
+            try_embedding: self.try_embedding,
+            only_unassigned: self.only_unassigned,
+            only_stereo_groups: self.only_stereo_groups,
+            max_isomers: self.max_isomers,
+            random_seed: None,
+            unique: self.unique,
+        }
+    }
+
+    fn random_source(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        let Some(rand) = &self.rand else {
+            return Ok(None);
+        };
+        let random_class = py.import("random")?.getattr("Random")?;
+        if rand.bind(py).is_instance(&random_class)? {
+            Ok(Some(rand.clone_ref(py)))
+        } else {
+            Ok(Some(random_class.call1((rand.bind(py),))?.unbind()))
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyStereoisomerOptions {
+    #[new]
+    #[pyo3(signature = (try_embedding=false, only_unassigned=true, max_isomers=1024, rand=None, unique=true, only_stereo_groups=false))]
+    fn new(
+        try_embedding: bool,
+        only_unassigned: bool,
+        max_isomers: usize,
+        rand: Option<Py<PyAny>>,
+        unique: bool,
+        only_stereo_groups: bool,
+    ) -> Self {
+        Self {
+            try_embedding,
+            only_unassigned,
+            only_stereo_groups,
+            max_isomers,
+            rand,
+            unique,
+        }
+    }
+
+    #[getter]
+    fn try_embedding(&self) -> bool {
+        self.try_embedding
+    }
+
+    #[setter]
+    fn set_try_embedding(&mut self, value: bool) {
+        self.try_embedding = value;
+    }
+
+    #[getter]
+    fn only_unassigned(&self) -> bool {
+        self.only_unassigned
+    }
+
+    #[setter]
+    fn set_only_unassigned(&mut self, value: bool) {
+        self.only_unassigned = value;
+    }
+
+    #[getter]
+    fn only_stereo_groups(&self) -> bool {
+        self.only_stereo_groups
+    }
+
+    #[setter]
+    fn set_only_stereo_groups(&mut self, value: bool) {
+        self.only_stereo_groups = value;
+    }
+
+    #[getter]
+    fn max_isomers(&self) -> usize {
+        self.max_isomers
+    }
+
+    #[setter]
+    fn set_max_isomers(&mut self, value: usize) {
+        self.max_isomers = value;
+    }
+
+    #[getter]
+    fn rand(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.rand.as_ref().map(|rand| rand.clone_ref(py))
+    }
+
+    #[setter]
+    fn set_rand(&mut self, value: Option<Py<PyAny>>) {
+        self.rand = value;
+    }
+
+    #[getter]
+    fn unique(&self) -> bool {
+        self.unique
+    }
+
+    #[setter]
+    fn set_unique(&mut self, value: bool) {
+        self.unique = value;
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "StereoisomerOptions(try_embedding={}, only_unassigned={}, max_isomers={}, rand={}, unique={}, only_stereo_groups={})",
+            self.try_embedding,
+            self.only_unassigned,
+            self.max_isomers,
+            if self.rand.is_some() { "..." } else { "None" },
+            self.unique,
+            self.only_stereo_groups,
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "PotentialStereoInfo", frozen, skip_from_py_object)]
+#[derive(Clone)]
+struct PyPotentialStereoInfo {
+    inner: cosmolkit_core::StereoInfo,
+}
+
+fn stereo_type_name(value: cosmolkit_core::StereoType) -> &'static str {
+    match value {
+        cosmolkit_core::StereoType::Unspecified => "unspecified",
+        cosmolkit_core::StereoType::AtomTetrahedral => "atom_tetrahedral",
+        cosmolkit_core::StereoType::AtomSquarePlanar => "atom_square_planar",
+        cosmolkit_core::StereoType::AtomTrigonalBipyramidal => "atom_trigonal_bipyramidal",
+        cosmolkit_core::StereoType::AtomOctahedral => "atom_octahedral",
+        cosmolkit_core::StereoType::BondDouble => "bond_double",
+        cosmolkit_core::StereoType::BondEvenCumulene => "bond_even_cumulene",
+        cosmolkit_core::StereoType::BondAtropisomer => "bond_atropisomer",
+    }
+}
+
+fn stereo_specified_name(value: cosmolkit_core::StereoSpecified) -> &'static str {
+    match value {
+        cosmolkit_core::StereoSpecified::Unspecified => "unspecified",
+        cosmolkit_core::StereoSpecified::Specified => "specified",
+        cosmolkit_core::StereoSpecified::Unknown => "unknown",
+    }
+}
+
+fn stereo_descriptor_name(value: cosmolkit_core::StereoDescriptor) -> &'static str {
+    match value {
+        cosmolkit_core::StereoDescriptor::None => "none",
+        cosmolkit_core::StereoDescriptor::TetrahedralClockwise => "tetrahedral_clockwise",
+        cosmolkit_core::StereoDescriptor::TetrahedralCounterclockwise => {
+            "tetrahedral_counterclockwise"
+        }
+        cosmolkit_core::StereoDescriptor::BondCis => "bond_cis",
+        cosmolkit_core::StereoDescriptor::BondTrans => "bond_trans",
+        cosmolkit_core::StereoDescriptor::BondAtropClockwise => "bond_atrop_clockwise",
+        cosmolkit_core::StereoDescriptor::BondAtropCounterclockwise => {
+            "bond_atrop_counterclockwise"
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyPotentialStereoInfo {
+    #[getter]
+    fn stereo_type(&self) -> &'static str {
+        stereo_type_name(self.inner.stereo_type())
+    }
+
+    #[getter]
+    fn specified(&self) -> &'static str {
+        stereo_specified_name(self.inner.specified())
+    }
+
+    #[getter]
+    fn center_kind(&self) -> &'static str {
+        match self.inner.center() {
+            cosmolkit_core::StereoCenter::Missing => "missing",
+            cosmolkit_core::StereoCenter::Atom(_) => "atom",
+            cosmolkit_core::StereoCenter::Bond(_) => "bond",
+        }
+    }
+
+    #[getter]
+    fn center_index(&self) -> Option<usize> {
+        match self.inner.center() {
+            cosmolkit_core::StereoCenter::Missing => None,
+            cosmolkit_core::StereoCenter::Atom(atom) => Some(atom.index()),
+            cosmolkit_core::StereoCenter::Bond(bond) => Some(bond.index()),
+        }
+    }
+
+    #[getter]
+    fn descriptor(&self) -> &'static str {
+        stereo_descriptor_name(self.inner.descriptor())
+    }
+
+    #[getter]
+    fn permutation(&self) -> u32 {
+        self.inner.permutation()
+    }
+
+    #[getter]
+    fn controlling_atoms(&self) -> Vec<Option<usize>> {
+        self.inner
+            .controlling_atoms()
+            .iter()
+            .map(|atom| match atom {
+                cosmolkit_core::ControllingAtom::Missing => None,
+                cosmolkit_core::ControllingAtom::Atom(atom) => Some(atom.index()),
+            })
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        let center_index = self
+            .center_index()
+            .map_or_else(|| "None".to_owned(), |index| index.to_string());
+        format!(
+            "PotentialStereoInfo(stereo_type='{}', specified='{}', center_kind='{}', center_index={}, descriptor='{}', permutation={})",
+            self.stereo_type(),
+            self.specified(),
+            self.center_kind(),
+            center_index,
+            self.descriptor(),
+            self.permutation(),
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "PotentialStereoAnalysis", frozen, skip_from_py_object)]
+#[derive(Clone)]
+struct PyPotentialStereoAnalysis {
+    molecule: cosmolkit_core::Molecule,
+    stereo_info: Vec<cosmolkit_core::StereoInfo>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyPotentialStereoAnalysis {
+    #[getter]
+    fn molecule(&self) -> Molecule {
+        Molecule {
+            inner: self.molecule.clone(),
+        }
+    }
+
+    #[getter]
+    fn stereo_info(&self) -> Vec<PyPotentialStereoInfo> {
+        self.stereo_info
+            .iter()
+            .cloned()
+            .map(|inner| PyPotentialStereoInfo { inner })
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.stereo_info.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PotentialStereoAnalysis(records={})",
+            self.stereo_info.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "StereoisomerIterator", skip_from_py_object)]
+struct PyStereoisomerIterator {
+    inner: cosmolkit_core::StereoisomerIterator,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyStereoisomerIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    #[gen_stub(override_return_type(type_repr = "Molecule"))]
+    fn __next__(&mut self) -> PyResult<Option<Molecule>> {
+        self.inner
+            .next()
+            .transpose()
+            .map(|molecule| molecule.map(|inner| Molecule { inner }))
+            .map_err(enumeration_pyerr)
+    }
+
+    #[getter]
+    fn yielded_count(&self) -> usize {
+        self.inner.yielded_count()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "StereoisomerIterator(yielded_count={})",
+            self.inner.yielded_count()
+        )
     }
 }
 
@@ -7370,6 +7721,92 @@ Perceive stereochemistry and validate stereo processing for this molecule.
         self.inner.perceive_stereochemistry().map_err(stereo_pyerr)
     }
 
+    #[pyo3(signature = (clean=false, flag_possible=true))]
+    #[doc = r#"
+Analyze potential stereochemistry without mutating this molecule.
+
+The returned analysis contains the isolated molecule state produced by the
+source-defined cleanup mode and ordered typed potential-stereo records.
+"#]
+    fn analyze_potential_stereo(
+        &self,
+        clean: bool,
+        flag_possible: bool,
+    ) -> PyResult<PyPotentialStereoAnalysis> {
+        self.inner
+            .analyze_potential_stereo(cosmolkit_core::PotentialStereoOptions {
+                clean,
+                flag_possible,
+            })
+            .map(|analysis| PyPotentialStereoAnalysis {
+                molecule: analysis.molecule,
+                stereo_info: analysis.stereo_info,
+            })
+            .map_err(potential_stereo_pyerr)
+    }
+
+    #[pyo3(signature = (options=None))]
+    #[doc = r#"
+Return a lazy iterator over source-ordered stereoisomers.
+
+The source molecule remains unchanged. ``options`` defaults to
+``StereoisomerOptions()``. A ``random.Random`` instance or subclass supplied
+through ``options.rand`` is consumed lazily through its ``getrandbits()``
+method; other seed objects follow Python ``random.Random(seed)`` semantics.
+"#]
+    fn stereoisomers(
+        &self,
+        py: Python<'_>,
+        options: Option<&PyStereoisomerOptions>,
+    ) -> PyResult<PyStereoisomerIterator> {
+        let default_options;
+        let options = if let Some(options) = options {
+            options
+        } else {
+            default_options = PyStereoisomerOptions::default();
+            &default_options
+        };
+        let core_options = options.core_options();
+        let inner = if let Some(random) = options.random_source(py)? {
+            cosmolkit_core::enumerate_stereoisomers_with_random_bits(
+                &self.inner,
+                core_options,
+                move |bit_count| {
+                    Python::attach(|py| {
+                        random
+                            .bind(py)
+                            .call_method1("getrandbits", (bit_count,))
+                            .and_then(|value| value.extract::<num_bigint::BigUint>())
+                            .map_err(|error| error.to_string())
+                    })
+                },
+            )
+        } else {
+            self.inner.stereoisomers(core_options)
+        }
+        .map_err(enumeration_pyerr)?;
+        Ok(PyStereoisomerIterator { inner })
+    }
+
+    #[pyo3(signature = (options=None))]
+    #[doc = "Return the source-defined upper-bound stereoisomer count."]
+    #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
+    fn stereoisomer_count(
+        &self,
+        options: Option<&PyStereoisomerOptions>,
+    ) -> PyResult<num_bigint::BigUint> {
+        let default_options;
+        let options = if let Some(options) = options {
+            options
+        } else {
+            default_options = PyStereoisomerOptions::default();
+            &default_options
+        };
+        self.inner
+            .stereoisomer_count(&options.core_options())
+            .map_err(enumeration_pyerr)
+    }
+
     #[doc = r#"
 Serialize the molecule to COSMolKit binary form.
 "#]
@@ -11981,6 +12418,10 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyAlignmentResult>()?;
     m.add_class::<PyConformerRmsd>()?;
     m.add_class::<PyConformerAlignmentReport>()?;
+    m.add_class::<PyStereoisomerOptions>()?;
+    m.add_class::<PyStereoisomerIterator>()?;
+    m.add_class::<PyPotentialStereoInfo>()?;
+    m.add_class::<PyPotentialStereoAnalysis>()?;
     m.add_class::<PyEmbedParameters>()?;
     m.add_class::<BioStructure>()?;
     m.add_class::<PyMmcifOutputGroups>()?;

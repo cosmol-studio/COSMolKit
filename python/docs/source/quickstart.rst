@@ -104,6 +104,19 @@ value-style form leaves caller state unchanged on failure. Like other in-place
 operations, the ``_`` form may retain valid partial changes after an error but
 keeps the molecule's internal storage complete.
 
+Enumerate unassigned atom and double-bond stereo lazily while preserving the
+source molecule:
+
+.. code-block:: python
+
+   from cosmolkit import Molecule, StereoisomerOptions
+
+   source = Molecule.from_smiles("CC(F)C(Cl)Br")
+   options = StereoisomerOptions(max_isomers=4)
+
+   print(source.stereoisomer_count(options))
+   print([isomer.to_smiles() for isomer in source.stereoisomers(options)])
+
 Molecular File IO And Stored Coordinates
 -----------------------------------------
 

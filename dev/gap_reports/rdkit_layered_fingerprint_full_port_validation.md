@@ -153,8 +153,8 @@ Its manifest records:
 | Measure | Value |
 |---|---:|
 | source rows processed | 2,897,819 |
-| mutually parsed rows | 2,897,804 |
-| mutually rejected rows | 15 |
+| rows accepted by both parsers | 2,897,804 |
+| rows rejected by both parsers at parse entry | 15 |
 | deterministic shards completed | 128 / 128 |
 | active profiles per parsed row | 18 |
 | exact Layered comparisons | 52,160,472 |

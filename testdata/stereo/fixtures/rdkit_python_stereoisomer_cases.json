@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "name": "rdkit",
+    "version": "2026.03.1",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+  },
+  "scope": {
+    "public_boundary": [
+      "rdkit.Chem.FindPotentialStereo",
+      "rdkit.Chem.EnumerateStereoisomers.GetStereoisomerCount",
+      "rdkit.Chem.EnumerateStereoisomers.EnumerateStereoisomers"
+    ],
+    "in_scope": [
+      "typed potential-stereo records and cleanup state",
+      "tetrahedral and double-bond Python flippers",
+      "absolute, OR, and AND stereo-group handling",
+      "exhaustive and Python-random configuration order",
+      "canonical isomeric-SMILES uniqueness",
+      "tryEmbedding filtering and heavy-atom coordinates",
+      "source-molecule preservation"
+    ],
+    "out_of_scope": [
+      "the distinct C++ StereoisomerEnumerator API",
+      "AtropisomerFlipper enumeration absent from the Python implementation",
+      "non-source COSMolKit feasibility heuristics"
+    ]
+  },
+  "option_profiles": [
+    {"id":"default","try_embedding":false,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":1024,"rand":{"kind":"default"},"unique":true},
+    {"id":"all_assigned","try_embedding":false,"only_unassigned":false,"only_stereo_groups":false,"max_isomers":1024,"rand":{"kind":"default"},"unique":true},
+    {"id":"non_unique","try_embedding":false,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":1024,"rand":{"kind":"default"},"unique":false},
+    {"id":"groups_only","try_embedding":false,"only_unassigned":true,"only_stereo_groups":true,"max_isomers":1024,"rand":{"kind":"default"},"unique":true},
+    {"id":"unbounded","try_embedding":false,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":0,"rand":{"kind":"default"},"unique":true},
+    {"id":"seeded_three","try_embedding":false,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":3,"rand":{"kind":"integer","value":61453},"unique":true},
+    {"id":"custom_three","try_embedding":false,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":3,"rand":{"kind":"counter_getrandbits"},"unique":true},
+    {"id":"embed_two","try_embedding":true,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":2,"rand":{"kind":"default"},"unique":true},
+    {"id":"embed_eight","try_embedding":true,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":8,"rand":{"kind":"default"},"unique":true},
+    {"id":"embed_exhaustive","try_embedding":true,"only_unassigned":true,"only_stereo_groups":false,"max_isomers":1024,"rand":{"kind":"default"},"unique":true}
+  ],
+  "cases": [
+    {"id":"no_centers","input":{"kind":"smiles","value":"CC"},"profiles":["default","all_assigned"],"source":["EnumerateStereoisomers.py:no-flippers branch"],"branches":["one cloned output","no chiral flag"]},
+    {"id":"basic_atom_and_bond","input":{"kind":"smiles","value":"CC(F)=CC(Cl)C"},"profiles":["default","non_unique","seeded_three"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersBasic","UnitTestMol3D.py:testEnumerateStereoisomersRandomSeeding"],"branches":["tetrahedral flipper","double-bond flipper","chiral flag","random sampling"]},
+    {"id":"fully_assigned","input":{"kind":"smiles","value":"C/C(F)=C/[C@@H](C)Cl"},"profiles":["default","all_assigned"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyUnassigned"],"branches":["specified-center filtering","all-center enumeration"]},
+    {"id":"partially_assigned","input":{"kind":"smiles","value":"CC(F)=C[C@@H](C)Cl"},"profiles":["default","all_assigned"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyUnassigned"],"branches":["mixed specified and unspecified centers"]},
+    {"id":"meso_atom_pair","input":{"kind":"smiles","value":"FC(Cl)C(Cl)F"},"profiles":["default","non_unique"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyUnique"],"branches":["canonical duplicate continuation","meso output"]},
+    {"id":"symmetric_double_bonds","input":{"kind":"smiles","value":"CC=CC=CC"},"profiles":["default","non_unique"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyUnique"],"branches":["double-bond duplicate continuation"]},
+    {"id":"mixed_unique_matrix","input":{"kind":"smiles","value":"FC(Cl)C=CC=CC(F)Cl"},"profiles":["default","non_unique"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyUnique"],"branches":["mixed atom and bond flippers","canonical uniqueness"]},
+    {"id":"explicit_stereoany","input":{"kind":"smiles","value":"CC=CC"},"mutations":[{"kind":"set_bond_stereo","bond":1,"value":"Any"}],"profiles":["default"],"source":["UnitTestMol3D.py:testIssue2890"],"branches":["unknown bond remains enumerable"]},
+    {"id":"implicit_h_center","input":{"kind":"smiles","value":"CCC(C)Br"},"profiles":["default"],"source":["UnitTestMol3D.py:testIssue3505"],"branches":["implicit-H potential center","ChiralityPossible property"]},
+    {"id":"enhanced_and","input":{"kind":"cxsmiles","value":"O[C@H](Br)[C@H](F)C |&1:1,3|"},"profiles":["default","groups_only","all_assigned"],"source":["UnitTestMol3D.py:testGithub6045"],"branches":["relative stereo group flipper","output group removal"]},
+    {"id":"ring_para_stereo","input":{"kind":"smiles","value":"CC1CC(C)C1"},"profiles":["default"],"source":["UnitTestMol3D.py:testGithub7516"],"branches":["ring-transmitted potential stereo","output order"]},
+    {"id":"bridgehead_ring_n","input":{"kind":"smiles","value":"O=C(NC1CC2[NH+](C(C1)CC2)Cc3ccccc3)N"},"profiles":["default"],"source":["UnitTestMol3D.py:testGithub7516"],"branches":["bridgehead nitrogen","ring symmetry"]},
+    {"id":"non_stereogenic_amidine","input":{"kind":"smiles","value":"N=C(N1CCC1)NCCOc2ccc(C(F)(F)F)cc2"},"profiles":["default"],"source":["UnitTestMol3D.py:testGithub7608"],"branches":["duplicate-neighbor rejection"]},
+    {"id":"clean_invalid_mark","input":{"kind":"smiles","value":"CCF"},"mutations":[{"kind":"set_atom_chiral_tag","atom":1,"value":"TetrahedralCcw"}],"potential_stereo_profiles":[{"clean_it":false,"flag_possible":false},{"clean_it":false,"flag_possible":true},{"clean_it":true,"flag_possible":false},{"clean_it":true,"flag_possible":true}],"source":["catch_chirality.cpp:Github #5200"],"branches":["cleanup mutation","flagPossible interaction"]},
+    {"id":"clean_false_regression_a","input":{"kind":"smiles","value":"C[C@H](F)C(C)[C@H](F)C"},"potential_stereo_profiles":[{"clean_it":false,"flag_possible":false},{"clean_it":false,"flag_possible":true},{"clean_it":true,"flag_possible":false},{"clean_it":true,"flag_possible":true}],"source":["catch_chirality.cpp:Github #7598"],"branches":["retained specified and possible centers"]},
+    {"id":"clean_false_regression_b","input":{"kind":"smiles","value":"CC([C@H](C)F)[C@@H](C)F"},"potential_stereo_profiles":[{"clean_it":false,"flag_possible":false},{"clean_it":false,"flag_possible":true},{"clean_it":true,"flag_possible":false},{"clean_it":true,"flag_possible":true}],"source":["catch_chirality.cpp:Github #7598"],"branches":["symmetry update convergence"]},
+    {"id":"clean_false_regression_c","input":{"kind":"smiles","value":"CC([C@H](C)F)[C@H](F)C"},"potential_stereo_profiles":[{"clean_it":false,"flag_possible":false},{"clean_it":false,"flag_possible":true},{"clean_it":true,"flag_possible":false},{"clean_it":true,"flag_possible":true}],"source":["catch_chirality.cpp:Github #7598"],"branches":["symmetry update convergence"]},
+    {"id":"marked_ring_stereo","input":{"kind":"smiles","value":"C[C@H]1CC[C@@H](C)CC1"},"potential_stereo_profiles":[{"clean_it":false,"flag_possible":false},{"clean_it":false,"flag_possible":true},{"clean_it":true,"flag_possible":false},{"clean_it":true,"flag_possible":true}],"source":["catch_chirality.cpp:Github #4279"],"branches":["marked ring stereo with flagPossible false"]},
+    {"id":"embed_constrained","input":{"kind":"smiles","value":"BrC=CC1OC(C2)(F)C2(Cl)C1"},"profiles":["embed_eight","embed_exhaustive"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersMaxIsomersShouldBeReturnedEvenWithTryEmbedding","UnitTestMol3D.py:testEnumerateStereoisomersTryEmbeddingShouldNotInfiniteLoopWhenMaxIsomersIsLargerThanActual"],"branches":["embedding rejection","successful-output max","finite exhaustion"]},
+    {"id":"custom_random","input":{"kind":"smiles","value":"CCCC(=C(CCl)C(C)CBr)[C@H](F)C(C)C"},"profiles":["default","custom_three"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersRandomSeeding"],"branches":["custom getrandbits source","exact bit order"]},
+    {"id":"many_centers","input":{"kind":"repeat_smiles","prefix":"Br","unit":"[CH](Cl)","repeat":101,"suffix":"F"},"profiles":["seeded_three"],"source":["EnumerateStereoisomers.py:large lazy example","UnitTestMol3D.py:testEnumerateStereoisomersWithCrazyNumberOfCenters"],"branches":["more than machine-word centers","bounded lazy random sampling"]},
+    {"id":"enhanced_or_mol","input":{"kind":"mol_file","path":"testdata/stereo/fixtures/rdkit/two_centers_or.mol"},"profiles":["default","groups_only","all_assigned","non_unique"],"source":["UnitTestMol3D.py:testEnumerateStereoisomersOnlyEnhancedStereo","UnitTestMol3D.py:testNoExtrasIfEnumeratingAllWithEnhancedStereo"],"branches":["absolute and OR group ordering","no double counting"]},
+    {"id":"either_double_mol","input":{"kind":"mol_file","path":"testdata/stereo/fixtures/rdkit/simple_either.mol"},"profiles":["default"],"source":["UnitTestMol3D.py:testEnumerateEitherDoubleStereo"],"branches":["EITHERDOUBLE preprocessing","stereo atom initialization"]}
+  ]
+}

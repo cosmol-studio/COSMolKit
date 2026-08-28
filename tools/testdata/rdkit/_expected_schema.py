@@ -36,6 +36,12 @@ SCHEMAS = {
     "ciplabeler.jsonl": _schema(
         "calls:array,case_id:string,initial_state:null|object,parse_error:null|string,parse_status:string,schema_version:integer,source:object"
     ),
+    "python_stereoisomer.jsonl": _schema(
+        "case_id:string,enumeration_runs:array,final_source_state:null|object,initial_state:null|object,parse_error_message:null|string,parse_error_type:null|string,parse_status:string,potential_stereo_runs:array,schema_version:integer,source:object"
+    ),
+    "python_stereoisomer_corpus.jsonl": _schema(
+        "enumeration:array,error_message:null|string,error_type:null|string,parse_status:string,potential_stereo:array,row:integer,schema_version:integer,smiles:string,source_state:null|object"
+    ),
     "graph_features.jsonl": _schema(
         "addhs_removehs:null|object,chiral_centers:null|object,direct:null|object,error:null|string,possible_stereo:null|object,rdkit_ok:boolean,smiles:string,with_hs:null|object"
     ),

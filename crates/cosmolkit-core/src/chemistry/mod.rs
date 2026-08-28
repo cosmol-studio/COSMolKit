@@ -19,6 +19,7 @@ pub mod mol_align;
 pub(crate) mod mol_align_support;
 pub mod mol_transforms;
 pub(crate) mod numerics;
+pub mod potential_stereo;
 pub mod rings;
 pub mod stereo;
 pub mod stereo_enumerate;

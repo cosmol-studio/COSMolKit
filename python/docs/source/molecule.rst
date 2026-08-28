@@ -243,6 +243,51 @@ canonicalized to one numeric representative. The precise contract is in
 not mean the ligand slot is empty. If hydrogens are materialized with
 ``with_hydrogens()``, that hydrogen ligand is returned as an atom index.
 
+Potential Stereo And Stereoisomer Enumeration
+----------------------------------------------
+
+``analyze_potential_stereo()`` returns an isolated molecule state and ordered,
+typed potential-stereo records without mutating the source. Each record reports
+its stereo type, specified state, atom or bond center, descriptor, permutation,
+and ordered controlling atoms.
+
+``stereoisomers()`` returns a lazy iterator. The default options enumerate only
+unassigned atom and double-bond stereo, include enhanced stereo-group flippers,
+deduplicate by canonical isomeric SMILES, and yield at most 1,024 outputs. A
+molecule with no selected center yields one isolated molecule value.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule, StereoisomerOptions
+
+   source = Molecule.from_smiles("CC(F)C(Cl)Br")
+   analysis = source.analyze_potential_stereo()
+
+   print([(item.center_kind, item.center_index) for item in analysis.stereo_info])
+   print(source.stereoisomer_count())
+
+   options = StereoisomerOptions(max_isomers=4, rand=0xF00D)
+   for isomer in source.stereoisomers(options):
+       print(isomer.to_smiles())
+
+   assert source.to_smiles() == "CC(F)C(Cl)Br"
+
+``max_isomers`` bounds successful outputs. When it is smaller than the
+configuration space, ``rand`` follows Python ``random.Random`` semantics; a
+``random.Random`` instance or subclass can supply ``getrandbits()`` lazily.
+``try_embedding=True`` applies the source-defined one-conformer geometry
+filter, and embedding failures do not consume the successful-output limit.
+``only_unassigned=False`` also enumerates assigned centers,
+``only_stereo_groups=True`` restricts selection to enhanced stereo groups, and
+``unique=False`` retains source configurations that canonicalize to the same
+isomeric SMILES.
+
+Iterator errors are raised when the corresponding output is requested. The
+source molecule remains unchanged, including when candidate discovery,
+custom random generation, finalization, or embedding fails. This API matches
+the pinned RDKit Python ``EnumerateStereoisomers`` boundary; the separate newer
+C++ enumerator and atropisomer enumeration are not part of this surface.
+
 Atom Chiral Tags From 3D Coordinates
 ------------------------------------
 

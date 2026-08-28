@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from dev.tools.chembl_parity import audit_fingerprints, audit_surfaces
+from dev.tools.chembl_parity import audit_fingerprints, audit_stereo, audit_surfaces
 
 
 TOOL_DIR = Path(__file__).resolve().parents[1]
@@ -100,6 +100,187 @@ class WorkflowTests(unittest.TestCase):
             }
             self.assertTrue(required.issubset(audit.counts))
             audit.finish(6, "molalign", 0, 1)
+
+    def test_stereo_phase_is_complete_source_bounded_and_unfiltered(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phase = {item["name"]: item for item in profile["phases"]}[
+            "stereo-enumeration"
+        ]
+        self.assertEqual(phase["script"], "audit_stereo.py")
+        self.assertEqual(phase["mode"], "stereo")
+        self.assertEqual(phase["expected_processed"], profile["corpus_records"])
+        self.assertEqual(
+            phase["expected_profiles"],
+            {"potential_stereo": 4, "enumeration": 4},
+        )
+        self.assertNotIn("max_atoms", phase)
+        self.assertNotIn("records_per_shard", phase)
+
+        self.assertEqual(
+            audit_stereo.POTENTIAL_PROFILES,
+            (
+                {"id": "preserve_possible", "clean": False, "flag_possible": True},
+                {"id": "clean_possible", "clean": True, "flag_possible": True},
+                {"id": "preserve_known", "clean": False, "flag_possible": False},
+                {"id": "clean_known", "clean": True, "flag_possible": False},
+            ),
+        )
+        self.assertEqual(
+            [item["id"] for item in audit_stereo.ENUMERATION_PROFILES],
+            [
+                "default_bounded",
+                "all_assigned_bounded",
+                "non_unique_bounded",
+                "seeded_three",
+            ],
+        )
+        self.assertEqual(
+            [item["max_isomers"] for item in audit_stereo.ENUMERATION_PROFILES],
+            [8, 8, 8, 3],
+        )
+
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/stereo-enumeration/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(command[command.index("--mode") + 1], "stereo")
+        self.assertNotIn("--limit", command)
+        self.assertNotIn("--max-atoms", command)
+
+    def test_stereo_auditor_compares_every_profile_and_exact_state_field(self) -> None:
+        record = {
+            "row": 0,
+            "chembl_id": "HARNESS",
+            "smiles": "CC(F)C(Cl)Br",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_stereo.Audit(Path(temporary) / "summary.json", 4)
+            audit_stereo.audit_record(audit, record)
+            audit.finish(1, "stereo", 0, 1)
+            self.assertFalse(
+                any(key.startswith("mismatch.") for key in audit.counts),
+                audit.counts,
+            )
+            self.assertEqual(sum(audit.counts.values()), 31)
+            expected = {
+                *(f"match.potential.{profile['id']}.records" for profile in audit_stereo.POTENTIAL_PROFILES),
+                *(f"match.potential.{profile['id']}.state" for profile in audit_stereo.POTENTIAL_PROFILES),
+                *(f"match.enumeration.{profile['id']}.theoretical_count" for profile in audit_stereo.ENUMERATION_PROFILES),
+                *(f"match.enumeration.{profile['id']}.bounded_out" for profile in audit_stereo.ENUMERATION_PROFILES),
+                *(f"match.enumeration.{profile['id']}.outputs" for profile in audit_stereo.ENUMERATION_PROFILES),
+            }
+            self.assertTrue(expected <= set(audit.counts))
+
+    def test_stereo_auditor_treats_source_none_and_structured_rejection_equally(self) -> None:
+        record = {
+            "row": 0,
+            "chembl_id": "SOURCE_REJECTED",
+            "smiles": "F[PH](F)(F)(F)(F)F",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_stereo.Audit(Path(temporary) / "summary.json", 4)
+            audit_stereo.audit_record(audit, record)
+            audit.finish(1, "stereo", 0, 1)
+
+            self.assertEqual(audit.counts["match.parse.accepted"], 1)
+            self.assertEqual(audit.counts["parse.both_rejected"], 1)
+            self.assertFalse(
+                any(key.startswith("mismatch.") for key in audit.counts),
+                audit.counts,
+            )
+
+    def test_stereo_aggregate_requires_all_shards_profiles_and_rows(self) -> None:
+        expected_profiles = {"potential_stereo": 4, "enumeration": 4}
+        with tempfile.TemporaryDirectory() as temporary:
+            phase_dir = Path(temporary)
+            results = {}
+            for shard in range(3):
+                output = phase_dir / f"shard-{shard:03d}.json"
+                output.write_text(
+                    json.dumps(
+                        {
+                            "processed": shard + 1,
+                            "profiles": expected_profiles,
+                            "counts": {"match.enumeration.default_bounded.outputs": shard + 1},
+                        }
+                    )
+                )
+                output.with_suffix(".findings.jsonl").write_text("")
+                results[str(shard)] = {"returncode": 0, "output": str(output)}
+
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 3, set(), 6, expected_profiles
+            )
+            self.assertTrue(aggregate["complete"])
+            self.assertTrue(aggregate["passed"])
+
+            partial = phase_dir / "shard-002.json"
+            summary = json.loads(partial.read_text())
+            summary["processed"] = 0
+            partial.write_text(json.dumps(summary))
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 3, set(), 6, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+            self.assertFalse(aggregate["passed"])
+
+            summary["processed"] = 3
+            summary["profiles"] = {"potential_stereo": 4, "enumeration": 3}
+            partial.write_text(json.dumps(summary))
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 3, set(), 6, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+            self.assertEqual(aggregate["invalid_profile_tasks"], 1)
+
+            del results["2"]
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 3, set(), 6, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+            self.assertEqual(aggregate["failed_or_missing_tasks"], 1)
+
+    def test_stereo_script_and_profile_are_part_of_resume_identity(self) -> None:
+        root = TOOL_DIR.parents[2]
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        with mock.patch.object(runner, "extension_artifacts", return_value=[]), mock.patch.object(
+            runner, "git_head", return_value="HEAD"
+        ), mock.patch.object(runner, "distribution_version", return_value="0"):
+            identity = runner.build_identity(
+                root,
+                TOOL_DIR,
+                TOOL_DIR / "profiles/complete.json",
+                profile,
+                {"source_sha256": "source"},
+                "manifest-sha",
+                b"",
+                b"",
+            )
+        self.assertIn("audit_stereo.py", identity["scripts"])
+        self.assertEqual(
+            identity["selected_phases"][-1], "stereo-enumeration"
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shard-000.json"
+            findings = output.with_suffix(".findings.jsonl")
+            output.write_text(json.dumps({"processed": 1, "counts": {}}))
+            findings.write_text("")
+            command = ["python", "-m", "audit_stereo"]
+            result = {
+                "returncode": 0,
+                "command": command,
+                "output": str(output),
+                "output_sha256": runner.sha256_file(output),
+                "findings_sha256": runner.sha256_file(findings),
+            }
+            self.assertTrue(runner.completed_task_is_valid(result, command))
+            output.write_text(json.dumps({"processed": 0, "counts": {}}))
+            self.assertFalse(runner.completed_task_is_valid(result, command))
 
     def test_ciplabeler_phase_is_complete_and_source_backed(self) -> None:
         profile = runner.load_json(TOOL_DIR / "profiles/complete.json")

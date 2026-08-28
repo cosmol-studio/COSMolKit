@@ -84,7 +84,7 @@ vectors and all probe bits to be contained in every reference-positive target.
 | Focused Pattern fixtures | 18 | 11 branches per row | All output and error branches pass. |
 | `smiles_small` | 152 | 11 branches per row | Every row and branch passes. |
 | `smiles_5000` | 5,000 | 11 branches per row | Every row and branch passes. |
-| ChEMBL 37 | 2,897,819 processed; 2,897,804 mutually parsed; 15 mutually rejected | 10 complete profiles | 28,978,040 exact fingerprint comparisons, zero mismatch. |
+| ChEMBL 37 | 2,897,819 processed; 2,897,804 accepted by both parsers | 10 complete profiles | 28,978,040 exact fingerprint comparisons, zero mismatch. |
 
 The ChEMBL execution completed all `128/128` deterministic shards. Its corpus
 source SHA-256 is

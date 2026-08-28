@@ -4037,7 +4037,7 @@ fn rdkit_rank_atoms_by_rank_into(
         {
             rank = cip_rank;
         } else if let Some(chiral_rank) = atom
-            .prop("_ChiralAtomRank")
+            .prop("_chiralAtomRank")
             .and_then(|value| value.parse::<u32>().ok())
         {
             rank = mol_atom_count - chiral_rank;
@@ -7641,8 +7641,8 @@ mod tests {
     #[test]
     fn rank_atoms_uses_chiral_atom_rank_when_cip_rank_prop_is_absent() {
         let mut builder = MoleculeBuilder::new();
-        let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_ChiralAtomRank", "0"));
-        let h = builder.add_atom(AtomSpec::new(Element::H).with_prop("_ChiralAtomRank", "1"));
+        let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_chiralAtomRank", "0"));
+        let h = builder.add_atom(AtomSpec::new(Element::H).with_prop("_chiralAtomRank", "1"));
         builder
             .add_bond(BondSpec::new(c, h, BondOrder::Single))
             .unwrap();

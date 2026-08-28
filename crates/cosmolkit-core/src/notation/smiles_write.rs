@@ -6,8 +6,7 @@ mod stereo;
 
 pub(crate) use self::cx::get_cx_extensions;
 pub(crate) use self::stereo::{
-    assign_stereochemistry_on_working_copy, serialize_ring_stereo_atoms,
-    update_property_cache_for_smiles,
+    assign_stereochemistry_on_working_copy, update_property_cache_for_smiles,
 };
 use self::{cx::*, direction::*, stereo::*};
 

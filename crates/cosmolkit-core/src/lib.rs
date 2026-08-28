@@ -106,7 +106,7 @@ pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;
 pub use chemistry::{
     aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_align,
-    mol_transforms, rings, stereo, stereo_enumerate, tautomer, valence,
+    mol_transforms, potential_stereo, rings, stereo, stereo_enumerate, tautomer, valence,
 };
 pub use io::pdb_writer;
 pub(crate) use model::invariants;
@@ -291,6 +291,11 @@ pub use ops::{
     WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC, WITH_ONLY_3D_CONFORMER_SPEC,
     WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
+pub use potential_stereo::{
+    ControllingAtom, PotentialStereoAnalysis, PotentialStereoError, PotentialStereoOptions,
+    StereoCenter, StereoDescriptor, StereoInfo, StereoSpecified, StereoType,
+    analyze_potential_stereo,
+};
 pub use properties::descriptors::{
     CrippenDescriptorValues, DescriptorError, DescriptorResult, NumRotatableBondsOptions,
     calc_crippen_descriptors, calc_exact_mol_wt, calc_fraction_csp3, calc_mol_formula, calc_mol_wt,
@@ -315,6 +320,10 @@ pub use stereo::{
     DoubleBondStereo, LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo,
     assign_stereochemistry, perceive_stereochemistry,
 };
+pub use stereo_enumerate::{
+    EnumerationError, StereoisomerIterator, StereoisomerOptions, enumerate_stereoisomers,
+    enumerate_stereoisomers_with_random_bits, stereoisomer_count,
+};
 pub use substruct::{
     AtomCoordsMatchFunctor, ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SubstructMatchError,
     SubstructMatchOverload, SubstructMatchParams, SubstructMatchParamsJsonError,
@@ -332,8 +341,9 @@ pub use support::{
     INCHI_FEATURE, KEKULIZE_FEATURE, LAYERED_FINGERPRINT_FEATURE, MOLALIGN_FEATURE,
     MOLBLOCK_IO_FEATURE, PATTERN_FINGERPRINT_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
     SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
-    SUBSTRUCTURE_FEATURE, SupportStatus, TAUTOMER_ENUMERATION_FEATURE,
-    TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE, UnsupportedFeatureError, VALENCE_FEATURE,
+    STEREOISOMER_ENUMERATION_FEATURE, SUBSTRUCTURE_FEATURE, SupportStatus,
+    TAUTOMER_ENUMERATION_FEATURE, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE, UnsupportedFeatureError,
+    VALENCE_FEATURE,
 };
 #[allow(deprecated)]
 pub use support::{

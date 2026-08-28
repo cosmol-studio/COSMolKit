@@ -51,3 +51,17 @@ atom, computed-property, success, and error state after every call. The focused
 matrix covers all ten public descriptors emitted by the supported modern
 assignment configurations: `R`, `S`, `r`, `s`, `E`, `Z`, `M`, `P`, `m`, and
 `p`.
+
+## Python stereoisomer enumeration cases
+
+`rdkit_python_stereoisomer_cases.json` defines the focused input and option
+matrix for the pinned Python `FindPotentialStereo` to flippers to
+`EnumerateStereoisomers` boundary. Each case records its exact upstream source
+locator, observable branch rationale, and applicable option profiles. Expected
+records are generated separately; the input matrix contains no accepted
+mismatch or expected-output shortcut.
+
+`rdkit/two_centers_or.mol` and `rdkit/simple_either.mol` are byte-for-byte
+copies of the pinned RDKit FileParsers fixtures used by `UnitTestMol3D.py` for
+enhanced stereo and explicit either-double enumeration. Tests resolve the
+committed copies and do not require `third_party/rdkit` at runtime.

@@ -27,11 +27,11 @@ empty.
 ## [Unreleased]
 
 This release adds the public modern RDKit CIPLabeler, ordinary molecular
-alignment and RMSD, source-backed Pattern and Layered fingerprints, and the
-Rust tautomer-enumeration surface, and completes the ordinary-molecule SMARTS
-parser, query, writer, and substructure-matching path through source-backed
-Rust implementations with explicit state lifecycle and pinned parity
-validation.
+alignment and RMSD, source-backed Pattern and Layered fingerprints, Rust
+tautomer enumeration, and typed potential-stereo and lazy stereoisomer
+enumeration. It also completes the ordinary-molecule SMARTS parser, query,
+writer, and substructure-matching path through source-backed Rust
+implementations with explicit state lifecycle and pinned parity validation.
 
 ### Added
 
@@ -74,6 +74,20 @@ validation.
   best and coordinate-frame RMSD, all-conformer pair output, and explicit
   value-style or trailing-underscore coordinate mutation. O3A remains a
   separately scoped future capability.
+- Added project-native Rust and Python potential-stereo analysis with ordered,
+  typed atom/bond centers, specified state, descriptors, permutations, and
+  controlling atoms, returning an isolated analyzed molecule without mutating
+  the source.
+- Added a single lazy Rust and Python stereoisomer iterator over the pinned
+  RDKit Python behavior, including exact option defaults, arbitrary-width
+  counts, atom, double-bond, and enhanced-group flippers, exhaustive and finite
+  unique-random configurations, Python-compatible integer and custom random
+  sources, canonical uniqueness, optional embedding, and structured lazy
+  errors.
+- Added focused source fixtures, committed 152-row and 5,000-row exact parity
+  profiles, a complete reproducible ChEMBL 37 phase, architecture guards,
+  composition tests, public examples, and deterministic stage benchmarks for
+  potential stereo and stereoisomer enumeration.
 
 ### Changed
 
@@ -185,6 +199,26 @@ validation.
   coordinates, and source/reference immutability with zero mismatch or
   retained finding. Fifteen rows were rejected by both parsers and 43,442
   accepted rows exceeded the configured 80-atom boundary.
+- The complete potential-stereo and stereoisomer-enumeration audit processed
+  all 2,897,819 ChEMBL 37 records over 128/128 deterministic shards. It fully
+  compared 2,897,804 rows accepted by both parsers across four potential-stereo
+  and four bounded enumeration profiles. The remaining 15 rows were rejected
+  by both parsers at parse entry. It completed 89,831,939 exact parse, state,
+  output, and source-preservation observations with zero blocking,
+  informational, or other mismatch.
+- The committed 152-row and 5,000-row profiles contribute 89,047 and 4,680,490
+  exact leaf comparisons. Focused tests additionally lock option defaults,
+  source-record order, cleanup state, enhanced stereo groups, arbitrary-width
+  counts, exact exhaustive and random sequences, uniqueness, lazy errors,
+  embedding outcomes, repeated calls, parallel isolation, and mixed hydrogen,
+  conformer, descriptor, and serialization calls.
+- Exact-output benchmark preflights passed for candidate discovery, count and
+  setup, one-configuration finalization, lazy-prefix, exhaustive, bounded
+  random, embedding, and parallel profiles. No enumerator-specific complexity
+  regression was found; the measured optional-embedding path retains the
+  existing distance-geometry composition cost. The parity boundary is RDKit's
+  Python enumerator and does not claim the separate newer C++ enumerator or
+  atropisomer enumeration.
 
 ## [0.2.13] - 2026-08-24
 

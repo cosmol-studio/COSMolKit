@@ -120,6 +120,9 @@ print(layered.on_bits())
 pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=False)
 print(pattern.on_bits())
 
+stereoisomers = list(Molecule.from_smiles("FC(Cl)Br").stereoisomers())
+print([isomer.to_smiles() for isomer in stereoisomers])
+
 batch = (
     MoleculeBatch.from_smiles_list(
         ["CCO", "c1ccccc1", "CC(=O)O"],
@@ -247,6 +250,9 @@ inputs until a trusted graph has been constructed.
 - XYZ block reading
 - Four scalar InChI APIs with exact source-defined official-C/RDKit parity and structured errors
 - Stable 3D atom-chiral-tag assignment with exact pinned-RDKit full-state parity
+- Typed potential-stereo analysis and lazy, source-ordered stereoisomer
+  enumeration with exhaustive, bounded random, uniqueness, enhanced-group,
+  and optional embedding controls
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - Source-backed Rust tautomer enumeration, canonical selection, scoring,
@@ -342,6 +348,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Tautomer enumeration, canonical selection, scoring, and source-defined
   stereochemistry and isotopic-hydrogen options
 - ✅ Stereochemistry inspection for supported atom and bond states
+- ✅ Typed potential-stereo analysis and lazy stereoisomer enumeration through
+  the pinned RDKit Python behavior, including arbitrary-width counts, seeded
+  random generation, enhanced stereo groups, uniqueness, and optional embedding
 - ✅ Atom chiral-tag assignment from selected 3D conformers, with exact
   pinned-RDKit `assignChiralTypesFrom3D` parity across 77 fixed full-state
   oracle records

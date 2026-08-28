@@ -269,6 +269,35 @@ jobs:
                   path: testdata/fingerprint/expected/rdkit/layered_focused
                   key: ${{ steps.focused_layered_golden_cache.outputs.cache-primary-key }}
 
+            - name: Restore focused Pattern fingerprint golden cache
+              id: focused_pattern_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/pattern_focused
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-pattern-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py', 'tools/testdata/rdkit/pattern_fingerprint_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-pattern-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py', 'tools/testdata/rdkit/pattern_fingerprint_profile.json') }}-
+
+            - name: Prepare and validate focused Pattern fingerprint expected data
+              id: prepare_focused_pattern_expected
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile pattern_focused --suite pattern --jobs 1 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated focused Pattern fingerprint expected-data cache
+              if: steps.prepare_focused_pattern_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/pattern_focused
+                  key: ${{ steps.focused_pattern_golden_cache.outputs.cache-primary-key }}
+
             - name: Restore strict 5000 InChI golden cache
               id: strict_5000_inchi_golden_cache
               uses: actions/cache/restore@v4

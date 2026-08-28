@@ -204,6 +204,7 @@ dependencies = [
  "indicatif",
  "libc",
  "log",
+ "num-bigint",
  "postcard",
  "rayon",
  "resvg",
@@ -241,6 +242,7 @@ version = "0.2.13"
 dependencies = [
  "cosmolkit-core",
  "glam",
+ "num-bigint",
  "numpy",
  "pyo3",
  "pyo3-stub-gen",
@@ -1017,6 +1019,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
 dependencies = [
  "libc",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",

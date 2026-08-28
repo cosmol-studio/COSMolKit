@@ -140,9 +140,9 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "svg_drawer.jsonl" | "prepared_draw_molecule.jsonl" => "depiction",
         "graph_features.jsonl" => "graph",
         "molecular_descriptors.jsonl" => "descriptors",
-        "tetrahedral_stereo_geometry.jsonl" | "assign_atom_chiral_tags_from_structure.jsonl" => {
-            "stereo"
-        }
+        "tetrahedral_stereo_geometry.jsonl"
+        | "assign_atom_chiral_tags_from_structure.jsonl"
+        | "python_stereoisomer_corpus.jsonl" => "stereo",
         "dg_bounds_matrix.jsonl" => "distgeom",
         "mol2_read.jsonl" => "mol2",
         "xyz_read.jsonl" => "xyz",
@@ -400,6 +400,8 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         "tautomer_pcs_100k" => {
             repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz")
         }
+        "python_stereoisomer_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
+        "python_stereoisomer_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
         "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
         "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
         "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
@@ -422,10 +424,15 @@ fn validate_output_identity(
     primary_input: &ManifestFile,
     expected_profile: &str,
 ) -> Result<(), String> {
-    if output.output_schema_version != 1 {
+    let expected_schema_version = if output.path == "python_stereoisomer_corpus.jsonl" {
+        2
+    } else {
+        1
+    };
+    if output.output_schema_version != expected_schema_version {
         return Err(format!(
-            "{} has unsupported output schema version {}",
-            output.path, output.output_schema_version
+            "{} has output schema version {}, expected {}",
+            output.path, output.output_schema_version, expected_schema_version
         ));
     }
     if output.generator.is_empty() {
