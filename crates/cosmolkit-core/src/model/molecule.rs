@@ -496,15 +496,36 @@ impl DerivedCacheBlock {
 #[derive(Debug, Default)]
 struct ComputedPropertyCache {
     crippen: RwLock<Option<[f64; 2]>>,
+    crippen_atom_contributions: RwLock<Option<CrippenAtomContributionCache>>,
+    connectivity_hk_deltas: RwLock<Option<Arc<[f64]>>>,
+    connectivity_n_vals: RwLock<Option<Arc<[f64]>>>,
+    labute: RwLock<Option<LabuteDescriptorCache>>,
     topological_distance_matrix: RwLock<Option<Arc<[f64]>>>,
     distance_matrices_3d: RwLock<BTreeMap<usize, Arc<[f64]>>>,
     potential_stereo: RwLock<Option<Arc<[crate::StereoInfo]>>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CrippenAtomContributionCache {
+    pub(crate) logp: Arc<[f64]>,
+    pub(crate) mr: Arc<[f64]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LabuteDescriptorCache {
+    pub(crate) atom_contributions: Arc<[f64]>,
+    pub(crate) hydrogen_contribution: f64,
+    pub(crate) asa: f64,
 }
 
 impl Clone for ComputedPropertyCache {
     fn clone(&self) -> Self {
         Self {
             crippen: RwLock::new(self.crippen()),
+            crippen_atom_contributions: RwLock::new(self.crippen_atom_contributions()),
+            connectivity_hk_deltas: RwLock::new(self.connectivity_hk_deltas()),
+            connectivity_n_vals: RwLock::new(self.connectivity_n_vals()),
+            labute: RwLock::new(self.labute()),
             topological_distance_matrix: RwLock::new(self.topological_distance_matrix()),
             distance_matrices_3d: RwLock::new(self.distance_matrices_3d()),
             potential_stereo: RwLock::new(self.potential_stereo()),
@@ -530,6 +551,62 @@ impl ComputedPropertyCache {
     fn set_crippen(&self, values: [f64; 2]) {
         *self
             .crippen
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
+    fn crippen_atom_contributions(&self) -> Option<CrippenAtomContributionCache> {
+        self.crippen_atom_contributions
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_crippen_atom_contributions(&self, values: CrippenAtomContributionCache) {
+        *self
+            .crippen_atom_contributions
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
+    fn connectivity_hk_deltas(&self) -> Option<Arc<[f64]>> {
+        self.connectivity_hk_deltas
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_connectivity_hk_deltas(&self, values: Arc<[f64]>) {
+        *self
+            .connectivity_hk_deltas
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
+    fn connectivity_n_vals(&self) -> Option<Arc<[f64]>> {
+        self.connectivity_n_vals
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_connectivity_n_vals(&self, values: Arc<[f64]>) {
+        *self
+            .connectivity_n_vals
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
+    fn labute(&self) -> Option<LabuteDescriptorCache> {
+        self.labute
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_labute(&self, values: LabuteDescriptorCache) {
+        *self
+            .labute
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
     }
@@ -617,6 +694,22 @@ impl ComputedPropertyCache {
     fn clear(&self) {
         *self
             .crippen
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .crippen_atom_contributions
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .connectivity_hk_deltas
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .connectivity_n_vals
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .labute
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         *self
@@ -1022,6 +1115,11 @@ impl Molecule {
     #[must_use]
     pub fn bonds(&self) -> &[Bond] {
         &self.topology.bonds
+    }
+
+    #[must_use]
+    pub(crate) fn adjacency(&self) -> &crate::AdjacencyList {
+        &self.topology.adjacency
     }
 
     #[must_use]
@@ -1490,6 +1588,39 @@ impl Molecule {
         self.computed_properties.set_potential_stereo(values);
     }
 
+    pub(crate) fn crippen_atom_contribution_cache(&self) -> Option<CrippenAtomContributionCache> {
+        self.computed_properties.crippen_atom_contributions()
+    }
+
+    pub(crate) fn set_crippen_atom_contribution_cache(&self, values: CrippenAtomContributionCache) {
+        self.computed_properties
+            .set_crippen_atom_contributions(values);
+    }
+
+    pub(crate) fn connectivity_hk_deltas_cache(&self) -> Option<Arc<[f64]>> {
+        self.computed_properties.connectivity_hk_deltas()
+    }
+
+    pub(crate) fn set_connectivity_hk_deltas_cache(&self, values: Arc<[f64]>) {
+        self.computed_properties.set_connectivity_hk_deltas(values);
+    }
+
+    pub(crate) fn connectivity_n_vals_cache(&self) -> Option<Arc<[f64]>> {
+        self.computed_properties.connectivity_n_vals()
+    }
+
+    pub(crate) fn set_connectivity_n_vals_cache(&self, values: Arc<[f64]>) {
+        self.computed_properties.set_connectivity_n_vals(values);
+    }
+
+    pub(crate) fn labute_descriptor_cache(&self) -> Option<LabuteDescriptorCache> {
+        self.computed_properties.labute()
+    }
+
+    pub(crate) fn set_labute_descriptor_cache(&self, values: LabuteDescriptorCache) {
+        self.computed_properties.set_labute(values);
+    }
+
     pub(crate) fn topological_distance_matrix_cache_or_init(
         &self,
         initialize: impl FnOnce() -> Vec<f64>,
@@ -1542,7 +1673,9 @@ impl Molecule {
 
 #[cfg(test)]
 mod tests {
-    use super::Molecule;
+    use std::sync::Arc;
+
+    use super::{LabuteDescriptorCache, Molecule};
     use crate::avalon_fingerprint::{AvalonFingerprintParams, avalon_fingerprint};
     use crate::fingerprint::{MaccsFingerprintParams, TopologicalFingerprintParams};
     use crate::{
@@ -1733,5 +1866,95 @@ mod tests {
             crate::fingerprint::topological_fingerprint(&mol, &params)
                 .expect("module function result")
         );
+    }
+
+    #[test]
+    fn descriptor_computed_cache_lifecycle_is_typed_independent_and_topology_invalidated() {
+        let mut molecule = Molecule::from_smiles("CCO").expect("descriptor cache molecule");
+        assert!(molecule.connectivity_hk_deltas_cache().is_none());
+        assert!(molecule.connectivity_n_vals_cache().is_none());
+        assert!(molecule.labute_descriptor_cache().is_none());
+
+        let hk_deltas = Arc::<[f64]>::from([1.0, 2.0, 3.0]);
+        let n_vals = Arc::<[f64]>::from([4.0, 5.0, 6.0]);
+        let labute = LabuteDescriptorCache {
+            atom_contributions: Arc::<[f64]>::from([7.0, 8.0, 9.0]),
+            hydrogen_contribution: 10.0,
+            asa: 11.0,
+        };
+        molecule.set_connectivity_hk_deltas_cache(Arc::clone(&hk_deltas));
+        molecule.set_labute_descriptor_cache(labute.clone());
+        molecule.set_connectivity_n_vals_cache(Arc::clone(&n_vals));
+
+        assert_eq!(molecule.connectivity_hk_deltas_cache(), Some(hk_deltas));
+        assert_eq!(molecule.connectivity_n_vals_cache(), Some(n_vals));
+        assert_eq!(molecule.labute_descriptor_cache(), Some(labute));
+
+        let clone = molecule.clone();
+        molecule.set_connectivity_hk_deltas_cache(Arc::<[f64]>::from([12.0, 13.0, 14.0]));
+        molecule.set_connectivity_n_vals_cache(Arc::<[f64]>::from([15.0, 16.0, 17.0]));
+        molecule.set_labute_descriptor_cache(LabuteDescriptorCache {
+            atom_contributions: Arc::<[f64]>::from([18.0, 19.0, 20.0]),
+            hydrogen_contribution: 21.0,
+            asa: 22.0,
+        });
+        assert_eq!(
+            clone.connectivity_hk_deltas_cache().as_deref(),
+            Some(&[1.0, 2.0, 3.0][..])
+        );
+        assert_eq!(
+            clone.connectivity_n_vals_cache().as_deref(),
+            Some(&[4.0, 5.0, 6.0][..])
+        );
+        assert_eq!(clone.labute_descriptor_cache().unwrap().asa, 11.0);
+
+        let coordinates = molecule.coordinate_block().clone();
+        molecule.replace_coordinate_block(coordinates);
+        assert!(molecule.connectivity_hk_deltas_cache().is_some());
+        assert!(molecule.connectivity_n_vals_cache().is_some());
+        assert!(molecule.labute_descriptor_cache().is_some());
+
+        let topology = molecule.topology_block().clone();
+        molecule.replace_topology_block(topology);
+        assert!(molecule.connectivity_hk_deltas_cache().is_none());
+        assert!(molecule.connectivity_n_vals_cache().is_none());
+        assert!(molecule.labute_descriptor_cache().is_none());
+    }
+
+    #[test]
+    fn descriptor_computed_cache_supports_parallel_reads_without_cross_entry_aliasing() {
+        let molecule = Molecule::from_smiles("CCO").expect("parallel descriptor cache molecule");
+        molecule.set_connectivity_hk_deltas_cache(Arc::<[f64]>::from([1.0, 2.0, 3.0]));
+        molecule.set_connectivity_n_vals_cache(Arc::<[f64]>::from([4.0, 5.0, 6.0]));
+        molecule.set_labute_descriptor_cache(LabuteDescriptorCache {
+            atom_contributions: Arc::<[f64]>::from([7.0, 8.0, 9.0]),
+            hydrogen_contribution: 10.0,
+            asa: 11.0,
+        });
+        let molecule = Arc::new(molecule);
+
+        let readers = (0..16)
+            .map(|_| {
+                let molecule = Arc::clone(&molecule);
+                std::thread::spawn(move || {
+                    assert_eq!(
+                        molecule.connectivity_hk_deltas_cache().as_deref(),
+                        Some(&[1.0, 2.0, 3.0][..])
+                    );
+                    assert_eq!(
+                        molecule.connectivity_n_vals_cache().as_deref(),
+                        Some(&[4.0, 5.0, 6.0][..])
+                    );
+                    let labute = molecule.labute_descriptor_cache().unwrap();
+                    assert_eq!(labute.atom_contributions.as_ref(), &[7.0, 8.0, 9.0]);
+                    assert_eq!(labute.hydrogen_contribution, 10.0);
+                    assert_eq!(labute.asa, 11.0);
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for reader in readers {
+            reader.join().expect("parallel descriptor cache reader");
+        }
     }
 }

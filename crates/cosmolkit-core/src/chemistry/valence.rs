@@ -2399,6 +2399,35 @@ const RDKit_ATOMIC_WEIGHTS: [f64; 119] = [
     270.0, 269.0, 278.0, 281.0, 281.0, 285.0, 284.179, 289.190, 288.193, 293.204, 292.207, 294.214,
 ];
 
+// BEGIN RDKIT CPP FUNCTION PeriodicTable::getRb0 / atomicData::Rb0
+// RDKit✔️✔️: double Rb0() const { return rB0; }
+// RDKit✔️✔️: double getRb0(UINT atomicNumber) const {
+// RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+// RDKit✔️✔️:   return byanum[atomicNumber].Rb0();
+// RDKit✔️✔️: }
+// RDKit✔️✔️: //  rB0
+// RDKit✔️✔️: //  ...
+// RDKit✔️✔️: istr >> rB0;
+const RDKIT_RB0: [f64; 119] = [
+    0.0, 0.33, 0.7, 1.23, 0.9, 0.82, 0.77, 0.7, 0.66, 0.611, 0.7, 1.54, 1.36, 1.18, 0.937, 0.89,
+    1.04, 0.997, 1.74, 2.03, 1.74, 1.44, 1.32, 1.22, 1.18, 1.17, 1.17, 1.16, 1.15, 1.17, 1.25,
+    1.26, 1.188, 1.2, 1.17, 1.167, 1.91, 2.16, 1.91, 1.62, 1.45, 1.34, 1.3, 1.27, 1.25, 1.25, 1.28,
+    1.34, 1.48, 1.44, 1.385, 1.4, 1.378, 1.387, 1.98, 2.35, 1.98, 1.69, 1.83, 1.82, 1.81, 1.8, 1.8,
+    1.99, 1.79, 1.76, 1.75, 1.74, 1.73, 1.72, 1.94, 1.72, 1.44, 1.34, 1.3, 1.28, 1.26, 1.27, 1.3,
+    1.34, 1.49, 1.48, 1.48, 1.45, 1.46, 1.45, 2.4, 2.0, 1.9, 1.88, 1.79, 1.61, 1.58, 1.55, 1.53,
+    1.07, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
+];
+// END RDKIT CPP FUNCTION PeriodicTable::getRb0 / atomicData::Rb0
+
+#[must_use]
+pub(crate) fn rdkit_rb0(atomic_number: u8) -> f64 {
+    RDKIT_RB0
+        .get(usize::from(atomic_number))
+        .copied()
+        .unwrap_or(0.0)
+}
+
 #[must_use]
 pub(crate) fn rdkit_atomic_mass(atomic_number: u8, isotope: Option<u16>) -> f64 {
     // BEGIN RDKIT CPP FUNCTION Atom::getMass / PeriodicTable::getAtomicWeight / PeriodicTable::getMassForIsotope
@@ -2792,6 +2821,55 @@ mod tests {
         assert_eq!(rdkit_element_symbol(6).unwrap(), "C");
         assert_eq!(rdkit_element_symbol(118).unwrap(), "Og");
         assert!(rdkit_element_symbol(119).is_err());
+    }
+
+    #[test]
+    fn rdkit_rb0_matches_every_pinned_periodic_table_row_and_rejects_invalid_numbers() {
+        let source = include_str!("../../../../third_party/rdkit/Code/GraphMol/atomic_data.cpp");
+        let source = source
+            .split_once("const std::string periodicTableAtomData =")
+            .expect("pinned RDKit periodic-table declaration")
+            .1
+            .split_once("// Names of elements ordered by atomic number")
+            .expect("pinned RDKit periodic-table terminator")
+            .0;
+        let mut expected = [None; 119];
+
+        for line in source.lines() {
+            let line = line
+                .trim_start()
+                .strip_prefix("R\"DAT(")
+                .unwrap_or(line.trim_start());
+            let columns = line.split_whitespace().collect::<Vec<_>>();
+            let Some(atomic_number) = columns
+                .first()
+                .and_then(|column| column.parse::<usize>().ok())
+                .filter(|atomic_number| *atomic_number <= 118)
+            else {
+                continue;
+            };
+            let Some(rb0) = columns.get(4).and_then(|column| column.parse::<f64>().ok()) else {
+                continue;
+            };
+
+            if let Some(previous) = expected[atomic_number] {
+                assert_eq!(previous, rb0, "Rb0 alias row differs at {atomic_number}");
+            } else {
+                expected[atomic_number] = Some(rb0);
+            }
+        }
+
+        for (atomic_number, expected) in expected.into_iter().enumerate() {
+            let expected =
+                expected.unwrap_or_else(|| panic!("missing pinned RDKit Rb0 row {atomic_number}"));
+            assert_eq!(
+                super::rdkit_rb0(u8::try_from(atomic_number).unwrap()).to_bits(),
+                expected.to_bits(),
+                "Rb0 differs at atomic number {atomic_number}"
+            );
+        }
+        assert_eq!(super::rdkit_rb0(119), 0.0);
+        assert_eq!(super::rdkit_rb0(u8::MAX), 0.0);
     }
 
     #[test]

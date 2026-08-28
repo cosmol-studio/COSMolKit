@@ -27,11 +27,13 @@ empty.
 ## [Unreleased]
 
 This release adds the public modern RDKit CIPLabeler, ordinary molecular
-alignment and RMSD, source-backed Pattern and Layered fingerprints, Rust
-tautomer enumeration, and typed potential-stereo and lazy stereoisomer
-enumeration. It also completes the ordinary-molecule SMARTS parser, query,
-writer, and substructure-matching path through source-backed Rust
-implementations with explicit state lifecycle and pinned parity validation.
+alignment and RMSD, source-backed Pattern and Layered fingerprints, and the
+Rust tautomer-enumeration surface; adds typed potential-stereo and lazy
+stereoisomer enumeration; expands the molecular descriptor API with
+connectivity, shape, Lipinski/ring/stereo, MQN, Labute, and VSA families; and
+completes the ordinary-molecule SMARTS parser, query, writer, and substructure-
+matching path through source-backed Rust implementations with explicit state
+lifecycle and pinned parity validation.
 
 ### Added
 
@@ -88,6 +90,10 @@ implementations with explicit state lifecycle and pinned parity validation.
   profiles, a complete reproducible ChEMBL 37 phase, architecture guards,
   composition tests, public examples, and deterministic stage benchmarks for
   potential stereo and stereoisomer enumeration.
+- Added source-backed Rust and Python descriptor APIs for connectivity Chi,
+  Hall-Kier alpha, Kappa/Phi, direct Lipinski and ring/stereo counts, the
+  fixed 42-component MQN vector, Labute ASA and atom/H contributions, and
+  default or custom-bin SlogP/SMR VSA vectors and scalar projections.
 
 ### Changed
 
@@ -116,6 +122,12 @@ implementations with explicit state lifecycle and pinned parity validation.
   coordinate transforms onto one private pure-Rust quaternion/Jacobi alignment
   and 4x4 transform implementation; pinned source behavior required no
   numerical FFI backend.
+- Consolidated the new descriptor families onto one neutral source-order path
+  enumerator, one authoritative periodic-table Rb0 table, one ring-state
+  provider, shared SMARTS/stereo/Crippen cores, and typed topology-invalidated
+  computed caches. Python descriptor calls now borrow the retained molecule so
+  warm-cache state survives repeated and mixed calls without changing the
+  public signatures.
 
 ### Fixed
 
@@ -219,6 +231,12 @@ implementations with explicit state lifecycle and pinned parity validation.
   existing distance-geometry composition cost. The parity boundary is RDKit's
   Python enumerator and does not claim the separate newer C++ enumerator or
   atropisomer enumeration.
+- Descriptor validation covers focused branch fixtures, 152 project-small
+  rows, the complete maintained 5,000-row matrix, and all 2,897,819 ChEMBL 37
+  source records. All 2,897,804 mutually parseable ChEMBL records match pinned
+  RDKit across 903,237,331 exact scalar, vector, contribution, custom-bin, and
+  cache-sequence observations; finite floating-point values compare by exact
+  IEEE-754 bits, with zero mismatch.
 
 ## [0.2.13] - 2026-08-24
 

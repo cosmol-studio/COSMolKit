@@ -26,6 +26,8 @@ TOOL_DIR = Path(__file__).resolve().parent
 REFERENCE_IDENTITY_PATH = REPO_ROOT / "testdata/reference/rdkit.json"
 SCHEMA_PATH = TOOL_DIR / "_expected_schema.py"
 PROFILE_INPUTS = {
+    "descriptors_focused": REPO_ROOT
+    / "testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi",
     "ciplabeler_focused": REPO_ROOT
     / "testdata/stereo/fixtures/ciplabeler_focused.json",
     "atom_pair_focused": REPO_ROOT
@@ -123,6 +125,7 @@ GENERATOR_SPECS = [
         "molecular_descriptors.jsonl",
         "descriptors",
         {"default", "strict-corpus"},
+        profiles={"descriptors_focused", "smiles_small", "smiles_5000"},
     ),
     spec(
         "delete_substructs_golden",

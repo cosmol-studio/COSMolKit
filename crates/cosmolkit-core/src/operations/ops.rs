@@ -2462,9 +2462,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(coords.len(), 1);
-        assert!((coords[0][0] - 0.0).abs() < 1.0e-12);
-        assert!((coords[0][1] - 0.0).abs() < 1.0e-12);
-        assert!((coords[0][2] - 1.10).abs() < 1.0e-12);
+        assert_eq!(coords[0], [0.0, 0.0, 1.10]);
     }
 
     #[test]

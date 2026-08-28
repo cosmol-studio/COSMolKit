@@ -297,10 +297,26 @@ pub use potential_stereo::{
     analyze_potential_stereo,
 };
 pub use properties::descriptors::{
-    CrippenDescriptorValues, DescriptorError, DescriptorResult, NumRotatableBondsOptions,
-    calc_crippen_descriptors, calc_exact_mol_wt, calc_fraction_csp3, calc_mol_formula, calc_mol_wt,
-    calc_num_aromatic_rings, calc_num_hba, calc_num_hbd, calc_num_rotatable_bonds, calc_qed,
-    calc_tpsa,
+    CrippenDescriptorValues, DescriptorError, DescriptorResult, HallKierAlphaValues,
+    LabuteAsaContributions, NumRotatableBondsOptions, calc_chi_0, calc_chi_0n, calc_chi_0v,
+    calc_chi_1, calc_chi_1n, calc_chi_1v, calc_chi_2n, calc_chi_2v, calc_chi_3n, calc_chi_3v,
+    calc_chi_4n, calc_chi_4v, calc_chi_nn, calc_chi_nv, calc_crippen_descriptors,
+    calc_exact_mol_wt, calc_fraction_csp3, calc_hall_kier_alpha,
+    calc_hall_kier_alpha_with_contributions, calc_kappa_1, calc_kappa_2, calc_kappa_3,
+    calc_labute_asa, calc_labute_asa_contributions, calc_lipinski_hba, calc_lipinski_hbd,
+    calc_mol_formula, calc_mol_wt, calc_mqns, calc_num_aliphatic_carbocycles,
+    calc_num_aliphatic_heterocycles, calc_num_aliphatic_rings, calc_num_amide_bonds,
+    calc_num_aromatic_carbocycles, calc_num_aromatic_heterocycles, calc_num_aromatic_rings,
+    calc_num_atom_stereo_centers, calc_num_atoms, calc_num_bridgehead_atoms, calc_num_hba,
+    calc_num_hbd, calc_num_heavy_atoms, calc_num_heteroatoms, calc_num_heterocycles,
+    calc_num_rings, calc_num_rotatable_bonds, calc_num_saturated_carbocycles,
+    calc_num_saturated_heterocycles, calc_num_saturated_rings, calc_num_spiro_atoms,
+    calc_num_unspecified_atom_stereo_centers, calc_phi, calc_qed, calc_slogp_vsa, calc_slogp_vsa_1,
+    calc_slogp_vsa_2, calc_slogp_vsa_3, calc_slogp_vsa_4, calc_slogp_vsa_5, calc_slogp_vsa_6,
+    calc_slogp_vsa_7, calc_slogp_vsa_8, calc_slogp_vsa_9, calc_slogp_vsa_10, calc_slogp_vsa_11,
+    calc_slogp_vsa_12, calc_slogp_vsa_with_bins, calc_smr_vsa, calc_smr_vsa_1, calc_smr_vsa_2,
+    calc_smr_vsa_3, calc_smr_vsa_4, calc_smr_vsa_5, calc_smr_vsa_6, calc_smr_vsa_7, calc_smr_vsa_8,
+    calc_smr_vsa_9, calc_smr_vsa_10, calc_smr_vsa_with_bins, calc_tpsa,
 };
 pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use rings::{

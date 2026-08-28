@@ -11671,7 +11671,7 @@ Return the RDKit-aligned average molecular weight.
 Set ``only_heavy=True`` to omit hydrogen atoms and implicit hydrogen mass.
 The input molecule is not mutated.
 "#]
-fn calc_mol_wt(molecule: &Molecule, only_heavy: bool) -> PyResult<f64> {
+fn calc_mol_wt(molecule: PyRef<'_, Molecule>, only_heavy: bool) -> PyResult<f64> {
     cosmolkit_core::calc_mol_wt(&molecule.inner, only_heavy).map_err(descriptor_pyerr)
 }
 
@@ -11684,7 +11684,7 @@ Return the RDKit-aligned exact molecular weight.
 Set ``only_heavy=True`` to omit hydrogen atoms and implicit hydrogen mass.
 The input molecule is not mutated.
 "#]
-fn calc_exact_mol_wt(molecule: &Molecule, only_heavy: bool) -> PyResult<f64> {
+fn calc_exact_mol_wt(molecule: PyRef<'_, Molecule>, only_heavy: bool) -> PyResult<f64> {
     cosmolkit_core::calc_exact_mol_wt(&molecule.inner, only_heavy).map_err(descriptor_pyerr)
 }
 
@@ -11699,7 +11699,7 @@ Return the RDKit-aligned molecular formula.
 The input molecule is not mutated.
 "#]
 fn calc_mol_formula(
-    molecule: &Molecule,
+    molecule: PyRef<'_, Molecule>,
     separate_isotopes: bool,
     abbreviate_h_isotopes: bool,
 ) -> PyResult<String> {
@@ -11710,21 +11710,21 @@ fn calc_mol_formula(
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = "Return the RDKit-aligned hydrogen-bond donor count without mutating the molecule."]
-fn calc_num_hbd(molecule: &Molecule) -> PyResult<u32> {
+fn calc_num_hbd(molecule: PyRef<'_, Molecule>) -> PyResult<u32> {
     cosmolkit_core::calc_num_hbd(&molecule.inner).map_err(descriptor_pyerr)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = "Return the RDKit-aligned hydrogen-bond acceptor count without mutating the molecule."]
-fn calc_num_hba(molecule: &Molecule) -> PyResult<u32> {
+fn calc_num_hba(molecule: PyRef<'_, Molecule>) -> PyResult<u32> {
     cosmolkit_core::calc_num_hba(&molecule.inner).map_err(descriptor_pyerr)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = "Return the RDKit-aligned fraction of carbon atoms that are sp3 without mutating the molecule."]
-fn calc_fraction_csp3(molecule: &Molecule) -> PyResult<f64> {
+fn calc_fraction_csp3(molecule: PyRef<'_, Molecule>) -> PyResult<f64> {
     cosmolkit_core::calc_fraction_csp3(&molecule.inner).map_err(descriptor_pyerr)
 }
 
@@ -11741,7 +11741,7 @@ source-compatible computed Crippen descriptor cache may be populated on the
 input molecule, matching RDKit's property-cache behavior.
 "#]
 fn calc_crippen_descriptors(
-    molecule: &Molecule,
+    molecule: PyRef<'_, Molecule>,
     include_hs: bool,
     force: bool,
 ) -> PyResult<(f64, f64)> {
@@ -11759,14 +11759,14 @@ Return the RDKit-aligned topological polar surface area.
 Set ``include_sandp=True`` to include sulfur and phosphorus contributions.
 The input molecule is not mutated.
 "#]
-fn calc_tpsa(molecule: &Molecule, force: bool, include_sandp: bool) -> PyResult<f64> {
+fn calc_tpsa(molecule: PyRef<'_, Molecule>, force: bool, include_sandp: bool) -> PyResult<f64> {
     cosmolkit_core::calc_tpsa(&molecule.inner, force, include_sandp).map_err(descriptor_pyerr)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = "Return the RDKit-aligned aromatic-ring count without mutating the molecule."]
-fn calc_num_aromatic_rings(molecule: &Molecule) -> PyResult<u32> {
+fn calc_num_aromatic_rings(molecule: PyRef<'_, Molecule>) -> PyResult<u32> {
     cosmolkit_core::calc_num_aromatic_rings(&molecule.inner).map_err(descriptor_pyerr)
 }
 
@@ -11781,7 +11781,7 @@ Return the RDKit-aligned rotatable-bond count.
 ``"strict_linkages"``. The input molecule is not mutated.
 "#]
 fn calc_num_rotatable_bonds(
-    molecule: &Molecule,
+    molecule: PyRef<'_, Molecule>,
     #[gen_stub(override_type(type_repr = "typing.Literal['default', 'non_strict', 'strict', 'strict_linkages']", imports = ("typing")))]
     mode: &str,
 ) -> PyResult<u32> {
@@ -11792,9 +11792,250 @@ fn calc_num_rotatable_bonds(
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = "Return the RDKit-aligned quantitative estimate of drug-likeness without mutating the molecule."]
-fn calc_qed(molecule: &Molecule) -> PyResult<f64> {
+fn calc_qed(molecule: PyRef<'_, Molecule>) -> PyResult<f64> {
     cosmolkit_core::calc_qed(&molecule.inner).map_err(descriptor_pyerr)
 }
+
+macro_rules! python_infallible_float_descriptor {
+    ($name:ident, $doc:literal) => {
+        #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+        #[pyfunction]
+        #[doc = $doc]
+        fn $name(molecule: PyRef<'_, Molecule>) -> f64 {
+            cosmolkit_core::$name(&molecule.inner)
+        }
+    };
+}
+
+macro_rules! python_float_descriptor {
+    ($name:ident, $doc:literal) => {
+        #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+        #[pyfunction]
+        #[doc = $doc]
+        fn $name(molecule: PyRef<'_, Molecule>) -> PyResult<f64> {
+            cosmolkit_core::$name(&molecule.inner).map_err(descriptor_pyerr)
+        }
+    };
+}
+
+macro_rules! python_count_descriptor {
+    ($name:ident, $doc:literal) => {
+        #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+        #[pyfunction]
+        #[doc = $doc]
+        fn $name(molecule: PyRef<'_, Molecule>) -> PyResult<u32> {
+            cosmolkit_core::$name(&molecule.inner).map_err(descriptor_pyerr)
+        }
+    };
+}
+
+python_infallible_float_descriptor!(calc_chi_0, "Return the graph-degree Chi0 descriptor.");
+python_infallible_float_descriptor!(calc_chi_1, "Return the graph-degree Chi1 descriptor.");
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, order, force=false))]
+#[doc = "Return the order-N valence connectivity descriptor."]
+fn calc_chi_nv(molecule: PyRef<'_, Molecule>, order: usize, force: bool) -> PyResult<f64> {
+    cosmolkit_core::calc_chi_nv(&molecule.inner, order, force).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, order, force=false))]
+#[doc = "Return the order-N principal-quantum connectivity descriptor."]
+fn calc_chi_nn(molecule: PyRef<'_, Molecule>, order: usize, force: bool) -> PyResult<f64> {
+    cosmolkit_core::calc_chi_nn(&molecule.inner, order, force).map_err(descriptor_pyerr)
+}
+
+macro_rules! python_fixed_chi_descriptor {
+    ($name:ident) => {
+        #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+        #[pyfunction]
+        #[pyo3(signature = (molecule, force=false))]
+        fn $name(molecule: PyRef<'_, Molecule>, force: bool) -> PyResult<f64> {
+            cosmolkit_core::$name(&molecule.inner, force).map_err(descriptor_pyerr)
+        }
+    };
+}
+
+python_fixed_chi_descriptor!(calc_chi_0v);
+python_fixed_chi_descriptor!(calc_chi_1v);
+python_fixed_chi_descriptor!(calc_chi_2v);
+python_fixed_chi_descriptor!(calc_chi_3v);
+python_fixed_chi_descriptor!(calc_chi_4v);
+python_fixed_chi_descriptor!(calc_chi_0n);
+python_fixed_chi_descriptor!(calc_chi_1n);
+python_fixed_chi_descriptor!(calc_chi_2n);
+python_fixed_chi_descriptor!(calc_chi_3n);
+python_fixed_chi_descriptor!(calc_chi_4n);
+
+python_infallible_float_descriptor!(
+    calc_hall_kier_alpha,
+    "Return the Hall-Kier alpha descriptor."
+);
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return Hall-Kier alpha and atom-index-aligned contributions."]
+fn calc_hall_kier_alpha_with_contributions(molecule: PyRef<'_, Molecule>) -> (f64, Vec<f64>) {
+    let values = cosmolkit_core::calc_hall_kier_alpha_with_contributions(&molecule.inner);
+    (values.alpha, values.atom_contributions)
+}
+
+python_infallible_float_descriptor!(calc_kappa_1, "Return the first Kappa shape index.");
+python_float_descriptor!(calc_kappa_2, "Return the second Kappa shape index.");
+python_float_descriptor!(calc_kappa_3, "Return the third Kappa shape index.");
+python_float_descriptor!(calc_phi, "Return the molecular flexibility Phi descriptor.");
+
+python_count_descriptor!(
+    calc_lipinski_hba,
+    "Return the direct Lipinski nitrogen/oxygen acceptor count."
+);
+python_count_descriptor!(
+    calc_lipinski_hbd,
+    "Return the direct Lipinski nitrogen/oxygen donor-site count."
+);
+python_count_descriptor!(calc_num_heteroatoms, "Return the heteroatom count.");
+python_count_descriptor!(calc_num_amide_bonds, "Return the amide-bond count.");
+python_count_descriptor!(calc_num_heavy_atoms, "Return the heavy-atom count.");
+python_count_descriptor!(
+    calc_num_atoms,
+    "Return the total atom count including implicit hydrogens."
+);
+python_count_descriptor!(calc_num_rings, "Return the SSSR ring count.");
+python_count_descriptor!(calc_num_heterocycles, "Return the heterocycle count.");
+python_count_descriptor!(calc_num_saturated_rings, "Return the saturated-ring count.");
+python_count_descriptor!(calc_num_aliphatic_rings, "Return the aliphatic-ring count.");
+python_count_descriptor!(
+    calc_num_aromatic_heterocycles,
+    "Return the aromatic heterocycle count."
+);
+python_count_descriptor!(
+    calc_num_aromatic_carbocycles,
+    "Return the aromatic carbocycle count."
+);
+python_count_descriptor!(
+    calc_num_aliphatic_heterocycles,
+    "Return the aliphatic heterocycle count."
+);
+python_count_descriptor!(
+    calc_num_aliphatic_carbocycles,
+    "Return the aliphatic carbocycle count."
+);
+python_count_descriptor!(
+    calc_num_saturated_heterocycles,
+    "Return the saturated heterocycle count."
+);
+python_count_descriptor!(
+    calc_num_saturated_carbocycles,
+    "Return the saturated carbocycle count."
+);
+python_count_descriptor!(calc_num_spiro_atoms, "Return the spiro-atom count.");
+python_count_descriptor!(
+    calc_num_bridgehead_atoms,
+    "Return the bridgehead-atom count."
+);
+python_count_descriptor!(
+    calc_num_atom_stereo_centers,
+    "Return the number of possible atom stereocenters."
+);
+python_count_descriptor!(
+    calc_num_unspecified_atom_stereo_centers,
+    "Return the number of possible atom stereocenters without a specified chiral tag."
+);
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the fixed-order 42-component molecular quantum number vector."]
+fn calc_mqns(molecule: PyRef<'_, Molecule>) -> PyResult<Vec<u32>> {
+    cosmolkit_core::calc_mqns(&molecule.inner)
+        .map(|values| values.to_vec())
+        .map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, include_hydrogens=true, force=false))]
+#[doc = "Return the Labute approximate surface area."]
+fn calc_labute_asa(molecule: PyRef<'_, Molecule>, include_hydrogens: bool, force: bool) -> f64 {
+    cosmolkit_core::calc_labute_asa(&molecule.inner, include_hydrogens, force)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, include_hydrogens=true, force=false))]
+#[doc = "Return Labute ASA, atom-index-aligned contributions, and the hydrogen contribution."]
+fn calc_labute_asa_contributions(
+    molecule: PyRef<'_, Molecule>,
+    include_hydrogens: bool,
+    force: bool,
+) -> (f64, Vec<f64>, f64) {
+    let values =
+        cosmolkit_core::calc_labute_asa_contributions(&molecule.inner, include_hydrogens, force);
+    (
+        values.asa,
+        values.atom_contributions,
+        values.hydrogen_contribution,
+    )
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, bins=None, force=false))]
+#[doc = "Return the SlogP-VSA vector using default or caller-provided bin boundaries."]
+fn calc_slogp_vsa(
+    molecule: PyRef<'_, Molecule>,
+    bins: Option<Vec<f64>>,
+    force: bool,
+) -> PyResult<Vec<f64>> {
+    match bins {
+        Some(bins) => cosmolkit_core::calc_slogp_vsa_with_bins(&molecule.inner, &bins, force),
+        None => {
+            cosmolkit_core::calc_slogp_vsa(&molecule.inner, force).map(|values| values.to_vec())
+        }
+    }
+    .map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, bins=None, force=false))]
+#[doc = "Return the SMR-VSA vector using default or caller-provided bin boundaries."]
+fn calc_smr_vsa(
+    molecule: PyRef<'_, Molecule>,
+    bins: Option<Vec<f64>>,
+    force: bool,
+) -> PyResult<Vec<f64>> {
+    match bins {
+        Some(bins) => cosmolkit_core::calc_smr_vsa_with_bins(&molecule.inner, &bins, force),
+        None => cosmolkit_core::calc_smr_vsa(&molecule.inner, force).map(|values| values.to_vec()),
+    }
+    .map_err(descriptor_pyerr)
+}
+
+python_float_descriptor!(calc_slogp_vsa_1, "Return SlogP-VSA bin 1.");
+python_float_descriptor!(calc_slogp_vsa_2, "Return SlogP-VSA bin 2.");
+python_float_descriptor!(calc_slogp_vsa_3, "Return SlogP-VSA bin 3.");
+python_float_descriptor!(calc_slogp_vsa_4, "Return SlogP-VSA bin 4.");
+python_float_descriptor!(calc_slogp_vsa_5, "Return SlogP-VSA bin 5.");
+python_float_descriptor!(calc_slogp_vsa_6, "Return SlogP-VSA bin 6.");
+python_float_descriptor!(calc_slogp_vsa_7, "Return SlogP-VSA bin 7.");
+python_float_descriptor!(calc_slogp_vsa_8, "Return SlogP-VSA bin 8.");
+python_float_descriptor!(calc_slogp_vsa_9, "Return SlogP-VSA bin 9.");
+python_float_descriptor!(calc_slogp_vsa_10, "Return SlogP-VSA bin 10.");
+python_float_descriptor!(calc_slogp_vsa_11, "Return SlogP-VSA bin 11.");
+python_float_descriptor!(calc_slogp_vsa_12, "Return SlogP-VSA bin 12.");
+python_float_descriptor!(calc_smr_vsa_1, "Return SMR-VSA bin 1.");
+python_float_descriptor!(calc_smr_vsa_2, "Return SMR-VSA bin 2.");
+python_float_descriptor!(calc_smr_vsa_3, "Return SMR-VSA bin 3.");
+python_float_descriptor!(calc_smr_vsa_4, "Return SMR-VSA bin 4.");
+python_float_descriptor!(calc_smr_vsa_5, "Return SMR-VSA bin 5.");
+python_float_descriptor!(calc_smr_vsa_6, "Return SMR-VSA bin 6.");
+python_float_descriptor!(calc_smr_vsa_7, "Return SMR-VSA bin 7.");
+python_float_descriptor!(calc_smr_vsa_8, "Return SMR-VSA bin 8.");
+python_float_descriptor!(calc_smr_vsa_9, "Return SMR-VSA bin 9.");
+python_float_descriptor!(calc_smr_vsa_10, "Return SMR-VSA bin 10.");
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
@@ -12530,6 +12771,79 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calc_num_aromatic_rings, m)?)?;
     m.add_function(wrap_pyfunction!(calc_num_rotatable_bonds, m)?)?;
     m.add_function(wrap_pyfunction!(calc_qed, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_0, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_1, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_nv, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_nn, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_0v, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_1v, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_2v, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_3v, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_4v, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_0n, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_1n, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_2n, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_3n, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_chi_4n, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_hall_kier_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        calc_hall_kier_alpha_with_contributions,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(calc_kappa_1, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_kappa_2, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_kappa_3, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_phi, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_lipinski_hba, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_lipinski_hbd, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_heteroatoms, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_amide_bonds, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_heavy_atoms, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_atoms, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_rings, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_heterocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_saturated_rings, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aliphatic_rings, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aromatic_heterocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aromatic_carbocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aliphatic_heterocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aliphatic_carbocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_saturated_heterocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_saturated_carbocycles, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_spiro_atoms, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_bridgehead_atoms, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_atom_stereo_centers, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        calc_num_unspecified_atom_stereo_centers,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(calc_mqns, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_labute_asa, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_labute_asa_contributions, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_1, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_2, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_3, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_4, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_5, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_6, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_7, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_8, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_9, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_10, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_11, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_slogp_vsa_12, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_1, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_2, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_3, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_4, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_5, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_6, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_7, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_8, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_9, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_smr_vsa_10, m)?)?;
     m.add_function(wrap_pyfunction!(element_from_symbol, m)?)?;
     m.add_function(wrap_pyfunction!(get_element_info, m)?)?;
     m.add_function(wrap_pyfunction!(find_tabulated_residue, m)?)?;

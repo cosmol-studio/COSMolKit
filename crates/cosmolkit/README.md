@@ -21,7 +21,7 @@ Every discovered mismatch is traced back to the corresponding upstream logic, co
 
 The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
 
-See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
+See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, focused regressions, and upstream surfaces outside the current claim.
 
 ## Installation
 
@@ -146,17 +146,24 @@ The facade re-exports the source-backed descriptor functions from
 `cosmolkit-core`:
 
 ```rust
-use cosmolkit::{Molecule, calc_mol_formula, calc_mol_wt, calc_num_aromatic_rings};
+use cosmolkit::{
+    Molecule, calc_chi_0, calc_mol_formula, calc_mol_wt, calc_mqns,
+    calc_num_aromatic_rings,
+};
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
 assert_eq!(calc_mol_formula(&molecule, false, true)?, "C6H6O");
 assert!(calc_mol_wt(&molecule, false)? > 94.0);
 assert_eq!(calc_num_aromatic_rings(&molecule)?, 1);
+assert!(calc_chi_0(&molecule) > 0.0);
+assert_eq!(calc_mqns(&molecule)?.len(), 42);
 ```
 
-The documented descriptor surface is stable. Supported rows and parameter
-combinations are checked field-by-field against pinned RDKit golden data;
-unmodeled source states return an explicit descriptor error.
+The documented descriptor surface includes molecular properties, connectivity
+and shape indices, Lipinski and ring/stereo counts, MQN, Labute ASA, and
+SlogP/SMR VSA. Supported rows and parameter combinations are checked
+field-by-field against pinned RDKit golden data; unmodeled source states return
+an explicit descriptor error.
 
 ## Fingerprints
 

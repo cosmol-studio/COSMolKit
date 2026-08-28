@@ -332,7 +332,8 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
             message: "AddHs coordinate append references an out-of-range heavy atom",
         })?;
     let bond_length = if is_3d {
-        add_hs_rdkit_rb0(1) + add_hs_rdkit_rb0(other_atom.atomic_number())
+        crate::chemistry::valence::rdkit_rb0(1)
+            + crate::chemistry::valence::rdkit_rb0(other_atom.atomic_number())
     } else {
         1.0
     };
@@ -515,24 +516,6 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
 }
 
 const ADD_HS_SQ_DIST_ZERO_TOL: f64 = 1.0e-8;
-
-fn add_hs_rdkit_rb0(atomic_number: u8) -> f64 {
-    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getRb0 / atomicData::Rb0
-    // RDKit✔️✔️: double Rb0() const { return rB0; }
-    // RDKit✔️✔️: double getRb0(UINT atomicNumber) const { ... return byanum[atomicNumber].Rb0(); }
-    const RB0: [f64; 113] = [
-        0.0, 0.33, 0.7, 1.23, 0.9, 0.82, 0.77, 0.7, 0.66, 0.611, 0.7, 1.54, 1.36, 1.18, 0.937,
-        0.89, 1.04, 0.997, 1.74, 2.03, 1.74, 1.44, 1.32, 1.22, 1.18, 1.17, 1.17, 1.16, 1.15, 1.17,
-        1.25, 1.26, 1.188, 1.2, 1.17, 1.167, 1.91, 2.16, 1.91, 1.62, 1.45, 1.34, 1.3, 1.27, 1.25,
-        1.25, 1.28, 1.34, 1.48, 1.44, 1.385, 1.4, 1.378, 1.387, 1.98, 2.35, 1.98, 1.69, 1.83, 1.82,
-        1.81, 1.8, 1.8, 1.99, 1.79, 1.76, 1.75, 1.74, 1.73, 1.72, 1.94, 1.72, 1.44, 1.34, 1.3,
-        1.28, 1.26, 1.27, 1.3, 1.34, 1.49, 1.48, 1.48, 1.45, 1.46, 1.45, 2.4, 2.0, 1.9, 1.88, 1.79,
-        1.61, 1.58, 1.55, 1.53, 1.07, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0,
-    ];
-    RB0.get(usize::from(atomic_number)).copied().unwrap_or(0.0)
-    // END RDKIT CPP FUNCTION PeriodicTable::getRb0 / atomicData::Rb0
-}
 
 fn add_hs_bond_is_pi_like(
     molecule: MoleculeReadParts<'_>,

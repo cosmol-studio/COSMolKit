@@ -17,7 +17,14 @@ from typing import Any, Callable, cast
 import cosmolkit
 from rdkit import Chem, DataStructs, RDLogger
 from rdkit import rdBase
-from rdkit.Chem import Crippen, Descriptors, MACCSkeys, QED, rdFingerprintGenerator
+from rdkit.Chem import (
+    Crippen,
+    Descriptors,
+    GraphDescriptors,
+    MACCSkeys,
+    QED,
+    rdFingerprintGenerator,
+)
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import rdCIPLabeler
 
@@ -458,6 +465,377 @@ def descriptor_values_ck(mol: Any, branch_smiles: str | None = None) -> dict[str
     return values
 
 
+def fresh_rd_molecule(smiles: str) -> Chem.Mol:
+    molecule = Chem.MolFromSmiles(smiles, sanitize=True)
+    if molecule is None:
+        raise RuntimeError("RDKit rejected a SMILES accepted by the paired parser")
+    return molecule
+
+
+def fresh_ck_molecule(smiles: str) -> Any:
+    return cosmolkit.Molecule.from_smiles(smiles)
+
+
+def high_feasibility_descriptor_values_rd(
+    mol: Chem.Mol, smiles: str
+) -> dict[str, Any]:
+    alpha_contributions = [0.0] * mol.GetNumAtoms()
+    alpha = rdMolDescriptors.CalcHallKierAlpha(mol, alpha_contributions)
+    labute_contributions: dict[str, Any] = {}
+    for include_hydrogens in (False, True):
+        branch = fresh_rd_molecule(smiles)
+        atom_contributions, hydrogen_contribution = (
+            rdMolDescriptors._CalcLabuteASAContribs(branch, include_hydrogens)
+        )
+        labute_contributions[f"include_hydrogens_{include_hydrogens}"] = {
+            "asa": rdMolDescriptors.CalcLabuteASA(
+                fresh_rd_molecule(smiles), include_hydrogens, False
+            ),
+            "atom_contributions": list(atom_contributions),
+            "hydrogen_contribution": hydrogen_contribution,
+        }
+
+    def chi_cache_profile(function: Callable[..., float]) -> dict[str, Any]:
+        branch = fresh_rd_molecule(smiles)
+        return {
+            "cold": [function(branch, order, False) for order in range(7)],
+            "warm": [function(branch, order, False) for order in range(7)],
+            "forced": [function(branch, order, True) for order in range(7)],
+        }
+
+    labute_branch = fresh_rd_molecule(smiles)
+    vsa_branch = fresh_rd_molecule(smiles)
+    custom_bins = [-0.2, 0.0, 0.25, 0.25, 0.8]
+    values: dict[str, Any] = {
+        "descriptors": {
+            "chi_0": float(GraphDescriptors.Chi0(mol)),
+            "chi_1": float(GraphDescriptors.Chi1(mol)),
+            "chi_nv_orders_0_6": [
+                rdMolDescriptors.CalcChiNv(mol, order, False)
+                for order in range(7)
+            ],
+            "chi_nn_orders_0_6": [
+                rdMolDescriptors.CalcChiNn(mol, order, False)
+                for order in range(7)
+            ],
+            "chi_0v": rdMolDescriptors.CalcChi0v(mol, False),
+            "chi_1v": rdMolDescriptors.CalcChi1v(mol, False),
+            "chi_2v": rdMolDescriptors.CalcChi2v(mol, False),
+            "chi_3v": rdMolDescriptors.CalcChi3v(mol, False),
+            "chi_4v": rdMolDescriptors.CalcChi4v(mol, False),
+            "chi_0n": rdMolDescriptors.CalcChi0n(mol, False),
+            "chi_1n": rdMolDescriptors.CalcChi1n(mol, False),
+            "chi_2n": rdMolDescriptors.CalcChi2n(mol, False),
+            "chi_3n": rdMolDescriptors.CalcChi3n(mol, False),
+            "chi_4n": rdMolDescriptors.CalcChi4n(mol, False),
+            "hall_kier_alpha": alpha,
+            "kappa_1": rdMolDescriptors.CalcKappa1(mol),
+            "kappa_2": rdMolDescriptors.CalcKappa2(mol),
+            "kappa_3": rdMolDescriptors.CalcKappa3(mol),
+            "phi": rdMolDescriptors.CalcPhi(mol),
+            "lipinski_hba": rdMolDescriptors.CalcNumLipinskiHBA(mol),
+            "lipinski_hbd": rdMolDescriptors.CalcNumLipinskiHBD(mol),
+            "num_hba": rdMolDescriptors.CalcNumHBA(mol),
+            "num_hbd": rdMolDescriptors.CalcNumHBD(mol),
+            "num_heteroatoms": rdMolDescriptors.CalcNumHeteroatoms(mol),
+            "num_amide_bonds": rdMolDescriptors.CalcNumAmideBonds(mol),
+            "num_heavy_atoms": rdMolDescriptors.CalcNumHeavyAtoms(mol),
+            "num_atoms": rdMolDescriptors.CalcNumAtoms(mol),
+            "num_rings": rdMolDescriptors.CalcNumRings(mol),
+            "num_heterocycles": rdMolDescriptors.CalcNumHeterocycles(mol),
+            "num_aromatic_rings": rdMolDescriptors.CalcNumAromaticRings(mol),
+            "num_saturated_rings": rdMolDescriptors.CalcNumSaturatedRings(mol),
+            "num_aliphatic_rings": rdMolDescriptors.CalcNumAliphaticRings(mol),
+            "num_aromatic_heterocycles": (
+                rdMolDescriptors.CalcNumAromaticHeterocycles(mol)
+            ),
+            "num_aromatic_carbocycles": (
+                rdMolDescriptors.CalcNumAromaticCarbocycles(mol)
+            ),
+            "num_aliphatic_heterocycles": (
+                rdMolDescriptors.CalcNumAliphaticHeterocycles(mol)
+            ),
+            "num_aliphatic_carbocycles": (
+                rdMolDescriptors.CalcNumAliphaticCarbocycles(mol)
+            ),
+            "num_saturated_heterocycles": (
+                rdMolDescriptors.CalcNumSaturatedHeterocycles(mol)
+            ),
+            "num_saturated_carbocycles": (
+                rdMolDescriptors.CalcNumSaturatedCarbocycles(mol)
+            ),
+            "num_spiro_atoms": rdMolDescriptors.CalcNumSpiroAtoms(mol),
+            "num_bridgehead_atoms": rdMolDescriptors.CalcNumBridgeheadAtoms(mol),
+            "num_atom_stereo_centers": (
+                rdMolDescriptors.CalcNumAtomStereoCenters(mol)
+            ),
+            "num_unspecified_atom_stereo_centers": (
+                rdMolDescriptors.CalcNumUnspecifiedAtomStereoCenters(mol)
+            ),
+            "fraction_csp3": rdMolDescriptors.CalcFractionCSP3(mol),
+            "mqns": list(rdMolDescriptors.MQNs_(mol, False)),
+            "labute_asa_include_hydrogens_false": (
+                rdMolDescriptors.CalcLabuteASA(mol, False, False)
+            ),
+            "labute_asa_include_hydrogens_true": (
+                rdMolDescriptors.CalcLabuteASA(mol, True, True)
+            ),
+            "slogp_vsa": list(rdMolDescriptors.SlogP_VSA_(mol, [], False)),
+            "smr_vsa": list(rdMolDescriptors.SMR_VSA_(mol, [], False)),
+        },
+        "contributions": {
+            "hall_kier_alpha": {
+                "value": alpha,
+                "atom_contributions": alpha_contributions,
+            },
+            "labute_asa": labute_contributions,
+        },
+        "cache_profiles": {
+            "chi_nv": chi_cache_profile(rdMolDescriptors.CalcChiNv),
+            "chi_nn": chi_cache_profile(rdMolDescriptors.CalcChiNn),
+            "labute_asa_sequence": [
+                rdMolDescriptors.CalcLabuteASA(labute_branch, False, False),
+                rdMolDescriptors.CalcLabuteASA(labute_branch, True, False),
+                rdMolDescriptors.CalcLabuteASA(labute_branch, True, True),
+                rdMolDescriptors.CalcLabuteASA(labute_branch, False, False),
+            ],
+            "slogp_vsa_default_cold": list(
+                rdMolDescriptors.SlogP_VSA_(vsa_branch, [], False)
+            ),
+            "slogp_vsa_default_warm": list(
+                rdMolDescriptors.SlogP_VSA_(vsa_branch, [], False)
+            ),
+            "slogp_vsa_custom_forced": list(
+                rdMolDescriptors.SlogP_VSA_(vsa_branch, custom_bins, True)
+            ),
+            "smr_vsa_default_warm": list(
+                rdMolDescriptors.SMR_VSA_(vsa_branch, [], False)
+            ),
+            "smr_vsa_custom_forced": list(
+                rdMolDescriptors.SMR_VSA_(vsa_branch, custom_bins, True)
+            ),
+        },
+    }
+    return float_tree_bits(values)
+
+
+def high_feasibility_descriptor_values_ck(mol: Any, smiles: str) -> dict[str, Any]:
+    alpha, alpha_contributions = (
+        cosmolkit.calc_hall_kier_alpha_with_contributions(mol)
+    )
+    labute_contributions: dict[str, Any] = {}
+    for include_hydrogens in (False, True):
+        asa, atom_contributions, hydrogen_contribution = (
+            cosmolkit.calc_labute_asa_contributions(
+                fresh_ck_molecule(smiles),
+                include_hydrogens=include_hydrogens,
+                force=False,
+            )
+        )
+        labute_contributions[f"include_hydrogens_{include_hydrogens}"] = {
+            "asa": asa,
+            "atom_contributions": atom_contributions,
+            "hydrogen_contribution": hydrogen_contribution,
+        }
+
+    def chi_cache_profile(function: Callable[..., float]) -> dict[str, Any]:
+        branch = fresh_ck_molecule(smiles)
+        return {
+            "cold": [function(branch, order, force=False) for order in range(7)],
+            "warm": [function(branch, order, force=False) for order in range(7)],
+            "forced": [function(branch, order, force=True) for order in range(7)],
+        }
+
+    labute_branch = fresh_ck_molecule(smiles)
+    vsa_branch = fresh_ck_molecule(smiles)
+    custom_bins = [-0.2, 0.0, 0.25, 0.25, 0.8]
+    values: dict[str, Any] = {
+        "descriptors": {
+            "chi_0": cosmolkit.calc_chi_0(mol),
+            "chi_1": cosmolkit.calc_chi_1(mol),
+            "chi_nv_orders_0_6": [
+                cosmolkit.calc_chi_nv(mol, order, force=False)
+                for order in range(7)
+            ],
+            "chi_nn_orders_0_6": [
+                cosmolkit.calc_chi_nn(mol, order, force=False)
+                for order in range(7)
+            ],
+            "chi_0v": cosmolkit.calc_chi_0v(mol, force=False),
+            "chi_1v": cosmolkit.calc_chi_1v(mol, force=False),
+            "chi_2v": cosmolkit.calc_chi_2v(mol, force=False),
+            "chi_3v": cosmolkit.calc_chi_3v(mol, force=False),
+            "chi_4v": cosmolkit.calc_chi_4v(mol, force=False),
+            "chi_0n": cosmolkit.calc_chi_0n(mol, force=False),
+            "chi_1n": cosmolkit.calc_chi_1n(mol, force=False),
+            "chi_2n": cosmolkit.calc_chi_2n(mol, force=False),
+            "chi_3n": cosmolkit.calc_chi_3n(mol, force=False),
+            "chi_4n": cosmolkit.calc_chi_4n(mol, force=False),
+            "hall_kier_alpha": alpha,
+            "kappa_1": cosmolkit.calc_kappa_1(mol),
+            "kappa_2": cosmolkit.calc_kappa_2(mol),
+            "kappa_3": cosmolkit.calc_kappa_3(mol),
+            "phi": cosmolkit.calc_phi(mol),
+            "lipinski_hba": cosmolkit.calc_lipinski_hba(mol),
+            "lipinski_hbd": cosmolkit.calc_lipinski_hbd(mol),
+            "num_hba": cosmolkit.calc_num_hba(mol),
+            "num_hbd": cosmolkit.calc_num_hbd(mol),
+            "num_heteroatoms": cosmolkit.calc_num_heteroatoms(mol),
+            "num_amide_bonds": cosmolkit.calc_num_amide_bonds(mol),
+            "num_heavy_atoms": cosmolkit.calc_num_heavy_atoms(mol),
+            "num_atoms": cosmolkit.calc_num_atoms(mol),
+            "num_rings": cosmolkit.calc_num_rings(mol),
+            "num_heterocycles": cosmolkit.calc_num_heterocycles(mol),
+            "num_aromatic_rings": cosmolkit.calc_num_aromatic_rings(mol),
+            "num_saturated_rings": cosmolkit.calc_num_saturated_rings(mol),
+            "num_aliphatic_rings": cosmolkit.calc_num_aliphatic_rings(mol),
+            "num_aromatic_heterocycles": (
+                cosmolkit.calc_num_aromatic_heterocycles(mol)
+            ),
+            "num_aromatic_carbocycles": (
+                cosmolkit.calc_num_aromatic_carbocycles(mol)
+            ),
+            "num_aliphatic_heterocycles": (
+                cosmolkit.calc_num_aliphatic_heterocycles(mol)
+            ),
+            "num_aliphatic_carbocycles": (
+                cosmolkit.calc_num_aliphatic_carbocycles(mol)
+            ),
+            "num_saturated_heterocycles": (
+                cosmolkit.calc_num_saturated_heterocycles(mol)
+            ),
+            "num_saturated_carbocycles": (
+                cosmolkit.calc_num_saturated_carbocycles(mol)
+            ),
+            "num_spiro_atoms": cosmolkit.calc_num_spiro_atoms(mol),
+            "num_bridgehead_atoms": cosmolkit.calc_num_bridgehead_atoms(mol),
+            "num_atom_stereo_centers": (
+                cosmolkit.calc_num_atom_stereo_centers(mol)
+            ),
+            "num_unspecified_atom_stereo_centers": (
+                cosmolkit.calc_num_unspecified_atom_stereo_centers(mol)
+            ),
+            "fraction_csp3": cosmolkit.calc_fraction_csp3(mol),
+            "mqns": cosmolkit.calc_mqns(mol),
+            "labute_asa_include_hydrogens_false": cosmolkit.calc_labute_asa(
+                mol, include_hydrogens=False, force=False
+            ),
+            "labute_asa_include_hydrogens_true": cosmolkit.calc_labute_asa(
+                mol, include_hydrogens=True, force=True
+            ),
+            "slogp_vsa": cosmolkit.calc_slogp_vsa(mol, force=False),
+            "smr_vsa": cosmolkit.calc_smr_vsa(mol, force=False),
+        },
+        "contributions": {
+            "hall_kier_alpha": {
+                "value": alpha,
+                "atom_contributions": alpha_contributions,
+            },
+            "labute_asa": labute_contributions,
+        },
+        "cache_profiles": {
+            "chi_nv": chi_cache_profile(cosmolkit.calc_chi_nv),
+            "chi_nn": chi_cache_profile(cosmolkit.calc_chi_nn),
+            "labute_asa_sequence": [
+                cosmolkit.calc_labute_asa(
+                    labute_branch, include_hydrogens=False, force=False
+                ),
+                cosmolkit.calc_labute_asa(
+                    labute_branch, include_hydrogens=True, force=False
+                ),
+                cosmolkit.calc_labute_asa(
+                    labute_branch, include_hydrogens=True, force=True
+                ),
+                cosmolkit.calc_labute_asa(
+                    labute_branch, include_hydrogens=False, force=False
+                ),
+            ],
+            "slogp_vsa_default_cold": cosmolkit.calc_slogp_vsa(
+                vsa_branch, force=False
+            ),
+            "slogp_vsa_default_warm": cosmolkit.calc_slogp_vsa(
+                vsa_branch, force=False
+            ),
+            "slogp_vsa_custom_forced": cosmolkit.calc_slogp_vsa(
+                vsa_branch, bins=custom_bins, force=True
+            ),
+            "smr_vsa_default_warm": cosmolkit.calc_smr_vsa(
+                vsa_branch, force=False
+            ),
+            "smr_vsa_custom_forced": cosmolkit.calc_smr_vsa(
+                vsa_branch, bins=custom_bins, force=True
+            ),
+        },
+    }
+    return float_tree_bits(values)
+
+
+def float_tree_bits(value: Any) -> Any:
+    if isinstance(value, float):
+        return f64_bits(value)
+    if isinstance(value, list):
+        return [float_tree_bits(item) for item in value]
+    if isinstance(value, dict):
+        return {key: float_tree_bits(item) for key, item in value.items()}
+    return value
+
+
+def compare_observation_tree(
+    audit: Audit,
+    feature: str,
+    record: dict[str, Any],
+    rd_value: Any,
+    ck_value: Any,
+    *,
+    location: str = "",
+) -> None:
+    if isinstance(rd_value, dict) and isinstance(ck_value, dict):
+        if rd_value.keys() != ck_value.keys():
+            audit.mismatch(
+                f"{feature}.shape",
+                record,
+                sorted(rd_value),
+                sorted(ck_value),
+                location or None,
+            )
+            return
+        for key in rd_value:
+            compare_observation_tree(
+                audit,
+                f"{feature}.{key}",
+                record,
+                rd_value[key],
+                ck_value[key],
+                location=location,
+            )
+        return
+    if isinstance(rd_value, list) and isinstance(ck_value, list):
+        if len(rd_value) != len(ck_value):
+            audit.mismatch(
+                f"{feature}.shape",
+                record,
+                len(rd_value),
+                len(ck_value),
+                location or None,
+            )
+            return
+        for index, (rd_item, ck_item) in enumerate(zip(rd_value, ck_value)):
+            item_location = f"{location}[{index}]" if location else f"[{index}]"
+            compare_observation_tree(
+                audit,
+                feature,
+                record,
+                rd_item,
+                ck_item,
+                location=item_location,
+            )
+        return
+    if rd_value != ck_value:
+        audit.mismatch(feature, record, rd_value, ck_value, location or None)
+    else:
+        audit.count(f"match.{feature}")
+
+
 def audit_descriptors(audit: Audit, record: dict[str, Any]) -> None:
     rd_mol, ck_mol = parse_pair(audit, record)
     if rd_mol is None or ck_mol is None:
@@ -474,6 +852,34 @@ def audit_descriptors(audit: Audit, record: dict[str, Any]) -> None:
         return
     for field, expected in rd_values.items():
         compare_value(audit, f"descriptor.{field}", record, expected, ck_values[field])
+    try:
+        rd_high_feasibility = high_feasibility_descriptor_values_rd(
+            rd_mol, record["smiles"]
+        )
+    except Exception as error:
+        audit.mismatch(
+            "descriptor.high_feasibility.rdkit_error", record, repr(error), None
+        )
+        return
+    try:
+        ck_high_feasibility = high_feasibility_descriptor_values_ck(
+            ck_mol, record["smiles"]
+        )
+    except Exception as error:
+        audit.mismatch(
+            "descriptor.high_feasibility.cosmolkit_error",
+            record,
+            rd_high_feasibility,
+            repr(error),
+        )
+        return
+    compare_observation_tree(
+        audit,
+        "descriptor.high_feasibility",
+        record,
+        rd_high_feasibility,
+        ck_high_feasibility,
+    )
 
 
 def morgan_generator_with_num_bits_per_feature(value: int) -> Any:

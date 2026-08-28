@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::{
-    FingerprintError, extend_paths, find_all_paths_of_length_n, find_all_paths_of_lengths_m_to_n,
+    SubgraphPathError, extend_paths, find_all_paths_of_length_n, find_all_paths_of_lengths_m_to_n,
     rdkit_fp_bond_between_atoms,
 };
 use crate::{AtomSpec, BondOrder, BondSpec, Element, Molecule};
@@ -148,7 +148,7 @@ fn target_length_boundaries_and_range_keys_match_source_behavior() {
     assert_eq!(range.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
     assert!(matches!(
         find_all_paths_of_lengths_m_to_n(&molecule, 3, 2, false, false, -1, false),
-        Err(FingerprintError::InvalidArguments { .. })
+        Err(SubgraphPathError::InvalidArguments { .. })
     ));
 }
 

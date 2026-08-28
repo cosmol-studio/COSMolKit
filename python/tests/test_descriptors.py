@@ -1,4 +1,5 @@
 import struct
+from concurrent.futures import ThreadPoolExecutor
 
 import cosmolkit
 import pytest
@@ -6,6 +7,13 @@ import pytest
 
 def f64_bits(value: float) -> str:
     return struct.pack(">d", value).hex()
+
+
+def ordered_f64_sum(values: list[float]) -> float:
+    result = 0.0
+    for value in values:
+        result += value
+    return result
 
 
 def test_descriptor_bindings_preserve_exact_core_values_and_input():
@@ -91,3 +99,75 @@ def test_descriptor_binding_options_and_errors_are_explicit():
             deuterated_water,
             mode="unknown",  # pyright: ignore[reportArgumentType]
         )
+
+
+def _high_feasibility_descriptor_snapshot(
+    molecule: cosmolkit.Molecule,
+) -> tuple[object, ...]:
+    return (
+        f64_bits(cosmolkit.calc_chi_0(molecule)),
+        f64_bits(cosmolkit.calc_chi_1(molecule)),
+        f64_bits(cosmolkit.calc_chi_3v(molecule)),
+        f64_bits(cosmolkit.calc_kappa_2(molecule)),
+        cosmolkit.calc_lipinski_hba(molecule),
+        cosmolkit.calc_num_heteroatoms(molecule),
+        tuple(cosmolkit.calc_mqns(molecule)),
+        f64_bits(cosmolkit.calc_labute_asa(molecule)),
+        tuple(f64_bits(value) for value in cosmolkit.calc_slogp_vsa(molecule)),
+        tuple(f64_bits(value) for value in cosmolkit.calc_smr_vsa(molecule)),
+    )
+
+
+def test_high_feasibility_descriptor_bindings_compose_without_mutating_input():
+    molecule = cosmolkit.Molecule.from_smiles("CC(O)c1ccncc1")
+    before = molecule.to_smiles()
+    expected = _high_feasibility_descriptor_snapshot(molecule)
+
+    slogp_vsa = cosmolkit.calc_slogp_vsa(molecule)
+    smr_vsa = cosmolkit.calc_smr_vsa(molecule)
+    assert len(slogp_vsa) == 12
+    assert len(smr_vsa) == 10
+    assert f64_bits(cosmolkit.calc_slogp_vsa_1(molecule)) == f64_bits(slogp_vsa[0])
+    assert f64_bits(cosmolkit.calc_slogp_vsa_12(molecule)) == f64_bits(
+        slogp_vsa[11]
+    )
+    assert f64_bits(cosmolkit.calc_smr_vsa_1(molecule)) == f64_bits(smr_vsa[0])
+    assert f64_bits(cosmolkit.calc_smr_vsa_10(molecule)) == f64_bits(smr_vsa[9])
+
+    bins = [-0.2, 0.0, 0.25, 0.25, 0.8]
+    assert len(cosmolkit.calc_slogp_vsa(molecule, bins=bins, force=True)) == 6
+    assert len(cosmolkit.calc_smr_vsa(molecule, bins=bins, force=True)) == 6
+
+    alpha, alpha_contributions = (
+        cosmolkit.calc_hall_kier_alpha_with_contributions(molecule)
+    )
+    assert len(alpha_contributions) == molecule.num_atoms()
+    assert f64_bits(ordered_f64_sum(alpha_contributions)) == f64_bits(alpha)
+
+    asa, atom_contributions, hydrogen_contribution = (
+        cosmolkit.calc_labute_asa_contributions(molecule, force=True)
+    )
+    assert len(atom_contributions) == molecule.num_atoms()
+    assert f64_bits(
+        ordered_f64_sum(atom_contributions) + hydrogen_contribution
+    ) == f64_bits(asa)
+
+    clone = molecule.sanitize()
+    _ = cosmolkit.calc_chi_nv(clone, 5, force=True)
+    _ = cosmolkit.calc_smr_vsa(clone, force=True)
+    assert _high_feasibility_descriptor_snapshot(clone) == expected
+    assert _high_feasibility_descriptor_snapshot(molecule) == expected
+    assert molecule.to_smiles() == before
+
+
+def test_high_feasibility_descriptor_bindings_are_parallel_read_deterministic():
+    molecule = cosmolkit.Molecule.from_smiles("CC(O)c1ccncc1")
+    expected = _high_feasibility_descriptor_snapshot(molecule)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        actual = list(
+            executor.map(
+                _high_feasibility_descriptor_snapshot,
+                [molecule] * 32,
+            )
+        )
+    assert actual == [expected] * 32

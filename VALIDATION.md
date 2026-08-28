@@ -71,7 +71,7 @@ audits, and the 15-phase execution. The 15-phase execution used COSMolKit
 128 corpus shards, and 112 workers. All 15 phases and all 1,920 shard tasks
 completed; every result artifact and checksum was independently revalidated.
 Together with the nine independent complete audits, the consolidated evidence
-table records 3,273,348,085 matching checks and zero blocking mismatch. Bounds
+table records 4,176,585,416 matching checks and zero blocking mismatch. Bounds
 additionally traversed 2,757,910,995 matrix entries.
 
 The first 15 rows summarize the consolidated chemistry and composition
@@ -81,7 +81,7 @@ over the same ChEMBL 37 source.
 
 | Phase or independent audit | Records evaluated | Matching checks | Blocking mismatches | Status |
 |---|---:|---:|---:|---|
-| Descriptors | 2,897,819 | 84,036,316 | 0 | Pass |
+| Descriptors | 2,897,819 source; 2,897,804 mutually parseable | 987,273,647 | 0 | Pass |
 | Morgan/MACCS | 2,897,819 | 89,831,720 | 0 | Pass |
 | Explicit hydrogen | 2,854,362 | 11,417,448 | 0 | Pass |
 | Topology operations | 2,854,376 | 45,669,848 | 0 | Pass |
@@ -132,7 +132,7 @@ matrix entries actually compared, not merely the number of input molecules.
 | Surface | Corpus | Records evaluated | Profiles or output branches | Comparisons |
 |---|---|---:|---:|---:|
 | Core graph and default scalar APIs | ChEMBL 37 | 2,897,804 | 9 | 26,080,236 |
-| Molecular descriptors | ChEMBL 37 | 2,897,804 | 29 | 84,036,316 |
+| Molecular descriptors | ChEMBL 37 | 2,897,804 | 29 established outputs + complete high-feasibility scalar/vector/contribution/cache matrix | 987,273,647 |
 | Morgan and MACCS fingerprints | ChEMBL 37 | 2,897,804 | 31 configured | 89,831,720 completed |
 | Topological Torsion fingerprints | ChEMBL 37 | 2,897,804 | 36 vectors + 8 provenance outputs | 127,503,376 |
 | Layered fingerprints | ChEMBL 37 | 2,897,804 | 18 complete bit/count result profiles | 52,160,472 |
@@ -183,16 +183,15 @@ include parse acceptance, ordered records, affected molecule state,
 theoretical counts, bounded flags, ordered full output state, source
 preservation, and parser-rejection outcomes.
 
-The complete 128-shard ChEMBL 37 execution processed all 2,897,819 records,
+The complete 128-shard ChEMBL 37 execution processed all 2,897,819 records and
 fully compared 2,897,804 rows accepted by both parsers. The remaining 15 rows
 were rejected by both parsers at parse entry. It produced 89,831,939 exact
-observations with no blocking,
-informational, or other mismatch. Focused source fixtures, the 152-record
-project corpus, and the maintained 5,000-record corpus additionally cover
-option defaults, enhanced groups, random draw sequences, arbitrary-width
-counts, uniqueness, iterator errors, embedding outcomes, and full-state
-regressions. This boundary is the Python enumerator; it does not claim the
-separate newer C++ enumerator or atropisomer enumeration.
+observations with no blocking, informational, or other mismatch. Focused
+source fixtures, the 152-record project corpus, and the maintained 5,000-record
+corpus additionally cover option defaults, enhanced groups, random draw
+sequences, arbitrary-width counts, uniqueness, iterator errors, embedding
+outcomes, and full-state regressions. This boundary is the Python enumerator;
+it does not claim the separate newer C++ enumerator or atropisomer enumeration.
 
 The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
 InChIKeys that differ from the current result are corpus-version differences:
@@ -238,14 +237,35 @@ four-scalar-API claim.
 
 ### Molecular Descriptors
 
-The 29 ChEMBL branches cover molecular weight, exact molecular weight, formula
-variants, H-bond donor/acceptor counts, fraction Csp3, Crippen LogP/MR option
-branches, TPSA with and without S/P contributions and force recomputation,
-aromatic-ring count, four rotatable-bond modes, and QED. Float descriptors use
-exact RDKit bit-pattern comparison; integer and string outputs use exact
-equality. QED is pinned to `RDKit 2026.03.1 + CPython 3.13.12` because RDKit
-delegates reductions to Python `sum()` and older CPython versions use a
-different floating-point reduction algorithm.
+The established 29 ChEMBL branches cover molecular weight, exact molecular
+weight, formula variants, H-bond donor/acceptor counts, fraction Csp3,
+Crippen LogP/MR option branches, TPSA with and without S/P contributions and
+force recomputation, aromatic-ring count, four rotatable-bond modes, and QED.
+
+The complete high-feasibility matrix adds connectivity Chi orders 0 through
+6, fixed valence and principal-quantum Chi projections, Hall-Kier alpha and
+atom contributions, Kappa/Phi, direct Lipinski and ring/stereo counts, every
+entry of the 42-component MQN vector, Labute ASA and atom/H contributions,
+and every default or custom SlogP/SMR VSA bin. It separately compares cold,
+warm, forced, and mixed-order cache results. These additions contribute
+903,237,331 exact ChEMBL observations beyond the 84,036,316 established
+descriptor comparisons.
+
+| Descriptor evidence | Input records | Mutually parseable records | Exact observations | Mismatches |
+|---|---:|---:|---:|---:|
+| Focused behavioral fixtures | 69 | 69 | 17,265 | 0 |
+| Project small corpus | 152 | 140 | 40,224 | 0 |
+| Maintained 5,000-row corpus | 5,000 | 5,000 | 1,588,749 | 0 |
+| ChEMBL 37 | 2,897,819 | 2,897,804 | 903,237,331 | 0 |
+
+Every finite floating-point leaf uses exact IEEE-754 binary64-bit comparison;
+integer and string outputs use exact equality. Contribution arrays preserve
+atom order, vectors compare every entry, and paired parser rejections do not
+enter the descriptor-observation count. QED is pinned to
+`RDKit 2026.03.1 + CPython 3.13.12` because RDKit delegates reductions to
+Python `sum()` and older CPython versions use a different floating-point
+reduction algorithm. The implementation boundary and reproduction commands
+are recorded in the [descriptor validation report](dev/gap_reports/rdkit_high_feasibility_descriptors_full_port_validation.md).
 
 ### Tautomer Enumeration
 

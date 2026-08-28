@@ -531,6 +531,9 @@ pub(super) fn assign_legacy_cip_labels_for_writer_working_copy(
         .atoms()
         .iter()
         .any(|atom| !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other));
+    let has_potential_stereo_atoms = molecule.atoms().iter().any(|atom| {
+        crate::stereo::is_atom_potential_chiral_center(molecule, atom.id().index(), &[]).0
+    });
     let mut has_stereo_bonds = molecule.bonds().iter().any(|bond| {
         bond.order() == BondOrder::Double
             && molecule
@@ -557,11 +560,29 @@ pub(super) fn assign_legacy_cip_labels_for_writer_working_copy(
                         })
                 })
     });
-    let mut keep_going = has_stereo_atoms || has_stereo_bonds;
+    let mut has_potential_stereo_bonds = false;
+    for bond in molecule.bonds() {
+        if bond.order() == BondOrder::Double
+            && bond.stereo() == BondStereo::None
+            && crate::stereo::should_detect_double_bond_stereo(molecule, bond.id())?
+        {
+            has_potential_stereo_bonds = true;
+            break;
+        }
+    }
+    let mut keep_going = has_stereo_atoms
+        || has_potential_stereo_atoms
+        || has_stereo_bonds
+        || has_potential_stereo_bonds;
     while keep_going {
-        let atom_changed = if has_stereo_atoms {
-            let (unassigned_atoms, atom_labels, atom_changed) =
-                crate::stereo::assign_atom_chiral_codes(molecule, &ranks)?;
+        let atom_changed = if has_stereo_atoms || has_potential_stereo_atoms {
+            let (unassigned_atoms, atom_labels, possible_atoms, atom_changed) =
+                crate::stereo::assign_atom_chiral_codes_with_possible(molecule, &ranks, true)?;
+            for atom_idx in possible_atoms {
+                if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
+                    atom_mut.set_prop("_ChiralityPossible", "1");
+                }
+            }
             for (atom_idx, cip_code) in atom_labels {
                 if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
                     atom_mut.set_prop("_CIPCode", cip_code);
@@ -573,7 +594,7 @@ pub(super) fn assign_legacy_cip_labels_for_writer_working_copy(
             false
         };
 
-        let bond_changed = if has_stereo_bonds {
+        let bond_changed = if has_stereo_bonds || has_potential_stereo_bonds {
             let (unassigned_bonds, assignments, bond_changed) =
                 crate::stereo::assign_bond_stereo_codes(molecule, &ranks);
             for (bond_idx, stereo, begin_control, end_control) in assignments {

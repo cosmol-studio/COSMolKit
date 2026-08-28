@@ -43,6 +43,7 @@ const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
     "src/io/sdf.rs::parse_marvin_smarts_line",
     "src/io/sdf/postprocess.rs::process_smartsq",
     "src/notation/smiles_write.rs::canonicalize_fragment_stack_for_smarts",
+    "src/properties/descriptors.rs::rdkit_cached_smarts_matcher",
     "src/properties/descriptors.rs::rdkit_count_smarts_matches",
     "src/properties/fingerprint.rs::default_feature_smarts",
     "src/properties/fingerprint.rs::from_smarts_patterns",
@@ -103,13 +104,46 @@ fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
+fn without_cfg_test_modules(source: &str) -> String {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut production = String::with_capacity(source.len());
+    let mut line_idx = 0;
+
+    while line_idx < lines.len() {
+        let line = lines[line_idx];
+        let next_is_test_module = line.trim() == "#[cfg(test)]"
+            && lines
+                .get(line_idx + 1)
+                .is_some_and(|next| next.trim_start().starts_with("mod "));
+        if !next_is_test_module {
+            production.push_str(line);
+            production.push('\n');
+            line_idx += 1;
+            continue;
+        }
+
+        line_idx += 1;
+        let mut depth = 0_isize;
+        let mut entered_module = false;
+        while line_idx < lines.len() {
+            let module_line = lines[line_idx];
+            depth += module_line.matches('{').count() as isize;
+            depth -= module_line.matches('}').count() as isize;
+            entered_module |= module_line.contains('{');
+            line_idx += 1;
+            if entered_module && depth == 0 {
+                break;
+            }
+        }
+    }
+
+    production
+}
+
 fn production_source(path: &Path) -> String {
     let source = fs::read_to_string(path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    source
-        .find("#[cfg(test)]\nmod ")
-        .map_or(source.as_str(), |test_module| &source[..test_module])
-        .to_owned()
+    without_cfg_test_modules(&source)
 }
 
 fn function_name(line: &str) -> Option<&str> {
@@ -232,6 +266,26 @@ fn smarts_duplicate_inventory_baseline() {
         BTreeMap::new(),
         "consumer-local SMARTS decoder inventory changed",
     );
+}
+
+#[test]
+fn production_inventory_keeps_code_after_interleaved_test_modules() {
+    let source = r#"
+fn first_smarts_owner() {}
+
+#[cfg(test)]
+mod tests {
+    fn test_smarts_helper() {
+        assert_eq!("{query}", "{query}");
+    }
+}
+
+fn second_smarts_owner() {}
+"#;
+    let production = without_cfg_test_modules(source);
+    assert!(production.contains("fn first_smarts_owner()"));
+    assert!(production.contains("fn second_smarts_owner()"));
+    assert!(!production.contains("fn test_smarts_helper()"));
 }
 
 #[test]

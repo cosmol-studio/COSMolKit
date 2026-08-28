@@ -57,6 +57,9 @@ jobs:
             - name: Initialize pinned Gemmi source
               run: git submodule update --init --depth 1 third_party/gemmi
 
+            - name: Initialize pinned RDKit source
+              run: git submodule update --init --depth 1 third_party/rdkit
+
             - name: Setup Rust
               uses: dtolnay/rust-toolchain@stable
 
@@ -298,6 +301,66 @@ jobs:
                   path: testdata/fingerprint/expected/rdkit/pattern_focused
                   key: ${{ steps.focused_pattern_golden_cache.outputs.cache-primary-key }}
 
+            - name: Restore focused descriptor golden cache
+              id: focused_descriptor_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/descriptors/expected/rdkit/descriptors_focused
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-descriptors-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-descriptors-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-
+
+            - name: Prepare and validate focused descriptor expected data
+              id: prepare_focused_descriptor_expected
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile descriptors_focused --suite descriptors --jobs 4 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated focused descriptor expected-data cache
+              if: steps.prepare_focused_descriptor_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/descriptors/expected/rdkit/descriptors_focused
+                  key: ${{ steps.focused_descriptor_golden_cache.outputs.cache-primary-key }}
+
+            - name: Restore strict 5000 descriptor golden cache
+              id: strict_5000_descriptor_golden_cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/descriptors/expected/rdkit/smiles_5000
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-descriptors-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-descriptors-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-
+
+            - name: Prepare and validate strict 5000 descriptor expected data
+              id: prepare_strict_5000_descriptor_expected
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite descriptors --jobs 4 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated strict 5000 descriptor expected-data cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_descriptor_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/descriptors/expected/rdkit/smiles_5000
+                  key: ${{ steps.strict_5000_descriptor_golden_cache.outputs.cache-primary-key }}
+
             - name: Restore strict 5000 InChI golden cache
               id: strict_5000_inchi_golden_cache
               uses: actions/cache/restore@v4
@@ -496,6 +559,14 @@ jobs:
               run: |
                   COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_ciplabeler_parity --no-report -- --ignored modern_ciplabeler_matches_all_5000_rows_exactly --exact
 
+            - name: Run strict 5000 descriptor parity with coverage instrumentation
+              id: strict_5000_descriptors
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              continue-on-error: true
+              shell: bash
+              run: |
+                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_high_feasibility_descriptor_parity --no-report -- active_corpus_high_feasibility_descriptors_match_pinned_rdkit_exactly --exact
+
             - name: Generate HTML coverage report
               if: always()
               shell: bash
@@ -546,7 +617,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.tautomer_scalar_full.outcome == 'failure' || steps.tautomer_batch_full.outcome == 'failure' || steps.tautomer_pcs_full.outcome == 'failure' || steps.molalign_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.tautomer_scalar_full.outcome == 'failure' || steps.tautomer_batch_full.outcome == 'failure' || steps.tautomer_pcs_full.outcome == 'failure' || steps.molalign_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure' || steps.strict_5000_descriptors.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

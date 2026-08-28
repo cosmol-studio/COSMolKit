@@ -23,6 +23,7 @@ pub mod potential_stereo;
 pub mod rings;
 pub mod stereo;
 pub mod stereo_enumerate;
+pub(crate) mod subgraph;
 pub mod tautomer;
 mod tautomer_transforms;
 pub mod valence;

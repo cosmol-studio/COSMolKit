@@ -284,6 +284,8 @@ pub struct ElementInfo {
     pub period: u8,
     pub outer_electrons: i32,
     pub valences: &'static [i32],
+    /// RDKit's source-defined `Rb0` bond radius in angstroms.
+    pub rb0: f64,
     pub atomic_weight: f64,
 }
 
@@ -472,6 +474,7 @@ impl Element {
             valences: crate::chemistry::valence::rdkit_valence_list(atomic_number)
                 .expect("Element's private atomic number is always in 0..=118")
                 .expect("every valid Element has a periodic-table row"),
+            rb0: crate::chemistry::valence::rdkit_rb0(atomic_number),
             atomic_weight: crate::chemistry::valence::rdkit_atomic_mass(atomic_number, None),
         }
     }
@@ -1253,6 +1256,7 @@ mod tests {
             assert_eq!(serialized["element"], element.symbol());
             assert_eq!(serialized["symbol"], element.symbol());
             assert_eq!(serialized["atomic_number"], element.atomic_number());
+            assert_eq!(serialized["rb0"], info.rb0);
         }
 
         let carbon = Element::C.info();
@@ -1261,6 +1265,7 @@ mod tests {
         assert_eq!(carbon.period, 2);
         assert_eq!(carbon.outer_electrons, 4);
         assert_eq!(carbon.valences, &[4]);
+        assert_eq!(carbon.rb0, 0.77);
         assert_eq!(carbon.atomic_weight, 12.011);
     }
 }

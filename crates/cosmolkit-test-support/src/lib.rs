@@ -381,6 +381,8 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         profile if profile == profile_name() => smiles_path(),
         "atom_pair_focused" => repo_root()
             .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        "descriptors_focused" => repo_root()
+            .join("testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi"),
         "layered_focused" => {
             repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi")
         }

@@ -369,9 +369,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
   layers, roots, masks, seeded counts, and ordered batch execution; upstream
   classifies this fingerprint family as experimental
 - ✅ Substructure matching and Python SMARTS parse metadata
-- ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
-  donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
-  count, rotatable-bond modes, and QED for the documented parameter space
+- ✅ Molecular descriptors: weight/formula, H-bond and Lipinski counts,
+  Crippen/TPSA/QED, connectivity Chi, Hall-Kier/Kappa/Phi, ring and stereo
+  counts, MQN, Labute ASA, and SlogP/SMR VSA for the documented parameter space
 
 ### File I/O and Depiction
 

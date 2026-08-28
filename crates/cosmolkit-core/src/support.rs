@@ -244,7 +244,7 @@ pub const DESCRIPTORS_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "RDKit-aligned molecular descriptors exposed through the Rust API and Python bindings. The supported surface covers average and exact molecular weight (including only-heavy mode), formula options, H-bond donor/acceptor counts, fraction Csp3, every exposed Crippen include-H/force combination, every exposed TPSA force/S/P combination, aromatic-ring count, rotatable-bond modes, and QED. Supported corpus rows are compared field-by-field and bit-for-bit against pinned RDKit golden data, while inputs rejected by RDKit are required to fail in COSMolKit as well.",
+    docs: "RDKit-aligned molecular descriptors exposed through the Rust API and Python bindings. The supported surface covers molecular weight and formula, H-bond and Lipinski counts, fraction Csp3, Crippen, TPSA, QED, connectivity Chi, Hall-Kier alpha, Kappa/Phi, ring and stereo-center counts, MQN, Labute ASA, and SlogP/SMR VSA vectors and contributions. Focused, maintained 5,000-row, and complete ChEMBL 37 validation compares scalar, vector, contribution, custom-bin, and cache-sequence outputs field-by-field and bit-for-bit against pinned RDKit.",
 };
 
 pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {

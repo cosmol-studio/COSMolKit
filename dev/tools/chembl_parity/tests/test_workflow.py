@@ -9,7 +9,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from dev.tools.chembl_parity import audit_fingerprints, audit_stereo, audit_surfaces
+from dev.tools.chembl_parity import (
+    audit_core,
+    audit_fingerprints,
+    audit_stereo,
+    audit_surfaces,
+)
 
 
 TOOL_DIR = Path(__file__).resolve().parents[1]
@@ -28,6 +33,38 @@ prepare = load_module("chembl_parity_prepare", TOOL_DIR / "prepare_corpus.py")
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_descriptor_auditor_counts_complete_high_feasibility_matrix(self) -> None:
+        record = {
+            "row": 0,
+            "chembl_id": "HARNESS",
+            "smiles": "CC(O)c1ccncc1",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_core.Audit(Path(temporary) / "summary.json", 4)
+            audit_core.audit_descriptors(audit, record)
+            mismatches = [
+                key for key in audit.counts if key.startswith("mismatch.")
+            ]
+            self.assertFalse(mismatches)
+            prefix = "match.descriptor.high_feasibility."
+            observations = sum(
+                count for key, count in audit.counts.items() if key.startswith(prefix)
+            )
+            self.assertGreater(observations, 200)
+            self.assertEqual(audit.counts[f"{prefix}descriptors.mqns"], 42)
+            self.assertEqual(audit.counts[f"{prefix}descriptors.slogp_vsa"], 12)
+            self.assertEqual(audit.counts[f"{prefix}descriptors.smr_vsa"], 10)
+            self.assertEqual(audit.counts[f"{prefix}cache_profiles.chi_nv.cold"], 7)
+            self.assertEqual(audit.counts[f"{prefix}cache_profiles.chi_nv.warm"], 7)
+            self.assertEqual(audit.counts[f"{prefix}cache_profiles.chi_nv.forced"], 7)
+            self.assertEqual(
+                audit.counts[
+                    f"{prefix}contributions.hall_kier_alpha.atom_contributions"
+                ],
+                9,
+            )
+            audit.finish(1, "descriptors", 0, 1)
+
     def test_profile_is_valid_and_uses_owned_scripts(self) -> None:
         profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
         runner.validate_profile(profile)

@@ -3,8 +3,20 @@
 //! Public descriptor functions are source-backed and covered by field-level
 //! parity tests. Source states outside the modeled boundary fail explicitly
 //! instead of returning approximate descriptor values.
+//!
+//! The completed surface includes connectivity Chi, Hall-Kier alpha, Kappa
+//! and Phi, Lipinski graph/ring/stereo counts, the fixed 42-entry MQN vector,
+//! Labute ASA contributions, and SlogP/SMR VSA vectors. Read-only calls may
+//! populate typed observational caches but do not mutate molecular topology,
+//! coordinates, user properties, or derived chemical state.
+
+mod connectivity;
+mod lipinski;
+mod mol_surface;
+mod mqn;
 
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::OnceLock,
@@ -38,6 +50,20 @@ const RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_SMARTS: &str = concat!(
     "a[!#1])a)]"
 );
 const RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_SMARTS: &str = "C#[#6,#7]";
+static RDKIT_ROTATABLE_BONDS_NON_STRICT_MATCHER: OnceLock<DescriptorResult<Molecule>> =
+    OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_MATCHER: OnceLock<DescriptorResult<Molecule>> = OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_MATCHER: OnceLock<DescriptorResult<Molecule>> =
+    OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_MATCHER: OnceLock<
+    DescriptorResult<Molecule>,
+> = OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_MATCHER: OnceLock<
+    DescriptorResult<Molecule>,
+> = OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_MATCHER: OnceLock<
+    DescriptorResult<Molecule>,
+> = OnceLock::new();
 const RDKIT_CRIPPEN_DEFAULT_PARAM_DATA: &str = r#"#ID	SMARTS	logP	MR	Notes/Questions
 C1	[CH4]	0.1441	2.503	
 C1	[CH3]C	0.1441	2.503	
@@ -160,12 +186,35 @@ pub enum DescriptorError {
         function: &'static str,
         rdkit_function: &'static str,
     },
+    #[error(
+        "descriptor function {function} received mismatched arrays: {contributions} contributions and {properties} properties"
+    )]
+    MismatchedArraySizes {
+        function: &'static str,
+        contributions: usize,
+        properties: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CrippenDescriptorValues {
     pub logp: f64,
     pub molar_refractivity: f64,
+}
+
+/// Hall-Kier alpha and its atom-index-aligned contributions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HallKierAlphaValues {
+    pub alpha: f64,
+    pub atom_contributions: Vec<f64>,
+}
+
+/// Labute ASA and its atom-index-aligned source contributions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabuteAsaContributions {
+    pub asa: f64,
+    pub atom_contributions: Vec<f64>,
+    pub hydrogen_contribution: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,6 +226,357 @@ pub enum NumRotatableBondsOptions {
 }
 
 pub type DescriptorResult<T> = Result<T, DescriptorError>;
+
+pub(super) fn descriptor_ring_info(
+    molecule: &Molecule,
+    require_sssr_or_better: bool,
+) -> Result<Cow<'_, crate::RingInfo>, crate::RingFindingError> {
+    if let Some(rings) = molecule.derived_cache().rings.as_ref()
+        && rings.is_initialized()
+        && (!require_sssr_or_better || rings.is_sssr_or_better())
+    {
+        return Ok(Cow::Borrowed(rings));
+    }
+
+    if require_sssr_or_better {
+        // RDKit✔️✔️: if (!mol.getRingInfo() || !mol.getRingInfo()->isSssrOrBetter()) {
+        // RDKit✔️✔️:   MolOps::findSSSR(mol);
+        // RDKit✔️✔️: }
+        find_sssr(molecule).map(Cow::Owned)
+    } else {
+        symmetrize_sssr(molecule).map(Cow::Owned)
+    }
+}
+
+#[cfg(test)]
+mod descriptor_ring_info_tests {
+    use super::{
+        calc_mqns, calc_num_aromatic_rings, descriptor_ring_info,
+        lipinski::{calc_num_bridgehead_atoms, calc_num_rings, calc_num_spiro_atoms},
+    };
+    use crate::{AtomId, Molecule};
+    use std::borrow::Cow;
+
+    fn cached_ring_molecule(smiles: &str) -> Molecule {
+        Molecule::from_smiles_with_sanitize(smiles, false)
+            .expect("ring-state fixture must parse")
+            .with_assigned_rings()
+            .expect("ring-state fixture must acquire SymmSSSR state")
+    }
+
+    #[test]
+    fn descriptor_ring_info_borrows_initialized_cache_for_both_requirements() {
+        let molecule = cached_ring_molecule("C1CC2CCC1C2");
+        let cached = molecule
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("assigned ring state");
+        assert!(cached.is_initialized());
+        assert!(cached.is_sssr_or_better());
+
+        for require_sssr_or_better in [false, true] {
+            let rings = descriptor_ring_info(&molecule, require_sssr_or_better)
+                .expect("cached ring state must be reusable");
+            let Cow::Borrowed(borrowed) = rings else {
+                panic!("initialized ring state must be borrowed");
+            };
+            assert!(std::ptr::eq(borrowed, cached));
+        }
+    }
+
+    #[test]
+    fn descriptor_ring_info_computes_owned_cold_state_without_mutating_caller() {
+        let molecule = Molecule::from_smiles_with_sanitize("C1CC2CCC1C2", false)
+            .expect("cold ring-state fixture must parse");
+        assert!(molecule.derived_cache().rings.is_none());
+
+        let symmetrized =
+            descriptor_ring_info(&molecule, false).expect("cold SymmSSSR acquisition must succeed");
+        assert!(matches!(symmetrized, Cow::Owned(_)));
+        assert_eq!(symmetrized.num_rings(), 2);
+
+        let sssr =
+            descriptor_ring_info(&molecule, true).expect("cold SSSR acquisition must succeed");
+        assert!(matches!(sssr, Cow::Owned(_)));
+        assert_eq!(sssr.num_rings(), 2);
+        assert!(molecule.derived_cache().rings.is_none());
+    }
+
+    #[test]
+    fn descriptor_ring_info_clone_reuses_state_until_topology_invalidation() {
+        let molecule = cached_ring_molecule("C1CCCCC1");
+        let cloned = molecule.clone();
+        let source_rings = molecule
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("source rings");
+        let clone_rings = cloned.derived_cache().rings.as_ref().expect("clone rings");
+        assert!(std::ptr::eq(source_rings, clone_rings));
+        assert!(matches!(
+            descriptor_ring_info(&cloned, false).unwrap(),
+            Cow::Borrowed(_)
+        ));
+
+        let hydrogenated = cloned
+            .with_hydrogens()
+            .expect("hydrogen append must preserve ring state");
+        assert_eq!(
+            hydrogenated.derived_cache().rings.as_ref(),
+            Some(source_rings)
+        );
+        let dehydrogenated = hydrogenated
+            .without_hydrogens_with_sanitize(false)
+            .expect("hydrogen removal must complete");
+        assert!(dehydrogenated.derived_cache().rings.is_none());
+        assert!(matches!(
+            descriptor_ring_info(&dehydrogenated, false).unwrap(),
+            Cow::Owned(_)
+        ));
+        assert_eq!(calc_num_rings(&dehydrogenated), Ok(1));
+        assert!(dehydrogenated.derived_cache().rings.is_none());
+    }
+
+    #[test]
+    fn ring_descriptor_call_order_is_stable_for_cached_and_cold_state() {
+        let cached = Molecule::from_smiles("c1ccc2c(c1)C1CCC2(C1)C1CCCCC1")
+            .expect("sanitized descriptor call-order fixture must parse");
+        assert!(cached.derived_cache().rings.is_some());
+        let mut cold = cached.clone();
+        cold.derived_cache_mut().rings = None;
+
+        let observe = |molecule: &Molecule| {
+            let mut spiro = Vec::<AtomId>::new();
+            let mut bridgehead = Vec::<AtomId>::new();
+            let aromatic = calc_num_aromatic_rings(molecule).unwrap();
+            let mqn = calc_mqns(molecule).unwrap();
+            let rings = calc_num_rings(molecule).unwrap();
+            calc_num_bridgehead_atoms(molecule, Some(&mut bridgehead)).unwrap();
+            calc_num_spiro_atoms(molecule, Some(&mut spiro)).unwrap();
+            (rings, aromatic, spiro, bridgehead, mqn)
+        };
+
+        let cached_before = cached.derived_cache().rings.clone();
+        let cached_first = observe(&cached);
+        let cold_first = observe(&cold);
+        assert_eq!(cached_first, cold_first);
+        assert_eq!(observe(&cached), cached_first);
+        assert_eq!(observe(&cold), cold_first);
+        assert_eq!(cached.derived_cache().rings, cached_before);
+        assert!(cold.derived_cache().rings.is_none());
+    }
+}
+
+pub fn calc_chi_0(molecule: &Molecule) -> f64 {
+    connectivity::calc_chi_0(molecule)
+}
+
+pub fn calc_chi_1(molecule: &Molecule) -> f64 {
+    connectivity::calc_chi_1(molecule)
+}
+
+pub fn calc_chi_nv(molecule: &Molecule, order: usize, force: bool) -> DescriptorResult<f64> {
+    connectivity::calc_chi_nv(molecule, order, force)
+}
+
+pub fn calc_chi_nn(molecule: &Molecule, order: usize, force: bool) -> DescriptorResult<f64> {
+    connectivity::calc_chi_nn(molecule, order, force)
+}
+
+macro_rules! fixed_chi_descriptor {
+    ($name:ident, $core:ident) => {
+        pub fn $name(molecule: &Molecule, force: bool) -> DescriptorResult<f64> {
+            connectivity::$core(molecule, force)
+        }
+    };
+}
+
+fixed_chi_descriptor!(calc_chi_0v, calc_chi_0v);
+fixed_chi_descriptor!(calc_chi_1v, calc_chi_1v);
+fixed_chi_descriptor!(calc_chi_2v, calc_chi_2v);
+fixed_chi_descriptor!(calc_chi_3v, calc_chi_3v);
+fixed_chi_descriptor!(calc_chi_4v, calc_chi_4v);
+fixed_chi_descriptor!(calc_chi_0n, calc_chi_0n);
+fixed_chi_descriptor!(calc_chi_1n, calc_chi_1n);
+fixed_chi_descriptor!(calc_chi_2n, calc_chi_2n);
+fixed_chi_descriptor!(calc_chi_3n, calc_chi_3n);
+fixed_chi_descriptor!(calc_chi_4n, calc_chi_4n);
+
+pub fn calc_hall_kier_alpha(molecule: &Molecule) -> f64 {
+    connectivity::calc_hall_kier_alpha(molecule, None)
+}
+
+pub fn calc_hall_kier_alpha_with_contributions(molecule: &Molecule) -> HallKierAlphaValues {
+    let mut atom_contributions = vec![0.0; molecule.num_atoms()];
+    let alpha = connectivity::calc_hall_kier_alpha(molecule, Some(&mut atom_contributions));
+    HallKierAlphaValues {
+        alpha,
+        atom_contributions,
+    }
+}
+
+pub fn calc_kappa_1(molecule: &Molecule) -> f64 {
+    connectivity::calc_kappa_1(molecule)
+}
+
+pub fn calc_kappa_2(molecule: &Molecule) -> DescriptorResult<f64> {
+    connectivity::calc_kappa_2(molecule)
+}
+
+pub fn calc_kappa_3(molecule: &Molecule) -> DescriptorResult<f64> {
+    connectivity::calc_kappa_3(molecule)
+}
+
+pub fn calc_phi(molecule: &Molecule) -> DescriptorResult<f64> {
+    connectivity::calc_phi(molecule)
+}
+
+pub fn calc_lipinski_hba(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::calc_lipinski_hba(molecule)
+}
+
+pub fn calc_lipinski_hbd(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::calc_lipinski_hbd(molecule)
+}
+
+macro_rules! lipinski_count_descriptor {
+    ($name:ident, $core:ident) => {
+        pub fn $name(molecule: &Molecule) -> DescriptorResult<u32> {
+            lipinski::$core(molecule)
+        }
+    };
+}
+
+lipinski_count_descriptor!(calc_num_heteroatoms, calc_num_heteroatoms);
+lipinski_count_descriptor!(calc_num_amide_bonds, calc_num_amide_bonds);
+lipinski_count_descriptor!(calc_num_heavy_atoms, calc_num_heavy_atoms);
+lipinski_count_descriptor!(calc_num_atoms, calc_num_atoms);
+lipinski_count_descriptor!(calc_num_rings, calc_num_rings);
+lipinski_count_descriptor!(calc_num_heterocycles, calc_num_heterocycles);
+lipinski_count_descriptor!(calc_num_saturated_rings, calc_num_saturated_rings);
+lipinski_count_descriptor!(calc_num_aliphatic_rings, calc_num_aliphatic_rings);
+lipinski_count_descriptor!(
+    calc_num_aromatic_heterocycles,
+    calc_num_aromatic_heterocycles
+);
+lipinski_count_descriptor!(calc_num_aromatic_carbocycles, calc_num_aromatic_carbocycles);
+lipinski_count_descriptor!(
+    calc_num_aliphatic_heterocycles,
+    calc_num_aliphatic_heterocycles
+);
+lipinski_count_descriptor!(
+    calc_num_aliphatic_carbocycles,
+    calc_num_aliphatic_carbocycles
+);
+lipinski_count_descriptor!(
+    calc_num_saturated_heterocycles,
+    calc_num_saturated_heterocycles
+);
+lipinski_count_descriptor!(
+    calc_num_saturated_carbocycles,
+    calc_num_saturated_carbocycles
+);
+
+pub fn calc_num_spiro_atoms(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::calc_num_spiro_atoms(molecule, None)
+}
+
+pub fn calc_num_bridgehead_atoms(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::calc_num_bridgehead_atoms(molecule, None)
+}
+
+pub fn calc_num_atom_stereo_centers(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::num_atom_stereo_centers(molecule)
+}
+
+pub fn calc_num_unspecified_atom_stereo_centers(molecule: &Molecule) -> DescriptorResult<u32> {
+    lipinski::num_unspecified_atom_stereo_centers(molecule)
+}
+
+pub fn calc_mqns(molecule: &Molecule) -> DescriptorResult<[u32; 42]> {
+    mqn::calc_mqns_core(molecule)
+}
+
+pub fn calc_labute_asa(molecule: &Molecule, include_hydrogens: bool, force: bool) -> f64 {
+    mol_surface::calc_labute_asa(molecule, include_hydrogens, force)
+}
+
+pub fn calc_labute_asa_contributions(
+    molecule: &Molecule,
+    include_hydrogens: bool,
+    force: bool,
+) -> LabuteAsaContributions {
+    let contributions = mol_surface::get_labute_atom_contribs(molecule, include_hydrogens, force);
+    LabuteAsaContributions {
+        asa: contributions.asa,
+        atom_contributions: contributions.atom_contributions.to_vec(),
+        hydrogen_contribution: contributions.hydrogen_contribution,
+    }
+}
+
+pub fn calc_slogp_vsa(molecule: &Molecule, force: bool) -> DescriptorResult<[f64; 12]> {
+    mol_surface::calc_slogp_vsa(molecule, None, force).map(|values| {
+        values
+            .try_into()
+            .expect("the fixed SlogP-VSA boundary always produces 12 bins")
+    })
+}
+
+pub fn calc_slogp_vsa_with_bins(
+    molecule: &Molecule,
+    bins: &[f64],
+    force: bool,
+) -> DescriptorResult<Vec<f64>> {
+    mol_surface::calc_slogp_vsa(molecule, Some(bins), force)
+}
+
+pub fn calc_smr_vsa(molecule: &Molecule, force: bool) -> DescriptorResult<[f64; 10]> {
+    mol_surface::calc_smr_vsa(molecule, None, force).map(|values| {
+        values
+            .try_into()
+            .expect("the fixed SMR-VSA boundary always produces 10 bins")
+    })
+}
+
+pub fn calc_smr_vsa_with_bins(
+    molecule: &Molecule,
+    bins: &[f64],
+    force: bool,
+) -> DescriptorResult<Vec<f64>> {
+    mol_surface::calc_smr_vsa(molecule, Some(bins), force)
+}
+
+macro_rules! vsa_scalar_descriptor {
+    ($name:ident, $vector:ident, $index:expr) => {
+        pub fn $name(molecule: &Molecule) -> DescriptorResult<f64> {
+            Ok($vector(molecule, false)?[$index])
+        }
+    };
+}
+
+vsa_scalar_descriptor!(calc_slogp_vsa_1, calc_slogp_vsa, 0);
+vsa_scalar_descriptor!(calc_slogp_vsa_2, calc_slogp_vsa, 1);
+vsa_scalar_descriptor!(calc_slogp_vsa_3, calc_slogp_vsa, 2);
+vsa_scalar_descriptor!(calc_slogp_vsa_4, calc_slogp_vsa, 3);
+vsa_scalar_descriptor!(calc_slogp_vsa_5, calc_slogp_vsa, 4);
+vsa_scalar_descriptor!(calc_slogp_vsa_6, calc_slogp_vsa, 5);
+vsa_scalar_descriptor!(calc_slogp_vsa_7, calc_slogp_vsa, 6);
+vsa_scalar_descriptor!(calc_slogp_vsa_8, calc_slogp_vsa, 7);
+vsa_scalar_descriptor!(calc_slogp_vsa_9, calc_slogp_vsa, 8);
+vsa_scalar_descriptor!(calc_slogp_vsa_10, calc_slogp_vsa, 9);
+vsa_scalar_descriptor!(calc_slogp_vsa_11, calc_slogp_vsa, 10);
+vsa_scalar_descriptor!(calc_slogp_vsa_12, calc_slogp_vsa, 11);
+vsa_scalar_descriptor!(calc_smr_vsa_1, calc_smr_vsa, 0);
+vsa_scalar_descriptor!(calc_smr_vsa_2, calc_smr_vsa, 1);
+vsa_scalar_descriptor!(calc_smr_vsa_3, calc_smr_vsa, 2);
+vsa_scalar_descriptor!(calc_smr_vsa_4, calc_smr_vsa, 3);
+vsa_scalar_descriptor!(calc_smr_vsa_5, calc_smr_vsa, 4);
+vsa_scalar_descriptor!(calc_smr_vsa_6, calc_smr_vsa, 5);
+vsa_scalar_descriptor!(calc_smr_vsa_7, calc_smr_vsa, 6);
+vsa_scalar_descriptor!(calc_smr_vsa_8, calc_smr_vsa, 7);
+vsa_scalar_descriptor!(calc_smr_vsa_9, calc_smr_vsa, 8);
+vsa_scalar_descriptor!(calc_smr_vsa_10, calc_smr_vsa, 9);
 
 pub fn calc_mol_wt(mol: &Molecule, only_heavy: bool) -> DescriptorResult<f64> {
     // RDKit✔️✔️: double calcAMW(const ROMol &mol, bool onlyHeavy) {
@@ -672,7 +1072,7 @@ pub fn calc_crippen_descriptors(
     // RDKit✔️✔️:   std::vector<double> logpContribs(workMol->getNumAtoms());
     // RDKit✔️✔️:   std::vector<double> mrContribs(workMol->getNumAtoms());
     // RDKit✔️✔️:   getCrippenAtomContribs(*workMol, logpContribs, mrContribs, force);
-    let contribs = rdkit_crippen_atom_contribs(work_ref)?;
+    let contribs = rdkit_crippen_atom_contribs(work_ref, force)?;
     // RDKit✔️✔️:   logp = 0.0;
     // RDKit✔️✔️:   for (std::vector<double>::const_iterator iter = logpContribs.begin();
     // RDKit✔️✔️:        iter != logpContribs.end(); ++iter) {
@@ -700,16 +1100,23 @@ pub fn calc_crippen_descriptors(
     })
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct CrippenParam {
     idx: usize,
     label: &'static str,
     smarts: &'static str,
+    pattern: Molecule,
     logp: f64,
     mr: f64,
 }
 
 fn rdkit_crippen_params() -> &'static [CrippenParam] {
+    // RDKit✔️✔️: const CrippenParamCollection *CrippenParamCollection::getParams(
+    // RDKit✔️✔️:     const std::string &paramData) {
+    // RDKit✔️✔️:   const CrippenParamCollection *res = &(param_flyweight(paramData).get());
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
     static PARAMS: OnceLock<Vec<CrippenParam>> = OnceLock::new();
     PARAMS.get_or_init(rdkit_parse_default_crippen_params)
 }
@@ -753,12 +1160,8 @@ fn rdkit_parse_default_crippen_params() -> Vec<CrippenParam> {
     // RDKit✔️✔️:       } else {
     // RDKit✔️✔️:         paramObj.mr = 0.0;
     // RDKit✔️✔️:       }
-    // RDKit✔️❌:       paramObj.dp_pattern =
-    // RDKit✔️❌:           boost::shared_ptr<const ROMol>(SmartsToMol(paramObj.smarts));
-    // COSMolKit preserves descriptor semantics by storing the source SMARTS and
-    // compiling it at match time in `rdkit_crippen_atom_contribs()`. This is
-    // materially worse than RDKit's cached parsed query molecule but does not
-    // change ordered first-match atom typing for the modeled input state.
+    // RDKit✔️✔️:       paramObj.dp_pattern =
+    // RDKit✔️✔️:           boost::shared_ptr<const ROMol>(SmartsToMol(paramObj.smarts));
     // RDKit✔️✔️:       d_params.push_back(paramObj);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:     inLine = RDKit::getLine(inStream);
@@ -786,10 +1189,13 @@ fn rdkit_parse_default_crippen_params() -> Vec<CrippenParam> {
             .filter(|value| !value.is_empty())
             .and_then(|value| value.parse::<f64>().ok())
             .unwrap_or(0.0);
+        let pattern = rdkit_count_smarts_matches("calc_crippen_descriptors", smarts)
+            .expect("embedded RDKit Crippen SMARTS must parse");
         params.push(CrippenParam {
             idx: params.len(),
             label,
             smarts,
+            pattern,
             logp,
             mr,
         });
@@ -797,15 +1203,10 @@ fn rdkit_parse_default_crippen_params() -> Vec<CrippenParam> {
     params
 }
 
-#[derive(Debug, Clone)]
-struct CrippenAtomContribs {
-    logp: Vec<f64>,
-    mr: Vec<f64>,
-    atom_types: Vec<usize>,
-    atom_type_labels: Vec<&'static str>,
-}
-
-fn rdkit_crippen_atom_contribs(mol: &Molecule) -> DescriptorResult<CrippenAtomContribs> {
+pub(super) fn rdkit_crippen_atom_contribs(
+    mol: &Molecule,
+    force: bool,
+) -> DescriptorResult<crate::model::molecule::CrippenAtomContributionCache> {
     // RDKit✔️✔️:   if (!force && mol.hasProp(common_properties::_crippenLogPContribs)) {
     // RDKit✔️✔️:     std::vector<double> tmpVect1, tmpVect2;
     // RDKit✔️✔️:     mol.getProp(common_properties::_crippenLogPContribs, tmpVect1);
@@ -817,9 +1218,13 @@ fn rdkit_crippen_atom_contribs(mol: &Molecule) -> DescriptorResult<CrippenAtomCo
     // RDKit✔️✔️:       return;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // COSMolKit modeled input state: RDKit's vector-valued computed-property
-    // cache entries `_crippenLogPContribs` and `_crippenMRContribs` are not
-    // modeled, so cached per-atom contribution input cannot be observed here.
+    if !force
+        && let Some(cached) = mol.crippen_atom_contribution_cache()
+        && cached.logp.len() == mol.num_atoms()
+        && cached.mr.len() == mol.num_atoms()
+    {
+        return Ok(cached);
+    }
     //
     // RDKit✔️✔️:   boost::dynamic_bitset<> atomNeeded(mol.getNumAtoms());
     // RDKit✔️✔️:   atomNeeded.set();
@@ -848,15 +1253,8 @@ fn rdkit_crippen_atom_contribs(mol: &Molecule) -> DescriptorResult<CrippenAtomCo
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   mol.setProp(common_properties::_crippenLogPContribs, logpContribs, true);
     // RDKit✔️✔️:   mol.setProp(common_properties::_crippenMRContribs, mrContribs, true);
-    // COSMolKit modeled input state: per-atom Crippen contributions remain a
-    // local private helper result and are not written into RDKit-style computed
-    // property cache entries.
-    let mut contribs = CrippenAtomContribs {
-        logp: vec![0.0; mol.num_atoms()],
-        mr: vec![0.0; mol.num_atoms()],
-        atom_types: vec![usize::MAX; mol.num_atoms()],
-        atom_type_labels: vec![""; mol.num_atoms()],
-    };
+    let mut logp = vec![0.0; mol.num_atoms()];
+    let mut mr = vec![0.0; mol.num_atoms()];
     let mut atom_needed = vec![true; mol.num_atoms()];
     let params = rdkit_crippen_params();
     let match_params = SubstructMatchParams {
@@ -867,25 +1265,177 @@ fn rdkit_crippen_atom_contribs(mol: &Molecule) -> DescriptorResult<CrippenAtomCo
         ..Default::default()
     };
     for param in params {
-        let query = rdkit_count_smarts_matches("calc_crippen_descriptors", param.smarts)?;
-        let matches = crate::get_substruct_matches_with_params(mol, &query, &match_params);
+        let matches = crate::get_substruct_matches_with_params(mol, &param.pattern, &match_params);
         for matched in matches {
             let Some(&idx) = matched.atom_mapping.first() else {
                 continue;
             };
             if idx < atom_needed.len() && atom_needed[idx] {
                 atom_needed[idx] = false;
-                contribs.logp[idx] = param.logp;
-                contribs.mr[idx] = param.mr;
-                contribs.atom_types[idx] = param.idx;
-                contribs.atom_type_labels[idx] = param.label;
+                logp[idx] = param.logp;
+                mr[idx] = param.mr;
             }
         }
         if atom_needed.iter().all(|needed| !*needed) {
             break;
         }
     }
-    Ok(contribs)
+    let contributions = crate::model::molecule::CrippenAtomContributionCache {
+        logp: logp.into(),
+        mr: mr.into(),
+    };
+    mol.set_crippen_atom_contribution_cache(contributions.clone());
+    Ok(contributions)
+}
+
+#[cfg(test)]
+mod crippen_cache_tests {
+    use super::{
+        calc_crippen_descriptors, calc_slogp_vsa, calc_smr_vsa, rdkit_crippen_atom_contribs,
+        rdkit_crippen_params,
+    };
+    use crate::Molecule;
+    use std::sync::Arc;
+
+    fn bits(values: &[f64]) -> Vec<u64> {
+        values.iter().map(|value| value.to_bits()).collect()
+    }
+
+    #[test]
+    fn crippen_parameter_collection_reuses_parsed_queries() {
+        let first = rdkit_crippen_params();
+        let second = rdkit_crippen_params();
+        assert!(!first.is_empty());
+        assert!(std::ptr::eq(first.as_ptr(), second.as_ptr()));
+        assert!(std::ptr::eq(&first[0].pattern, &second[0].pattern));
+        assert_eq!(first[0].idx, 0);
+        assert_eq!(first[0].label, "C1");
+        assert_eq!(first[0].smarts, "[CH4]");
+    }
+
+    #[test]
+    fn crippen_atom_contribution_cache_reuses_and_force_replaces_typed_arrays() {
+        let molecule = Molecule::from_smiles("CC(=O)Oc1ccccc1C(=O)O")
+            .expect("Crippen cache fixture must parse");
+        assert!(molecule.crippen_atom_contribution_cache().is_none());
+
+        let cold = rdkit_crippen_atom_contribs(&molecule, false).unwrap();
+        let stored = molecule
+            .crippen_atom_contribution_cache()
+            .expect("cold contribution call must populate cache");
+        assert!(Arc::ptr_eq(&cold.logp, &stored.logp));
+        assert!(Arc::ptr_eq(&cold.mr, &stored.mr));
+
+        let warm = rdkit_crippen_atom_contribs(&molecule, false).unwrap();
+        assert!(Arc::ptr_eq(&cold.logp, &warm.logp));
+        assert!(Arc::ptr_eq(&cold.mr, &warm.mr));
+
+        let forced = rdkit_crippen_atom_contribs(&molecule, true).unwrap();
+        assert!(!Arc::ptr_eq(&cold.logp, &forced.logp));
+        assert!(!Arc::ptr_eq(&cold.mr, &forced.mr));
+        assert_eq!(bits(&cold.logp), bits(&forced.logp));
+        assert_eq!(bits(&cold.mr), bits(&forced.mr));
+        let replaced = molecule
+            .crippen_atom_contribution_cache()
+            .expect("forced contribution call must replace cache");
+        assert!(Arc::ptr_eq(&forced.logp, &replaced.logp));
+        assert!(Arc::ptr_eq(&forced.mr, &replaced.mr));
+    }
+
+    #[test]
+    fn crippen_atom_contribution_cache_clone_and_topology_lifecycles_are_independent() {
+        let molecule =
+            Molecule::from_smiles("c1ccncc1O").expect("Crippen clone fixture must parse");
+        let source = rdkit_crippen_atom_contribs(&molecule, false).unwrap();
+        let cloned = molecule.clone();
+        let clone_initial = cloned
+            .crippen_atom_contribution_cache()
+            .expect("clone must copy contribution cache snapshot");
+        assert!(Arc::ptr_eq(&source.logp, &clone_initial.logp));
+        assert!(Arc::ptr_eq(&source.mr, &clone_initial.mr));
+
+        let clone_forced = rdkit_crippen_atom_contribs(&cloned, true).unwrap();
+        assert!(!Arc::ptr_eq(&source.logp, &clone_forced.logp));
+        assert!(!Arc::ptr_eq(&source.mr, &clone_forced.mr));
+        let source_after = molecule
+            .crippen_atom_contribution_cache()
+            .expect("clone write must not alter source cache");
+        assert!(Arc::ptr_eq(&source.logp, &source_after.logp));
+        assert!(Arc::ptr_eq(&source.mr, &source_after.mr));
+
+        let hydrogenated = molecule
+            .with_hydrogens()
+            .expect("topology operation must succeed");
+        assert!(hydrogenated.crippen_atom_contribution_cache().is_none());
+        let hydrogenated_contribs = rdkit_crippen_atom_contribs(&hydrogenated, false).unwrap();
+        assert_eq!(hydrogenated_contribs.logp.len(), hydrogenated.num_atoms());
+        assert_eq!(hydrogenated_contribs.mr.len(), hydrogenated.num_atoms());
+        assert_eq!(source.logp.len(), molecule.num_atoms());
+    }
+
+    #[test]
+    fn crippen_and_vsa_mixed_call_order_preserves_exact_outputs() {
+        let crippen_first = Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+            .expect("Crippen/VSA call-order fixture must parse");
+        let crippen_values = calc_crippen_descriptors(&crippen_first, true, false).unwrap();
+        let slogp = calc_slogp_vsa(&crippen_first, false).unwrap();
+        let smr = calc_smr_vsa(&crippen_first, false).unwrap();
+        let contributions = rdkit_crippen_atom_contribs(&crippen_first, false).unwrap();
+
+        let vsa_first = Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+            .expect("Crippen/VSA reverse call-order fixture must parse");
+        let reverse_smr = calc_smr_vsa(&vsa_first, false).unwrap();
+        let reverse_slogp = calc_slogp_vsa(&vsa_first, false).unwrap();
+        let reverse_values = calc_crippen_descriptors(&vsa_first, true, false).unwrap();
+        let reverse_contributions = rdkit_crippen_atom_contribs(&vsa_first, false).unwrap();
+
+        assert_eq!(crippen_values.logp.to_bits(), reverse_values.logp.to_bits());
+        assert_eq!(
+            crippen_values.molar_refractivity.to_bits(),
+            reverse_values.molar_refractivity.to_bits()
+        );
+        assert_eq!(bits(&slogp), bits(&reverse_slogp));
+        assert_eq!(bits(&smr), bits(&reverse_smr));
+        assert_eq!(bits(&contributions.logp), bits(&reverse_contributions.logp));
+        assert_eq!(bits(&contributions.mr), bits(&reverse_contributions.mr));
+    }
+
+    #[test]
+    fn crippen_and_vsa_parallel_reads_share_only_immutable_cached_arrays() {
+        let molecule = Arc::new(
+            Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+                .expect("parallel Crippen/VSA fixture must parse"),
+        );
+        let expected_contributions = rdkit_crippen_atom_contribs(&molecule, false).unwrap();
+        let expected_logp = bits(&expected_contributions.logp);
+        let expected_mr = bits(&expected_contributions.mr);
+        let expected_slogp = bits(&calc_slogp_vsa(&molecule, false).unwrap());
+        let expected_smr = bits(&calc_smr_vsa(&molecule, false).unwrap());
+
+        let readers = (0..16)
+            .map(|_| {
+                let molecule = Arc::clone(&molecule);
+                let expected_logp = expected_logp.clone();
+                let expected_mr = expected_mr.clone();
+                let expected_slogp = expected_slogp.clone();
+                let expected_smr = expected_smr.clone();
+                std::thread::spawn(move || {
+                    let contributions = rdkit_crippen_atom_contribs(&molecule, false).unwrap();
+                    assert_eq!(bits(&contributions.logp), expected_logp);
+                    assert_eq!(bits(&contributions.mr), expected_mr);
+                    assert_eq!(
+                        bits(&calc_slogp_vsa(&molecule, false).unwrap()),
+                        expected_slogp
+                    );
+                    assert_eq!(bits(&calc_smr_vsa(&molecule, false).unwrap()), expected_smr);
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for reader in readers {
+            reader.join().expect("parallel Crippen/VSA reader");
+        }
+    }
 }
 
 pub fn calc_tpsa(mol: &Molecule, force: bool, include_sandp: bool) -> DescriptorResult<f64> {
@@ -1488,7 +2038,7 @@ pub fn calc_num_aromatic_rings(mol: &Molecule) -> DescriptorResult<u32> {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    let rings = symmetrize_sssr(mol).map_err(|_| DescriptorError::Unsupported {
+    let rings = descriptor_ring_info(mol, false).map_err(|_| DescriptorError::Unsupported {
         function: "calc_num_aromatic_rings",
         rdkit_function: "Descriptors::calcNumAromaticRings/RingInfo::bondRings",
     })?;
@@ -1582,53 +2132,66 @@ pub fn calc_num_rotatable_bonds(
     if options == NumRotatableBondsOptions::StrictLinkages {
         return calc_num_rotatable_bonds_strict_linkages(mol);
     }
-    let pattern = match options {
+    let query = match options {
         NumRotatableBondsOptions::Default | NumRotatableBondsOptions::Strict => {
-            RDKIT_ROTATABLE_BONDS_STRICT_SMARTS
+            rdkit_cached_smarts_matcher(
+                &RDKIT_ROTATABLE_BONDS_STRICT_MATCHER,
+                "calc_num_rotatable_bonds",
+                RDKIT_ROTATABLE_BONDS_STRICT_SMARTS,
+            )?
         }
-        NumRotatableBondsOptions::NonStrict => RDKIT_ROTATABLE_BONDS_NON_STRICT_SMARTS,
+        NumRotatableBondsOptions::NonStrict => rdkit_cached_smarts_matcher(
+            &RDKIT_ROTATABLE_BONDS_NON_STRICT_MATCHER,
+            "calc_num_rotatable_bonds",
+            RDKIT_ROTATABLE_BONDS_NON_STRICT_SMARTS,
+        )?,
         NumRotatableBondsOptions::StrictLinkages => unreachable!("handled above"),
     };
-    rdkit_count_smarts_matches("calc_num_rotatable_bonds", pattern)
-        .and_then(|query| rdkit_count_query_matches(mol, &query, "calc_num_rotatable_bonds"))
+    rdkit_count_query_matches(mol, query, "calc_num_rotatable_bonds")
 }
 
 fn calc_num_rotatable_bonds_strict_linkages(mol: &Molecule) -> DescriptorResult<u32> {
-    let mut res = rdkit_count_smarts_matches(
+    let base_matcher = rdkit_cached_smarts_matcher(
+        &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_MATCHER,
         "calc_num_rotatable_bonds",
         RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_SMARTS,
-    )
-    .and_then(|query| rdkit_count_query_matches(mol, &query, "calc_num_rotatable_bonds"))?
-        as i32;
+    )?;
+    let sym_rings_matcher = rdkit_cached_smarts_matcher(
+        &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_MATCHER,
+        "calc_num_rotatable_bonds",
+        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_SMARTS,
+    )?;
+    let terminal_triple_bonds_matcher = rdkit_cached_smarts_matcher(
+        &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_MATCHER,
+        "calc_num_rotatable_bonds",
+        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_SMARTS,
+    )?;
+    let non_ring_amides_matcher = rdkit_cached_smarts_matcher(
+        &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_MATCHER,
+        "calc_num_rotatable_bonds",
+        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_SMARTS,
+    )?;
+
+    let mut res = rdkit_count_query_matches(mol, base_matcher, "calc_num_rotatable_bonds")? as i32;
     if res == 0 {
         return Ok(0);
     }
 
-    res -= rdkit_count_smarts_matches(
-        "calc_num_rotatable_bonds",
-        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_SMARTS,
-    )
-    .and_then(|query| rdkit_count_query_matches(mol, &query, "calc_num_rotatable_bonds"))?
-        as i32;
+    res -= rdkit_count_query_matches(mol, sym_rings_matcher, "calc_num_rotatable_bonds")? as i32;
     if res < 0 {
         res = 0;
     }
 
-    res -= rdkit_count_smarts_matches(
+    res -= rdkit_count_query_matches(
+        mol,
+        terminal_triple_bonds_matcher,
         "calc_num_rotatable_bonds",
-        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_SMARTS,
-    )
-    .and_then(|query| rdkit_count_query_matches(mol, &query, "calc_num_rotatable_bonds"))?
-        as i32;
+    )? as i32;
     if res < 0 {
         res = 0;
     }
 
-    let amides = rdkit_count_smarts_matches(
-        "calc_num_rotatable_bonds",
-        RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_SMARTS,
-    )?;
-    let matches = crate::get_substruct_matches(mol, &amides);
+    let matches = crate::get_substruct_matches(mol, non_ring_amides_matcher);
     let mut atoms_seen = vec![false; mol.num_atoms()];
     for matched in matches {
         if rdkit_strict_linkages_amide_match_is_distinct(&mut atoms_seen, &matched) && res > 0 {
@@ -1640,6 +2203,24 @@ fn calc_num_rotatable_bonds_strict_linkages(mol: &Molecule) -> DescriptorResult<
         res = 0;
     }
     Ok(res as u32)
+}
+
+fn rdkit_cached_smarts_matcher(
+    cache: &'static OnceLock<DescriptorResult<Molecule>>,
+    function: &'static str,
+    pattern: &'static str,
+) -> DescriptorResult<&'static Molecule> {
+    // RDKit✔️✔️: typedef boost::flyweight<boost::flyweights::key_value<std::string, ss_matcher>,
+    // RDKit✔️✔️:                          boost::flyweights::no_tracking>
+    // RDKit✔️✔️:     pattern_flyweight;
+    // RDKit✔️✔️: pattern_flyweight m(pattern);
+    // Each source pattern is a fixed descriptor constant, so its dedicated
+    // OnceLock is the Rust equivalent of the source flyweight entry: one
+    // parsed immutable query followed by shared, lock-free reads.
+    match cache.get_or_init(|| rdkit_count_smarts_matches(function, pattern)) {
+        Ok(query) => Ok(query),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 fn rdkit_strict_linkages_amide_match_is_distinct(
@@ -2483,6 +3064,68 @@ fn unsupported<T>(function: &'static str, rdkit_function: &'static str) -> Descr
         function,
         rdkit_function,
     })
+}
+
+#[cfg(test)]
+mod rotatable_bond_matcher_cache_tests {
+    use super::*;
+
+    #[test]
+    fn fixed_rotatable_bond_queries_are_singletons_across_repeated_and_parallel_reads() {
+        let matchers = [
+            (
+                &RDKIT_ROTATABLE_BONDS_NON_STRICT_MATCHER,
+                RDKIT_ROTATABLE_BONDS_NON_STRICT_SMARTS,
+            ),
+            (
+                &RDKIT_ROTATABLE_BONDS_STRICT_MATCHER,
+                RDKIT_ROTATABLE_BONDS_STRICT_SMARTS,
+            ),
+            (
+                &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_MATCHER,
+                RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_SMARTS,
+            ),
+            (
+                &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_MATCHER,
+                RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_SMARTS,
+            ),
+            (
+                &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_MATCHER,
+                RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_SMARTS,
+            ),
+            (
+                &RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_MATCHER,
+                RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_SMARTS,
+            ),
+        ];
+
+        for (cache, pattern) in matchers {
+            let first = rdkit_cached_smarts_matcher(cache, "calc_num_rotatable_bonds", pattern)
+                .expect("embedded rotatable-bond SMARTS must parse");
+            let second = rdkit_cached_smarts_matcher(cache, "calc_num_rotatable_bonds", pattern)
+                .expect("cached rotatable-bond SMARTS must remain available");
+            assert!(std::ptr::eq(first, second));
+
+            let expected_address = first as *const Molecule as usize;
+            std::thread::scope(|scope| {
+                let handles = (0..8)
+                    .map(|_| {
+                        scope.spawn(move || {
+                            rdkit_cached_smarts_matcher(cache, "calc_num_rotatable_bonds", pattern)
+                                .expect("parallel matcher read")
+                                as *const Molecule as usize
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                for handle in handles {
+                    assert_eq!(
+                        handle.join().expect("matcher reader must not panic"),
+                        expected_address
+                    );
+                }
+            });
+        }
+    }
 }
 
 #[cfg(test)]

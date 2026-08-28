@@ -137,7 +137,7 @@ SCHEMAS = {
         "branches:object,row:integer,smiles:string"
     ),
     "molecular_descriptors.jsonl": _schema(
-        "descriptor_bits:null|object,descriptor_option_bits:null|object,descriptor_options:null|object,descriptors:null|object,error:null|string,rdkit_ok:boolean,smiles:string",
+        "descriptor_bits:null|object,descriptor_option_bits:null|object,descriptor_options:null|object,descriptors:null|object,error:null|string,high_feasibility_cache_profile_bits:null|object,high_feasibility_cache_profiles:null|object,high_feasibility_contribution_bits:null|object,high_feasibility_contributions:null|object,high_feasibility_descriptor_bits:null|object,high_feasibility_descriptors:null|object,rdkit_ok:boolean,smiles:string",
     ),
     "svg_drawer.jsonl": _schema(
         "error:null|string,height:integer,rdkit_ok:boolean,smiles:string,svg:null|string,width:integer"
