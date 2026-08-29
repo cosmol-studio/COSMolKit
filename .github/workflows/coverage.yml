@@ -126,6 +126,14 @@ jobs:
                       --suite tautomer \
                       --jobs 4
 
+            - name: Prepare and validate focused Python stereoisomer expected data
+              run: |
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
+                      --python .venv/bin/python \
+                      --profile python_stereoisomer_focused \
+                      --suite python-stereoisomer \
+                      --jobs 4
+
             - name: Prepare exhaustive RDKit tautomer expected data
               if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true' && env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
               run: |

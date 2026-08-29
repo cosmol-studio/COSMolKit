@@ -393,6 +393,9 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         "ciplabeler_focused" => {
             repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
         }
+        "python_stereoisomer_focused" => {
+            repo_root().join("testdata/stereo/fixtures/rdkit_python_stereoisomer_cases.json")
+        }
         "tautomer_focused" => {
             repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json")
         }

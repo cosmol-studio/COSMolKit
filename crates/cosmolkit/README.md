@@ -2,6 +2,8 @@
 
 `cosmolkit` is the public Rust API for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It provides molecular graphs, SMILES/SMARTS processing, molecular file IO, fingerprints, descriptors, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, InChI, substructure search, batch workflows, and protein structure APIs. The crate is a lightweight facade over `cosmolkit-core` and related COSMolKit components, providing the primary Rust import surface without hiding the underlying modules.
 
+For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.org/rust-cheminformatics>.
+
 ## Documentation
 
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>

@@ -32,8 +32,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cosmol-studio/COSMolKit"
+Homepage = "https://tools.cosmol.org/"
 Documentation = "https://kit.cosmol.org/"
+"Technical overview" = "https://tools.cosmol.org/rust-cheminformatics"
 "Rust API" = "https://docs.rs/cosmolkit"
 Repository = "https://github.com/cosmol-studio/COSMolKit"
 Issues = "https://github.com/cosmol-studio/COSMolKit/issues"

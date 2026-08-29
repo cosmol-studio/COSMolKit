@@ -5451,10 +5451,14 @@ mod tests {
 
     #[test]
     fn find_potential_stereo_matches_every_focused_golden_row_and_option_exactly() {
-        let golden = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../testdata/stereo/expected/rdkit/python_stereoisomer_focused/python_stereoisomer.jsonl"
-        ));
+        let golden_path = crate::test_data::expected_path_for_profile(
+            "stereo",
+            "rdkit",
+            "python_stereoisomer_focused",
+            "python_stereoisomer.jsonl",
+        );
+        let golden = std::fs::read_to_string(&golden_path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", golden_path.display()));
         let mut compared_runs = 0_usize;
         for line in golden.lines().filter(|line| !line.is_empty()) {
             let record: serde_json::Value = serde_json::from_str(line).unwrap();

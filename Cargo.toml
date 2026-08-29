@@ -18,7 +18,7 @@ version = "0.3.0"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"
-homepage = "https://github.com/cosmol-studio/COSMolKit"
+homepage = "https://tools.cosmol.org/"
 
 [workspace.lints.clippy]
 all = "warn"

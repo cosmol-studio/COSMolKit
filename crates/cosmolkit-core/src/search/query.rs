@@ -12447,13 +12447,4 @@ mod tests {
             QueryNode::Not(Box::new(QueryNode::Predicate(AtomQueryPredicate::Any)))
         );
     }
-
-    #[test]
-    fn test_atom_predicate_atomic_number() {
-        let mut mol = Molecule::new();
-        let builder = Molecule::builder();
-        // Can't easily test atom_predicate_matches without a molecule builder
-        // Just verify the types compile and match logic is correct
-        assert!(true);
-    }
 }
