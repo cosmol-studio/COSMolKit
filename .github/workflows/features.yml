@@ -1,0 +1,57 @@
+name: cargo-features
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    feature-matrix:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Setup Rust cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Check minimal facade
+              run: cargo check -p cosmolkit --no-default-features
+
+            - name: Test minimal facade
+              run: cargo test -p cosmolkit --no-default-features
+
+            - name: Check leaf and composed features
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  for feature in \
+                      io \
+                      inchi \
+                      serialization \
+                      descriptors \
+                      stereoisomers \
+                      confseq \
+                      fingerprints \
+                      depict \
+                      hashing \
+                      batch
+                  do
+                      cargo check -p cosmolkit \
+                          --no-default-features \
+                          --features "$feature"
+                  done
+
+            - name: Check default full facade
+              run: cargo check -p cosmolkit

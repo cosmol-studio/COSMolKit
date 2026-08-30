@@ -38,6 +38,17 @@ COSMolKit combines a native Rust API with Python interfaces designed for array-o
 * Rust crate notes: [`crates/cosmolkit/README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit/README.md)
 * Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
 
+## Planned Crate Architecture
+
+COSMolKit is planning a staged internal crate split that will separate the
+public molecule runtime, shared model values, and source-backed algorithm
+implementations more clearly. This is a target architecture, not the current
+workspace layout. The migration is intended to preserve the existing supported
+external API: `cosmolkit` remains the user-facing Rust crate, and normal users
+should not need to change imports or molecule workflows as implementation code
+moves between internal crates. Any unavoidable public change would be handled
+separately through the project's normal versioning and deprecation policy.
+
 ## Validation Status
 
 COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.

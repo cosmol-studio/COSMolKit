@@ -89,8 +89,11 @@
 
 pub mod bio;
 pub mod chemistry;
+#[cfg(feature = "confseq")]
 pub mod confseq;
+#[cfg(feature = "inchi")]
 pub mod inchi;
+#[cfg(feature = "io")]
 pub mod io;
 pub mod model;
 pub mod notation;
@@ -104,10 +107,13 @@ pub(crate) use cosmolkit_test_support as test_data;
 
 pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;
+#[cfg(feature = "stereoisomers")]
+pub use chemistry::stereo_enumerate;
 pub use chemistry::{
     aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_align,
-    mol_transforms, potential_stereo, rings, stereo, stereo_enumerate, tautomer, valence,
+    mol_transforms, potential_stereo, rings, stereo, tautomer, valence,
 };
+#[cfg(feature = "io")]
 pub use io::pdb_writer;
 pub(crate) use model::invariants;
 pub use model::{adjacency, atom, bond, builder, derived, error, molecule, read_parts, sgroup};
@@ -119,8 +125,18 @@ pub use mol_align::{
 pub(crate) use notation::{canon_rank, smiles};
 pub use notation::{canon_smiles, fragment, sequence, smiles_write};
 pub use operations::{ops, sanitize};
+#[cfg(feature = "fingerprints")]
 pub use properties::avalon_fingerprint::{AvalonFingerprintFlags, AvalonFingerprintParams};
-pub use properties::{avalon_fingerprint, batch, draw, fingerprint, mol_hash, mol_pickler};
+#[cfg(feature = "batch")]
+pub use properties::batch;
+#[cfg(feature = "depict")]
+pub use properties::draw;
+#[cfg(feature = "hashing")]
+pub use properties::mol_hash;
+#[cfg(feature = "serialization")]
+pub use properties::mol_pickler;
+#[cfg(feature = "fingerprints")]
+pub use properties::{avalon_fingerprint, fingerprint};
 pub use search::{
     SmartsParseParams, SmartsWriteError, get_atom_smarts, get_bond_smarts,
     mol_fragment_to_cx_smarts, mol_fragment_to_smarts, mol_from_smarts, mol_to_cx_smarts,
@@ -134,6 +150,7 @@ pub use atom::{
     Atom, AtomId, AtomPdbResidueInfo, AtomSpec, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,
     ElementInfo, ElementParseError, Hybridization,
 };
+#[cfg(feature = "batch")]
 pub use batch::{
     BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
@@ -201,6 +218,7 @@ pub use chemistry::tautomer::{
     score_tautomer, score_tautomer_hetero_hydrogens, score_tautomer_rings,
     score_tautomer_substructures, score_tautomer_with_terms,
 };
+#[cfg(feature = "confseq")]
 pub use confseq::{
     ConfSeqBatchDecodeResult, ConfSeqDecodeError, ConfSeqDecodeOptions, ConfSeqFastGeometryError,
     ConfSeqTemplateBackend, decode_confseq, decode_confseq_batch,
@@ -215,8 +233,10 @@ pub use distgeom::{
     EmbedParameters, embed_molecule, embed_molecule_result, embed_multiple_confs,
     embed_multiple_confs_result, embed_multiple_confs_return_vector,
 };
+#[cfg(feature = "depict")]
 pub use draw::SvgDrawError;
 pub use error::{InvariantError, MoleculeBuildError};
+#[cfg(feature = "fingerprints")]
 pub use fingerprint::{
     ATOM_PAIR_ATOM_NUMBER_TYPES, ATOM_PAIR_CODE_SIZE, ATOM_PAIR_MAX_NUM_BRANCHES,
     ATOM_PAIR_MAX_NUM_PI, ATOM_PAIR_MAX_PATH_LENGTH, ATOM_PAIR_NUM_BRANCH_BITS,
@@ -247,31 +267,40 @@ pub use fingerprint::{
     topological_torsion_sparse_fingerprint,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
+#[cfg(feature = "inchi")]
 pub use inchi::{
     INCHI_API_PARITY_MATRIX, InchiApiParitySpec, InchiDiagnostic, InchiDiagnosticLevel, InchiError,
     InchiErrorKind, InchiReturnValues, InchiToInchiKeyOutput, MolFromInchiOutput,
     MolToInchiKeyOutput, MolToInchiOutput, inchi_to_inchi_key, mol_from_inchi, mol_to_inchi,
     mol_to_inchi_key,
 };
+#[cfg(feature = "io")]
 #[allow(deprecated)]
 pub use io::bio::read_mmcif_atom_site_subset_from_str;
+#[cfg(feature = "io")]
 pub use io::bio::{
     BioPdbReadParams, BioReadError, BioWriteError, MmcifOutputGroups, MmcifWriteOptions,
 };
+#[cfg(feature = "io")]
 pub use io::mol2::{
     Mol2ReadError, Mol2ReadParams, Mol2Record, Mol2Type, mol_from_mol2_block_like_rdkit,
     mol_from_mol2_data_stream_like_rdkit, mol_from_mol2_file_like_rdkit, read_mol2_file,
     read_mol2_file_with_params, read_mol2_from_str, read_mol2_from_str_with_params,
 };
+#[cfg(feature = "io")]
 #[allow(deprecated)]
 pub use io::pdb_molecule::{
     PdbMoleculeConversionError, RdkitPdbMolProfile, bio_structure_to_rdkit_pdb_molecule,
     molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,
 };
+#[cfg(feature = "io")]
 pub use io::pdb_molecule::{StructureMoleculeConversionError, StructureMoleculeOptions};
+#[cfg(feature = "io")]
 pub use io::sdf::{SdfCoordinateMode, SdfDataset, SdfReadParams, SdfRecordMetadata};
+#[cfg(feature = "io")]
 pub use io::xyz::{XyzReadError, read_xyz_from_str};
 pub use kekulize::KekulizeError;
+#[cfg(feature = "serialization")]
 pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{
     AtomMapping, BondMapping, Conformer2D, Conformer3D, ConformerStore, CoordinateDimension,
@@ -296,6 +325,7 @@ pub use potential_stereo::{
     StereoCenter, StereoDescriptor, StereoInfo, StereoSpecified, StereoType,
     analyze_potential_stereo,
 };
+#[cfg(feature = "descriptors")]
 pub use properties::descriptors::{
     CrippenDescriptorValues, DescriptorError, DescriptorResult, HallKierAlphaValues,
     LabuteAsaContributions, NumRotatableBondsOptions, calc_chi_0, calc_chi_0n, calc_chi_0v,
@@ -336,6 +366,7 @@ pub use stereo::{
     DoubleBondStereo, LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo,
     assign_stereochemistry, perceive_stereochemistry,
 };
+#[cfg(feature = "stereoisomers")]
 pub use stereo_enumerate::{
     EnumerationError, StereoisomerIterator, StereoisomerOptions, enumerate_stereoisomers,
     enumerate_stereoisomers_with_random_bits, stereoisomer_count,

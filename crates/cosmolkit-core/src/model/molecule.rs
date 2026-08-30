@@ -1262,6 +1262,7 @@ impl Molecule {
         crate::smiles::mol_from_smiles(smiles, &params)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mol_block(_block: &str) -> Result<Self, crate::io::sdf::SdfReadError> {
         Ok(crate::io::sdf::read_sdf_from_str_with_params(
             _block,
@@ -1270,6 +1271,7 @@ impl Molecule {
         .molecule)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mol_block_with_params(
         _block: &str,
         params: crate::io::sdf::SdfReadParams,
@@ -1277,12 +1279,14 @@ impl Molecule {
         Ok(crate::io::sdf::read_sdf_from_str_with_params(_block, params)?.molecule)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mol_file(
         _path: impl AsRef<std::path::Path>,
     ) -> Result<Self, crate::io::sdf::SdfReadError> {
         Ok(crate::io::molfile::read_mol_file(_path)?.molecule)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mol_file_with_params(
         _path: impl AsRef<std::path::Path>,
         params: crate::io::sdf::SdfReadParams,
@@ -1290,6 +1294,7 @@ impl Molecule {
         Ok(crate::io::molfile::read_mol_file_with_params(_path, params)?.molecule)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_xyz_block(block: &str) -> Result<Self, crate::io::xyz::XyzReadError> {
         crate::io::xyz::read_xyz_from_str(block)
     }
@@ -1313,6 +1318,7 @@ impl Molecule {
         crate::distgeom::dg_bounds_matrix(self)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn avalon_fingerprint(
         &self,
         params: &crate::avalon_fingerprint::AvalonFingerprintParams,
@@ -1320,6 +1326,7 @@ impl Molecule {
         crate::avalon_fingerprint::avalon_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn morgan_fingerprint(
         &self,
         params: &crate::MorganFingerprintParams,
@@ -1327,6 +1334,7 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn morgan_fingerprint_with_output(
         &self,
         params: &crate::MorganFingerprintParams,
@@ -1334,6 +1342,7 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint_with_output(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn atom_pair_fingerprint(
         &self,
         params: &crate::AtomPairFingerprintParams,
@@ -1341,6 +1350,7 @@ impl Molecule {
         crate::fingerprint::atom_pair_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn atom_pair_fingerprint_with_output(
         &self,
         params: &crate::AtomPairFingerprintParams,
@@ -1348,6 +1358,7 @@ impl Molecule {
         crate::fingerprint::atom_pair_fingerprint_with_output(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn pattern_fingerprint(
         &self,
         params: &crate::PatternFingerprintParams,
@@ -1355,6 +1366,7 @@ impl Molecule {
         crate::fingerprint::pattern_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn topological_fingerprint(
         &self,
         params: &crate::fingerprint::TopologicalFingerprintParams,
@@ -1362,6 +1374,7 @@ impl Molecule {
         crate::fingerprint::topological_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn topological_fingerprint_with_output(
         &self,
         params: &crate::fingerprint::TopologicalFingerprintParams,
@@ -1370,6 +1383,7 @@ impl Molecule {
         crate::fingerprint::topological_fingerprint_with_output(self, params, request)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn layered_fingerprint(
         &self,
         params: &crate::fingerprint::LayeredFingerprintParams,
@@ -1377,6 +1391,7 @@ impl Molecule {
         crate::fingerprint::layered_fingerprint(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn layered_fingerprint_with_output(
         &self,
         params: &crate::fingerprint::LayeredFingerprintParams,
@@ -1384,6 +1399,7 @@ impl Molecule {
         crate::fingerprint::layered_fingerprint_with_output(self, params)
     }
 
+    #[cfg(feature = "fingerprints")]
     pub fn maccs_fingerprint(
         &self,
         params: &crate::fingerprint::MaccsFingerprintParams,
@@ -1391,10 +1407,12 @@ impl Molecule {
         crate::fingerprint::maccs_fingerprint(self, params)
     }
 
+    #[cfg(feature = "hashing")]
     pub fn hash(&self) -> Result<u64, crate::mol_hash::HashError> {
         crate::mol_hash::mol_hash(self)
     }
 
+    #[cfg(feature = "hashing")]
     pub fn hash_with_ranks(&self, ranks: &[u32]) -> Result<u64, crate::mol_hash::HashError> {
         crate::mol_hash::mol_hash_with_ranks(self, ranks)
     }
@@ -1407,26 +1425,32 @@ impl Molecule {
         crate::fragment::get_largest_fragment(self)
     }
 
+    #[cfg(feature = "hashing")]
     pub fn murcko_scaffold(&self) -> Result<Molecule, crate::mol_hash::HashError> {
         crate::mol_hash::mol_murcko_scaffold(self)
     }
 
+    #[cfg(feature = "hashing")]
     pub fn net_scaffold(&self) -> Result<Molecule, crate::mol_hash::HashError> {
         crate::mol_hash::mol_net_scaffold(self)
     }
 
+    #[cfg(feature = "depict")]
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, crate::SvgDrawError> {
         crate::draw::mol_to_svg(self, width, height)
     }
 
+    #[cfg(feature = "depict")]
     pub fn to_png(&self, width: u32, height: u32) -> Result<Vec<u8>, crate::SvgDrawError> {
         crate::draw::mol_to_png(self, width, height)
     }
 
+    #[cfg(feature = "io")]
     pub fn to_pdb_block(&self, conf_id: i32, flavor: u32) -> String {
         crate::pdb_writer::mol_to_pdb_block(self, conf_id, flavor)
     }
 
+    #[cfg(feature = "depict")]
     pub(crate) fn prepared_for_drawing_parity(
         &self,
     ) -> Result<crate::draw::PreparedDrawMolecule, crate::SvgDrawError> {
@@ -1457,6 +1481,7 @@ impl Molecule {
     /// Candidate discovery happens when the iterator is created. Configuration
     /// application, uniqueness, optional embedding, and their errors are
     /// deferred until the iterator is consumed.
+    #[cfg(feature = "stereoisomers")]
     pub fn stereoisomers(
         &self,
         options: crate::StereoisomerOptions,
@@ -1466,6 +1491,7 @@ impl Molecule {
 
     /// Return the source-defined arbitrary-width upper bound for stereoisomer
     /// enumeration under `options`.
+    #[cfg(feature = "stereoisomers")]
     pub fn stereoisomer_count(
         &self,
         options: &crate::StereoisomerOptions,

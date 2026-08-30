@@ -1,0 +1,13 @@
+[package]
+name = "cosmolkit-experiment-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cosmolkit-experiment-batch = { path = "../batch" }
+cosmolkit-experiment-chemistry = { path = "../chemistry" }
+cosmolkit-experiment-io = { path = "../io" }
+cosmolkit-experiment-macros = { path = "../macros" }
+cosmolkit-experiment-model = { path = "../model" }
+indicatif = "0.18"

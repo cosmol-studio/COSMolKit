@@ -862,11 +862,13 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned PDB structural record stream into a `BioStructure`.
+    #[cfg(feature = "io")]
     pub fn from_pdb_str(text: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_pdb_str_with_params(text, crate::io::bio::BioPdbReadParams::default())
     }
 
     /// Reads a PDB file into the complete structural model.
+    #[cfg(feature = "io")]
     pub fn from_pdb(
         path: impl AsRef<std::path::Path>,
     ) -> Result<Self, crate::io::bio::BioReadError> {
@@ -880,6 +882,7 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned PDB structural record stream with explicit PDB reader parameters.
+    #[cfg(feature = "io")]
     pub fn from_pdb_str_with_params(
         text: &str,
         params: crate::io::bio::BioPdbReadParams,
@@ -888,11 +891,13 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned mmCIF structural document into a `BioStructure`.
+    #[cfg(feature = "io")]
     pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Mmcif)
     }
 
     /// Reads an mmCIF file into the complete structural model.
+    #[cfg(feature = "io")]
     pub fn from_mmcif(
         path: impl AsRef<std::path::Path>,
     ) -> Result<Self, crate::io::bio::BioReadError> {
@@ -906,6 +911,7 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned structure by detecting the input format from text.
+    #[cfg(feature = "io")]
     pub fn from_structure_str(
         text: &str,
         path: &str,
@@ -914,6 +920,7 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned structure using the requested coordinate format.
+    #[cfg(feature = "io")]
     pub fn from_str_with_format(
         text: &str,
         path: &str,
@@ -923,11 +930,13 @@ impl BioStructure {
     }
 
     /// Serializes this complete structural model as Gemmi-aligned mmCIF.
+    #[cfg(feature = "io")]
     pub fn to_mmcif(&self) -> Result<String, crate::io::bio::BioWriteError> {
         self.to_mmcif_with_options(crate::io::bio::MmcifWriteOptions::default())
     }
 
     /// Serializes this complete structural model with explicit mmCIF output options.
+    #[cfg(feature = "io")]
     pub fn to_mmcif_with_options(
         &self,
         options: crate::io::bio::MmcifWriteOptions,
@@ -936,6 +945,7 @@ impl BioStructure {
     }
 
     /// Writes this complete structural model as Gemmi-aligned mmCIF.
+    #[cfg(feature = "io")]
     pub fn write_mmcif(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -944,6 +954,7 @@ impl BioStructure {
     }
 
     /// Writes this complete structural model with explicit mmCIF output options.
+    #[cfg(feature = "io")]
     pub fn write_mmcif_with_options(
         &self,
         path: impl AsRef<std::path::Path>,

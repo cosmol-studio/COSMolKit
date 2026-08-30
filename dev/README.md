@@ -5,6 +5,11 @@ standards and current design documents remain at this directory's top level.
 Execution plans, reports, tools, and historical records live in named
 subdirectories so that an old plan cannot be mistaken for current policy.
 
+The target workspace crate ownership and dependency direction are defined in
+[`crate_architecture.md`](./crate_architecture.md). In that architecture,
+`cosmolkit` owns `Molecule` and the operation runtime, while
+`cosmolkit-core` provides source-backed algorithms over shared model values.
+
 ## Directory Map
 
 | Path | Role |
@@ -35,6 +40,7 @@ subdirectories so that an old plan cannot be mistaken for current policy.
 
 ## Current Design
 
+- [`crate_architecture.md`](./crate_architecture.md)
 - [`topology_operations.md`](./topology_operations.md)
 - [`derived_effects_permission_model.md`](./derived_effects_permission_model.md)
 - [`inplace_operation_api_design.md`](./inplace_operation_api_design.md)

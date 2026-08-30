@@ -15,5 +15,74 @@ edition.workspace = true
 name = "cosmolkit"
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+features = ["full"]
+no-default-features = true
+
+[features]
+default = ["full"]
+full = [
+    "batch",
+    "depict",
+    "descriptors",
+    "fingerprints",
+    "hashing",
+    "inchi",
+    "io",
+    "serialization",
+    "stereoisomers",
+    "confseq",
+]
+batch = ["depict", "fingerprints", "io", "cosmolkit-core/batch"]
+confseq = ["cosmolkit-core/confseq"]
+depict = ["io", "cosmolkit-core/depict"]
+descriptors = ["cosmolkit-core/descriptors"]
+fingerprints = ["io", "cosmolkit-core/fingerprints"]
+hashing = ["fingerprints", "cosmolkit-core/hashing"]
+inchi = ["cosmolkit-core/inchi"]
+io = ["cosmolkit-core/io"]
+serialization = ["cosmolkit-core/serialization"]
+stereoisomers = ["cosmolkit-core/stereoisomers"]
+
 [dependencies]
-cosmolkit-core = { version = "0.3.0", path = "../cosmolkit-core" }
+cosmolkit-core = { version = "0.3.0", path = "../cosmolkit-core", default-features = false }
+
+[[example]]
+name = "confseq_decode_backends"
+required-features = ["confseq"]
+
+[[example]]
+name = "draw_png"
+required-features = ["depict"]
+
+[[example]]
+name = "draw_svg"
+required-features = ["depict"]
+
+[[example]]
+name = "layered_fingerprint"
+required-features = ["batch"]
+
+[[example]]
+name = "pattern_fingerprint"
+required-features = ["batch"]
+
+[[example]]
+name = "protein_from_pdb"
+required-features = ["io"]
+
+[[example]]
+name = "read_pdb_alpha_carbons"
+required-features = ["io"]
+
+[[example]]
+name = "read_xyz"
+required-features = ["io"]
+
+[[example]]
+name = "sdf_to_smiles"
+required-features = ["io"]
+
+[[example]]
+name = "topological_torsion_fingerprint"
+required-features = ["batch"]

@@ -15,29 +15,55 @@ edition.workspace = true
 name = "cosmolkit_core"
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+features = ["full"]
+no-default-features = true
+
 [features]
-default = []
+default = ["full"]
+full = [
+    "batch",
+    "depict",
+    "descriptors",
+    "fingerprints",
+    "hashing",
+    "inchi",
+    "io",
+    "serialization",
+    "stereoisomers",
+    "confseq",
+]
+batch = ["dep:indicatif", "dep:rayon", "depict", "fingerprints", "io"]
+confseq = ["dep:rayon"]
+depict = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "io"]
+descriptors = []
+fingerprints = ["dep:rayon", "io"]
+hashing = ["fingerprints"]
+inchi = ["dep:cosmolkit-inchi"]
+io = []
+serialization = ["dep:postcard"]
+stereoisomers = ["dep:num-bigint"]
 runtime-invariants = []
 op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
 [dependencies]
-cosmolkit-inchi = { version = "0.3.0", path = "../cosmolkit-inchi" }
+cosmolkit-inchi = { version = "0.3.0", path = "../cosmolkit-inchi", optional = true }
 cosmolkit-macros = { version = "0.3.0", path = "../cosmolkit-macros" }
 cosmolkit-ringdecomposer = { version = "0.3.0", path = "../cosmolkit-ringdecomposer" }
-glam = "0.33.5"
-indicatif = "0.18"
+glam = { version = "0.33.5", optional = true }
+indicatif = { version = "0.18", optional = true }
 libc = "0.2"
 log = "0.4.29"
-num-bigint = "0.4.8"
-rayon = "1.12.0"
-postcard = { version = "1", features = ["alloc"] }
+num-bigint = { version = "0.4.8", optional = true }
+rayon = { version = "1.12.0", optional = true }
+postcard = { version = "1", features = ["alloc"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0.18"
-tiny-skia = "0.12.0"
-usvg = "0.48.1"
-resvg = "0.48.1"
+tiny-skia = { version = "0.12.0", optional = true }
+usvg = { version = "0.48.1", optional = true }
+resvg = { version = "0.48.1", optional = true }
 
 [dev-dependencies]
 cosmolkit-test-support = { path = "../cosmolkit-test-support" }

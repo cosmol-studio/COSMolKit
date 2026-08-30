@@ -22,6 +22,7 @@ pub(crate) mod numerics;
 pub mod potential_stereo;
 pub mod rings;
 pub mod stereo;
+#[cfg(feature = "stereoisomers")]
 pub mod stereo_enumerate;
 pub(crate) mod subgraph;
 pub mod tautomer;

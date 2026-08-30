@@ -3,6 +3,7 @@ use crate::bio::{
     AtomId, AtomRow, BioStructure, ChainId, ChainKind, ChainRow, CoordinateBlock, ModelId,
     ModelRow, ResidueId, ResidueKind, ResidueRow, RowSpan,
 };
+#[cfg(feature = "io")]
 use crate::{BioCoorFormat, BioReadError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,25 +57,30 @@ impl Protein {
         self.structure
     }
 
+    #[cfg(feature = "io")]
     pub fn from_pdb_str(text: &str) -> Result<Self, BioReadError> {
         let structure = BioStructure::from_pdb_str(text)?;
         Ok(Self::project_from_bio_structure(&structure))
     }
 
+    #[cfg(feature = "io")]
     pub fn from_pdb(path: &str) -> Result<Self, BioReadError> {
         let structure = BioStructure::from_pdb(path)?;
         Ok(Self::project_from_bio_structure(&structure))
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Mmcif)
     }
 
+    #[cfg(feature = "io")]
     pub fn from_mmcif(path: &str) -> Result<Self, BioReadError> {
         let structure = BioStructure::from_mmcif(path)?;
         Ok(Self::project_from_bio_structure(&structure))
     }
 
+    #[cfg(feature = "io")]
     pub fn from_str_with_format(
         text: &str,
         path: &str,
@@ -84,6 +90,7 @@ impl Protein {
         Ok(Self::project_from_bio_structure(&structure))
     }
 
+    #[cfg(feature = "io")]
     pub fn from_structure_str(text: &str, path: &str) -> Result<Self, BioReadError> {
         let structure = BioStructure::from_structure_str(text, path)?;
         Ok(Self::project_from_bio_structure(&structure))

@@ -65,6 +65,7 @@
 
 pub use cosmolkit_core as core;
 pub use cosmolkit_core::bio;
+#[cfg(feature = "io")]
 pub use cosmolkit_core::io;
 pub use cosmolkit_core::*;
 
@@ -121,18 +122,25 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "inchi")]
     fn methane() -> Molecule {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::C));
         builder.build().expect("trusted methane")
     }
 
+    #[cfg(feature = "inchi")]
     fn assert_generation_type(_: &MolToInchiOutput) {}
+    #[cfg(feature = "inchi")]
     fn assert_molecule_key_type(_: &MolToInchiKeyOutput) {}
+    #[cfg(feature = "inchi")]
     fn assert_direct_key_type(_: &InchiToInchiKeyOutput) {}
+    #[cfg(feature = "inchi")]
     fn assert_parse_type(_: &MolFromInchiOutput) {}
+    #[cfg(feature = "inchi")]
     fn assert_error_type(_: &InchiError) {}
 
+    #[cfg(feature = "inchi")]
     #[test]
     fn inchi_rust_facade_four_scalar_apis_match_exact_methane_results_and_preserve_source() {
         let source = methane()
@@ -188,6 +196,7 @@ mod tests {
         assert_eq!(source.prop("record"), Some("kept"));
     }
 
+    #[cfg(feature = "inchi")]
     #[test]
     fn inchi_rust_facade_preserves_isotope_diagnostics_and_source_stereo_cleanup() {
         let parsed = mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false)
@@ -213,6 +222,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "inchi")]
     #[test]
     fn inchi_rust_facade_preserves_structured_unsupported_and_allocation_error_categories() {
         let unsupported = mol_to_inchi(&Molecule::new(), None).expect_err("untrusted topology");

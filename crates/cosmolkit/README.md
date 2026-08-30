@@ -1,8 +1,35 @@
 # COSMolKit
 
-`cosmolkit` is the public Rust API for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It provides molecular graphs, SMILES/SMARTS processing, molecular file IO, fingerprints, descriptors, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, InChI, substructure search, batch workflows, and protein structure APIs. The crate is a lightweight facade over `cosmolkit-core` and related COSMolKit components, providing the primary Rust import surface without hiding the underlying modules.
+`cosmolkit` is the public Rust API for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It provides molecular graphs, SMILES/SMARTS processing, molecular file IO, fingerprints, descriptors, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, InChI, substructure search, batch workflows, and protein structure APIs. In the current workspace it exposes implementation from `cosmolkit-core` and related COSMolKit components through the primary supported Rust import surface.
 
 For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.org/rust-cheminformatics>.
+
+## Cargo features
+
+The default `full` feature preserves the complete COSMolKit API. Applications
+that need a smaller dependency surface can disable defaults and enable only the
+capabilities they use:
+
+```toml
+cosmolkit = { version = "0.3.0", default-features = false, features = ["fingerprints"] }
+```
+
+| Feature | Capability | Implied features |
+|---|---|---|
+| `io` | MOL/SDF, MOL2, XYZ, PDB, and mmCIF IO | — |
+| `inchi` | InChI and InChIKey conversion | — |
+| `fingerprints` | Morgan, AtomPair, Pattern, Topological, MACCS, Layered, and Avalon fingerprints | `io` |
+| `descriptors` | Molecular descriptors | — |
+| `depict` | SVG and PNG molecule depiction | `io` |
+| `batch` | Ordered parallel batch APIs | `fingerprints`, `depict`, `io` |
+| `serialization` | Compact binary molecule serialization | — |
+| `stereoisomers` | Stereoisomer enumeration | — |
+| `hashing` | Molecular hashes and scaffolds | `fingerprints`, `io` |
+| `confseq` | ConfSeq decoding | — |
+
+Feature selection only controls compile-time API and dependency composition;
+it does not change the behavior of an enabled operation. Python wheels always
+build the complete `full` capability set.
 
 ## Documentation
 
@@ -411,6 +438,13 @@ uv sync --group dev
 .venv/bin/pytest
 ```
 
-The facade crate should stay thin. Public Rust APIs should be exposed through
-`cosmolkit` or clearly scoped public modules, while molecule mutation continues
-to go through registered operations in the core.
+The planned crate split is a staged internal architecture migration, not the
+current workspace layout. Its target is for `cosmolkit` to own the public
+`Molecule` API and operation runtime while shared model values and source-backed
+algorithms move behind explicit crate boundaries. It is not intended to break
+the existing supported external API: users should continue importing from
+`cosmolkit`, without changing normal molecule workflows merely because an
+implementation moves between crates. Internal implementation crates will not
+become competing public `Molecule` entry points. Any unavoidable public change
+will be handled separately through the normal versioning and deprecation
+policy.
