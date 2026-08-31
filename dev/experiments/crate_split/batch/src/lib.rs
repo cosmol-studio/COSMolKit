@@ -1,4 +1,3 @@
-use cosmolkit_experiment_io::parse_smiles;
 use cosmolkit_experiment_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 use rayon::prelude::*;
 
@@ -12,20 +11,23 @@ pub struct BatchRecord {
 
 pub type BatchProgress<'a> = Option<&'a (dyn Fn() + Sync)>;
 
-pub fn parse_smiles_batch<S>(
+pub fn map_parsed<S, R, E>(
     sources: impl IntoIterator<Item = S>,
     n_jobs: Option<usize>,
     progress: BatchProgress<'_>,
+    parser: impl Fn(S) -> Result<R, E> + Send + Sync,
 ) -> Result<Vec<BatchRecord>, String>
 where
     S: AsRef<str> + Send,
+    R: Into<(TopologyBlock, CoordinateBlock, MoleculeProperties)>,
+    E: ToString + Send,
 {
     map_ordered(
         sources.into_iter().enumerate(),
         n_jobs,
         progress,
         |(index, source)| {
-            let (topology, coordinates, properties) = parse_smiles(source.as_ref())?;
+            let (topology, coordinates, properties) = parser(source)?.into();
             Ok(BatchRecord {
                 index,
                 topology,
@@ -34,6 +36,7 @@ where
             })
         },
     )
+    .map_err(|error: E| error.to_string())
 }
 
 pub fn map_ordered<T, R, E>(

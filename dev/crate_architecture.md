@@ -30,6 +30,15 @@ typed values, assignments, reports, or transformed blocks. It must not depend
 on `cosmolkit`, `Molecule`, `OpParts`, the operation registry, or the runtime
 cache authority.
 
+The core crate is a capability layer, not a one-feature-per-crate rule. Tightly
+coupled foundational chemistry implementations may remain together there,
+including valence calculation, sanitization, and hydrogen transforms, when
+they share model-level machinery. A feature such as hydrogen handling therefore
+does not need a standalone crate. Separately reusable families such as
+fingerprints, descriptors, search, or file IO may be sibling domain crates;
+their dependency on core is determined by actual algorithm reuse, not by a
+public feature alias.
+
 The name `cosmolkit-core` is retained for package continuity; its role is no
 longer "the crate that owns Molecule". It is a reusable implementation crate,
 similar in dependency direction to a fingerprint or search crate, and may be
@@ -176,6 +185,21 @@ enumeration have coupled dependencies and should be migrated after the model
 and one simpler algorithm family establish the boundary. Feature flags remain
 useful for selecting optional algorithms and dependencies, but they are not a
 substitute for the crate-level ownership boundary.
+
+Feature selection follows two distinct layers:
+
+- Fine-grained features gate one public capability and its optional
+  implementation dependency, such as `smiles`, `tautomer`, or `conformer`.
+- User-facing bundles such as `common_api`, `chemistry_api`, `3d_api`, and
+  `full` are explicit compositions of fine-grained features.
+
+A fine-grained feature must not depend on another domain's public feature just
+  because its implementation happens to reuse code. Shared implementation
+  belongs in a lower-level internal crate or an explicit algorithm dependency;
+  it must not make unrelated facade methods appear. The operation registry may
+  retain complete contract metadata for review, while generated public
+  wrappers, operation bodies, and optional domain dependencies are gated by
+  their owning fine-grained feature.
 
 ## 7. Public Compatibility
 

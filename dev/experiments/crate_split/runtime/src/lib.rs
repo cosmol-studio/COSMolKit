@@ -1,14 +1,36 @@
-use cosmolkit_experiment_batch::{map_ordered, parse_smiles_batch};
-use cosmolkit_experiment_chemistry::{
-    add_hydrogens, enumerate_stereoisomers, enumerate_tautomers, generate_conformer,
-    remove_hydrogens,
-};
-use cosmolkit_experiment_io::{parse_smarts, parse_smiles, read_pdb, read_sdf, read_xyz};
-use cosmolkit_experiment_macros::{mol_multi_op_body, mol_op_body, molecule_ops};
-use cosmolkit_experiment_model::{
-    Conformer3D, CoordinateBlock, MoleculeProperties, QueryAst, TopologyBlock,
-};
+#[cfg(all(feature = "batch", feature = "hydrogens"))]
+use cosmolkit_experiment_batch::map_ordered;
+#[cfg(all(feature = "batch", feature = "smiles"))]
+use cosmolkit_experiment_batch::map_parsed;
+#[cfg(feature = "conformer")]
+use cosmolkit_experiment_conformer::generate_conformer;
+#[cfg(feature = "hydrogens")]
+use cosmolkit_experiment_core::{add_hydrogens, remove_hydrogens};
+#[cfg(feature = "smarts")]
+use cosmolkit_experiment_io::parse_smarts;
+#[cfg(feature = "smiles")]
+use cosmolkit_experiment_io::parse_smiles;
+#[cfg(feature = "pdb")]
+use cosmolkit_experiment_io::read_pdb;
+#[cfg(feature = "sdf")]
+use cosmolkit_experiment_io::read_sdf;
+#[cfg(feature = "xyz")]
+use cosmolkit_experiment_io::read_xyz;
+#[cfg(any(feature = "tautomer", feature = "stereoisomers"))]
+use cosmolkit_experiment_macros::mol_multi_op_body;
+#[cfg(any(feature = "hydrogens", feature = "conformer"))]
+use cosmolkit_experiment_macros::mol_op_body;
+use cosmolkit_experiment_macros::molecule_ops;
+#[cfg(feature = "smarts")]
+use cosmolkit_experiment_model::QueryAst;
+use cosmolkit_experiment_model::{Conformer3D, CoordinateBlock, MoleculeProperties, TopologyBlock};
+#[cfg(feature = "stereoisomers")]
+use cosmolkit_experiment_stereoisomers::enumerate_stereoisomers;
+#[cfg(feature = "tautomer")]
+use cosmolkit_experiment_tautomer::enumerate_tautomers;
+#[cfg(feature = "batch")]
 use indicatif::ProgressBar;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -208,7 +230,7 @@ molecule_ops! {
         cip_state: clear_computed,
         semantic_preconditions: [],
         requires_mapping: required,
-        feature: HYDROGENS_FEATURE,
+        feature: hydrogens,
         parity: required_now,
         parity_profile: "experiment",
         io_roundtrip: false,
@@ -236,7 +258,7 @@ molecule_ops! {
         cip_state: clear_computed,
         semantic_preconditions: [],
         requires_mapping: required,
-        feature: HYDROGENS_FEATURE,
+        feature: hydrogens,
         parity: required_now,
         parity_profile: "experiment",
         io_roundtrip: false,
@@ -263,7 +285,7 @@ molecule_ops! {
         cip_state: tautomer_source_transition,
         semantic_preconditions: [],
         requires_mapping: none,
-        feature: TAUTOMER_FEATURE,
+        feature: tautomer,
         parity: required_now,
         parity_profile: "experiment",
         io_roundtrip: false,
@@ -289,7 +311,7 @@ molecule_ops! {
         cip_state: assign,
         semantic_preconditions: [],
         requires_mapping: none,
-        feature: STEREOISOMER_FEATURE,
+        feature: stereoisomers,
         parity: required_now,
         parity_profile: "experiment",
         io_roundtrip: false,
@@ -315,7 +337,7 @@ molecule_ops! {
         cip_state: preserve,
         semantic_preconditions: [],
         requires_mapping: none,
-        feature: CONFORMER_FEATURE,
+        feature: conformer,
         parity: required_now,
         parity_profile: "experiment",
         io_roundtrip: false,
@@ -387,6 +409,10 @@ impl Molecule {
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Self {
+        // The experiment keeps this constructor intentionally small to test
+        // crate ownership. Production migration must validate every existing
+        // topology, index, coordinate, property, adjacency, and cache
+        // invariant before installing equivalent blocks.
         Self {
             topology,
             coordinates,
@@ -395,6 +421,7 @@ impl Molecule {
     }
 
     #[must_use]
+    #[cfg(feature = "smiles")]
     pub fn from_smiles(source: &str) -> Result<Self, OperationError> {
         validate_input("parse_smiles", source)?;
         parse_smiles(source)
@@ -405,6 +432,7 @@ impl Molecule {
     }
 
     #[must_use]
+    #[cfg(feature = "sdf")]
     pub fn from_sdf(source: &str) -> Result<Vec<Self>, OperationError> {
         validate_input("read_sdf", source)?;
         read_sdf(source)
@@ -420,6 +448,7 @@ impl Molecule {
     }
 
     #[must_use]
+    #[cfg(feature = "pdb")]
     pub fn from_pdb(source: &str) -> Result<Self, OperationError> {
         validate_input("read_pdb", source)?;
         read_pdb(source)
@@ -430,6 +459,7 @@ impl Molecule {
     }
 
     #[must_use]
+    #[cfg(feature = "xyz")]
     pub fn from_xyz(source: &str) -> Result<Self, OperationError> {
         validate_input("read_xyz", source)?;
         read_xyz(source)
@@ -455,74 +485,74 @@ impl Molecule {
     }
 }
 
+#[cfg(feature = "smarts")]
 pub fn molecule_from_smarts(source: &str) -> Result<QueryAst, OperationError> {
     validate_input("parse_smarts", source)?;
     parse_smarts(source).map_err(OperationError::Algorithm)
 }
 
-#[mol_op_body(add_hydrogens, parts)]
+#[cfg(feature = "hydrogens")]
+#[mol_op_body(add_hydrogens, context)]
 fn add_hydrogens_impl() -> Result<(), OperationError> {
-    let (topology, coordinates, properties) = parts.extract_all_writable()?;
+    let (topology, coordinates, properties) = context.extract_all_writable()?;
     let (topology, coordinates, properties) =
         add_hydrogens(topology, coordinates, properties).map_err(OperationError::Algorithm)?;
-    parts.commit_topology(topology)?;
-    parts.commit_coordinates(coordinates)?;
-    parts.commit_properties(properties)?;
-    parts.record_topology_mapping()?;
+    context.commit_all_writable(topology, coordinates, properties)?;
     Ok(())
 }
 
-#[mol_op_body(remove_hydrogens, parts)]
+#[cfg(feature = "hydrogens")]
+#[mol_op_body(remove_hydrogens, context)]
 fn remove_hydrogens_impl() -> Result<(), OperationError> {
-    let (topology, coordinates, properties) = parts.extract_all_writable()?;
+    let (topology, coordinates, properties) = context.extract_all_writable()?;
     let (topology, coordinates, properties) =
         remove_hydrogens(topology, coordinates, properties).map_err(OperationError::Algorithm)?;
-    parts.commit_topology(topology)?;
-    parts.commit_coordinates(coordinates)?;
-    parts.commit_properties(properties)?;
-    parts.record_topology_mapping()?;
+    context.commit_all_writable(topology, coordinates, properties)?;
     Ok(())
 }
 
-#[mol_multi_op_body(tautomers, parts)]
+#[cfg(feature = "tautomer")]
+#[mol_multi_op_body(tautomers, context)]
 fn tautomers_impl() -> Result<(), OperationError> {
-    let candidates = parts.with_source_read_parts(|read| {
+    let candidates = context.with_source_read_parts(|read| {
         enumerate_tautomers(read.topology()?, read.coordinates()?, read.properties()?)
             .map_err(OperationError::Algorithm)
     })?;
     for (topology, coordinates, properties) in candidates {
-        let branch = parts.derive_from_source(move |branch| {
-            branch.replace_all_writable(topology, coordinates, properties)
+        let branch = context.derive_from_source(move |branch| {
+            branch.commit_all_writable(topology, coordinates, properties)
         })?;
-        parts.emit(branch)?;
+        context.emit(branch)?;
     }
     Ok(())
 }
 
-#[mol_multi_op_body(stereoisomers, parts)]
+#[cfg(feature = "stereoisomers")]
+#[mol_multi_op_body(stereoisomers, context)]
 fn stereoisomers_impl() -> Result<(), OperationError> {
-    let candidates = parts.with_source_read_parts(|read| {
+    let candidates = context.with_source_read_parts(|read| {
         enumerate_stereoisomers(read.topology()?, read.coordinates()?, read.properties()?)
             .map_err(OperationError::Algorithm)
     })?;
     for (topology, coordinates, properties) in candidates {
-        let branch = parts.derive_from_source(move |branch| {
-            branch.replace_all_writable(topology, coordinates, properties)
+        let branch = context.derive_from_source(move |branch| {
+            branch.commit_all_writable(topology, coordinates, properties)
         })?;
-        parts.emit(branch)?;
+        context.emit(branch)?;
     }
     Ok(())
 }
 
-#[mol_op_body(conformer, parts)]
+#[cfg(feature = "conformer")]
+#[mol_op_body(conformer, context)]
 fn conformer_impl() -> Result<(), OperationError> {
-    let conformer =
-        generate_conformer(parts.begin_topology_read()?).map_err(OperationError::Algorithm)?;
-    let mut coordinates = parts.begin_coordinates_mut()?;
+    let conformer = generate_conformer(context.topology()?).map_err(OperationError::Algorithm)?;
+    let mut coordinates = context.begin_coordinates_mut()?;
     coordinates.add_conformer_3d(conformer);
-    parts.commit_coordinates(coordinates)
+    context.commit_coordinates(coordinates)
 }
 
+#[cfg(feature = "batch")]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MoleculeBatch {
     records: Vec<Molecule>,
@@ -530,7 +560,9 @@ pub struct MoleculeBatch {
     progress_bar: Option<bool>,
 }
 
+#[cfg(feature = "batch")]
 impl MoleculeBatch {
+    #[cfg(feature = "smiles")]
     pub fn from_smiles<S>(sources: impl IntoIterator<Item = S>) -> Result<Self, OperationError>
     where
         S: AsRef<str> + Send,
@@ -538,6 +570,7 @@ impl MoleculeBatch {
         Self::from_smiles_with_options(sources, None, None)
     }
 
+    #[cfg(feature = "smiles")]
     pub fn from_smiles_with_options<S>(
         sources: impl IntoIterator<Item = S>,
         n_jobs: Option<usize>,
@@ -549,7 +582,9 @@ impl MoleculeBatch {
         let n_jobs = n_jobs.map(|value| value.max(1));
         let sources: Vec<S> = sources.into_iter().collect();
         let records = with_batch_progress(progress_bar, sources.len(), |progress| {
-            parse_smiles_batch(sources, n_jobs, progress)
+            map_parsed(sources, n_jobs, progress, |source| {
+                parse_smiles(source.as_ref())
+            })
         })
         .map_err(OperationError::Algorithm)?;
         Ok(Self {
@@ -586,10 +621,12 @@ impl MoleculeBatch {
         self.progress_bar
     }
 
+    #[cfg(all(feature = "batch", feature = "hydrogens"))]
     pub fn add_hydrogens(&self) -> Result<Self, OperationError> {
         self.add_hydrogens_with_options(None, None)
     }
 
+    #[cfg(all(feature = "batch", feature = "hydrogens"))]
     pub fn add_hydrogens_with_options(
         &self,
         n_jobs: Option<usize>,
@@ -624,6 +661,7 @@ impl MoleculeBatch {
     }
 }
 
+#[cfg(feature = "batch")]
 fn with_batch_progress<R>(
     enabled: Option<bool>,
     total: usize,
@@ -640,7 +678,9 @@ fn with_batch_progress<R>(
     }
 }
 
-pub(crate) struct OpParts<'a> {
+pub(crate) struct UnrestrictedAccess;
+
+pub(crate) struct OpParts<'a, Access = UnrestrictedAccess> {
     spec: &'static MoleculeOpSpec,
     topology: Option<TopologyBlock>,
     coordinates: Option<CoordinateBlock>,
@@ -648,48 +688,17 @@ pub(crate) struct OpParts<'a> {
     topology_checked_out: bool,
     coordinates_checked_out: bool,
     properties_checked_out: bool,
-    topology_mapping_recorded: bool,
     in_place_target: Option<&'a mut Molecule>,
+    _access: PhantomData<Access>,
 }
 
-pub(crate) struct MoleculeReadParts<'a> {
+struct MoleculeReadParts<'a, Access = UnrestrictedAccess> {
     spec: &'static MoleculeOpSpec,
     molecule: &'a Molecule,
+    _access: PhantomData<Access>,
 }
 
-impl<'a> MoleculeReadParts<'a> {
-    fn topology(&self) -> Result<&'a TopologyBlock, OperationError> {
-        if !self.spec.access.can_read(BlockSet::TOPOLOGY) {
-            return Err(OperationError::AccessDenied {
-                operation: self.spec.method,
-                block: "topology",
-            });
-        }
-        Ok(&self.molecule.topology)
-    }
-
-    fn coordinates(&self) -> Result<&'a CoordinateBlock, OperationError> {
-        if !self.spec.access.can_read(BlockSet::COORDINATES) {
-            return Err(OperationError::AccessDenied {
-                operation: self.spec.method,
-                block: "coordinates",
-            });
-        }
-        Ok(&self.molecule.coordinates)
-    }
-
-    fn properties(&self) -> Result<&'a MoleculeProperties, OperationError> {
-        if !self.spec.access.can_read(BlockSet::PROPERTIES) {
-            return Err(OperationError::AccessDenied {
-                operation: self.spec.method,
-                block: "properties",
-            });
-        }
-        Ok(&self.molecule.properties)
-    }
-}
-
-impl<'a> OpParts<'a> {
+impl<'a, Access> OpParts<'a, Access> {
     fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
         if spec.output != OperationOutput::Single {
             return Err(OperationError::ContractViolation(
@@ -704,8 +713,8 @@ impl<'a> OpParts<'a> {
             topology_checked_out: false,
             coordinates_checked_out: false,
             properties_checked_out: false,
-            topology_mapping_recorded: false,
             in_place_target: None,
+            _access: PhantomData,
         })
     }
 
@@ -726,8 +735,8 @@ impl<'a> OpParts<'a> {
             topology_checked_out: false,
             coordinates_checked_out: false,
             properties_checked_out: false,
-            topology_mapping_recorded: false,
             in_place_target: None,
+            _access: PhantomData,
         })
     }
 
@@ -748,8 +757,8 @@ impl<'a> OpParts<'a> {
             topology_checked_out: false,
             coordinates_checked_out: false,
             properties_checked_out: false,
-            topology_mapping_recorded: false,
             in_place_target: Some(target),
+            _access: PhantomData,
         })
     }
 
@@ -763,14 +772,34 @@ impl<'a> OpParts<'a> {
         Ok(())
     }
 
-    fn begin_topology_read(&self) -> Result<&TopologyBlock, OperationError> {
+    fn read_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
         self.ensure_access(self.spec.access.topology, "topology")?;
         self.topology
             .as_ref()
             .ok_or(OperationError::BlockCheckedOut { block: "topology" })
     }
 
-    fn begin_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
+    #[allow(dead_code)]
+    fn read_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
+        self.ensure_access(self.spec.access.coordinates, "coordinates")?;
+        self.coordinates
+            .as_ref()
+            .ok_or(OperationError::BlockCheckedOut {
+                block: "coordinates",
+            })
+    }
+
+    #[allow(dead_code)]
+    fn read_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
+        self.ensure_access(self.spec.access.properties, "properties")?;
+        self.properties
+            .as_ref()
+            .ok_or(OperationError::BlockCheckedOut {
+                block: "properties",
+            })
+    }
+
+    fn checkout_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
         self.ensure_access(self.spec.access.topology, "topology")?;
         let topology = self
             .topology
@@ -780,7 +809,8 @@ impl<'a> OpParts<'a> {
         Ok(topology)
     }
 
-    fn commit_topology(&mut self, topology: TopologyBlock) -> Result<(), OperationError> {
+    #[allow(dead_code)]
+    fn install_topology(&mut self, topology: TopologyBlock) -> Result<(), OperationError> {
         topology
             .validate()
             .map_err(|error| OperationError::InvalidTopology(error.to_string()))?;
@@ -789,7 +819,7 @@ impl<'a> OpParts<'a> {
         Ok(())
     }
 
-    fn begin_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
+    fn checkout_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
         self.ensure_access(self.spec.access.coordinates, "coordinates")?;
         let coordinates = self
             .coordinates
@@ -801,13 +831,13 @@ impl<'a> OpParts<'a> {
         Ok(coordinates)
     }
 
-    fn commit_coordinates(&mut self, coordinates: CoordinateBlock) -> Result<(), OperationError> {
+    fn install_coordinates(&mut self, coordinates: CoordinateBlock) -> Result<(), OperationError> {
         self.coordinates = Some(coordinates);
         self.coordinates_checked_out = false;
         Ok(())
     }
 
-    fn begin_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
+    fn checkout_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
         self.ensure_access(self.spec.access.properties, "properties")?;
         let properties = self
             .properties
@@ -819,22 +849,23 @@ impl<'a> OpParts<'a> {
         Ok(properties)
     }
 
-    fn commit_properties(&mut self, properties: MoleculeProperties) -> Result<(), OperationError> {
+    #[allow(dead_code)]
+    fn install_properties(&mut self, properties: MoleculeProperties) -> Result<(), OperationError> {
         self.properties = Some(properties);
         self.properties_checked_out = false;
         Ok(())
     }
 
-    fn extract_all_writable(
+    fn checkout_all_writable(
         &mut self,
     ) -> Result<(TopologyBlock, CoordinateBlock, MoleculeProperties), OperationError> {
-        let topology = self.begin_topology_mut()?;
-        let coordinates = self.begin_coordinates_mut()?;
-        let properties = self.begin_properties_mut()?;
+        let topology = self.checkout_topology_mut()?;
+        let coordinates = self.checkout_coordinates_mut()?;
+        let properties = self.checkout_properties_mut()?;
         Ok((topology, coordinates, properties))
     }
 
-    fn replace_all_writable(
+    fn install_all_writable(
         &mut self,
         topology: TopologyBlock,
         coordinates: CoordinateBlock,
@@ -849,6 +880,9 @@ impl<'a> OpParts<'a> {
                 block: "all writable blocks",
             });
         }
+        topology
+            .validate()
+            .map_err(|error| OperationError::InvalidTopology(error.to_string()))?;
         self.topology = Some(topology);
         self.coordinates = Some(coordinates);
         self.properties = Some(properties);
@@ -856,17 +890,6 @@ impl<'a> OpParts<'a> {
         self.coordinates_checked_out = false;
         self.properties_checked_out = false;
         Ok(())
-    }
-
-    fn record_topology_mapping(&mut self) -> Result<(), OperationError> {
-        if self.spec.requires_mapping {
-            self.topology_mapping_recorded = true;
-            Ok(())
-        } else {
-            Err(OperationError::ContractViolation(
-                "operation does not require topology mapping",
-            ))
-        }
     }
 
     fn finish(self) -> Result<Molecule, OperationError> {
@@ -886,11 +909,6 @@ impl<'a> OpParts<'a> {
         if self.spec.may_mutate != self.spec.access.write() && self.spec.kind != "construction" {
             return Err(OperationError::ContractViolation(
                 "may_mutate does not match declared topology write access",
-            ));
-        }
-        if self.spec.requires_mapping && !self.topology_mapping_recorded {
-            return Err(OperationError::ContractViolation(
-                "strong topology operation is missing mapping",
             ));
         }
         let topology = self
@@ -932,15 +950,16 @@ pub(crate) struct MoleculeBranchId {
     index: usize,
 }
 
-pub(crate) struct MultiOutputOpParts<'a> {
+struct MultiOutputOpParts<'a, Access = UnrestrictedAccess> {
     spec: &'static MoleculeOpSpec,
     source: &'a Molecule,
     executor_id: u64,
     candidates: Vec<Molecule>,
     emitted: Vec<MoleculeBranchId>,
+    _access: PhantomData<Access>,
 }
 
-impl<'a> MultiOutputOpParts<'a> {
+impl<'a, Access> MultiOutputOpParts<'a, Access> {
     fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
         if spec.output != OperationOutput::Multiple {
             return Err(OperationError::ContractViolation(
@@ -958,22 +977,24 @@ impl<'a> MultiOutputOpParts<'a> {
             executor_id,
             candidates: Vec::new(),
             emitted: Vec::new(),
+            _access: PhantomData,
         })
     }
 
-    fn with_source_read_parts<R>(
+    fn source_read_runtime<R>(
         &self,
-        read: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+        read: impl FnOnce(MoleculeReadParts<'_, Access>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         read(MoleculeReadParts {
             spec: self.spec,
             molecule: self.source,
+            _access: PhantomData,
         })
     }
 
-    fn derive_from_source(
+    fn derive_source_runtime(
         &mut self,
-        derive: impl FnOnce(&mut OpParts<'_>) -> Result<(), OperationError>,
+        derive: impl FnOnce(&mut OpParts<'_, Access>) -> Result<(), OperationError>,
     ) -> Result<MoleculeBranchId, OperationError> {
         let mut parts = OpParts::new_multi_branch(self.source, self.spec)?;
         derive(&mut parts)?;
@@ -987,10 +1008,10 @@ impl<'a> MultiOutputOpParts<'a> {
     }
 
     #[allow(dead_code)]
-    fn derive_from_branch(
+    fn derive_branch_runtime(
         &mut self,
         parent: MoleculeBranchId,
-        derive: impl FnOnce(&mut OpParts<'_>) -> Result<(), OperationError>,
+        derive: impl FnOnce(&mut OpParts<'_, Access>) -> Result<(), OperationError>,
     ) -> Result<MoleculeBranchId, OperationError> {
         let source = self.branch(parent)?.clone();
         let mut parts = OpParts::new_multi_branch(&source, self.spec)?;
@@ -1018,24 +1039,25 @@ impl<'a> MultiOutputOpParts<'a> {
     }
 
     #[allow(dead_code)]
-    fn with_branch_read_parts<R>(
+    fn branch_read_runtime<R>(
         &self,
         branch: MoleculeBranchId,
-        read: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+        read: impl FnOnce(MoleculeReadParts<'_, Access>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         read(MoleculeReadParts {
             spec: self.spec,
             molecule: self.branch(branch)?,
+            _access: PhantomData,
         })
     }
 
-    fn emit(&mut self, branch: MoleculeBranchId) -> Result<(), OperationError> {
+    fn emit_runtime(&mut self, branch: MoleculeBranchId) -> Result<(), OperationError> {
         self.branch(branch)?;
         self.emitted.push(branch);
         Ok(())
     }
 
-    fn finish(self) -> Result<Vec<Molecule>, OperationError> {
+    fn finish_runtime(self) -> Result<Vec<Molecule>, OperationError> {
         if self.emitted.is_empty() {
             return Err(OperationError::ContractViolation(
                 "multiple-output operation produced no finalized branches",
@@ -1075,7 +1097,7 @@ impl<'a> MultiOutputOpParts<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full"))]
 fn find_spec(method: &'static str) -> &'static MoleculeOpSpec {
     MOLECULE_OPS
         .iter()
@@ -1093,7 +1115,7 @@ fn validate_input(operation: &'static str, source: &str) -> Result<(), Operation
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full"))]
 mod tests {
     use super::*;
 
@@ -1194,16 +1216,15 @@ mod tests {
     #[test]
     fn op_parts_closes_each_block_begin_commit_pair_before_finish() {
         let molecule = Molecule::from_smiles("CC").expect("SMILES");
-        let mut parts = OpParts::new(&molecule, find_spec("with_hydrogens")).unwrap();
+        let mut parts =
+            OpParts::<AddHydrogensAccess>::new(&molecule, find_spec("with_hydrogens")).unwrap();
 
-        let topology = parts.begin_topology_mut().unwrap();
-        parts.commit_topology(topology).unwrap();
-        let coordinates = parts.begin_coordinates_mut().unwrap();
-        parts.commit_coordinates(coordinates).unwrap();
-        let properties = parts.begin_properties_mut().unwrap();
-        parts.commit_properties(properties).unwrap();
-        parts.record_topology_mapping().unwrap();
-
+        let topology = parts.checkout_topology_mut().unwrap();
+        parts.install_topology(topology).unwrap();
+        let coordinates = parts.checkout_coordinates_mut().unwrap();
+        parts.install_coordinates(coordinates).unwrap();
+        let properties = parts.checkout_properties_mut().unwrap();
+        parts.install_properties(properties).unwrap();
         let finished = parts.finish().unwrap();
         assert_eq!(finished.num_atoms(), molecule.num_atoms());
     }
@@ -1212,16 +1233,48 @@ mod tests {
     fn operation_declarations_and_bodies_use_the_proc_macro_surface() {
         let source = include_str!("lib.rs");
         assert!(source.contains("molecule_ops!"));
-        assert!(source.contains("#[mol_op_body(add_hydrogens, parts)]"));
-        assert!(source.contains("#[mol_multi_op_body(tautomers, parts)]"));
+        assert!(source.contains("#[mol_op_body(add_hydrogens, context)]"));
+        assert!(source.contains("#[mol_multi_op_body(tautomers, context)]"));
+        assert!(source.contains("context.extract_all_writable()"));
+        assert!(source.contains("context.commit_all_writable(topology, coordinates, properties)"));
+        assert!(source.contains("context.with_source_read_parts"));
         assert_eq!(ADD_HYDROGENS_SPEC.impl_fn, "add_hydrogens_impl");
         assert_eq!(TAUTOMERS_SPEC.output, OperationOutput::Multiple);
     }
 
     #[test]
+    fn generated_contexts_expose_declared_capabilities() {
+        fn add_hydrogens_capabilities(context: &mut AddHydrogensContext<'_>) {
+            let _ = context.begin_topology_mut();
+            let _ = context.begin_coordinates_mut();
+            let _ = context.begin_properties_mut();
+            let _ = context.extract_all_writable();
+            let _ = context.commit_all_writable(
+                TopologyBlock::default(),
+                CoordinateBlock::default(),
+                MoleculeProperties::default(),
+            );
+        }
+
+        fn conformer_capabilities(context: &mut ConformerContext<'_>) {
+            let _ = context.topology();
+            let _ = context.properties();
+            let _ = context.begin_coordinates_mut();
+            let _ = context.commit_coordinates(CoordinateBlock::default());
+        }
+
+        let molecule = Molecule::from_smiles("CC").unwrap();
+        let mut add_hydrogens = AddHydrogensContext::new(&molecule, &ADD_HYDROGENS_SPEC).unwrap();
+        add_hydrogens_capabilities(&mut add_hydrogens);
+        let mut conformer = ConformerContext::new(&molecule, &CONFORMER_SPEC).unwrap();
+        conformer_capabilities(&mut conformer);
+    }
+
+    #[test]
     fn multi_output_runtime_derives_reads_and_emits_validated_branches() {
         let molecule = Molecule::from_smiles("CC").unwrap();
-        let mut outputs = MultiOutputOpParts::new(&molecule, &TAUTOMERS_SPEC).unwrap();
+        let mut outputs =
+            MultiOutputOpParts::<TautomersAccess>::new(&molecule, &TAUTOMERS_SPEC).unwrap();
         let first = outputs.derive_from_source(|_| Ok(())).unwrap();
         assert_eq!(
             outputs
@@ -1234,7 +1287,8 @@ mod tests {
         outputs.emit(second).unwrap();
         assert_eq!(outputs.finish().unwrap().len(), 2);
 
-        let mut other = MultiOutputOpParts::new(&molecule, &TAUTOMERS_SPEC).unwrap();
+        let mut other =
+            MultiOutputOpParts::<TautomersAccess>::new(&molecule, &TAUTOMERS_SPEC).unwrap();
         assert!(other.emit(first).is_err());
     }
 }

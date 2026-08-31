@@ -30,13 +30,19 @@ dependencies = [
 name = "cosmolkit-experiment-batch"
 version = "0.0.0"
 dependencies = [
- "cosmolkit-experiment-io",
  "cosmolkit-experiment-model",
  "rayon",
 ]
 
 [[package]]
-name = "cosmolkit-experiment-chemistry"
+name = "cosmolkit-experiment-conformer"
+version = "0.0.0"
+dependencies = [
+ "cosmolkit-experiment-model",
+]
+
+[[package]]
+name = "cosmolkit-experiment-core"
 version = "0.0.0"
 dependencies = [
  "cosmolkit-experiment-model",
@@ -67,11 +73,28 @@ name = "cosmolkit-experiment-runtime"
 version = "0.0.0"
 dependencies = [
  "cosmolkit-experiment-batch",
- "cosmolkit-experiment-chemistry",
+ "cosmolkit-experiment-conformer",
+ "cosmolkit-experiment-core",
  "cosmolkit-experiment-io",
  "cosmolkit-experiment-macros",
  "cosmolkit-experiment-model",
+ "cosmolkit-experiment-stereoisomers",
+ "cosmolkit-experiment-tautomer",
  "indicatif",
+]
+
+[[package]]
+name = "cosmolkit-experiment-stereoisomers"
+version = "0.0.0"
+dependencies = [
+ "cosmolkit-experiment-model",
+]
+
+[[package]]
+name = "cosmolkit-experiment-tautomer"
+version = "0.0.0"
+dependencies = [
+ "cosmolkit-experiment-model",
 ]
 
 [[package]]

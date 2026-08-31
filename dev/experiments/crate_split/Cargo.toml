@@ -1,5 +1,15 @@
 [workspace]
-members = ["model", "chemistry", "io", "batch", "macros", "runtime"]
+members = [
+    "model",
+    "core",
+    "tautomer",
+    "stereoisomers",
+    "conformer",
+    "io",
+    "batch",
+    "macros",
+    "runtime",
+]
 resolver = "2"
 
 [workspace.package]

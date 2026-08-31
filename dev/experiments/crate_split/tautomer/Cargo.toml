@@ -1,9 +1,8 @@
 [package]
-name = "cosmolkit-experiment-batch"
+name = "cosmolkit-experiment-tautomer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 cosmolkit-experiment-model = { path = "../model" }
-rayon = "1"

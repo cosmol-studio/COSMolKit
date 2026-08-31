@@ -4,10 +4,39 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["full"]
+
+# Fine-grained API features. These names own only the corresponding public
+# surface; they must not pull in another domain's public methods.
+smiles = ["dep:cosmolkit-experiment-io"]
+smarts = ["dep:cosmolkit-experiment-io"]
+sdf = ["dep:cosmolkit-experiment-io"]
+pdb = ["dep:cosmolkit-experiment-io"]
+xyz = ["dep:cosmolkit-experiment-io"]
+hydrogens = ["dep:cosmolkit-experiment-core"]
+tautomer = ["dep:cosmolkit-experiment-tautomer"]
+stereoisomers = ["dep:cosmolkit-experiment-stereoisomers"]
+conformer = ["dep:cosmolkit-experiment-conformer"]
+batch = ["dep:cosmolkit-experiment-batch", "dep:indicatif"]
+
+# User-facing bundles are explicit feature composition, not implementation
+# dependency aliases.
+common_api = ["smiles", "smarts", "sdf", "pdb", "xyz"]
+# Reserved for a future depiction slice; this experiment claims no 2D API.
+2d_api = []
+3d_api = ["conformer"]
+chemistry_api = ["hydrogens", "tautomer", "stereoisomers"]
+batch_api = ["batch", "smiles"]
+full = ["common_api", "2d_api", "3d_api", "chemistry_api", "batch_api"]
+
 [dependencies]
-cosmolkit-experiment-batch = { path = "../batch" }
-cosmolkit-experiment-chemistry = { path = "../chemistry" }
-cosmolkit-experiment-io = { path = "../io" }
+cosmolkit-experiment-batch = { path = "../batch", optional = true }
+cosmolkit-experiment-conformer = { path = "../conformer", optional = true }
+cosmolkit-experiment-core = { path = "../core", optional = true }
+cosmolkit-experiment-io = { path = "../io", optional = true }
 cosmolkit-experiment-macros = { path = "../macros" }
 cosmolkit-experiment-model = { path = "../model" }
-indicatif = "0.18"
+cosmolkit-experiment-stereoisomers = { path = "../stereoisomers", optional = true }
+cosmolkit-experiment-tautomer = { path = "../tautomer", optional = true }
+indicatif = { version = "0.18", optional = true }

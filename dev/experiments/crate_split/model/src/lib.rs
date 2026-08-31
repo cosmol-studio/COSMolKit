@@ -160,6 +160,10 @@ impl TopologyBlock {
     }
 
     pub fn validate(&self) -> Result<(), TopologyError> {
+        // This experiment only models the local bond-endpoint check. A
+        // production crate split must carry over the complete molecule
+        // invariant set, including atom/bond identity, adjacency, coordinate
+        // row alignment, and per-entity property alignment.
         for bond in &self.bonds {
             if bond.source().index() >= self.atoms.len()
                 || bond.target().index() >= self.atoms.len()
