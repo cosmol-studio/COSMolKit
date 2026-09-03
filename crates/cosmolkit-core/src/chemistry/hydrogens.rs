@@ -1116,7 +1116,7 @@ fn remove_hs_recursive_planning_molecule(
 
     let mapping = topology.remove_atoms_with_mapping(&assignment.atoms_to_remove);
     let mut coordinates = read_parts.coordinates().clone();
-    coordinates.remap_topology(&mapping);
+    coordinates.remap_topology(&mapping.retained_atom_indices());
     let planned = Molecule::from_blocks(topology, coordinates, read_parts.properties().clone())
         .map_err(|_| RemoveHydrogensError::ProtocolDebt {
             branch: "MolOps::removeHs/removeAndTrackIsotopes",

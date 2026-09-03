@@ -11,8 +11,9 @@
 //! ## Implementation notes
 //!
 //! `QueryNode`, `AtomQueryPredicate`, `BondQueryPredicate`, and
-//! `SmartsParseError` are the sole shared typed SMARTS/query model. Parsing
-//! belongs in `search::smarts_parse` and reuses these types.
+//! `SmartsParseError` define the predicate vocabulary. The graph-level model
+//! is [`super::query_graph::QueryGraph`], while parsing belongs in
+//! `search::smarts_parse` and reuses these types.
 //!
 //! - Atom adjacency is built on-the-fly from `mol.bonds()` when not cached.
 //! - Ring info is built on-the-fly from `mol.atoms()`/`mol.bonds()` when not cached.
@@ -20,6 +21,8 @@
 //!   Wilkins / RDKit SMARTS grammar.
 
 use std::collections::BTreeSet;
+
+use super::query_graph::QueryGraph;
 
 use crate::chemistry::valence::rdkit_atomic_mass;
 use crate::{
@@ -42,21 +45,6 @@ pub(crate) const MH_EXCLUDED_ATOMIC_NUMBERS: [u8; 22] = [
 // QueryNode: a recursive Boolean query tree
 // ---------------------------------------------------------------------------
 
-/// A recursive Boolean query tree over a predicate type `T`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum QueryNode<T> {
-    /// A leaf node containing a single predicate.
-    Predicate(T),
-    /// All children must match (logical AND).
-    And(Vec<QueryNode<T>>),
-    /// Any child must match (logical OR).
-    Or(Vec<QueryNode<T>>),
-    /// Exactly one child must match (logical XOR).
-    Xor(Vec<QueryNode<T>>),
-    /// The child must not match (logical NOT).
-    Not(Box<QueryNode<T>>),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompositeQueryType {
     And,
@@ -64,43 +52,39 @@ pub(crate) enum CompositeQueryType {
     Xor,
 }
 
+/// A recursive Boolean query tree over a predicate type `T`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueryNode<T> {
+    Predicate(T),
+    And(Vec<QueryNode<T>>),
+    Or(Vec<QueryNode<T>>),
+    Xor(Vec<QueryNode<T>>),
+    Not(Box<QueryNode<T>>),
+}
+
 impl<T> QueryNode<T> {
     #[must_use]
     pub fn predicate(predicate: T) -> Self {
         Self::Predicate(predicate)
     }
-
     #[must_use]
-    pub fn and(children: Vec<QueryNode<T>>) -> Self {
+    pub fn and(children: Vec<Self>) -> Self {
         Self::And(children)
     }
-
     #[must_use]
-    pub fn or(children: Vec<QueryNode<T>>) -> Self {
+    pub fn or(children: Vec<Self>) -> Self {
         Self::Or(children)
     }
-
     #[must_use]
-    pub fn xor(children: Vec<QueryNode<T>>) -> Self {
+    pub fn xor(children: Vec<Self>) -> Self {
         Self::Xor(children)
     }
-
     #[must_use]
-    pub fn not(child: QueryNode<T>) -> Self {
+    pub fn not(child: Self) -> Self {
         Self::Not(Box::new(child))
     }
 
-    pub(crate) fn add_child(&mut self, child: QueryNode<T>) {
-        // RDKit✔️✔️: void addChild(CHILD_TYPE child) { this->d_children.push_back(child); }
-        //
-        // `And` and `Or` are the canonical typed equivalents of RDKit query
-        // objects that own child vectors. As in the source, append preserves
-        // insertion order and does not inspect, clone, flatten, or deduplicate
-        // the child. Local complexity review: Rust `Vec::push` and C++
-        // `std::vector::push_back` both have O(1) amortized append complexity,
-        // contiguous storage, and occasional O(n) capacity growth. Moving the
-        // owned enum replaces the source shared-pointer copy without adding a
-        // traversal, lookup, temporary collection, or child clone.
+    pub(crate) fn add_child(&mut self, child: Self) {
         match self {
             Self::And(children) | Self::Or(children) | Self::Xor(children) => children.push(child),
             Self::Predicate(_) | Self::Not(_) => {
@@ -110,17 +94,6 @@ impl<T> QueryNode<T> {
     }
 
     pub(crate) fn set_negation(&mut self, what: bool) {
-        // RDKit✔️❌: void setNegation(bool what) { this->df_negate = what; }
-        //
-        // `Not` is the canonical typed storage for the source node-level
-        // boolean. Setting the same state is idempotent; clearing negation
-        // unwraps only this node and preserves any negation owned by its child.
-        // Local complexity review: both implementations are O(1), perform no
-        // traversal, lookup, clone, or temporary collection, and leave child
-        // storage in place. RDKit writes an inline bool without allocation;
-        // setting Rust's recursive enum to `Not` requires one `Box` allocation
-        // (and clearing it frees that box), so the allocation behavior is
-        // materially worse even though matching semantics are unchanged.
         match (what, matches!(self, Self::Not(_))) {
             (true, false) => {
                 let child = std::mem::replace(self, Self::And(Vec::new()));
@@ -128,11 +101,11 @@ impl<T> QueryNode<T> {
             }
             (false, true) => {
                 let Self::Not(child) = std::mem::replace(self, Self::And(Vec::new())) else {
-                    unreachable!("negation state was checked before unwrapping")
+                    unreachable!()
                 };
                 *self = *child;
             }
-            (true, true) | (false, false) => {}
+            _ => {}
         }
     }
 
@@ -665,7 +638,7 @@ pub enum AtomQueryPredicate {
 /// The single typed payload used for recursive SMARTS queries.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecursiveStructureQuery {
-    query_mol: Option<Box<Molecule>>,
+    query_mol: Option<Box<QueryGraph>>,
     source_smarts: Option<String>,
     atom_indices: BTreeSet<i32>,
     serial_number: u32,
@@ -687,7 +660,7 @@ impl RecursiveStructureQuery {
         }
     }
 
-    pub(crate) fn from_molecule(query: Molecule, serial_number: u32) -> Self {
+    pub(crate) fn from_molecule(query: QueryGraph, serial_number: u32) -> Self {
         // RDKit✔️✔️: RecursiveStructureQuery(ROMol const *query, unsigned int serialNumber = 0)
         // RDKit✔️✔️:     : Queries::SetQuery<int, Atom const *, true>(),
         // RDKit✔️✔️:       d_serialNumber(serialNumber) {
@@ -707,7 +680,7 @@ impl RecursiveStructureQuery {
 
     pub(crate) fn from_smarts(
         smarts: impl Into<String>,
-        query_mol: Molecule,
+        query_mol: QueryGraph,
         serial_number: u32,
     ) -> Self {
         let mut query = Self::from_molecule(query_mol, serial_number);
@@ -724,19 +697,19 @@ impl RecursiveStructureQuery {
         atom.id().index() as i32
     }
 
-    pub(crate) fn set_query_mol(&mut self, query: Molecule) {
+    pub(crate) fn set_query_mol(&mut self, query: QueryGraph) {
         // RDKit✔️✔️: void setQueryMol(ROMol const *query) { dp_queryMol.reset(query); }
         // Local complexity review: both replace one owned pointer in O(1).
         self.query_mol = Some(Box::new(query));
     }
 
-    pub(crate) fn query_mol(&self) -> Option<&Molecule> {
+    pub(crate) fn query_mol(&self) -> Option<&QueryGraph> {
         // RDKit✔️✔️: ROMol const *getQueryMol() const { return dp_queryMol.get(); }
         // Local complexity review: both borrow one stored pointer in O(1).
         self.query_mol.as_deref()
     }
 
-    pub(crate) fn query_mol_mut(&mut self) -> Option<&mut Molecule> {
+    pub(crate) fn query_mol_mut(&mut self) -> Option<&mut QueryGraph> {
         self.query_mol.as_deref_mut()
     }
 
@@ -6906,7 +6879,8 @@ mod tests {
     #[test]
     fn smarts_recursive_structure_molecule_constructor() {
         let molecule = Molecule::from_smiles("CO").unwrap();
-        let query = RecursiveStructureQuery::from_molecule(molecule, 17);
+        let graph = QueryGraph::from_concrete_molecule(&molecule).unwrap();
+        let query = RecursiveStructureQuery::from_molecule(graph, 17);
         assert_eq!(query.query_mol().unwrap().num_atoms(), 2);
         assert_eq!(query.serial_number(), 17);
     }
@@ -6920,23 +6894,31 @@ mod tests {
     #[test]
     fn smarts_recursive_structure_set_molecule() {
         let mut query = RecursiveStructureQuery::new();
-        query.set_query_mol(Molecule::from_smiles("N").unwrap());
+        let nitrogen = Molecule::from_smiles("N").unwrap();
+        query.set_query_mol(QueryGraph::from_concrete_molecule(&nitrogen).unwrap());
         assert_eq!(query.query_mol().unwrap().atoms()[0].atomic_number(), 7);
-        query.set_query_mol(Molecule::from_smiles("O").unwrap());
+        let oxygen = Molecule::from_smiles("O").unwrap();
+        query.set_query_mol(QueryGraph::from_concrete_molecule(&oxygen).unwrap());
         assert_eq!(query.query_mol().unwrap().atoms()[0].atomic_number(), 8);
     }
 
     #[test]
     fn smarts_recursive_structure_get_molecule() {
-        let query =
-            RecursiveStructureQuery::from_molecule(Molecule::from_smiles("C=C").unwrap(), 0);
+        let molecule = Molecule::from_smiles("C=C").unwrap();
+        let query = RecursiveStructureQuery::from_molecule(
+            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
+            0,
+        );
         assert_eq!(query.query_mol().unwrap().num_bonds(), 1);
     }
 
     #[test]
     fn smarts_recursive_structure_copy() {
-        let mut query =
-            RecursiveStructureQuery::from_molecule(Molecule::from_smiles("CO").unwrap(), 23);
+        let molecule = Molecule::from_smiles("CO").unwrap();
+        let mut query = RecursiveStructureQuery::from_molecule(
+            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
+            23,
+        );
         query.insert_atom_index(3);
         let copied = query.copy_query();
         assert_eq!(copied, query);
@@ -6946,7 +6928,11 @@ mod tests {
 
     #[test]
     fn smarts_recursive_structure_serial() {
-        let query = RecursiveStructureQuery::from_molecule(Molecule::new(), 101);
+        let molecule = Molecule::new();
+        let query = RecursiveStructureQuery::from_molecule(
+            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
+            101,
+        );
         assert_eq!(query.serial_number(), 101);
     }
 

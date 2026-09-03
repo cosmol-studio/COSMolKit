@@ -182,6 +182,8 @@ name = "cosmolkit"
 version = "0.3.0"
 dependencies = [
  "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-types",
 ]
 
 [[package]]
@@ -198,8 +200,10 @@ version = "0.3.0"
 dependencies = [
  "cosmolkit-inchi",
  "cosmolkit-macros",
+ "cosmolkit-model",
  "cosmolkit-ringdecomposer",
  "cosmolkit-test-support",
+ "cosmolkit-types",
  "glam",
  "indicatif",
  "libc",
@@ -237,6 +241,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmolkit-model"
+version = "0.3.0"
+dependencies = [
+ "cosmolkit-types",
+ "thiserror",
+]
+
+[[package]]
 name = "cosmolkit-py"
 version = "0.3.0"
 dependencies = [
@@ -264,6 +276,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "cosmolkit-types"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

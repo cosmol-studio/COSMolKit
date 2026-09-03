@@ -319,16 +319,8 @@ impl MoleculeBuilder {
             .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
             .collect();
 
-        self.properties.remap_topology(&TopologyMapping {
-            atoms: AtomMapping {
-                old_to_new: atom_old_to_new.clone(),
-                new_to_old: atom_new_to_old.clone(),
-            },
-            bonds: BondMapping {
-                old_to_new: bond_old_to_new.clone(),
-                new_to_old: bond_new_to_old.clone(),
-            },
-        });
+        self.properties
+            .remap_topology(&atom_new_to_old, &bond_new_to_old);
 
         self.atoms = atoms;
         self.bonds = bonds;

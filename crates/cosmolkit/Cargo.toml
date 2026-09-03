@@ -46,6 +46,8 @@ stereoisomers = ["cosmolkit-core/stereoisomers"]
 
 [dependencies]
 cosmolkit-core = { version = "0.3.0", path = "../cosmolkit-core", default-features = false }
+cosmolkit-model = { version = "0.3.0", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.3.0", path = "../cosmolkit-types" }
 
 [[example]]
 name = "confseq_decode_backends"

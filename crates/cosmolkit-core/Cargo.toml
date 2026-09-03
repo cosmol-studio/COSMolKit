@@ -50,6 +50,8 @@ op-contracts-strict = ["runtime-invariants", "op-contracts"]
 [dependencies]
 cosmolkit-inchi = { version = "0.3.0", path = "../cosmolkit-inchi", optional = true }
 cosmolkit-macros = { version = "0.3.0", path = "../cosmolkit-macros" }
+cosmolkit-types = { version = "0.3.0", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.3.0", path = "../cosmolkit-model" }
 cosmolkit-ringdecomposer = { version = "0.3.0", path = "../cosmolkit-ringdecomposer" }
 glam = { version = "0.33.5", optional = true }
 indicatif = { version = "0.18", optional = true }

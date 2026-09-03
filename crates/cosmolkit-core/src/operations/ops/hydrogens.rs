@@ -167,7 +167,7 @@ pub(super) fn apply_add_hs_assignment(
         added_atom_count,
         added_bond_count,
     );
-    properties.remap_topology(&mapping);
+    properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
 
     let adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
     let valence = crate::hydrogens::add_hs_valence_assignment_from_parts(
@@ -669,8 +669,8 @@ fn without_hydrogens_apply(
                 TopologyMapping::identity(atom_count, bond_count)
             } else {
                 let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
-                coordinates.remap_topology(&mapping);
-                properties.remap_topology(&mapping);
+                coordinates.remap_topology(&mapping.retained_atom_indices());
+                properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
                 parts.record_topology_edit(TopologyEditKind::Compacting)?;
                 changed = true;
                 mapping

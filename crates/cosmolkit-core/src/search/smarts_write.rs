@@ -1,4 +1,4 @@
-//! RDKit SMARTS serialization for canonical query-bearing molecules.
+//! RDKit SMARTS serialization for canonical [`QueryGraph`] values.
 
 use super::query::{AtomRangeBounds, AtomRangeDataFunction, QueryNode, RecursiveStructureQuery};
 use crate::{
@@ -33,6 +33,8 @@ impl std::ops::BitOrAssign for QueryBoolFeatures {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsWriteError {
+    #[error("SMARTS writer query-graph traversal is not available for this graph: {detail}")]
+    QueryGraphTraversalUnsupported { detail: &'static str },
     #[error("This is a non-smartable query - OR above and below AND in the binary tree")]
     OrAboveAndBelowAnd,
     #[error("Don't know how to combine using {description}")]
@@ -62,6 +64,66 @@ pub enum SmartsWriteError {
     FragmentAtomOutOfRange { atom: usize },
     #[error("SMARTS fragment bond index {bond} is out of range")]
     FragmentBondOutOfRange { bond: usize },
+}
+
+/// Serialize an independent query graph.
+///
+/// The canonical molecule traversal is intentionally not used here: a query
+/// graph is not a `Molecule` and must never be lowered back into one.
+pub(crate) fn query_graph_to_smarts(
+    query: &crate::QueryGraph,
+    params: &SmilesWriteParams,
+) -> Result<String, SmartsWriteError> {
+    let molecule =
+        query
+            .to_molecule()
+            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+                detail: "query graph cannot be materialized for SMARTS traversal",
+            })?;
+    mol_to_smarts(&molecule, params)
+}
+
+pub(crate) fn query_graph_to_cx_smarts(
+    query: &crate::QueryGraph,
+    params: &SmilesWriteParams,
+) -> Result<String, SmartsWriteError> {
+    let molecule =
+        query
+            .to_molecule()
+            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+                detail: "query graph cannot be materialized for CXSMARTS traversal",
+            })?;
+    mol_to_cx_smarts(&molecule, params)
+}
+
+pub(crate) fn query_graph_fragment_to_smarts(
+    query: &crate::QueryGraph,
+    params: &SmilesWriteParams,
+    atoms: &[AtomId],
+    bonds: Option<&[BondId]>,
+) -> Result<String, SmartsWriteError> {
+    let molecule =
+        query
+            .to_molecule()
+            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+                detail: "query graph cannot be materialized for SMARTS fragment traversal",
+            })?;
+    mol_fragment_to_smarts(&molecule, params, atoms, bonds)
+}
+
+pub(crate) fn query_graph_fragment_to_cx_smarts(
+    query: &crate::QueryGraph,
+    params: &SmilesWriteParams,
+    atoms: &[AtomId],
+    bonds: Option<&[BondId]>,
+) -> Result<String, SmartsWriteError> {
+    let molecule =
+        query
+            .to_molecule()
+            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+                detail: "query graph cannot be materialized for CXSMARTS fragment traversal",
+            })?;
+    mol_fragment_to_cx_smarts(&molecule, params, atoms, bonds)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -563,7 +625,7 @@ fn get_recursive_structure_query_smarts<F>(
     write_molecule: F,
 ) -> Result<String, SmartsWriteError>
 where
-    F: FnOnce(&Molecule, &SmilesWriteParams) -> Result<String, SmartsWriteError>,
+    F: FnOnce(&crate::QueryGraph, &SmilesWriteParams) -> Result<String, SmartsWriteError>,
 {
     // BEGIN RDKIT CPP FUNCTION getRecursiveStructureQuerySmarts
     // RDKit✔️✔️: std::string getRecursiveStructureQuerySmarts(
@@ -821,7 +883,7 @@ fn recurse_get_smarts<F>(
     write_molecule: &mut F,
 ) -> Result<String, SmartsWriteError>
 where
-    F: FnMut(&Molecule, &SmilesWriteParams) -> Result<String, SmartsWriteError>,
+    F: FnMut(&crate::QueryGraph, &SmilesWriteParams) -> Result<String, SmartsWriteError>,
 {
     // BEGIN RDKIT CPP FUNCTION _recurseGetSmarts
     // RDKit✔️✔️: std::string _recurseGetSmarts(const QueryAtom *qatom,
@@ -1776,8 +1838,9 @@ pub fn get_atom_smarts(
             &mut false,
         ));
     };
-    let mut write_molecule = |recursive: &Molecule, recursive_params: &SmilesWriteParams| {
-        mol_to_smarts(recursive, recursive_params)
+    let mut write_molecule = |recursive: &crate::QueryGraph,
+                              recursive_params: &SmilesWriteParams| {
+        query_graph_to_smarts(recursive, recursive_params)
     };
     let (query, negated) = atom_query_without_not(query, false);
     let mut need_paren = false;
@@ -2248,10 +2311,14 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::C));
         builder.add_atom(AtomSpec::new(Element::O));
-        let query = RecursiveStructureQuery::from_molecule(builder.build().unwrap(), 0);
+        let molecule = builder.build().unwrap();
+        let query = RecursiveStructureQuery::from_molecule(
+            crate::QueryGraph::from_concrete_molecule(&molecule).unwrap(),
+            0,
+        );
         let params = SmilesWriteParams::default();
 
-        let write_nested = |molecule: &crate::Molecule, _: &SmilesWriteParams| {
+        let write_nested = |molecule: &crate::QueryGraph, _: &SmilesWriteParams| {
             assert_eq!(molecule.num_atoms(), 2);
             Ok("C=O".to_owned())
         };
@@ -2462,8 +2529,11 @@ mod tests {
 
         let mut recursive_builder = MoleculeBuilder::new();
         recursive_builder.add_atom(AtomSpec::new(Element::N));
-        let recursive =
-            RecursiveStructureQuery::from_molecule(recursive_builder.build().unwrap(), 0);
+        let recursive_molecule = recursive_builder.build().unwrap();
+        let recursive = RecursiveStructureQuery::from_molecule(
+            crate::QueryGraph::from_concrete_molecule(&recursive_molecule).unwrap(),
+            0,
+        );
         let recursive_query = QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
             QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
@@ -2701,8 +2771,11 @@ mod tests {
         );
         let mut recursive_builder = MoleculeBuilder::new();
         recursive_builder.add_atom(AtomSpec::new(Element::N));
-        let recursive =
-            RecursiveStructureQuery::from_molecule(recursive_builder.build().unwrap(), 0);
+        let recursive_molecule = recursive_builder.build().unwrap();
+        let recursive = RecursiveStructureQuery::from_molecule(
+            crate::QueryGraph::from_concrete_molecule(&recursive_molecule).unwrap(),
+            0,
+        );
         builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(
             AtomQueryPredicate::RecursiveSmarts(recursive),
         )));
@@ -2791,8 +2864,11 @@ mod tests {
             AtomSpec::new(Element::N)
                 .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))),
         );
-        let recursive =
-            RecursiveStructureQuery::from_molecule(recursive_builder.build().unwrap(), 0);
+        let recursive_molecule = recursive_builder.build().unwrap();
+        let recursive = RecursiveStructureQuery::from_molecule(
+            crate::QueryGraph::from_concrete_molecule(&recursive_molecule).unwrap(),
+            0,
+        );
 
         let mut builder = MoleculeBuilder::new();
         let carbon = builder.add_atom(

@@ -145,6 +145,66 @@ for semantic correctness. The parent runtime still enforces registry access,
 mapping obligations, derived effects, preconditions, source-preservation rules,
 unsupported errors, and final invariants.
 
+### Value and behaviour facades
+
+When a domain value has several operations that interpret it, keep one
+canonical value type and place the domain behaviour behind an operator facade.
+The value type may retain methods for local construction, accessors, and local
+validation, but it must not acquire dependencies on parsers, matchers,
+serializers, planners, or runtime state merely to expose those behaviours.
+
+The facade borrows the canonical value and groups related operations:
+
+```rust
+// model/value crate
+pub struct QueryGraph { /* data and local validation */ }
+
+// domain implementation crate
+pub struct QueryGraphOperator<'a> {
+    inner: &'a QueryGraph,
+}
+```
+
+This rule applies to query graphs and to future data/behaviour pairs with the
+same dependency shape. It does not authorize a second wrapper type with the
+same public domain name, a duplicate value model, or long-lived conversion
+adapters. Construction that returns an owned value remains an explicit domain
+entrypoint, while interpretation operations are methods on the operator
+facade. For example, SMARTS construction is `search::parse_smarts(...) ->
+QueryGraph`; it must not be an associated function on `QueryGraphOperator`
+because no existing `inner` value participates in parsing. Existing top-level
+facade APIs may remain as thin forwarders to preserve source compatibility.
+For example, `QueryGraph::to_smarts()` may delegate to
+`self.operator().to_smarts()` without making the model crate depend on the
+SMARTS writer. Such forwarders belong to the top-level or domain facade, never
+to the lower-level canonical value implementation.
+
+### Parser construction boundary
+
+SMARTS parsing uses a private construction state, not a second public query
+model and not a query-bearing `Molecule` as its canonical intermediate:
+
+```text
+SMARTS
+  -> parser state + QueryGraphBuilder
+  -> one controlled lowering (`finish`)
+  -> QueryGraph
+```
+
+`ParserState` owns syntax bookkeeping such as branch stacks, pending bonds, and
+ring-closure tables. `QueryGraphBuilder` owns only query graph construction
+state and source metadata needed to construct the final value. Ring-closure
+records are consumed when their bond is emitted and are not retained as a
+second graph representation. `finish` validates index alignment, assigns
+stable IDs, builds adjacency, and returns the sole `QueryGraph` value.
+
+RDKit's parser creates query atoms and bonds directly in an `RWMol`; the builder
+is therefore a COSMolKit construction aid for preserving the same semantic
+action order, not a claim that RDKit has a `ParsedSmartsGraph` type. Source
+post-processing must preserve RDKit's ordering and behavior. Any remaining
+adapter that consumes a concrete molecule is an explicitly bounded integration
+dependency and must not become a public parser/model conversion path.
+
 ## 5. Parent Operation Flow
 
 Every public molecule operation follows this shape:

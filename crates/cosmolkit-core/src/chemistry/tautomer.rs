@@ -18,8 +18,8 @@ use super::tautomer_transforms::{
 };
 use crate::{
     AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Hybridization, Molecule,
-    RingFindingError, SmartsParseError, SmartsParseParams, StereoError, mol_from_smarts,
-    read_parts::MoleculeReadParts,
+    QueryGraph, RingFindingError, SmartsParseError, SmartsParseParams, StereoError,
+    mol_from_smarts, read_parts::MoleculeReadParts,
 };
 
 pub(super) type TautomerTransformDefinition<'a> = (&'a str, &'a str, &'a str, &'a str);
@@ -618,7 +618,7 @@ fn v1_builtin_transforms() -> Result<Vec<TautomerTransform>, TautomerCatalogErro
 /// unchanged.
 #[derive(Debug, PartialEq)]
 pub struct TautomerTransform {
-    query: Molecule,
+    query: QueryGraph,
     bond_types: Vec<BondOrder>,
     charges: Vec<i32>,
 }
@@ -635,7 +635,7 @@ pub struct TautomerScoreTerm {
     name: String,
     smarts: String,
     score: i32,
-    matcher: Option<Molecule>,
+    matcher: Option<QueryGraph>,
 }
 
 /// Source-defined components of a tautomer canonicalization score.
@@ -2847,7 +2847,7 @@ impl TautomerScoreTerm {
         self.score
     }
 
-    pub(crate) const fn matcher(&self) -> Option<&Molecule> {
+    pub(crate) const fn matcher(&self) -> Option<&QueryGraph> {
         self.matcher.as_ref()
     }
 }
@@ -3201,7 +3201,7 @@ impl TautomerTransform {
     /// Construct a transform from an already compiled SMARTS query.
     pub fn new(
         name: impl Into<String>,
-        query: Molecule,
+        query: QueryGraph,
         bond_types: Vec<BondOrder>,
         charges: Vec<i32>,
     ) -> Result<Self, TautomerTransformError> {
@@ -3242,11 +3242,11 @@ impl TautomerTransform {
 
     #[must_use]
     pub fn name(&self) -> &str {
-        self.query.properties().name().unwrap_or("")
+        self.query.prop("_Name").unwrap_or("")
     }
 
     #[must_use]
-    pub const fn query(&self) -> &Molecule {
+    pub const fn query(&self) -> &QueryGraph {
         &self.query
     }
 
@@ -3305,7 +3305,7 @@ mod tests {
     use super::*;
     use crate::{SmartsParseParams, mol_from_smarts};
 
-    fn query(smarts: &str) -> Molecule {
+    fn query(smarts: &str) -> QueryGraph {
         mol_from_smarts(smarts, &SmartsParseParams::default()).expect("compile transform SMARTS")
     }
 
@@ -3627,9 +3627,14 @@ mod tests {
             assert_eq!(transform.name(), name, "name at source row {index}");
             let expected_query = query(smarts);
             assert_eq!(
-                transform.query().topology_block(),
-                expected_query.topology_block(),
-                "compiled query at source row {index}: {name}"
+                transform.query().atoms(),
+                expected_query.atoms(),
+                "compiled query atoms at source row {index}: {name}"
+            );
+            assert_eq!(
+                transform.query().bonds(),
+                expected_query.bonds(),
+                "compiled query bonds at source row {index}: {name}"
             );
             let expected_bonds: Vec<_> = bonds
                 .bytes()
@@ -3719,7 +3724,11 @@ mod tests {
     fn catalog_object_indexing_returns_an_independent_value_and_checks_bounds() {
         let catalog = TautomerCatalog::from_data(&[("one", "[O]-[C]", "-", "")]).expect("catalog");
         let mut transform = catalog.transform(0).expect("first transform");
-        transform.query.topology_block_mut().atoms[0].set_formal_charge(-1);
+        transform
+            .query
+            .atom_mut(0)
+            .expect("query atom")
+            .set_formal_charge(-1);
         transform.bond_types[0] = BondOrder::Double;
 
         assert_eq!(
@@ -3798,9 +3807,14 @@ mod tests {
             assert_eq!(term.score(), score, "score at source row {index}");
             let expected_matcher = query(smarts);
             assert_eq!(
-                term.matcher().expect("built-in matcher").topology_block(),
-                expected_matcher.topology_block(),
-                "matcher at source row {index}"
+                term.matcher().expect("built-in matcher").atoms(),
+                expected_matcher.atoms(),
+                "matcher atoms at source row {index}"
+            );
+            assert_eq!(
+                term.matcher().expect("built-in matcher").bonds(),
+                expected_matcher.bonds(),
+                "matcher bonds at source row {index}"
             );
         }
     }
@@ -3812,8 +3826,8 @@ mod tests {
 
         assert!(std::ptr::eq(first, second));
         assert!(std::ptr::eq(
-            first[0].matcher().expect("matcher").topology_block(),
-            second[0].matcher().expect("matcher").topology_block()
+            first[0].matcher().expect("matcher").atoms().as_ptr(),
+            second[0].matcher().expect("matcher").atoms().as_ptr()
         ));
     }
 
@@ -6563,7 +6577,11 @@ mod tests {
         .expect("valid transform");
         let mut cloned = original.clone();
 
-        cloned.query.topology_block_mut().atoms[0].set_formal_charge(-1);
+        cloned
+            .query
+            .atom_mut(0)
+            .expect("query atom")
+            .set_formal_charge(-1);
         cloned.query = cloned.query.with_name("clone");
         cloned.bond_types[0] = BondOrder::Triple;
 
@@ -6596,16 +6614,13 @@ mod tests {
     #[test]
     fn transform_keeps_and_reuses_the_compiled_query_value() {
         let compiled = query("[O]-[C]=[C]").with_prop("compiled-sentinel", "present");
-        let shared_topology = compiled.topology_block() as *const _;
+        let shared_atoms = compiled.atoms().as_ptr();
 
         let transform = TautomerTransform::new("compiled", compiled, Vec::new(), Vec::new())
             .expect("valid transform");
 
         assert_eq!(transform.query().prop("compiled-sentinel"), Some("present"));
-        assert_eq!(
-            transform.query.topology_block() as *const _,
-            shared_topology
-        );
+        assert_eq!(transform.query.atoms().as_ptr(), shared_atoms);
     }
 
     #[test]

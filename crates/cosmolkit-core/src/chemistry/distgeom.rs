@@ -2984,8 +2984,11 @@ fn embedder_get_mol_self_matches(
             specified_stereo_query_matches_unspecified: false,
             ..Default::default()
         };
-        let heavy_atom_matches =
-            get_substruct_matches_with_params(&tmol, prb_mol_for_match, &sssps);
+        let prb_query =
+            crate::QueryGraph::from_query_molecule(prb_mol_for_match.clone()).map_err(|_| {
+                DgBoundsError::GenerationFailed("failed to build self-match query".to_owned())
+            })?;
+        let heavy_atom_matches = get_substruct_matches_with_params(&tmol, &prb_query, &sssps);
         // RDKit✔️✔️:     for (const auto &match : heavyAtomMatches) {
         // RDKit✔️✔️:       res.emplace_back(0);
         // RDKit✔️✔️:       res.back().reserve(match.size());

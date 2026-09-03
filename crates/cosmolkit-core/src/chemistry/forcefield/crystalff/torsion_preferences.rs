@@ -6,8 +6,8 @@ use crate::search::smarts_parse::compile_query_fixture;
 use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
 use crate::{
     AtomQueryPredicate, AtomSpec, BondId, BondOrder, BondQueryPredicate, BondSpec, Element,
-    Hybridization, Molecule, MoleculeBuilder, QueryNode, RingInfo, SubstructMatchParams,
-    get_substruct_matches_with_params, symmetrize_sssr,
+    Hybridization, Molecule, MoleculeBuilder, QueryGraph, QueryNode, RingInfo,
+    SubstructMatchParams, get_substruct_matches_with_params, symmetrize_sssr,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -106,7 +106,7 @@ pub(crate) struct ExpTorsionAngle {
     smarts: String,
     force_constants: Vec<f64>,
     signs: Vec<i32>,
-    query_molecule: Result<Molecule, SmartsParseError>,
+    query_molecule: Result<QueryGraph, SmartsParseError>,
     idx: [usize; 4],
 }
 
@@ -132,7 +132,7 @@ impl ExpTorsionAngle {
     }
 
     #[must_use]
-    pub(crate) fn query_molecule(&self) -> Result<&Molecule, &SmartsParseError> {
+    pub(crate) fn query_molecule(&self) -> Result<&QueryGraph, &SmartsParseError> {
         self.query_molecule.as_ref()
     }
 
@@ -742,7 +742,7 @@ fn parse_exp_torsion_angle_line(
     let query_molecule = mol_from_smarts(&smarts, &SmartsParseParams::default());
     let idx = query_molecule
         .as_ref()
-        .map_or([0; 4], map_pattern_atom_indices);
+        .map_or([0; 4], |query| map_pattern_atom_indices(query));
 
     Ok(ExpTorsionAngle {
         torsion_idx,
@@ -821,7 +821,7 @@ struct CrystalffTemplateBond {
 }
 
 fn expand_crystalff_smarts_bonds(
-    query_molecule: &Molecule,
+    query_molecule: &QueryGraph,
 ) -> Result<Vec<CrystalffTemplateBond>, String> {
     // Local complexity review: this is one O(E) pass over the canonical query
     // graph with one clone per bond query. It performs no SMARTS tokenization,
@@ -843,7 +843,7 @@ fn expand_crystalff_smarts_bonds(
         .collect()
 }
 
-fn map_pattern_atom_indices(query_molecule: &Molecule) -> [usize; 4] {
+fn map_pattern_atom_indices(query_molecule: &QueryGraph) -> [usize; 4] {
     // RDKit✔️✔️:       for (unsigned int i = 0; i < (angle.dp_pattern.get())->getNumAtoms();
     // RDKit✔️✔️:            ++i) {
     // RDKit✔️✔️:         Atom const *atom = (angle.dp_pattern.get())->getAtomWithIdx(i);

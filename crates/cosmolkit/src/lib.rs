@@ -62,12 +62,24 @@
 //! assert_eq!(ELEMENTS.len(), 118);
 //! assert!(Element::from_atomic_number(119).is_none());
 //! ```
+//!
+//! SMARTS is represented as a query graph rather than a concrete molecule:
+//!
+//! ```
+//! use cosmolkit::{Molecule, QueryGraph, SmartsParseParams};
+//!
+//! let query = QueryGraph::from_smarts("[#6]-[#8]", &SmartsParseParams::default()).unwrap();
+//! let target = Molecule::from_smiles("CCO").unwrap();
+//! assert!(!query.compile().matches(&target).is_empty());
+//! ```
 
 pub use cosmolkit_core as core;
 pub use cosmolkit_core::bio;
 #[cfg(feature = "io")]
 pub use cosmolkit_core::io;
 pub use cosmolkit_core::*;
+pub use cosmolkit_model as model;
+pub use cosmolkit_types as types;
 
 /// Returns the crate version at compile time.
 #[must_use]
@@ -231,11 +243,9 @@ mod tests {
         assert_eq!(unsupported.kind, InchiErrorKind::UnsupportedState);
         assert!(unsupported.detail.contains("trusted"));
 
-        let mut query_builder = MoleculeBuilder::new();
-        query_builder.add_atom(
-            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
-        );
-        let query = query_builder.build().expect("query graph");
+        let query: Molecule = mol_from_smarts("[#6]", &SmartsParseParams::default())
+            .expect("query graph")
+            .into();
         let unsupported = mol_to_inchi_key(&query, None).expect_err("query atom");
         assert_eq!(unsupported.operation, "mol_to_inchi_key");
         assert_eq!(unsupported.kind, InchiErrorKind::UnsupportedState);
@@ -305,24 +315,25 @@ mod tests {
         let write_params = SmilesWriteParams::default();
 
         assert_eq!(
-            get_atom_smarts(&query.atoms()[0], &write_params).unwrap(),
+            get_atom_smarts(query.atoms()[0].atom(), &write_params).unwrap(),
             "[#6]"
         );
         assert_eq!(
-            get_bond_smarts(&query.bonds()[0], &write_params, Some(0)).unwrap(),
+            get_bond_smarts(query.bonds()[0].bond(), &write_params, Some(0)).unwrap(),
             "-"
         );
-        assert_eq!(mol_to_smarts(&query, &write_params).unwrap(), "[#6]-[#8]");
+        assert_eq!(query.to_smarts(&write_params).unwrap(), "[#6]-[#8]");
         assert_eq!(
-            mol_fragment_to_smarts(&query, &write_params, &[AtomId::new(1)], None).unwrap(),
+            query
+                .fragment_to_smarts(&write_params, &[AtomId::new(1)], None)
+                .unwrap(),
             "[#8]"
         );
+        assert_eq!(query.to_cx_smarts(&write_params).unwrap(), "[#6]-[#8]");
         assert_eq!(
-            mol_to_cx_smarts(&query, &write_params).unwrap(),
-            "[#6]-[#8]"
-        );
-        assert_eq!(
-            mol_fragment_to_cx_smarts(&query, &write_params, &[AtomId::new(0)], None).unwrap(),
+            query
+                .fragment_to_cx_smarts(&write_params, &[AtomId::new(0)], None)
+                .unwrap(),
             "[#6]"
         );
     }

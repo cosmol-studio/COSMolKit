@@ -1,0 +1,17 @@
+[package]
+name = "cosmolkit-types"
+description = "Public shared chemical vocabulary and value enums for COSMolKit"
+keywords = ["chemistry", "cheminformatics", "molecular-modeling", "types"]
+categories = ["science", "data-structures"]
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2.0.18"
+[lib]
+name = "cosmolkit_types"
+path = "src/lib.rs"

@@ -24,10 +24,12 @@ use crate::search::query::{
     bond_predicate_matches_with_context, bond_queries_match, build_query_match_context,
     or_query_match, xor_query_match,
 };
+use crate::search::query_graph::{QueryAtom, QueryBond, QueryGraph};
 use crate::{
     Atom, AtomQueryPredicate, Bond, BondOrder, BondQueryPredicate, BondStereo, ChiralTag, Molecule,
     StereoGroupKind,
 };
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -37,13 +39,7 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------
 
 /// Result of a single substructure match.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubstructMatchResult {
-    /// Mapping from query atom index to molecule atom index.
-    pub atom_mapping: Vec<usize>,
-    /// Mapping from query bond index to molecule bond index.
-    pub bond_mapping: Vec<usize>,
-}
+pub type SubstructMatchResult = crate::search::query_graph::MatchResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SubstructMatchError {
@@ -94,8 +90,43 @@ pub enum SubstructMatchParamsJsonError {
 
 type SubstructMatchResultList = Result<Vec<SubstructMatchResult>, SubstructMatchError>;
 
+/// Query input accepted by the matcher boundary.
+///
+/// `QueryGraph` is the canonical representation. A concrete `Molecule` is
+/// accepted as an exact structural pattern by lowering it into a query graph;
+/// this keeps `Molecule` query-free while preserving the historical matcher
+/// convenience for internal callers.
+pub trait QueryInput {
+    fn query_graph(&self) -> Result<Cow<'_, QueryGraph>, SubstructMatchError>;
+}
+
+impl QueryInput for QueryGraph {
+    fn query_graph(&self) -> Result<Cow<'_, QueryGraph>, SubstructMatchError> {
+        Ok(Cow::Borrowed(self))
+    }
+}
+
+impl QueryInput for Molecule {
+    fn query_graph(&self) -> Result<Cow<'_, QueryGraph>, SubstructMatchError> {
+        let graph = if self.atoms().iter().any(|atom| atom.query().is_some())
+            || self.bonds().iter().any(|bond| bond.query().is_some())
+        {
+            QueryGraph::from_query_molecule(self.clone())
+        } else {
+            QueryGraph::from_concrete_molecule(self)
+        };
+        graph
+            .map(Cow::Owned)
+            .map_err(|_| SubstructMatchError::Unsupported {
+                branch: "concrete molecule query lowering",
+                rdkit_function: "SubstructMatch query preparation",
+            })
+    }
+}
+
 /// Parameters controlling substructure matching behaviour.
-pub type ExtraAtomCheck = Arc<dyn Fn(&Molecule, &Atom, &Molecule, &Atom) -> bool + Send + Sync>;
+pub type ExtraAtomCheck =
+    Arc<dyn Fn(&QueryGraph, &QueryAtom, &Molecule, &Atom) -> bool + Send + Sync>;
 pub type ExtraBondCheck = Arc<dyn Fn(&Bond, &Bond) -> bool + Send + Sync>;
 pub type ExtraFinalCheck = Arc<dyn Fn(&Molecule, &[usize]) -> bool + Send + Sync>;
 
@@ -119,8 +150,8 @@ impl AtomCoordsMatchFunctor {
     #[must_use]
     pub fn matches(
         &self,
-        query_mol: &Molecule,
-        query_atom: &Atom,
+        query_mol: &QueryGraph,
+        query_atom: &QueryAtom,
         target_mol: &Molecule,
         target_atom: &Atom,
     ) -> bool {
@@ -141,12 +172,15 @@ impl AtomCoordsMatchFunctor {
         // Complexity review: both versions select two conformers, index two
         // coordinate rows, and compare three squared deltas in O(1) after the
         // conformer-id lookup. No coordinate data is cloned or allocated.
-        fn conformer(molecule: &Molecule, id: i32) -> Option<&crate::Conformer3D> {
+        fn conformer<T>(molecule: &T, id: i32) -> Option<&crate::Conformer3D>
+        where
+            T: ConformerSource,
+        {
+            let conformers = molecule.conformers_3d();
             if id < 0 {
-                molecule.conformers_3d().first()
+                conformers.first()
             } else {
-                molecule
-                    .conformers_3d()
+                conformers
                     .iter()
                     .find(|conformer| conformer.id() == id as usize)
             }
@@ -175,6 +209,22 @@ impl AtomCoordsMatchFunctor {
             })
             .sum::<f64>()
             <= self.tol2
+    }
+}
+
+trait ConformerSource {
+    fn conformers_3d(&self) -> &[crate::Conformer3D];
+}
+
+impl ConformerSource for Molecule {
+    fn conformers_3d(&self) -> &[crate::Conformer3D] {
+        self.conformers_3d()
+    }
+}
+
+impl ConformerSource for QueryGraph {
+    fn conformers_3d(&self) -> &[crate::Conformer3D] {
+        self.conformers_3d()
     }
 }
 
@@ -281,7 +331,7 @@ struct RecursiveLocker {
 }
 
 impl RecursiveLocker {
-    fn new(query: &Molecule, recursion_possible: bool) -> Self {
+    fn new(query: &QueryGraph, recursion_possible: bool) -> Self {
         // RDKit✔️🔝: RecursiveLocker(const ROMol &query, const bool recursionPossible) {
         // RDKit✔️🔝:   if (recursionPossible) {
         // RDKit✔️🔝:     locked.reserve(query.getNumAtoms());
@@ -581,7 +631,38 @@ struct Vf2Graph {
 ///
 /// The C++ code iterates `out_edges` via Boost graph. We pre-build adjacency
 /// once and use raw index lookups.
-fn build_vf2_graph(mol: &Molecule) -> Vf2Graph {
+trait Vf2GraphSource {
+    fn vf2_num_atoms(&self) -> usize;
+    fn vf2_num_bonds(&self) -> usize;
+    fn vf2_bond_endpoints(&self, index: usize) -> (usize, usize);
+}
+
+impl Vf2GraphSource for Molecule {
+    fn vf2_num_atoms(&self) -> usize {
+        self.num_atoms()
+    }
+    fn vf2_num_bonds(&self) -> usize {
+        self.num_bonds()
+    }
+    fn vf2_bond_endpoints(&self, index: usize) -> (usize, usize) {
+        let bond = &self.bonds()[index];
+        (bond.begin().index(), bond.end().index())
+    }
+}
+
+impl Vf2GraphSource for QueryGraph {
+    fn vf2_num_atoms(&self) -> usize {
+        self.num_atoms()
+    }
+    fn vf2_num_bonds(&self) -> usize {
+        self.num_bonds()
+    }
+    fn vf2_bond_endpoints(&self, index: usize) -> (usize, usize) {
+        self.bonds()[index].endpoints()
+    }
+}
+
+fn build_vf2_graph<G: Vf2GraphSource>(mol: &G) -> Vf2Graph {
     // RDKit source (implicit in vf2.hpp usage of out_edges):
     //   The VF2 state stores Graph *g1, *g2 and calls:
     //     boost::out_edges(node, *g)
@@ -592,19 +673,18 @@ fn build_vf2_graph(mol: &Molecule) -> Vf2Graph {
     // RDKit✔️❌: We build a flat adjacency Vec<(usize, usize)> per atom.
     //   This adds a one-time O(V+E) allocation vs the Boost inline storage,
     //   but lookups are O(degree) which matches the original hot-path cost.
-    let n_atoms = mol.num_atoms();
+    let n_atoms = mol.vf2_num_atoms();
     let mut adjacency: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n_atoms];
-    let mut edge_endpoints = Vec::with_capacity(mol.num_bonds());
-    for (bond_idx, bond) in mol.bonds().iter().enumerate() {
-        let b = bond.begin().index();
-        let e = bond.end().index();
+    let mut edge_endpoints = Vec::with_capacity(mol.vf2_num_bonds());
+    for bond_idx in 0..mol.vf2_num_bonds() {
+        let (b, e) = mol.vf2_bond_endpoints(bond_idx);
         edge_endpoints.push((b, e));
         adjacency[b].push((e, bond_idx));
         adjacency[e].push((b, bond_idx));
     }
     Vf2Graph {
         n_atoms,
-        n_bonds: mol.num_bonds(),
+        n_bonds: mol.vf2_num_bonds(),
         edge_endpoints,
         adjacency,
     }
@@ -814,7 +894,7 @@ fn try_to_insert(
 }
 
 fn atom_label_matches(
-    query: &Molecule,
+    query: &QueryGraph,
     mol: &Molecule,
     query_index: usize,
     mol_index: usize,
@@ -862,19 +942,7 @@ fn atom_label_matches(
     )
 }
 
-fn atom_matches(query_atom: &Atom, query_mol: &Molecule, mol_atom: &Atom, mol: &Molecule) -> bool {
-    if let Some(query_node) = query_atom.query() {
-        let query_ctx = build_query_match_context(mol);
-        return evaluate_atom_query(
-            query_node,
-            mol_atom,
-            mol,
-            &SubstructMatchParams::default(),
-            None,
-            &query_ctx,
-        );
-    }
-
+fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, mol: &Molecule) -> bool {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: Atom::Match
     // RDKit✔️✔️: bool Atom::Match(Atom const *what) const {
     // RDKit✔️✔️:   PRECONDITION(what, "bad query atom");
@@ -914,7 +982,6 @@ fn atom_matches(query_atom: &Atom, query_mol: &Molecule, mol_atom: &Atom, mol: &
     if query_atom.atomic_number() != mol_atom.atomic_number() {
         return false;
     }
-    let _ = query_mol;
     if query_atom.atomic_number() == 0 {
         return match (query_atom.isotope(), mol_atom.isotope()) {
             (Some(query_isotope), Some(mol_isotope)) => query_isotope == mol_isotope,
@@ -1092,7 +1159,7 @@ fn rdkit_bond_stereo_is_above_any(stereo: BondStereo) -> bool {
 }
 
 fn bond_label_matches(
-    query: &Molecule,
+    query: &QueryGraph,
     mol: &Molecule,
     query_index: usize,
     mol_index: usize,
@@ -2661,7 +2728,7 @@ fn count_swaps_to_interconvert_i32(reference: &[i32], probe: &[i32]) -> Option<u
 }
 
 fn rdkit_atom_perturbation_order_from_bond_indices(
-    mol: &Molecule,
+    mol: &QueryGraph,
     atom_idx: usize,
     probe: &[i32],
 ) -> Result<u32, SubstructMatchError> {
@@ -2675,11 +2742,11 @@ fn rdkit_atom_perturbation_order_from_bond_indices(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION
     let reference: Vec<i32> = mol
-        .topology_block()
-        .adjacency
-        .neighbors_of(atom_idx)
-        .iter()
-        .map(|neighbor| i32::try_from(neighbor.bond.index()))
+        .adjacency()
+        .get(atom_idx)
+        .into_iter()
+        .flatten()
+        .map(|(_, bond)| i32::try_from(*bond))
         .collect::<Result<_, _>>()
         .map_err(|_| SubstructMatchError::Unsupported {
             branch: "MolMatchFinalCheckFunctor/Atom::getPerturbationOrder/bond-index-overflow",
@@ -2701,7 +2768,7 @@ fn rdkit_translate_ez_label_to_cis_trans(stereo: BondStereo) -> BondStereo {
 
 fn enhanced_stereo_is_ok(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     q_to_mol: &[NodeId],
     mol_stereo_groups: &[Option<usize>],
     matches: &[Option<bool>],
@@ -2823,7 +2890,7 @@ struct MolMatchFinalCheckSetup {
 }
 
 impl MolMatchFinalCheckSetup {
-    fn new(_query: &Molecule, mol: &Molecule, params: &SubstructMatchParams) -> Self {
+    fn new(_query: &QueryGraph, mol: &Molecule, params: &SubstructMatchParams) -> Self {
         // RDKit✔️✔️: MolMatchFinalCheckFunctor::MolMatchFinalCheckFunctor(
         // RDKit✔️✔️:     const ROMol &query, const ROMol &mol, const SubstructMatchParameters &ps)
         // RDKit✔️✔️:     : d_query(query), d_mol(mol), d_params(ps) {
@@ -2863,9 +2930,16 @@ fn find_bond_between(mol: &Molecule, begin: usize, end: usize) -> Option<&Bond> 
     })
 }
 
+fn find_query_bond_between(query: &QueryGraph, begin: usize, end: usize) -> Option<&QueryBond> {
+    query.bonds().iter().find(|bond| {
+        let (b, e) = bond.endpoints();
+        (b == begin && e == end) || (b == end && e == begin)
+    })
+}
+
 fn rdkit_match_final_check(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     c1: &[NodeId],
     c2: &[NodeId],
@@ -2947,7 +3021,7 @@ fn rdkit_match_final_check(
     // RDKit✔️✔️:     }
     for qi in 0..query.num_atoms() {
         let q_at = &query.atoms()[qi];
-        if query.topology_block().adjacency.neighbors_of(qi).len() < 3 || !has_chiral_label(q_at) {
+        if query.adjacency().get(qi).map_or(0, Vec::len) < 3 || !has_chiral_label(q_at) {
             continue;
         }
         let mi = q_to_mol[qi];
@@ -2967,7 +3041,7 @@ fn rdkit_match_final_check(
         // RDKit✔️✔️:     if (qAt->getDegree() > mAt->getDegree()) {
         // RDKit✔️✔️:       return false;
         // RDKit✔️✔️:     }
-        if query.topology_block().adjacency.neighbors_of(qi).len()
+        if query.adjacency().get(qi).map_or(0, Vec::len)
             > mol.topology_block().adjacency.neighbors_of(mi).len()
         {
             return Ok(false);
@@ -2989,7 +3063,7 @@ fn rdkit_match_final_check(
         let mut q_order: Vec<i32> = Vec::new();
         let mut m_order: Vec<i32> = Vec::new();
         for qj in 0..query.num_atoms() {
-            let Some(q_bond) = find_bond_between(query, qi, qj) else {
+            let Some(q_bond) = find_query_bond_between(query, qi, qj) else {
                 continue;
             };
             let mj = q_to_mol[qj];
@@ -3008,11 +3082,11 @@ fn rdkit_match_final_check(
                     rdkit_function: "countSwapsToInterconvert",
                 }
             })?);
-            if m_order.len() == query.topology_block().adjacency.neighbors_of(qi).len() {
+            if m_order.len() == query.adjacency().get(qi).map_or(0, Vec::len) {
                 break;
             }
         }
-        if q_order.len() != query.topology_block().adjacency.neighbors_of(qi).len()
+        if q_order.len() != query.adjacency().get(qi).map_or(0, Vec::len)
             || q_order.len() != m_order.len()
         {
             return Err(SubstructMatchError::Unsupported {
@@ -3340,7 +3414,7 @@ fn preflight_bond_query(
     }
 }
 
-fn preflight_query_molecule(query: &Molecule) -> Result<(), SubstructMatchError> {
+fn preflight_query_molecule(query: &QueryGraph) -> Result<(), SubstructMatchError> {
     // This fail-closed preflight has no RDKit counterpart: RDKit query leaves
     // are executable, while COSMolKit can preserve explicitly unsupported
     // leaves imported from other formats. Inspecting every leaf before VF2
@@ -3367,7 +3441,7 @@ fn preflight_query_molecule(query: &Molecule) -> Result<(), SubstructMatchError>
 
 fn recursive_matcher(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
 ) -> Result<Vec<bool>, SubstructMatchError> {
@@ -3546,7 +3620,7 @@ fn match_subqueries(
 
 fn populate_recursive_query_match_cache(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
 ) -> Result<(), SubstructMatchError> {
@@ -3560,7 +3634,7 @@ fn populate_recursive_query_match_cache(
 
 fn substruct_match_impl_with_recursive_cache(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
 ) -> SubstructMatchResultList {
@@ -3576,7 +3650,7 @@ fn substruct_match_impl_with_recursive_cache(
 
 fn substruct_match_impl_with_recursive_cache_and_context(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
@@ -3708,8 +3782,8 @@ fn substruct_match_impl_with_recursive_cache_and_context(
 }
 
 fn atom_compat(
-    query_atom: &Atom,
-    query_mol: &Molecule,
+    query_atom: &QueryAtom,
+    query_mol: &QueryGraph,
     mol_atom: &Atom,
     mol: &Molecule,
     params: &SubstructMatchParams,
@@ -3780,7 +3854,7 @@ fn atom_compat(
             query_ctx,
         )
     } else {
-        atom_matches(query_atom, query_mol, mol_atom, mol)
+        atom_matches(query_atom, mol_atom, mol)
     };
     if !matches {
         return false;
@@ -3804,8 +3878,8 @@ fn atom_compat(
 
 #[allow(deprecated)]
 fn chiral_atom_compat(
-    query_atom: &Atom,
-    query_mol: &Molecule,
+    query_atom: &QueryAtom,
+    query_mol: &QueryGraph,
     mol_atom: &Atom,
     mol: &Molecule,
 ) -> bool {
@@ -3837,7 +3911,7 @@ fn chiral_atom_compat(
     // property map, or string is cloned. BTreeMap lookup retains the canonical
     // atom property representation and has the same logarithmic lookup class
     // as RDKit's property dictionary for the modeled state.
-    let mut matches = atom_matches(query_atom, query_mol, mol_atom, mol);
+    let mut matches = atom_matches(query_atom, mol_atom, mol);
     if matches {
         let query_cip = query_atom.prop("_CIPCode");
         let mol_cip = mol_atom.prop("_CIPCode");
@@ -3857,8 +3931,8 @@ fn chiral_atom_compat(
 }
 
 fn bond_compat(
-    query_bond: &Bond,
-    query_mol: &Molecule,
+    query_bond: &QueryBond,
+    query_mol: &QueryGraph,
     mol_bond: &Bond,
     mol: &Molecule,
     params: &SubstructMatchParams,
@@ -3960,17 +4034,21 @@ fn bond_compat(
     {
         bond_queries_match(query, mol_query)
     } else if params.aromatic_matches_conjugated
-        && query_bond.query().is_none()
+        && query_bond.bond().query().is_none()
         && mol_bond.query().is_none()
         && aromatic_pair_matches(&is_conjugated_single_or_double)
     {
         true
     } else if params.aromatic_matches_single_or_double
-        && query_bond.query().is_none()
+        && query_bond.bond().query().is_none()
         && mol_bond.query().is_none()
         && aromatic_pair_matches(&is_single_or_double)
     {
         true
+    } else if query_bond.bond().query().is_none() {
+        query_bond.order() == BondOrder::Unspecified
+            || mol_bond.order() == BondOrder::Unspecified
+            || query_bond.order() == mol_bond.order()
     } else if let Some(query) = query_bond.query() {
         evaluate_bond_query(query, mol_bond, mol, query_ctx)
     } else {
@@ -3987,9 +4065,7 @@ fn bond_compat(
         let query_end = &query_mol.atoms()[query_bond.end().index()];
         let mol_begin = &mol.atoms()[mol_bond.begin().index()];
         let mol_end = &mol.atoms()[mol_bond.end().index()];
-        if !atom_matches(query_begin, query_mol, mol_begin, mol)
-            || !atom_matches(query_end, query_mol, mol_end, mol)
-        {
+        if !atom_matches(query_begin, mol_begin, mol) || !atom_matches(query_end, mol_end, mol) {
             return false;
         }
     }
@@ -4284,7 +4360,7 @@ fn sort_matches_by_degree_of_core_substitution(
 
 fn substruct_match_impl(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
 ) -> SubstructMatchResultList {
     // RDKit✔️❌: std::vector<MatchVectType> SubstructMatch(
@@ -4351,11 +4427,14 @@ fn substruct_match_impl(
 ///
 /// This is the public API for `has_substruct_match`.
 /// RDKit✔️❌: VF2-based substructure matching ported from vf2.hpp + SubstructMatch.cpp.
-pub fn has_substruct_match(mol: &Molecule, query: &Molecule) -> bool {
+pub fn has_substruct_match<Q: QueryInput + ?Sized>(mol: &Molecule, query: &Q) -> bool {
     let params = SubstructMatchParams::default();
     let mut params = params;
     params.max_matches = 1;
-    substruct_match_impl(mol, query, &params)
+    let Ok(query) = query.query_graph() else {
+        return false;
+    };
+    substruct_match_impl(mol, &query, &params)
         .map(|matches| !matches.is_empty())
         .unwrap_or(false)
 }
@@ -4364,11 +4443,15 @@ pub fn has_substruct_match(mol: &Molecule, query: &Molecule) -> bool {
 ///
 /// This is the public API for `get_substruct_match`.
 /// RDKit✔️❌: VF2-based substructure matching ported from vf2.hpp + SubstructMatch.cpp.
-pub fn get_substruct_match(mol: &Molecule, query: &Molecule) -> Option<SubstructMatchResult> {
+pub fn get_substruct_match<Q: QueryInput + ?Sized>(
+    mol: &Molecule,
+    query: &Q,
+) -> Option<SubstructMatchResult> {
     let params = SubstructMatchParams::default();
     let mut params = params;
     params.max_matches = 1;
-    substruct_match_impl(mol, query, &params)
+    let query = query.query_graph().ok()?;
+    substruct_match_impl(mol, &query, &params)
         .ok()
         .and_then(|matches| matches.into_iter().next())
 }
@@ -4377,36 +4460,46 @@ pub fn get_substruct_match(mol: &Molecule, query: &Molecule) -> Option<Substruct
 ///
 /// This is the public API for `get_substruct_matches`.
 /// RDKit✔️❌: VF2-based substructure matching ported from vf2.hpp + SubstructMatch.cpp.
-pub fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatchResult> {
+pub fn get_substruct_matches<Q: QueryInput + ?Sized>(
+    mol: &Molecule,
+    query: &Q,
+) -> Vec<SubstructMatchResult> {
     let params = SubstructMatchParams::default();
-    substruct_match_impl(mol, query, &params).unwrap_or_default()
+    let Ok(query) = query.query_graph() else {
+        return Vec::new();
+    };
+    substruct_match_impl(mol, &query, &params).unwrap_or_default()
 }
 
 /// Get all substructure matches with custom parameters.
 ///
 /// This is the public API for `get_substruct_matches_with_params`.
 /// RDKit✔️❌: VF2-based substructure matching ported from vf2.hpp + SubstructMatch.cpp.
-pub fn get_substruct_matches_with_params(
+pub fn get_substruct_matches_with_params<Q: QueryInput + ?Sized>(
     mol: &Molecule,
-    query: &Molecule,
+    query: &Q,
     params: &SubstructMatchParams,
 ) -> Vec<SubstructMatchResult> {
-    substruct_match_impl(mol, query, params).unwrap_or_default()
+    let Ok(query) = query.query_graph() else {
+        return Vec::new();
+    };
+    substruct_match_impl(mol, &query, params).unwrap_or_default()
 }
 
 /// Get all substructure matches with custom parameters and structured
 /// unsupported-feature errors for source-porting callers.
-pub fn try_get_substruct_matches_with_params(
+pub fn try_get_substruct_matches_with_params<Q: QueryInput + ?Sized>(
     mol: &Molecule,
-    query: &Molecule,
+    query: &Q,
     params: &SubstructMatchParams,
 ) -> SubstructMatchResultList {
-    substruct_match_impl(mol, query, params)
+    let query = query.query_graph()?;
+    substruct_match_impl(mol, &query, params)
 }
 
 pub(crate) fn try_get_substruct_matches_with_params_and_context(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     params: &SubstructMatchParams,
     query_context: &QueryMatchContext,
 ) -> SubstructMatchResultList {
@@ -4440,6 +4533,24 @@ mod tests {
     use super::*;
     use crate::MoleculeBuilder;
     use crate::search::smarts_parse::compile_query_fixture;
+
+    fn as_query_graph(molecule: &Molecule) -> QueryGraph {
+        QueryGraph::from_concrete_molecule(molecule).expect("concrete query fixture")
+    }
+
+    fn atom_match_fixture(
+        query: &Molecule,
+        query_index: usize,
+        target: &Molecule,
+        target_index: usize,
+    ) -> bool {
+        let query_graph = as_query_graph(query);
+        atom_matches(
+            &query_graph.atoms()[query_index],
+            &target.atoms()[target_index],
+            target,
+        )
+    }
 
     #[test]
     fn smarts_ring_connectivity_zero_rejects_ring_atoms() {
@@ -4923,7 +5034,10 @@ mod tests {
                 )),
             ]),
         ));
-        let atom_query = atom_builder.build().expect("atom query fixture");
+        let atom_query = crate::QueryGraph::from_query_molecule(
+            atom_builder.build().expect("atom query fixture"),
+        )
+        .expect("atom query graph fixture");
         assert_eq!(
             try_get_substruct_matches_with_params(&target, &atom_query, &params),
             Err(SubstructMatchError::Unsupported {
@@ -4933,8 +5047,11 @@ mod tests {
         );
 
         let mut bond_builder = MoleculeBuilder::new();
-        let begin = bond_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let end = bond_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let atom_query = crate::QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let begin = bond_builder
+            .add_atom(crate::AtomSpec::new(crate::Element::C).with_query(atom_query.clone()));
+        let end =
+            bond_builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_query(atom_query));
         bond_builder
             .add_bond(
                 crate::BondSpec::new(begin, end, BondOrder::Single).with_query(
@@ -4947,7 +5064,10 @@ mod tests {
                 ),
             )
             .expect("bond query edge");
-        let bond_query = bond_builder.build().expect("bond query fixture");
+        let bond_query = crate::QueryGraph::from_query_molecule(
+            bond_builder.build().expect("bond query fixture"),
+        )
+        .expect("bond query graph fixture");
         assert_eq!(
             try_get_substruct_matches_with_params(&target, &bond_query, &params),
             Err(SubstructMatchError::Unsupported {
@@ -4962,15 +5082,20 @@ mod tests {
                 "unsupported recursive leaf",
             )),
         ));
+        let inner_molecule = inner_builder.build().expect("inner query fixture");
         let recursive_query = crate::search::query::RecursiveStructureQuery::from_molecule(
-            inner_builder.build().expect("inner query fixture"),
+            crate::QueryGraph::from_query_molecule(inner_molecule)
+                .expect("inner query graph fixture"),
             0,
         );
         let mut outer_builder = MoleculeBuilder::new();
         outer_builder.add_atom(crate::AtomSpec::new(crate::Element::DUMMY).with_query(
             crate::QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive_query)),
         ));
-        let outer_query = outer_builder.build().expect("outer query fixture");
+        let outer_query = crate::QueryGraph::from_query_molecule(
+            outer_builder.build().expect("outer query fixture"),
+        )
+        .expect("outer query graph fixture");
         assert_eq!(
             try_get_substruct_matches_with_params(&target, &outer_query, &params),
             Err(SubstructMatchError::Unsupported {
@@ -5105,15 +5230,29 @@ mod tests {
         let query = one_atom_with_conformers(&[(0, [0.0, 0.0, 0.1]), (7, [5.0, 0.0, 0.0])]);
         let target = one_atom_with_conformers(&[(0, [0.0, 0.0, 0.0]), (9, [5.1, 0.0, 0.0])]);
         let missing = one_atom_with_conformers(&[]);
+        let query_graph = as_query_graph(&query);
 
         let default_matcher = AtomCoordsMatchFunctor::default();
-        assert!(!default_matcher.matches(&query, &query.atoms()[0], &target, &target.atoms()[0],));
-        assert!(
-            !default_matcher.matches(&query, &query.atoms()[0], &missing, &missing.atoms()[0],)
-        );
+        assert!(!default_matcher.matches(
+            &query_graph,
+            &query_graph.atoms()[0],
+            &target,
+            &target.atoms()[0],
+        ));
+        assert!(!default_matcher.matches(
+            &query_graph,
+            &query_graph.atoms()[0],
+            &missing,
+            &missing.atoms()[0],
+        ));
 
         let matcher = AtomCoordsMatchFunctor::new(9, 7, 0.15);
-        assert!(matcher.matches(&query, &query.atoms()[0], &target, &target.atoms()[0],));
+        assert!(matcher.matches(
+            &query_graph,
+            &query_graph.atoms()[0],
+            &target,
+            &target.atoms()[0],
+        ));
         let mut params = SubstructMatchParams::default();
         params.extra_atom_check = Some(Arc::new(move |query_mol, query_atom, mol, mol_atom| {
             matcher.matches(query_mol, query_atom, mol, mol_atom)
@@ -5140,16 +5279,17 @@ mod tests {
 
         let carbon = atom(crate::Element::C, None);
         let oxygen = atom(crate::Element::O, None);
+        let carbon_query = as_query_graph(&carbon);
         assert!(!chiral_atom_compat(
-            &carbon.atoms()[0],
-            &carbon,
+            &carbon_query.atoms()[0],
+            &carbon_query,
             &oxygen.atoms()[0],
             &oxygen,
         ));
 
         assert!(chiral_atom_compat(
-            &carbon.atoms()[0],
-            &carbon,
+            &carbon_query.atoms()[0],
+            &carbon_query,
             &carbon.atoms()[0],
             &carbon,
         ));
@@ -5157,27 +5297,28 @@ mod tests {
         let carbon_r = atom(crate::Element::C, Some("R"));
         let another_carbon_r = atom(crate::Element::C, Some("R"));
         let carbon_s = atom(crate::Element::C, Some("S"));
+        let carbon_r_query = as_query_graph(&carbon_r);
         assert!(chiral_atom_compat(
-            &carbon_r.atoms()[0],
-            &carbon_r,
+            &carbon_r_query.atoms()[0],
+            &carbon_r_query,
             &another_carbon_r.atoms()[0],
             &another_carbon_r,
         ));
         assert!(!chiral_atom_compat(
-            &carbon_r.atoms()[0],
-            &carbon_r,
+            &carbon_r_query.atoms()[0],
+            &carbon_r_query,
             &carbon_s.atoms()[0],
             &carbon_s,
         ));
         assert!(!chiral_atom_compat(
-            &carbon_r.atoms()[0],
-            &carbon_r,
+            &carbon_r_query.atoms()[0],
+            &carbon_r_query,
             &carbon.atoms()[0],
             &carbon,
         ));
         assert!(!chiral_atom_compat(
-            &carbon.atoms()[0],
-            &carbon,
+            &carbon_query.atoms()[0],
+            &carbon_query,
             &carbon_r.atoms()[0],
             &carbon_r,
         ));
@@ -5198,9 +5339,10 @@ mod tests {
         }
 
         fn compatible(query: &Molecule, target: &Molecule, params: &SubstructMatchParams) -> bool {
+            let query = as_query_graph(query);
             bond_compat(
                 &query.bonds()[0],
-                query,
+                &query,
                 &target.bonds()[0],
                 target,
                 params,
@@ -6591,10 +6733,8 @@ mod tests {
             .add_bond(crate::BondSpec::new(c0, c1, BondOrder::Single))
             .expect("add bond");
         let mol = builder.build().expect("build");
-        let q_atom = &mol.atoms()[0];
-        let m_atom = &mol.atoms()[1];
         assert!(
-            atom_matches(q_atom, &mol, m_atom, &mol),
+            atom_match_fixture(&mol, 0, &mol, 1),
             "two carbons should match"
         );
     }
@@ -6612,10 +6752,8 @@ mod tests {
         // atomic number check should reject since 6 != 8).
         // But our atom_matches uses query atomic number: query=6, mol=8.
         // If query atomic number != 0, it must match. So C does not match O.
-        let c_atom = &mol.atoms()[0]; // C
-        let o_atom = &mol.atoms()[1]; // O
         assert!(
-            !atom_matches(c_atom, &mol, o_atom, &mol),
+            !atom_match_fixture(&mol, 0, &mol, 1),
             "C should not match O via basic atomic number check"
         );
     }
@@ -6631,49 +6769,19 @@ mod tests {
         let dummy = one_atom(crate::AtomSpec::new(crate::Element::DUMMY));
         let isotope_one = one_atom(crate::AtomSpec::new(crate::Element::DUMMY).with_isotope(1));
         let isotope_two = one_atom(crate::AtomSpec::new(crate::Element::DUMMY).with_isotope(2));
-        assert!(atom_matches(
-            &dummy.atoms()[0],
-            &dummy,
-            &isotope_one.atoms()[0],
-            &isotope_one,
-        ));
-        assert!(atom_matches(
-            &isotope_one.atoms()[0],
-            &isotope_one,
-            &dummy.atoms()[0],
-            &dummy,
-        ));
-        assert!(!atom_matches(
-            &isotope_one.atoms()[0],
-            &isotope_one,
-            &isotope_two.atoms()[0],
-            &isotope_two,
-        ));
+        assert!(atom_match_fixture(&dummy, 0, &isotope_one, 0));
+        assert!(atom_match_fixture(&isotope_one, 0, &dummy, 0));
+        assert!(!atom_match_fixture(&isotope_one, 0, &isotope_two, 0));
 
         let neutral_carbon = one_atom(crate::AtomSpec::new(crate::Element::C));
         let charged_carbon =
             one_atom(crate::AtomSpec::new(crate::Element::C).with_formal_charge(1));
-        assert!(atom_matches(
-            &neutral_carbon.atoms()[0],
-            &neutral_carbon,
-            &charged_carbon.atoms()[0],
-            &charged_carbon,
-        ));
-        assert!(!atom_matches(
-            &charged_carbon.atoms()[0],
-            &charged_carbon,
-            &neutral_carbon.atoms()[0],
-            &neutral_carbon,
-        ));
+        assert!(atom_match_fixture(&neutral_carbon, 0, &charged_carbon, 0));
+        assert!(!atom_match_fixture(&charged_carbon, 0, &neutral_carbon, 0));
 
         let radical_carbon =
             one_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(1));
-        assert!(!atom_matches(
-            &radical_carbon.atoms()[0],
-            &radical_carbon,
-            &neutral_carbon.atoms()[0],
-            &neutral_carbon,
-        ));
+        assert!(!atom_match_fixture(&radical_carbon, 0, &neutral_carbon, 0));
     }
 
     #[test]
@@ -6685,9 +6793,10 @@ mod tests {
             .add_bond(crate::BondSpec::new(c0, c1, BondOrder::Single))
             .expect("add bond");
         let mol = builder.build().expect("build");
+        let query = as_query_graph(&mol);
         assert!(bond_compat(
-            &mol.bonds()[0],
-            &mol,
+            &query.bonds()[0],
+            &query,
             &mol.bonds()[0],
             &mol,
             &SubstructMatchParams::default(),
@@ -7341,7 +7450,8 @@ mod tests {
             builder.build().expect("build grouped molecule")
         }
 
-        let query_or = grouped(&[(StereoGroupKind::Or, &[0, 1])]);
+        let query_or_molecule = grouped(&[(StereoGroupKind::Or, &[0, 1])]);
+        let query_or = as_query_graph(&query_or_molecule);
         let mol_or = grouped(&[(StereoGroupKind::Or, &[0, 1])]);
         let mol_and = grouped(&[(StereoGroupKind::And, &[0, 1])]);
         let identity = [0, 1, 2];
@@ -7362,7 +7472,8 @@ mod tests {
             &same,
         ));
 
-        let query_and = grouped(&[(StereoGroupKind::And, &[0, 1])]);
+        let query_and_molecule = grouped(&[(StereoGroupKind::And, &[0, 1])]);
+        let query_and = as_query_graph(&query_and_molecule);
         assert!(!enhanced_stereo_is_ok(
             &mol_or,
             &query_and,
@@ -7394,7 +7505,9 @@ mod tests {
             &[Some(true), Some(false), None],
         ));
 
-        let split_query = grouped(&[(StereoGroupKind::Or, &[0]), (StereoGroupKind::Or, &[1])]);
+        let split_query_molecule =
+            grouped(&[(StereoGroupKind::Or, &[0]), (StereoGroupKind::Or, &[1])]);
+        let split_query = as_query_graph(&split_query_molecule);
         assert!(!enhanced_stereo_is_ok(
             &mol_or,
             &split_query,
@@ -7486,13 +7599,14 @@ mod tests {
             ))
             .expect("add AND group");
         let molecule = builder.build().expect("build grouped molecule");
+        let query = as_query_graph(&molecule);
 
         let disabled =
-            MolMatchFinalCheckSetup::new(&molecule, &molecule, &SubstructMatchParams::default());
+            MolMatchFinalCheckSetup::new(&query, &molecule, &SubstructMatchParams::default());
         assert_eq!(disabled.mol_stereo_groups, vec![None; 4]);
 
         let enabled = MolMatchFinalCheckSetup::new(
-            &molecule,
+            &query,
             &molecule,
             &SubstructMatchParams {
                 use_enhanced_stereo: true,
@@ -7507,7 +7621,8 @@ mod tests {
 
     #[test]
     fn smarts_match_final_check() {
-        let query = make_mol_cc();
+        let query_molecule = make_mol_cc();
+        let query = as_query_graph(&query_molecule);
         let molecule = Molecule::from_smiles("CCC").expect("parse target");
         let mapping = ([0, 1], [0, 1]);
 
@@ -7580,7 +7695,8 @@ mod tests {
             builder.build().expect("build one atom")
         }
 
-        let query = one_atom(crate::Element::C, ChiralTag::TetrahedralCw);
+        let query_molecule = one_atom(crate::Element::C, ChiralTag::TetrahedralCw);
+        let query = as_query_graph(&query_molecule);
         let unspecified = one_atom(crate::Element::C, ChiralTag::Unspecified);
         let specified = one_atom(crate::Element::C, ChiralTag::TetrahedralCcw);
         let oxygen = one_atom(crate::Element::O, ChiralTag::TetrahedralCcw);
@@ -7630,7 +7746,8 @@ mod tests {
             builder.build().expect("build double bond")
         }
 
-        let query = double_bond(BondStereo::E);
+        let query_molecule = double_bond(BondStereo::E);
+        let query = as_query_graph(&query_molecule);
         let unspecified = double_bond(BondStereo::None);
         let specified = double_bond(BondStereo::Z);
         let mut params = SubstructMatchParams {

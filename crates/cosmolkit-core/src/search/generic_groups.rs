@@ -1551,7 +1551,11 @@ fn adjust_query_properties_with_generic_groups(
     Ok(result)
 }
 
-pub(super) fn generic_atom_matcher(mol: &Molecule, query: &Molecule, atom_match: &[usize]) -> bool {
+pub(super) fn generic_atom_matcher(
+    mol: &Molecule,
+    query: &crate::QueryGraph,
+    atom_match: &[usize],
+) -> bool {
     // RDKit✔️✔️: bool genericAtomMatcher(const ROMol &mol, const ROMol &query,
     // RDKit✔️✔️:                         const std::span<const unsigned int> &match) {
     // RDKit✔️✔️:   boost::dynamic_bitset<> ignore(mol.getNumAtoms());
@@ -1587,13 +1591,7 @@ pub(super) fn generic_atom_matcher(mol: &Molecule, query: &Molecule, atom_match:
 
     for atom in query.atoms() {
         let query_index = atom.id().index();
-        if query
-            .topology_block()
-            .adjacency
-            .neighbors_of(query_index)
-            .len()
-            > 1
-        {
+        if query.adjacency().get(query_index).map_or(0, Vec::len) > 1 {
             continue;
         }
         let Some(label) = atom.prop("_QueryAtomGenericLabel") else {
@@ -2253,7 +2251,7 @@ mod tests {
 
     #[test]
     fn smarts_generic_generic_atom_matcher() {
-        fn terminal_query(label: &str) -> crate::Molecule {
+        fn terminal_query(label: &str) -> crate::QueryGraph {
             let mut builder = MoleculeBuilder::new();
             let attachment = builder.add_atom(AtomSpec::new(Element::C));
             let generic = builder
@@ -2261,7 +2259,10 @@ mod tests {
             builder
                 .add_bond(BondSpec::new(attachment, generic, BondOrder::Single))
                 .expect("add query bond");
-            builder.build().expect("build terminal generic query")
+            crate::QueryGraph::from_concrete_molecule(
+                &builder.build().expect("build terminal generic query"),
+            )
+            .expect("build terminal generic query graph")
         }
 
         let alkyl_query = terminal_query("Alkyl");
@@ -2286,7 +2287,11 @@ mod tests {
         builder
             .add_bond(BondSpec::new(middle, right, BondOrder::Single))
             .expect("add right query bond");
-        let internal_label = builder.build().expect("build internal-label query");
+        let internal_label = {
+            let molecule = builder.build().expect("build internal-label query");
+            crate::QueryGraph::from_concrete_molecule(&molecule)
+                .expect("build internal-label query graph")
+        };
         assert!(generic_atom_matcher(
             &saturated,
             &internal_label,

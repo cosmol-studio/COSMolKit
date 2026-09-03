@@ -11088,7 +11088,9 @@ fn parse_smarts(
     };
     let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params)
         .map_err(smarts_parse_pyerr)?;
-    Ok(Molecule { inner })
+    Ok(Molecule {
+        inner: inner.into(),
+    })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -11109,7 +11111,9 @@ fn parse_smarts_with_params(smarts: &str, params: &SmartsParserParams) -> PyResu
     // replacements map and introduces no query graph copy or alternate parser.
     let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params.inner)
         .map_err(smarts_parse_pyerr)?;
-    Ok(Molecule { inner })
+    Ok(Molecule {
+        inner: inner.into(),
+    })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]

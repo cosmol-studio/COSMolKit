@@ -29,9 +29,9 @@ use self::{cx::*, stereo::*};
 // implemented. Do not upgrade markers or add semantic behavior without checking
 // the corresponding RDKit source line and the local Rust code.
 
-const SMILES_START_PROP: &str = "_SmilesStart";
+pub(crate) const SMILES_START_PROP: &str = "_SmilesStart";
 pub(crate) const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
-const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
+pub(crate) const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
 static YYSMILES_DEBUG: AtomicBool = AtomicBool::new(false);
 
 fn atom_spec_from_atom(atom: &Atom) -> AtomSpec {

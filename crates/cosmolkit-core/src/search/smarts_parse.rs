@@ -15,15 +15,10 @@
 //!
 //! ## Design
 //!
-//! This module is the sole canonical SMARTS parser/compiler owner.
-//! The shared typed query graph remains owned by `search::query`; callers must
-//! migrate into this module and that model instead of adding another parser,
-//! compatibility graph, or consumer-local decoder. The parser tokenizes the
-//! SMARTS string, recursively produces a private graph, and immediately
-//! materializes the sole query-bearing `Molecule` representation.
-//!
-//! The parser's private graph is materialized immediately as the canonical
-//! query-bearing `Molecule` consumed by the substructure matcher.
+//! This module is the sole canonical SMARTS parser/compiler owner.  Parsing
+//! produces the first-class [`QueryGraph`] model consumed by matching and
+//! serialization; concrete molecules remain query-free at the public API
+//! boundary.
 
 use std::collections::BTreeMap;
 
@@ -32,61 +27,41 @@ use crate::search::query::{
     make_atom_possible_range_query, make_bond_is_in_ring_query, make_bond_null_query,
     make_bond_order_equals_query, query_bond_expand_query,
 };
+use crate::search::query_graph::{QueryAtom, QueryBond, QueryGraph};
 use crate::{
-    AtomQueryPredicate, AtomSpec, BondDirection, BondOrder, BondQueryPredicate, BondSpec,
-    ChiralTag, Element, Molecule, MoleculeBuilder, QueryNode, SmartsParseError,
+    Atom, AtomQueryPredicate, AtomSpec, Bond, BondDirection, BondOrder, BondQueryPredicate,
+    BondSpec, ChiralTag, Element, Molecule, QueryNode, SmartsParseError,
 };
 
 // ---------------------------------------------------------------------------
-// ParsedSmartsGraph - private parser output
+// QueryGraphBuilder - private parser construction state
 // ---------------------------------------------------------------------------
 
-/// The result of parsing a SMARTS string.
+/// Parser-owned construction state for a [`QueryGraph`].
 ///
 /// RDKit✔️✔️: RDKit returns an RWMol with QueryAtom / QueryBond objects.
-/// COSMolKit returns a separate struct of query-predicate trees paired via
-/// indexing (`atom_queries[i]` is the i-th atom, `bond_queries[i]` is the bond
-/// between atoms i and i+1 in SMARTS order).
-#[derive(Debug, Clone)]
-struct ParsedSmartsGraph {
+/// COSMolKit keeps parser indexes and ring bookkeeping private, then lowers
+/// them once into the independent `QueryGraph` value. This is not a second
+/// public graph model and never becomes a query-bearing `Molecule`.
+#[derive(Debug, Clone, Default)]
+struct QueryGraphBuilder {
     /// Query trees for each atom in the pattern.
-    pub atom_queries: Vec<QueryNode<AtomQueryPredicate>>,
+    atom_queries: Vec<QueryNode<AtomQueryPredicate>>,
     /// Atom-map properties aligned with `atom_queries`.
-    pub atom_maps: Vec<Option<u32>>,
+    atom_maps: Vec<Option<u32>>,
     /// Query trees for each bond in the pattern (length = atom_queries.len() - 1).
-    pub bond_queries: Vec<QueryNode<BondQueryPredicate>>,
+    bond_queries: Vec<QueryNode<BondQueryPredicate>>,
     /// Directional state aligned with `bond_queries`.
-    pub bond_directions: Vec<BondDirection>,
+    bond_directions: Vec<BondDirection>,
     /// Query bond endpoints in SMARTS atom-index space.
-    pub bond_edges: Vec<(usize, usize)>,
+    bond_edges: Vec<(usize, usize)>,
     /// Ring-closure specifications: (closure_number, atom_index_in_pattern)
-    pub ring_closures: Vec<(u32, usize)>,
+    ring_closures: Vec<(u32, usize)>,
     /// Ring-closure bond query specifications: (closure_number, atom_index, bond_query).
-    pub ring_closure_bonds: Vec<(u32, usize, QueryNode<BondQueryPredicate>)>,
+    ring_closure_bonds: Vec<(u32, usize, QueryNode<BondQueryPredicate>)>,
 }
 
-impl ParsedSmartsGraph {
-    #[must_use]
-    pub fn new(
-        atom_queries: Vec<QueryNode<AtomQueryPredicate>>,
-        atom_maps: Vec<Option<u32>>,
-        bond_queries: Vec<QueryNode<BondQueryPredicate>>,
-        bond_directions: Vec<BondDirection>,
-        bond_edges: Vec<(usize, usize)>,
-        ring_closures: Vec<(u32, usize)>,
-        ring_closure_bonds: Vec<(u32, usize, QueryNode<BondQueryPredicate>)>,
-    ) -> Self {
-        Self {
-            atom_queries,
-            atom_maps,
-            bond_queries,
-            bond_directions,
-            bond_edges,
-            ring_closures,
-            ring_closure_bonds,
-        }
-    }
-
+impl QueryGraphBuilder {
     #[must_use]
     pub fn num_atoms(&self) -> usize {
         self.atom_queries.len()
@@ -100,6 +75,131 @@ impl ParsedSmartsGraph {
     #[must_use]
     pub fn bond_query(&self, idx: usize) -> Option<&QueryNode<BondQueryPredicate>> {
         self.bond_queries.get(idx)
+    }
+
+    fn push_atom(&mut self, atom: ParsedSmartsAtom) -> usize {
+        self.atom_queries.push(atom.query);
+        self.atom_maps.push(atom.atom_map);
+        self.atom_queries.len() - 1
+    }
+
+    fn push_bond(
+        &mut self,
+        begin: usize,
+        end: usize,
+        query: QueryNode<BondQueryPredicate>,
+        direction: BondDirection,
+    ) {
+        self.bond_queries.push(query);
+        self.bond_directions.push(direction);
+        self.bond_edges.push((begin, end));
+    }
+
+    fn record_ring_marker(
+        &mut self,
+        number: u32,
+        atom_index: usize,
+        query: &QueryNode<BondQueryPredicate>,
+    ) {
+        self.ring_closures.push((number, atom_index));
+        self.ring_closure_bonds
+            .push((number, atom_index, query.clone()));
+    }
+
+    /// Lower parser indexes and query state into the canonical query value.
+    ///
+    /// The parser's parallel storage is deliberately consumed here: atom
+    /// maps, bond directions, and endpoints are installed on their final
+    /// `QueryAtom`/`QueryBond` values, while ring-closure records disappear
+    /// after they have produced ordinary graph bonds.
+    fn finish(self) -> Result<QueryGraph, SmartsParseError> {
+        let Self {
+            atom_queries,
+            atom_maps,
+            bond_queries,
+            bond_directions,
+            bond_edges,
+            ring_closures: _,
+            ring_closure_bonds: _,
+        } = self;
+
+        if atom_queries.len() != atom_maps.len()
+            || bond_queries.len() != bond_directions.len()
+            || bond_queries.len() != bond_edges.len()
+        {
+            return Err(SmartsParseError::Parse(
+                "SMARTS parser state has misaligned graph arrays".to_owned(),
+            ));
+        }
+
+        let mut atoms = Vec::with_capacity(atom_queries.len());
+        for (index, (query, atom_map)) in atom_queries.into_iter().zip(atom_maps).enumerate() {
+            let (query, chiral_tag, chiral_permutation) = materialize_smarts_atom_state(query)?;
+            let isotope = atom_isotope(&query);
+            let (atomic_number, aromatic) = source_query_atom_identity(&query);
+            let element = Element::from_atomic_number(atomic_number).ok_or_else(|| {
+                SmartsParseError::Parse(format!(
+                    "invalid SMARTS atomic number {atomic_number} at atom {index}"
+                ))
+            })?;
+            let mut spec = AtomSpec::new(element)
+                .with_aromatic(aromatic)
+                .with_query(query.clone())
+                .with_chiral_tag(chiral_tag);
+            if let Some(permutation) = chiral_permutation {
+                spec = spec.with_chiral_permutation(permutation);
+            }
+            if let Some(isotope) = isotope {
+                spec = spec.with_isotope(isotope);
+            }
+            if let Some(atom_map) = atom_map {
+                spec = spec.with_atom_map(atom_map);
+            }
+            atoms.push(QueryAtom::new(
+                Atom::from_spec(crate::AtomId::new(index), spec),
+                query,
+            ));
+        }
+
+        let mut bonds = Vec::with_capacity(bond_queries.len());
+        for (bond_index, ((endpoints, query), direction)) in bond_edges
+            .into_iter()
+            .zip(bond_queries)
+            .zip(bond_directions)
+            .enumerate()
+        {
+            let (begin, end) = endpoints;
+            if begin >= atoms.len() || end >= atoms.len() {
+                return Err(SmartsParseError::Parse(format!(
+                    "SMARTS bond {bond_index} references an atom outside the graph"
+                )));
+            }
+            let bond = Bond::from_spec(
+                crate::BondId::new(bond_index),
+                BondSpec::new(
+                    crate::AtomId::new(begin),
+                    crate::AtomId::new(end),
+                    representative_bond_order(&query),
+                )
+                .with_direction(direction)
+                .with_prop(
+                    crate::notation::smiles::CXSMILES_BOND_IDX_PROP,
+                    bond_index.to_string(),
+                )
+                .with_query(query.clone()),
+            );
+            bonds.push(QueryBond::new(bond, query));
+        }
+
+        QueryGraph::from_parts(
+            atoms,
+            bonds,
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))
     }
 }
 
@@ -158,68 +258,11 @@ fn to_mol(inp: &str) -> Result<Molecule, String> {
     // input, and materialization makes one pass over atoms and one over bonds.
     // Rust ownership replaces RDKit's raw-pointer cleanup without an extra
     // graph scan, temporary molecule list, matcher-time decode, or clone.
-    if inp.is_empty() {
-        return Ok(Molecule::new());
-    }
-
-    let parsed = parse_smarts(inp).map_err(|error| error.to_string())?;
-    let mut builder = MoleculeBuilder::new();
-    let atom_ids: Vec<_> = parsed
-        .atom_queries
-        .iter()
-        .zip(parsed.atom_maps.iter().copied())
-        .map(|(query, atom_map)| {
-            let (query, chiral_tag, chiral_permutation) =
-                materialize_smarts_atom_state(query.clone()).map_err(|error| error.to_string())?;
-            let isotope = atom_isotope(&query);
-            let (atomic_number, aromatic) = source_query_atom_identity(&query);
-            let mut spec = AtomSpec::new(
-                Element::from_atomic_number(atomic_number)
-                    .expect("source SMARTS atomic number is a valid element"),
-            )
-            .with_aromatic(aromatic)
-            .with_query(query)
-            .with_chiral_tag(chiral_tag);
-            if let Some(chiral_permutation) = chiral_permutation {
-                spec = spec.with_chiral_permutation(chiral_permutation);
-            }
-            if let Some(isotope) = isotope {
-                spec = spec.with_isotope(isotope);
-            }
-            if let Some(atom_map) = atom_map {
-                spec = spec.with_atom_map(atom_map);
-            }
-            Ok(builder.add_atom(spec))
-        })
-        .collect::<Result<_, String>>()?;
-    for (bond_index, (((begin_atom_index, end_atom_index), query), direction)) in parsed
-        .bond_edges
-        .iter()
-        .copied()
-        .zip(parsed.bond_queries.iter())
-        .zip(parsed.bond_directions.iter().copied())
-        .enumerate()
-    {
-        // RDKit's SMARTS grammar assigns this parser-order index to every
-        // materialized bond. CX coordinate-bond extensions consume it before
-        // CleanupAfterParsing removes the temporary property.
-        builder
-            .add_bond(
-                BondSpec::new(
-                    atom_ids[begin_atom_index],
-                    atom_ids[end_atom_index],
-                    representative_bond_order(query),
-                )
-                .with_direction(direction)
-                .with_prop(
-                    crate::notation::smiles::CXSMILES_BOND_IDX_PROP,
-                    bond_index.to_string(),
-                )
-                .with_query(query.clone()),
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    builder.build().map_err(|error| error.to_string())
+    let graph = parse_smarts_graph(inp)
+        .map_err(|error| error.to_string())?
+        .finish()
+        .map_err(|error| error.to_string())?;
+    graph.to_molecule().map_err(|error| error.to_string())
 }
 
 fn source_query_atom_identity(query: &QueryNode<AtomQueryPredicate>) -> (u8, bool) {
@@ -427,7 +470,7 @@ fn representative_bond_order(query: &QueryNode<BondQueryPredicate>) -> BondOrder
 }
 
 #[cfg(test)]
-pub(crate) fn compile_query_fixture(smarts: &str) -> Result<Molecule, String> {
+pub(crate) fn compile_query_fixture(smarts: &str) -> Result<QueryGraph, String> {
     mol_from_smarts(smarts, &SmartsParseParams::default()).map_err(|error| error.to_string())
 }
 
@@ -487,7 +530,7 @@ impl Default for SmartsParseParams {
 // RDKit✔️✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn parse_smarts(smarts: &str) -> Result<ParsedSmartsGraph, SmartsParseError> {
+fn parse_smarts_graph(smarts: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
     parse_smarts_with_params(smarts, &SmartsParseParams::default())
 }
 
@@ -499,7 +542,7 @@ fn parse_smarts(smarts: &str) -> Result<ParsedSmartsGraph, SmartsParseError> {
 fn parse_smarts_with_params(
     smarts: &str,
     params: &SmartsParseParams,
-) -> Result<ParsedSmartsGraph, SmartsParseError> {
+) -> Result<QueryGraphBuilder, SmartsParseError> {
     // RDKit✔️✔️: preprocessSmiles — trim whitespace, handle replacements
     let preprocessed = preprocess_smarts(smarts, params);
     let input = label_recursive_patterns(&preprocessed.smarts);
@@ -563,10 +606,10 @@ fn parse_smarts_with_params(
     smarts_parse_entry(&input)
 }
 
-pub fn mol_from_smarts(
+pub fn parse_smarts(
     smarts: &str,
     params: &SmartsParseParams,
-) -> Result<Molecule, SmartsParseError> {
+) -> Result<QueryGraph, SmartsParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmarts
     // RDKit✔️❌: std::unique_ptr<RWMol> MolFromSmarts(const std::string &smarts,
     // RDKit✔️❌:                                      const SmartsParserParams &params) {
@@ -610,8 +653,37 @@ pub fn mol_from_smarts(
     }
     let preprocessed = preprocess_smarts(smarts, params);
     let labeled = label_recursive_patterns(&preprocessed.smarts);
-    let mut molecule = to_mol(&labeled).map_err(SmartsParseError::Parse)?;
+    // Lower parser state to the canonical query value before any source
+    // post-processing. The remaining molecule projection is confined to
+    // shared CX/stereo/cleanup adapters whose APIs still operate on the
+    // concrete graph; it is not part of parser construction or public query
+    // ownership.
+    let mut parsed_graph = smarts_parse_entry(&labeled)?
+        .finish()
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
     let mut name = preprocessed.name;
+
+    // The common SMARTS path has no concrete-molecule post-processing
+    // requirement. Keep it entirely in the query model: this is the normal
+    // parser result, not a query-to-molecule round trip.
+    let needs_concrete_postprocessing =
+        !preprocessed.cx_part.is_empty() || params.merge_hs || parsed_graph.has_directional_bonds();
+    if !needs_concrete_postprocessing {
+        if !params.skip_cleanup {
+            parsed_graph.cleanup_parser_state();
+        }
+        if !name.is_empty() {
+            parsed_graph = parsed_graph.with_name(name);
+        }
+        return Ok(parsed_graph);
+    }
+
+    // CXSMILES, query-H merging, and directional stereo still share the
+    // source-backed concrete-graph adapters. This projection is deliberately
+    // limited to those operations and is converted back exactly once.
+    let mut molecule = parsed_graph
+        .to_molecule()
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
     handle_c_x_part_and_name(&mut molecule, params, &preprocessed.cx_part, &mut name)?;
     if params.merge_hs {
         merge_query_hs_in_place(&mut molecule, false, false)?;
@@ -625,10 +697,21 @@ pub fn mol_from_smarts(
     if !name.is_empty() {
         molecule = molecule.with_name(name);
     }
-    Ok(molecule)
+    QueryGraph::from_query_molecule(molecule)
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))
 }
 
-fn smarts_parse_helper(input: &str) -> Result<ParsedSmartsGraph, SmartsParseError> {
+/// Compatibility spelling for the established public API.
+///
+/// New code should use [`parse_smarts`].
+pub fn mol_from_smarts(
+    smarts: &str,
+    params: &SmartsParseParams,
+) -> Result<QueryGraph, SmartsParseError> {
+    parse_smarts(smarts, params)
+}
+
+fn smarts_parse_helper(input: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
     // RDKit✔️✔️: int smarts_parse_helper(const std::string &inp, ...,
     // RDKit✔️✔️:   return generic_parse_helper<yysmarts_lex_init,
     // RDKit✔️✔️:     setup_smarts_string, yysmarts_lex_destroy>(yysmarts_parse,
@@ -804,7 +887,7 @@ fn bond_from_smarts(
     to_bond(smarts)
 }
 
-fn smarts_parse_entry(input: &str) -> Result<ParsedSmartsGraph, SmartsParseError> {
+fn smarts_parse_entry(input: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
     // RDKit✔️✔️: int smarts_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
     // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_MOL);
     // RDKit✔️✔️:   Atom *atom = nullptr;
@@ -816,15 +899,7 @@ fn smarts_parse_entry(input: &str) -> Result<ParsedSmartsGraph, SmartsParseError
     // token allocation, matching the grammar's START_MOL/EOS branch without a
     // second parser, rescan, or molecule conversion.
     if input.is_empty() {
-        return Ok(ParsedSmartsGraph::new(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ));
+        return Ok(QueryGraphBuilder::default());
     }
     smarts_parse_helper(input)
 }
@@ -1158,8 +1233,14 @@ fn merge_recursive_query_hydrogens(
 ) -> Result<(), SmartsParseError> {
     match query {
         QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
-            if let Some(query_molecule) = recursive.query_mol_mut() {
-                merge_query_hs_in_place(query_molecule, merge_unmapped_only, merge_isotopes)?;
+            if let Some(nested) = recursive.query_mol().cloned() {
+                let mut nested_molecule = nested
+                    .to_molecule()
+                    .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+                merge_query_hs_in_place(&mut nested_molecule, merge_unmapped_only, merge_isotopes)?;
+                let nested = QueryGraph::from_query_molecule(nested_molecule)
+                    .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+                recursive.set_query_mol(nested);
             }
         }
         QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
@@ -1376,7 +1457,7 @@ fn query_node_h_status(query: &QueryNode<AtomQueryPredicate>) -> (bool, bool) {
     match query {
         QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => recursive
             .query_mol()
-            .map(has_query_hs)
+            .map(has_query_hs_graph)
             .unwrap_or((false, false)),
         QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
             let mut query_hs = false;
@@ -1470,6 +1551,24 @@ fn has_query_hs(molecule: &Molecule) -> (bool, bool) {
             }
             query_hs |= result.0;
         }
+    }
+    (query_hs, false)
+}
+
+fn has_query_hs_graph(graph: &crate::QueryGraph) -> (bool, bool) {
+    let mut query_hs = false;
+    for (index, atom) in graph.atoms().iter().enumerate() {
+        let degree = graph.adjacency().get(index).map_or(0, Vec::len);
+        match is_query_hydrogen(atom, degree) {
+            QueryHydrogenType::UnmergableQueryHydrogen => return (true, true),
+            QueryHydrogenType::QueryHydrogen => query_hs = true,
+            QueryHydrogenType::NotAHydrogen => {}
+        }
+        let result = query_node_h_status(atom.predicate());
+        if result.1 {
+            return result;
+        }
+        query_hs |= result.0;
     }
     (query_hs, false)
 }
@@ -2510,7 +2609,7 @@ impl<'a> SmartsParser<'a> {
     /// Parse the full SMARTS pattern into a private graph.
     ///
     /// RDKit source: smarts.yy — the top-level grammar rule produces a molecule.
-    fn parse_smarts_molecule(&mut self) -> Result<ParsedSmartsGraph, SmartsParseError> {
+    fn parse_smarts_molecule(&mut self) -> Result<QueryGraphBuilder, SmartsParseError> {
         // RDKit✔️✔️: mol: atomd {
         // RDKit✔️✔️:   int sz     = molList->size();
         // RDKit✔️✔️:   molList->resize( sz + 1);
@@ -2659,58 +2758,28 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️:
         // RDKit✔️✔️: ;
         // RDKit✔️✔️:
-        let mut atom_queries: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
-        let mut atom_maps: Vec<Option<u32>> = Vec::new();
-        let mut bond_queries: Vec<QueryNode<BondQueryPredicate>> = Vec::new();
-        let mut bond_directions: Vec<BondDirection> = Vec::new();
-        let mut bond_edges: Vec<(usize, usize)> = Vec::new();
-        let mut ring_closures: Vec<(u32, usize)> = Vec::new();
-        let mut ring_closure_bonds: Vec<(u32, usize, QueryNode<BondQueryPredicate>)> = Vec::new();
+        let mut graph = QueryGraphBuilder::default();
 
         // RDKit✔️✔️: Parse the first atom
         let first = self.parse_atomd()?;
-        atom_queries.push(first.query);
-        atom_maps.push(first.atom_map);
+        graph.push_atom(first);
 
         // RDKit✔️✔️: Parse the rest of the pattern
-        let _ = self.parse_smarts_chain(
-            &mut atom_queries,
-            &mut atom_maps,
-            &mut bond_queries,
-            &mut bond_directions,
-            &mut bond_edges,
-            &mut ring_closures,
-            &mut ring_closure_bonds,
-            0,
-        )?;
+        let _ = self.parse_smarts_chain(&mut graph, 0)?;
 
         if let Some(number) = self.ring_closure_targets.keys().next().copied() {
             return Err(SmartsParseError::UnbalancedRingClosure(number));
         }
         self.require_end("molecule SMARTS")?;
 
-        Ok(ParsedSmartsGraph::new(
-            atom_queries,
-            atom_maps,
-            bond_queries,
-            bond_directions,
-            bond_edges,
-            ring_closures,
-            ring_closure_bonds,
-        ))
+        Ok(graph)
     }
 
     /// RDKit source: smarts.yy — mol → atom atom_list
     /// RDKit✔️✔️: Parse the chain of atoms, bonds, branches, and ring closures.
     fn parse_smarts_chain(
         &mut self,
-        atom_queries: &mut Vec<QueryNode<AtomQueryPredicate>>,
-        atom_maps: &mut Vec<Option<u32>>,
-        bond_queries: &mut Vec<QueryNode<BondQueryPredicate>>,
-        bond_directions: &mut Vec<BondDirection>,
-        bond_edges: &mut Vec<(usize, usize)>,
-        ring_closures: &mut Vec<(u32, usize)>,
-        ring_closure_bonds: &mut Vec<(u32, usize, QueryNode<BondQueryPredicate>)>,
+        graph: &mut QueryGraphBuilder,
         mut active_atom_idx: usize,
     ) -> Result<usize, SmartsParseError> {
         loop {
@@ -2742,25 +2811,17 @@ impl<'a> SmartsParser<'a> {
                                 bond,
                                 direction,
                                 bond_pos,
-                                bond_queries,
-                                bond_directions,
-                                bond_edges,
-                                ring_closures,
-                                ring_closure_bonds,
+                                graph,
                             );
                         }
                         _ => {
                             let (bond, reverse_endpoints) = normalize_dative_bond(bond);
                             let atom = self.parse_atomd()?;
-                            atom_queries.push(atom.query);
-                            atom_maps.push(atom.atom_map);
-                            let end_atom_idx = atom_queries.len() - 1;
-                            bond_queries.push(bond);
-                            bond_directions.push(direction);
+                            let end_atom_idx = graph.push_atom(atom);
                             if reverse_endpoints {
-                                bond_edges.push((end_atom_idx, active_atom_idx));
+                                graph.push_bond(end_atom_idx, active_atom_idx, bond, direction);
                             } else {
-                                bond_edges.push((active_atom_idx, end_atom_idx));
+                                graph.push_bond(active_atom_idx, end_atom_idx, bond, direction);
                             }
                             active_atom_idx = end_atom_idx;
                         }
@@ -2782,11 +2843,7 @@ impl<'a> SmartsParser<'a> {
                                 unspecified_smarts_bond_query(),
                                 BondDirection::None,
                                 bond_pos,
-                                bond_queries,
-                                bond_directions,
-                                bond_edges,
-                                ring_closures,
-                                ring_closure_bonds,
+                                graph,
                             );
                         }
                         (Token::OpenParen, _) => {
@@ -2794,16 +2851,7 @@ impl<'a> SmartsParser<'a> {
                             // RDKit✔️✔️: branchPoints.push_back({atomIdx1, $2});
                             // RDKit✔️✔️: GROUP_CLOSE_TOKEN restores the active atom
                             // RDKit✔️✔️: with mp->setActiveAtom(branchPoints.back().first).
-                            let _branch_active = self.parse_smarts_chain(
-                                atom_queries,
-                                atom_maps,
-                                bond_queries,
-                                bond_directions,
-                                bond_edges,
-                                ring_closures,
-                                ring_closure_bonds,
-                                active_atom_idx,
-                            )?;
+                            let _branch_active = self.parse_smarts_chain(graph, active_atom_idx)?;
                             match self.peek() {
                                 (Token::CloseParen, _) => {
                                     self.advance();
@@ -2824,19 +2872,18 @@ impl<'a> SmartsParser<'a> {
                             // RDKit✔️✔️: Dot separates disconnected fragments
                             self.advance();
                             let atom = self.parse_atomd()?;
-                            atom_queries.push(atom.query);
-                            atom_maps.push(atom.atom_map);
-                            active_atom_idx = atom_queries.len() - 1;
+                            active_atom_idx = graph.push_atom(atom);
                         }
                         // Atom follows implicitly with default bond
                         _ => {
-                            bond_queries.push(unspecified_smarts_bond_query());
-                            bond_directions.push(BondDirection::None);
                             let atom = self.parse_atomd()?;
-                            atom_queries.push(atom.query);
-                            atom_maps.push(atom.atom_map);
-                            let end_atom_idx = atom_queries.len() - 1;
-                            bond_edges.push((active_atom_idx, end_atom_idx));
+                            let end_atom_idx = graph.push_atom(atom);
+                            graph.push_bond(
+                                active_atom_idx,
+                                end_atom_idx,
+                                unspecified_smarts_bond_query(),
+                                BondDirection::None,
+                            );
                             active_atom_idx = end_atom_idx;
                         }
                     }
@@ -2854,14 +2901,9 @@ impl<'a> SmartsParser<'a> {
         bond: QueryNode<BondQueryPredicate>,
         direction: BondDirection,
         bond_pos: usize,
-        bond_queries: &mut Vec<QueryNode<BondQueryPredicate>>,
-        bond_directions: &mut Vec<BondDirection>,
-        bond_edges: &mut Vec<(usize, usize)>,
-        ring_closures: &mut Vec<(u32, usize)>,
-        ring_closure_bonds: &mut Vec<(u32, usize, QueryNode<BondQueryPredicate>)>,
+        graph: &mut QueryGraphBuilder,
     ) {
-        ring_closures.push((num, atom_idx));
-        ring_closure_bonds.push((num, atom_idx, bond.clone()));
+        graph.record_ring_marker(num, atom_idx, &bond);
         if let Some((open_atom_idx, open_bond, open_direction, _open_pos)) =
             self.ring_closure_targets.remove(&num)
         {
@@ -2876,9 +2918,7 @@ impl<'a> SmartsParser<'a> {
             } else {
                 open_direction
             };
-            bond_queries.push(resolved_bond);
-            bond_directions.push(resolved_direction);
-            bond_edges.push((open_atom_idx, atom_idx));
+            graph.push_bond(open_atom_idx, atom_idx, resolved_bond, resolved_direction);
         } else {
             self.ring_closure_targets
                 .insert(num, (atom_idx, bond, direction, bond_pos));
@@ -4249,9 +4289,11 @@ impl<'a> SmartsParser<'a> {
             .strip_prefix("$(")
             .and_then(|value| value.strip_suffix(')'))
             .expect("balanced recursive SMARTS has delimiters");
-        let query_mol = to_mol(inner).map_err(|detail| SmartsParseError::InvalidAtomPrimitive {
-            position: start,
-            detail,
+        let query_mol = mol_from_smarts(inner, &SmartsParseParams::default()).map_err(|error| {
+            SmartsParseError::InvalidAtomPrimitive {
+                position: start,
+                detail: error.to_string(),
+            }
         })?;
         Ok((
             QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(
@@ -4973,7 +5015,9 @@ mod tests {
     #[test]
     fn smarts_grammar_meta_start() {
         assert_eq!(
-            parse_smarts("").expect("empty molecule start").num_atoms(),
+            parse_smarts_graph("")
+                .expect("empty molecule start")
+                .num_atoms(),
             0
         );
         assert!(parse_atom_entry("[C]").is_ok());
@@ -4994,27 +5038,27 @@ mod tests {
 
     #[test]
     fn smarts_grammar_mol() {
-        let mol = parse_smarts("C(=O).N").expect("branch and fragment productions");
+        let mol = parse_smarts_graph("C(=O).N").expect("branch and fragment productions");
         assert_eq!(mol.num_atoms(), 3);
         assert_eq!(mol.bond_edges, vec![(0, 1)]);
 
-        let quadruple = parse_smarts("C$C").expect("quadruple bond production");
+        let quadruple = parse_smarts_graph("C$C").expect("quadruple bond production");
         assert_eq!(
             quadruple.bond_queries[0],
             QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Quadruple))
         );
 
-        let right = parse_smarts("C->N").expect("right dative production");
+        let right = parse_smarts_graph("C->N").expect("right dative production");
         assert_eq!(right.bond_edges, vec![(0, 1)]);
         assert_eq!(
             right.bond_queries[0],
             QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Dative))
         );
-        let left = parse_smarts("C<-N").expect("left dative production");
+        let left = parse_smarts_graph("C<-N").expect("left dative production");
         assert_eq!(left.bond_edges, vec![(1, 0)]);
-        assert!(parse_smarts("C)").is_err());
+        assert!(parse_smarts_graph("C)").is_err());
         assert!(matches!(
-            parse_smarts("C1CC"),
+            parse_smarts_graph("C1CC"),
             Err(SmartsParseError::UnbalancedRingClosure(1))
         ));
     }
@@ -5031,7 +5075,7 @@ mod tests {
             ("c", 6, true),
             ("n", 7, true),
         ] {
-            let parsed = parse_smarts(smarts).expect("simple atom regression");
+            let parsed = parse_smarts_graph(smarts).expect("simple atom regression");
             assert_eq!(
                 parsed.atom_queries,
                 vec![QueryNode::Predicate(AtomQueryPredicate::AtomType {
@@ -5043,7 +5087,9 @@ mod tests {
         }
 
         assert_eq!(
-            parse_smarts("*").expect("wildcard regression").atom_queries,
+            parse_smarts_graph("*")
+                .expect("wildcard regression")
+                .atom_queries,
             vec![QueryNode::Predicate(AtomQueryPredicate::Any)]
         );
         for (smarts, order) in [
@@ -5053,7 +5099,7 @@ mod tests {
             ("c:c", BondOrder::Aromatic),
         ] {
             assert_eq!(
-                parse_smarts(smarts)
+                parse_smarts_graph(smarts)
                     .expect("explicit bond regression")
                     .bond_queries,
                 vec![QueryNode::Predicate(BondQueryPredicate::Order(order))],
@@ -5061,7 +5107,7 @@ mod tests {
             );
         }
         assert_eq!(
-            parse_smarts("C~N")
+            parse_smarts_graph("C~N")
                 .expect("any-bond regression")
                 .bond_queries,
             vec![QueryNode::Predicate(BondQueryPredicate::Any)]
@@ -5088,7 +5134,7 @@ mod tests {
             QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6))
         );
 
-        let mapped = parse_smarts("[#6:17]").expect("mapped atom_expr branch");
+        let mapped = parse_smarts_graph("[#6:17]").expect("mapped atom_expr branch");
         assert_eq!(mapped.atom_maps, vec![Some(17)]);
         assert_eq!(
             mapped.atom_queries,
@@ -5119,7 +5165,8 @@ mod tests {
             ("[2H-:4]", Some(2), Some(-1), Some(4)),
         ];
         for (smarts, isotope, charge, atom_map) in cases {
-            let parsed = parse_smarts(smarts).unwrap_or_else(|error| panic!("{smarts}: {error}"));
+            let parsed =
+                parse_smarts_graph(smarts).unwrap_or_else(|error| panic!("{smarts}: {error}"));
             let query = &parsed.atom_queries[0];
             assert!(
                 contains(query, &AtomQueryPredicate::AtomicNumber(1)),
@@ -5142,7 +5189,7 @@ mod tests {
 
     #[test]
     fn smarts_atom_map_property() {
-        let parsed = parse_smarts("[C:7]-[O:8]").expect("mapped SMARTS parse tree");
+        let parsed = parse_smarts_graph("[C:7]-[O:8]").expect("mapped SMARTS parse tree");
         assert_eq!(parsed.atom_maps, vec![Some(7), Some(8)]);
         assert_eq!(
             parsed.atom_queries,
@@ -5158,7 +5205,8 @@ mod tests {
             ]
         );
 
-        let query = to_mol("[C:7]-[O:8]").expect("mapped query molecule");
+        let query = mol_from_smarts("[C:7]-[O:8]", &SmartsParseParams::default())
+            .expect("mapped query graph");
         assert_eq!(query.atoms()[0].atom_map(), Some(7));
         assert_eq!(query.atoms()[1].atom_map(), Some(8));
 
@@ -5230,7 +5278,7 @@ mod tests {
         match recursive {
             QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(query)) => {
                 assert_eq!(query.source_smarts(), Some("$(CO)"));
-                assert_eq!(query.query_mol().map(Molecule::num_atoms), Some(2));
+                assert_eq!(query.query_mol().map(QueryGraph::num_atoms), Some(2));
             }
             other => panic!("expected recursive point query, got {other:?}"),
         }
@@ -5249,12 +5297,12 @@ mod tests {
         let plain = recursive("[$(C1CC1)]");
         assert_eq!(plain.source_smarts(), Some("$(C1CC1)"));
         assert_eq!(plain.serial_number(), 0);
-        assert_eq!(plain.query_mol().map(Molecule::num_atoms), Some(3));
+        assert_eq!(plain.query_mol().map(QueryGraph::num_atoms), Some(3));
 
         let numbered = recursive("[$([N])_12]");
         assert_eq!(numbered.source_smarts(), Some("$([N])"));
         assert_eq!(numbered.serial_number(), 12);
-        assert_eq!(numbered.query_mol().map(Molecule::num_atoms), Some(1));
+        assert_eq!(numbered.query_mol().map(QueryGraph::num_atoms), Some(1));
 
         for invalid in ["[$()]", "[$(C)_]", "[$(C)_0]", "[$(C1CC)]"] {
             assert!(parse_atom_entry(invalid).is_err(), "{invalid}");
@@ -5545,7 +5593,7 @@ mod tests {
             QueryNode::Predicate(BondQueryPredicate::Any)
         );
         assert_eq!(
-            parse_smarts("C-,=O")
+            parse_smarts_graph("C-,=O")
                 .expect("molecule bond_expr")
                 .bond_queries,
             vec![QueryNode::Or(vec![single, double])]
@@ -5679,14 +5727,14 @@ mod tests {
             ]
         );
         assert_eq!(
-            parse_smarts("C%(123)CC%(123)")
+            parse_smarts_graph("C%(123)CC%(123)")
                 .expect("parenthesized percent ring")
                 .ring_closures,
             vec![(123, 0), (123, 2)]
         );
-        assert!(parse_smarts("C%0C").is_err());
-        assert!(parse_smarts("C%123C").is_err());
-        assert!(parse_smarts("C%(123456)C").is_err());
+        assert!(parse_smarts_graph("C%0C").is_err());
+        assert!(parse_smarts_graph("C%123C").is_err());
+        assert!(parse_smarts_graph("C%(123456)C").is_err());
     }
 
     #[test]
@@ -5724,7 +5772,7 @@ mod tests {
         assert_eq!(parser.parse_branch_open_token().expect("branch open"), 1);
         assert!(matches!(parser.peek(), (Token::OrganicElement(symbol), 2) if symbol == "C"));
 
-        let parsed = parse_smarts("C(C)(N)O").expect("sibling branches");
+        let parsed = parse_smarts_graph("C(C)(N)O").expect("sibling branches");
         assert_eq!(parsed.num_atoms(), 4);
         assert_eq!(parsed.bond_edges, vec![(0, 1), (0, 2), (0, 3)]);
     }
@@ -5988,7 +6036,7 @@ mod tests {
         assert_eq!(molecule.atoms()[0].atom_map(), Some(7));
         assert_eq!(molecule.atoms()[0].prop("atomLabel"), Some("carbon"));
         assert_eq!(molecule.atoms()[1].prop("atomLabel"), Some("oxygen"));
-        assert_eq!(molecule.properties().name(), Some("carbonyl query"));
+        assert_eq!(molecule.name(), Some("carbonyl query"));
         assert!(molecule.atoms().iter().all(|atom| atom.query().is_some()));
         assert!(molecule.bonds().iter().all(|bond| bond.query().is_some()));
 
@@ -6002,7 +6050,7 @@ mod tests {
 
         let recursive =
             mol_from_smarts("[$(C-[H])]", &merge_params).expect("merge recursive query hydrogen");
-        assert_eq!(has_query_hs(&recursive), (false, false));
+        assert_eq!(has_query_hs_graph(&recursive), (false, false));
 
         let mapped = mol_from_smarts("[#6]-[#1:7]", &merge_params)
             .expect("MolFromSmarts merges mapped H with default options");
@@ -6087,7 +6135,7 @@ mod tests {
     #[test]
     fn test_bracket_atom_element() {
         // [C] — carbon in brackets
-        let mol = parse_smarts("[C]").unwrap();
+        let mol = parse_smarts_graph("[C]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
         assert_eq!(mol.bond_queries.len(), 0);
     }
@@ -6095,7 +6143,7 @@ mod tests {
     #[test]
     fn test_parse_simple_smarts() {
         // CC
-        let mol = parse_smarts("CC").unwrap();
+        let mol = parse_smarts_graph("CC").unwrap();
         assert_eq!(mol.atom_queries.len(), 2);
         assert_eq!(mol.bond_queries.len(), 1);
         assert_eq!(
@@ -6117,7 +6165,7 @@ mod tests {
     #[test]
     fn test_parse_bonded_smarts() {
         // C=O
-        let mol = parse_smarts("C=O").unwrap();
+        let mol = parse_smarts_graph("C=O").unwrap();
         assert_eq!(mol.atom_queries.len(), 2);
         assert_eq!(mol.bond_queries.len(), 1);
         assert_eq!(
@@ -6128,7 +6176,7 @@ mod tests {
 
     #[test]
     fn test_bracket_with_charge() {
-        let mol = parse_smarts("[N+]").unwrap();
+        let mol = parse_smarts_graph("[N+]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
         assert_eq!(
             mol.atom_queries[0],
@@ -6144,7 +6192,7 @@ mod tests {
 
     #[test]
     fn test_bracket_with_negative_charge_defaults_to_minus_one() {
-        let mol = parse_smarts("[O-]").unwrap();
+        let mol = parse_smarts_graph("[O-]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
         assert_eq!(
             mol.atom_queries[0],
@@ -6160,20 +6208,20 @@ mod tests {
 
     #[test]
     fn test_bracket_with_chirality() {
-        let mol = parse_smarts("[C@@H]").unwrap();
+        let mol = parse_smarts_graph("[C@@H]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
     }
 
     #[test]
     fn test_parse_ring_closure() {
-        let mol = parse_smarts("C1CC1").unwrap();
+        let mol = parse_smarts_graph("C1CC1").unwrap();
         assert_eq!(mol.atom_queries.len(), 3);
         assert_eq!(mol.ring_closures.len(), 2);
     }
 
     #[test]
     fn test_parse_explicit_bond_ring_closure_like_rdkit() {
-        let mol = parse_smarts("*1~*~*~*~1").unwrap();
+        let mol = parse_smarts_graph("*1~*~*~*~1").unwrap();
         assert_eq!(mol.atom_queries.len(), 4);
         assert_eq!(mol.bond_queries.len(), 4);
         assert_eq!(mol.bond_edges, vec![(0, 1), (1, 2), (2, 3), (0, 3)]);
@@ -6187,13 +6235,13 @@ mod tests {
 
     #[test]
     fn test_parse_branch() {
-        let mol = parse_smarts("C(C)C").unwrap();
+        let mol = parse_smarts_graph("C(C)C").unwrap();
         assert_eq!(mol.atom_queries.len(), 3);
     }
 
     #[test]
     fn test_parse_branch_continues_from_branch_point_like_rdkit() {
-        let mol = parse_smarts("[#6]~[!#6!#1](~[#6])(~[#6])~*").unwrap();
+        let mol = parse_smarts_graph("[#6]~[!#6!#1](~[#6])(~[#6])~*").unwrap();
         assert_eq!(mol.atom_queries.len(), 5);
         assert_eq!(mol.bond_queries.len(), 4);
         assert_eq!(mol.bond_edges, vec![(0, 1), (1, 2), (1, 3), (1, 4)]);
@@ -6201,7 +6249,7 @@ mod tests {
 
     #[test]
     fn test_bracket_atomic_number_primitive() {
-        let mol = parse_smarts("[#6]").unwrap();
+        let mol = parse_smarts_graph("[#6]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
     }
 
@@ -6247,7 +6295,7 @@ mod tests {
     #[test]
     fn test_parse_aromatic_smarts() {
         // c1ccccc1 — benzene SMARTS
-        let mol = parse_smarts("c1ccccc1").unwrap();
+        let mol = parse_smarts_graph("c1ccccc1").unwrap();
         assert_eq!(mol.atom_queries.len(), 6);
         // Every atom is aromatic carbon
         for aq in &mol.atom_queries {
@@ -6263,7 +6311,7 @@ mod tests {
 
     #[test]
     fn test_smarts_molecule_num_atoms() {
-        let mol = parse_smarts("CCO").unwrap();
+        let mol = parse_smarts_graph("CCO").unwrap();
         assert_eq!(mol.num_atoms(), 3);
         assert!(mol.atom_query(0).is_some());
         assert!(mol.bond_query(0).is_some());
@@ -6272,13 +6320,13 @@ mod tests {
 
     #[test]
     fn ring_connectivity_distinguishes_bare_x_from_explicit_x0() {
-        let has_ring_bond = parse_smarts("[Cx]").expect("bare x SMARTS");
+        let has_ring_bond = parse_smarts_graph("[Cx]").expect("bare x SMARTS");
         assert!(atom_query_contains(
             &has_ring_bond.atom_queries[0],
             &AtomQueryPredicate::HasRingBond
         ));
 
-        let no_ring_bonds = parse_smarts("[Cx0]").expect("x0 SMARTS");
+        let no_ring_bonds = parse_smarts_graph("[Cx0]").expect("x0 SMARTS");
         assert!(atom_query_contains(
             &no_ring_bonds.atom_queries[0],
             &AtomQueryPredicate::RingBondCount(0)
@@ -6389,13 +6437,14 @@ mod tests {
             &recursive.atom_queries[0]
         ));
 
-        let ring_atom = parse_smarts("[R]").expect("MACCS bit 165 ring atom should parse");
+        let ring_atom = parse_smarts_graph("[R]").expect("MACCS bit 165 ring atom should parse");
         assert!(atom_query_contains(
             &ring_atom.atom_queries[0],
             &AtomQueryPredicate::InRing
         ));
 
-        let ring_bond = parse_smarts("*@*(@*)@*").expect("MACCS bit 105 ring bonds should parse");
+        let ring_bond =
+            parse_smarts_graph("*@*(@*)@*").expect("MACCS bit 105 ring bonds should parse");
         assert!(
             ring_bond
                 .bond_queries
@@ -6405,7 +6454,7 @@ mod tests {
         );
 
         let non_ring_bond =
-            parse_smarts("*!@[#8]!@*").expect("MACCS bit 126 non-ring bonds should parse");
+            parse_smarts_graph("*!@[#8]!@*").expect("MACCS bit 126 non-ring bonds should parse");
         assert!(
             non_ring_bond.bond_queries.iter().any(|query| matches!(
                 query,
@@ -6415,20 +6464,22 @@ mod tests {
             "MACCS bit 126 should preserve !@ non-ring-bond queries"
         );
 
-        let wildcard = parse_smarts("*~[CH2]~[#7]").expect("MACCS bit 100 wildcard should parse");
+        let wildcard =
+            parse_smarts_graph("*~[CH2]~[#7]").expect("MACCS bit 100 wildcard should parse");
         assert_eq!(
             wildcard.atom_queries[0],
             QueryNode::Predicate(AtomQueryPredicate::Any)
         );
 
-        let negation = parse_smarts("[!#6!#1!H0]").expect("MACCS bit 131 negation should parse");
+        let negation =
+            parse_smarts_graph("[!#6!#1!H0]").expect("MACCS bit 131 negation should parse");
         assert!(
             matches!(&negation.atom_queries[0], QueryNode::And(children) if children.iter().any(|child| matches!(child, QueryNode::Not(_)))),
             "MACCS bit 131 should preserve atom-query negation"
         );
 
         let alternatives =
-            parse_smarts("[F,Cl,Br,I]").expect("MACCS bit 31 OR alternatives should parse");
+            parse_smarts_graph("[F,Cl,Br,I]").expect("MACCS bit 31 OR alternatives should parse");
 
         fn or_leaf_count(query: &QueryNode<AtomQueryPredicate>) -> Option<usize> {
             match query {
@@ -6446,7 +6497,7 @@ mod tests {
         );
 
         let hydrogen_count =
-            parse_smarts("[C;H3,H4]").expect("MACCS bit 149 hydrogen counts should parse");
+            parse_smarts_graph("[C;H3,H4]").expect("MACCS bit 149 hydrogen counts should parse");
         assert!(atom_query_contains(
             &hydrogen_count.atom_queries[0],
             &AtomQueryPredicate::HydrogenCount(3)
@@ -6456,7 +6507,7 @@ mod tests {
             &AtomQueryPredicate::HydrogenCount(4)
         ));
 
-        let branch_ring_closure = parse_smarts("[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]")
+        let branch_ring_closure = parse_smarts_graph("[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]")
             .expect("MACCS bit 116 branch/ring-closure SMARTS should parse");
         assert_eq!(branch_ring_closure.num_atoms(), 1);
         assert!(atom_query_contains_recursive_smarts(
@@ -6464,7 +6515,7 @@ mod tests {
         ));
 
         let explicit_ring_closure =
-            parse_smarts("*1~*~*~*~1").expect("MACCS bit 11 ring closure should parse");
+            parse_smarts_graph("*1~*~*~*~1").expect("MACCS bit 11 ring closure should parse");
         assert_eq!(
             explicit_ring_closure.bond_edges,
             vec![(0, 1), (1, 2), (2, 3), (0, 3)]
@@ -6631,7 +6682,7 @@ mod tests {
 
         assert_eq!(cases.len(), 136);
         for (bit, smarts) in cases {
-            parse_smarts(smarts)
+            parse_smarts_graph(smarts)
                 .unwrap_or_else(|error| panic!("MACCS bit {bit} SMARTS failed: {error}"));
         }
     }
@@ -6807,13 +6858,13 @@ mod tests {
 
     #[test]
     fn test_varied_bonds() {
-        let mol = parse_smarts("C#N").unwrap();
+        let mol = parse_smarts_graph("C#N").unwrap();
         assert_eq!(
             mol.bond_queries[0],
             QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Triple))
         );
 
-        let mol = parse_smarts("C:N").unwrap();
+        let mol = parse_smarts_graph("C:N").unwrap();
         assert_eq!(
             mol.bond_queries[0],
             QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Aromatic))
@@ -6822,7 +6873,7 @@ mod tests {
 
     #[test]
     fn test_empty_smarts_molecule() {
-        let result = parse_smarts("").expect("meta_start EOS accepts an empty molecule");
+        let result = parse_smarts_graph("").expect("meta_start EOS accepts an empty molecule");
         assert_eq!(result.num_atoms(), 0);
     }
 }

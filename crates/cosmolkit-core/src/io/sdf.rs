@@ -4968,7 +4968,11 @@ fn parse_marvin_smarts_line(
         .with_query(merge_atom_query(
             atom.spec.query().cloned(),
             QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
-                crate::search::query::RecursiveStructureQuery::from_smarts(sma, query_molecule, 0),
+                crate::search::query::RecursiveStructureQuery::from_smarts(
+                    sma,
+                    query_molecule.into(),
+                    0,
+                ),
             )),
         ));
     Ok(())

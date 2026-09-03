@@ -4904,8 +4904,8 @@ mod tests {
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
         let mapping = topology.remove_atoms_with_mapping(&[o1]);
-        coordinates.remap_topology(&mapping);
-        properties.remap_topology(&mapping);
+        coordinates.remap_topology(&mapping.retained_atom_indices());
+        properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
         parts
             .record_topology_edit(TopologyEditKind::Compacting)
             .unwrap();
@@ -4971,8 +4971,8 @@ mod tests {
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
         let mapping = topology.remove_atoms_with_mapping(&[n2]);
-        coordinates.remap_topology(&mapping);
-        properties.remap_topology(&mapping);
+        coordinates.remap_topology(&mapping.retained_atom_indices());
+        properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
         parts
             .record_topology_edit(TopologyEditKind::Compacting)
             .unwrap();

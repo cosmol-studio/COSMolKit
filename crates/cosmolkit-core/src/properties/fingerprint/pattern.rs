@@ -763,6 +763,15 @@ mod tests {
         (fingerprint, events)
     }
 
+    fn traced_query_pattern_fingerprint(
+        query: &crate::QueryGraph,
+        fingerprint_size: usize,
+        tautomeric: bool,
+    ) -> (Fingerprint, Vec<PatternTraceEvent>) {
+        let molecule = query.to_molecule().expect("query graph materialization");
+        traced_pattern_fingerprint(&molecule, fingerprint_size, tautomeric)
+    }
+
     #[test]
     fn pattern_core_matches_exact_ethane_hash_evolution_and_tautomer_bits() {
         let molecule = Molecule::from_smiles("CC").expect("ethane");
@@ -883,7 +892,7 @@ mod tests {
             &crate::search::smarts_parse::SmartsParseParams::default(),
         )
         .expect("query atom");
-        let (_, atom_events) = traced_pattern_fingerprint(&query_atom, 2048, false);
+        let (_, atom_events) = traced_query_pattern_fingerprint(&query_atom, 2048, false);
         assert!(
             atom_events
                 .iter()
@@ -902,7 +911,7 @@ mod tests {
             &crate::search::smarts_parse::SmartsParseParams::default(),
         )
         .expect("query bond");
-        let (_, bond_events) = traced_pattern_fingerprint(&query_bond, 2048, false);
+        let (_, bond_events) = traced_query_pattern_fingerprint(&query_bond, 2048, false);
         assert!(bond_events.iter().any(|event| matches!(
             event,
             PatternTraceEvent::QueryBondSuppressed {
@@ -911,7 +920,7 @@ mod tests {
             }
         )));
         assert_eq!(
-            traced_pattern_fingerprint(&query_bond, 257, false)
+            traced_query_pattern_fingerprint(&query_bond, 257, false)
                 .0
                 .on_bits(),
             vec![14, 44, 132, 136, 146]
@@ -923,7 +932,7 @@ mod tests {
         )
         .expect("any query bond");
         assert_eq!(
-            traced_pattern_fingerprint(&any_query, 257, false)
+            traced_query_pattern_fingerprint(&any_query, 257, false)
                 .0
                 .on_bits(),
             vec![14, 43, 44, 132, 136, 146]
@@ -935,7 +944,7 @@ mod tests {
         )
         .expect("single-or-double query bond");
         assert_eq!(
-            traced_pattern_fingerprint(&order_query, 257, false)
+            traced_query_pattern_fingerprint(&order_query, 257, false)
                 .0
                 .on_bits(),
             vec![14, 43, 44, 132, 136, 146]
@@ -949,7 +958,7 @@ mod tests {
             &crate::search::smarts_parse::SmartsParseParams::default(),
         )
         .expect("single-or-aromatic query bond");
-        let (_, events) = traced_pattern_fingerprint(&query, 2048, true);
+        let (_, events) = traced_query_pattern_fingerprint(&query, 2048, true);
         assert!(events.iter().any(|event| matches!(
             event,
             PatternTraceEvent::TautomerQueryBond {

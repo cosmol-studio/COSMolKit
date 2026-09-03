@@ -49,6 +49,11 @@ const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
     "src/properties/fingerprint.rs::from_smarts_patterns",
     "src/search/query.rs::from_smarts",
     "src/search/query.rs::source_smarts",
+    "src/search/query_graph.rs::to_smarts",
+    "src/search/query_graph.rs::to_cx_smarts",
+    "src/search/query_graph.rs::fragment_to_smarts",
+    "src/search/query_graph.rs::from_smarts",
+    "src/search/query_graph.rs::fragment_to_cx_smarts",
     "src/search/smarts_parse.rs::atom_from_smarts",
     "src/search/smarts_parse.rs::bond_from_smarts",
     "src/search/smarts_parse.rs::materialize_smarts_atom_state",
@@ -347,8 +352,8 @@ fn smarts_canonical_module_baseline() {
         "the canonical SMARTS parser/compiler owner must remain explicit",
     );
     assert!(
-        query_model.contains("are the sole shared typed SMARTS/query model."),
-        "the shared typed query-model owner must remain explicit",
+        query_model.contains("define the predicate vocabulary."),
+        "the shared typed predicate vocabulary owner must remain explicit",
     );
 
     for (needle, expected) in [
@@ -393,8 +398,10 @@ fn smarts_canonical_module_baseline() {
     assert!(
         facade.contains("pub use search::{query, smarts_parse, substruct};")
             && facade.contains(
-                "pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};",
-            ),
-        "the public facade must expose the canonical parser module and shared typed query model",
+                "pub use search::query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};",
+            )
+            && facade.contains("CompiledQuery")
+            && facade.contains("QueryGraph"),
+        "the public facade must expose the canonical parser module and first-class query graph model",
     );
 }

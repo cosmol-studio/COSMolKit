@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::chemistry::numerics::alignment::{Transform3D, align_points};
 use crate::read_parts::MoleculeReadParts;
-use crate::{Conformer3D, Molecule, SubstructMatchParams};
+use crate::{Conformer3D, Molecule, QueryGraph, SubstructMatchParams};
 
 const DEFAULT_MAX_ITERATIONS: u32 = 50;
 const DEFAULT_MAX_MATCHES: i32 = 1_000_000;
@@ -227,11 +227,14 @@ fn first_alignment_map(
         use_query_query_matches: true,
         ..SubstructMatchParams::default()
     };
-    let matched = crate::try_get_substruct_matches_with_params(reference, probe, &matcher_params)
-        .map_err(|_| AlignmentError::NoSubstructureMatch)?
-        .into_iter()
-        .next()
-        .ok_or(AlignmentError::NoSubstructureMatch)?;
+    let probe_query = QueryGraph::from_concrete_molecule(probe)
+        .map_err(|_| AlignmentError::NoSubstructureMatch)?;
+    let matched =
+        crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
+            .map_err(|_| AlignmentError::NoSubstructureMatch)?
+            .into_iter()
+            .next()
+            .ok_or(AlignmentError::NoSubstructureMatch)?;
     Ok(matched
         .atom_mapping
         .into_iter()
@@ -314,8 +317,10 @@ fn automatic_maps(
         use_chirality: false,
         ..Default::default()
     };
+    let probe_query = QueryGraph::from_concrete_molecule(probe_for_match)
+        .map_err(|_| AlignmentError::NoSubstructureMatch)?;
     let mut maps: Vec<_> =
-        crate::try_get_substruct_matches_with_params(reference, probe_for_match, &matcher_params)
+        crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
             .map_err(|_| AlignmentError::NoSubstructureMatch)?
             .into_iter()
             .map(|matched| {

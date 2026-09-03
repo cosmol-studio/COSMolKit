@@ -10,7 +10,7 @@ use crate::chemistry::subgraph::{
 };
 use crate::chemistry::valence::rdkit_atomic_mass;
 use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
-use crate::{AdjacencyList, AtomId, BondOrder, ChiralTag, Molecule};
+use crate::{AdjacencyList, AtomId, BondOrder, ChiralTag, Molecule, QueryGraph};
 use serde_json::Value;
 
 mod atom_pair;
@@ -262,12 +262,10 @@ const DEFAULT_FEATURE_SMARTS: [&str; 6] = [
 // RDKit✔️✔️:   m_matcher.reset(p);
 // RDKit✔️✔️: };
 //
-// COSMolKit owns the equivalent query-bearing `Molecule` directly instead of
-// caching an `ROMOL_SPTR`; matcher construction and access retain the same
-// observable behavior.
+// COSMolKit owns the equivalent compiled query graph directly.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SsMatcher {
-    matcher: Molecule,
+    matcher: QueryGraph,
 }
 
 impl SsMatcher {
@@ -294,7 +292,7 @@ impl SsMatcher {
 
     #[must_use]
     #[allow(non_snake_case)]
-    pub fn getMatcher(&self) -> &Molecule {
+    pub fn getMatcher(&self) -> &QueryGraph {
         &self.matcher
     }
 }
@@ -8294,8 +8292,9 @@ mod tests {
     fn rdkit_fp_query_bond_path_is_rejected_at_hash_input_boundary() {
         let query =
             crate::search::smarts_parse::compile_query_fixture("[#6]~[#6]").expect("query fixture");
-        let invariants = rdkit_fp_atom_invariants(&query);
-        let inputs = rdkit_fp_generate_bond_hash_inputs(&query, &[0], true, &invariants)
+        let query_molecule = query.to_molecule().expect("query molecule fixture");
+        let invariants = rdkit_fp_atom_invariants(&query_molecule);
+        let inputs = rdkit_fp_generate_bond_hash_inputs(&query_molecule, &[0], true, &invariants)
             .expect("query path result");
         assert!(inputs.bond_hashes.is_empty());
         assert_eq!(inputs.atoms_in_path, vec![true, true]);
@@ -8596,6 +8595,13 @@ mod tests {
                 "smarts" => mol_from_smarts(&case.input, &SmartsParseParams::default())
                     .unwrap_or_else(|error| {
                         panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)
+                    })
+                    .to_molecule()
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{} ({}) failed to materialize: {error}",
+                            case.case_id, case.input
+                        )
                     }),
                 notation => panic!("{}: unsupported notation {notation}", case.case_id),
             };

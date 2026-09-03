@@ -3,12 +3,13 @@
 use std::{collections::BTreeMap, sync::OnceLock};
 
 use crate::{
-    BondOrder, BondQueryPredicate, DerivedState, Molecule, QueryNode, SmartsParseParams,
-    SubstructMatchParams, mol_from_smarts, try_get_substruct_matches_with_params,
+    BondOrder, BondQueryPredicate, DerivedState, Molecule, QueryGraph, QueryNode,
+    SmartsParseParams, SubstructMatchParams, mol_from_smarts,
+    try_get_substruct_matches_with_params,
 };
 
-fn terminal_atom_query() -> Result<&'static Molecule, &'static str> {
-    static QUERY: OnceLock<Result<Molecule, &'static str>> = OnceLock::new();
+fn terminal_atom_query() -> Result<&'static QueryGraph, &'static str> {
+    static QUERY: OnceLock<Result<QueryGraph, &'static str>> = OnceLock::new();
     QUERY
         .get_or_init(|| {
             let params = SmartsParseParams {

@@ -138,9 +138,13 @@ pub use properties::mol_pickler;
 #[cfg(feature = "fingerprints")]
 pub use properties::{avalon_fingerprint, fingerprint};
 pub use search::{
+    CompiledQuery, MatchResult, McsResult, QueryAtom, QueryBond, QueryGraph, QueryGraphError,
+    QueryGraphOperator,
+};
+pub use search::{
     SmartsParseParams, SmartsWriteError, get_atom_smarts, get_bond_smarts,
     mol_fragment_to_cx_smarts, mol_fragment_to_smarts, mol_from_smarts, mol_to_cx_smarts,
-    mol_to_smarts,
+    mol_to_smarts, parse_smarts,
 };
 pub use search::{query, smarts_parse, substruct};
 
@@ -348,12 +352,12 @@ pub use properties::descriptors::{
     calc_smr_vsa_3, calc_smr_vsa_4, calc_smr_vsa_5, calc_smr_vsa_6, calc_smr_vsa_7, calc_smr_vsa_8,
     calc_smr_vsa_9, calc_smr_vsa_10, calc_smr_vsa_with_bins, calc_tpsa,
 };
-pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use rings::{
     RingFindType, RingFindingError, RingInfo, fast_find_rings, find_ring_families, find_sssr,
     symmetrize_sssr,
 };
 pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep, detect_chemistry_problems};
+pub use search::query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
     SGroupConnection, SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId,

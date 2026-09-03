@@ -23,7 +23,8 @@ use std::{
 };
 
 use crate::{
-    AdjacencyList, AtomId, BondOrder, Molecule, SubstructMatchParams, SubstructMatchResult,
+    AdjacencyList, AtomId, BondOrder, Molecule, QueryGraph, SubstructMatchParams,
+    SubstructMatchResult,
     chemistry::valence::{
         ValenceModel, assign_valence_with_options, rdkit_atomic_mass, rdkit_element_symbol,
         rdkit_most_common_isotope_mass,
@@ -50,19 +51,20 @@ const RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_SMARTS: &str = concat!(
     "a[!#1])a)]"
 );
 const RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_SMARTS: &str = "C#[#6,#7]";
-static RDKIT_ROTATABLE_BONDS_NON_STRICT_MATCHER: OnceLock<DescriptorResult<Molecule>> =
+static RDKIT_ROTATABLE_BONDS_NON_STRICT_MATCHER: OnceLock<DescriptorResult<QueryGraph>> =
     OnceLock::new();
-static RDKIT_ROTATABLE_BONDS_STRICT_MATCHER: OnceLock<DescriptorResult<Molecule>> = OnceLock::new();
-static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_MATCHER: OnceLock<DescriptorResult<Molecule>> =
+static RDKIT_ROTATABLE_BONDS_STRICT_MATCHER: OnceLock<DescriptorResult<QueryGraph>> =
+    OnceLock::new();
+static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_BASE_MATCHER: OnceLock<DescriptorResult<QueryGraph>> =
     OnceLock::new();
 static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_NON_RING_AMIDES_MATCHER: OnceLock<
-    DescriptorResult<Molecule>,
+    DescriptorResult<QueryGraph>,
 > = OnceLock::new();
 static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_SYM_RINGS_MATCHER: OnceLock<
-    DescriptorResult<Molecule>,
+    DescriptorResult<QueryGraph>,
 > = OnceLock::new();
 static RDKIT_ROTATABLE_BONDS_STRICT_LINKAGES_TERMINAL_TRIPLE_BONDS_MATCHER: OnceLock<
-    DescriptorResult<Molecule>,
+    DescriptorResult<QueryGraph>,
 > = OnceLock::new();
 const RDKIT_CRIPPEN_DEFAULT_PARAM_DATA: &str = r#"#ID	SMARTS	logP	MR	Notes/Questions
 C1	[CH4]	0.1441	2.503	
@@ -1106,7 +1108,7 @@ struct CrippenParam {
     idx: usize,
     label: &'static str,
     smarts: &'static str,
-    pattern: Molecule,
+    pattern: QueryGraph,
     logp: f64,
     mr: f64,
 }
@@ -2206,10 +2208,10 @@ fn calc_num_rotatable_bonds_strict_linkages(mol: &Molecule) -> DescriptorResult<
 }
 
 fn rdkit_cached_smarts_matcher(
-    cache: &'static OnceLock<DescriptorResult<Molecule>>,
+    cache: &'static OnceLock<DescriptorResult<QueryGraph>>,
     function: &'static str,
     pattern: &'static str,
-) -> DescriptorResult<&'static Molecule> {
+) -> DescriptorResult<&'static QueryGraph> {
     // RDKit✔️✔️: typedef boost::flyweight<boost::flyweights::key_value<std::string, ss_matcher>,
     // RDKit✔️✔️:                          boost::flyweights::no_tracking>
     // RDKit✔️✔️:     pattern_flyweight;
@@ -2697,7 +2699,7 @@ fn rdkit_qed_arom(mol: &Molecule) -> DescriptorResult<u32> {
 
 fn rdkit_qed_delete_substructs(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     only_frags: bool,
     use_chirality: bool,
 ) -> DescriptorResult<Molecule> {
@@ -3013,7 +3015,10 @@ fn rdkit_total_num_hs_without_neighbors(
     })
 }
 
-fn rdkit_count_smarts_matches(function: &'static str, pattern: &str) -> DescriptorResult<Molecule> {
+fn rdkit_count_smarts_matches(
+    function: &'static str,
+    pattern: &str,
+) -> DescriptorResult<QueryGraph> {
     // RDKit✔️✔️: ss_matcher(const std::string &pattern) : m_pattern(pattern) {
     // RDKit✔️✔️:   m_needCopies = (pattern.find_first_of("$") != std::string::npos);
     // RDKit✔️✔️:   RDKit::RWMol *p = RDKit::SmartsToMol(pattern);
@@ -3021,8 +3026,8 @@ fn rdkit_count_smarts_matches(function: &'static str, pattern: &str) -> Descript
     // RDKit✔️✔️:   POSTCONDITION(m_matcher, "no matcher");
     // RDKit✔️✔️: };
     // Local complexity review: canonical SMARTS compilation remains linear in
-    // the pattern and directly returns the query-bearing Molecule consumed by
-    // the matcher, with no intermediate graph conversion.
+    // the pattern and returns the canonical QueryGraph. The descriptor's
+    // internal matcher projection is created only at its ownership boundary.
     crate::mol_from_smarts(pattern, &crate::SmartsParseParams::default()).map_err(|_| {
         DescriptorError::Unsupported {
             function,
@@ -3033,7 +3038,7 @@ fn rdkit_count_smarts_matches(function: &'static str, pattern: &str) -> Descript
 
 fn rdkit_count_query_matches(
     mol: &Molecule,
-    query: &Molecule,
+    query: &QueryGraph,
     function: &'static str,
 ) -> DescriptorResult<u32> {
     // RDKit✔️✔️: unsigned int countMatches(const RDKit::ROMol &mol) const {
@@ -3106,14 +3111,14 @@ mod rotatable_bond_matcher_cache_tests {
                 .expect("cached rotatable-bond SMARTS must remain available");
             assert!(std::ptr::eq(first, second));
 
-            let expected_address = first as *const Molecule as usize;
+            let expected_address = first as *const QueryGraph as usize;
             std::thread::scope(|scope| {
                 let handles = (0..8)
                     .map(|_| {
                         scope.spawn(move || {
                             rdkit_cached_smarts_matcher(cache, "calc_num_rotatable_bonds", pattern)
                                 .expect("parallel matcher read")
-                                as *const Molecule as usize
+                                as *const QueryGraph as usize
                         })
                     })
                     .collect::<Vec<_>>();

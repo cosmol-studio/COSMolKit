@@ -11,5 +11,6 @@ pub mod derived;
 pub mod error;
 pub(crate) mod invariants;
 pub mod molecule;
+pub mod query;
 pub mod read_parts;
 pub mod sgroup;

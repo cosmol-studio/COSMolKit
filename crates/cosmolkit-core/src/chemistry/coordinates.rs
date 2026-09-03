@@ -53,6 +53,7 @@ unsafe extern "C" {
 use crate::AtomId;
 use crate::ChiralTag;
 use crate::Molecule;
+use crate::QueryGraph;
 use crate::atom::Atom;
 use crate::bond::{Bond, BondDirection, BondOrder, BondStereo};
 use crate::builder::MoleculeBuilder;
@@ -86,7 +87,7 @@ struct TemplateGraphBond {
 
 #[derive(Debug, Clone, PartialEq)]
 struct RdkitTemplateGraphModel {
-    compiled_query: Molecule,
+    compiled_query: crate::QueryGraph,
     atom_queries: Vec<crate::QueryNode<crate::AtomQueryPredicate>>,
     bonds: Vec<TemplateGraphBond>,
 }
@@ -98,6 +99,7 @@ struct RdkitTemplateRuntimeModel {
     conformer_3d: Option<Vec<[f64; 3]>>,
     source_coordinate_dim: Option<CoordinateDimension>,
     fragment_count: usize,
+    ring_count: usize,
     bond_ring_counts: Vec<usize>,
 }
 
@@ -250,7 +252,7 @@ fn parse_rdkit_template_graph_model(
         .collect::<Result<Vec<_>, _>>()?;
     let bonds = expand_template_smarts_bonds(&parsed)?;
     Ok(RdkitTemplateGraphModel {
-        compiled_query: parsed,
+        compiled_query: parsed.clone(),
         atom_queries,
         bonds,
     })
@@ -283,6 +285,7 @@ fn build_rdkit_template_runtime_model(
         conformer_3d,
         source_coordinate_dim,
         fragment_count,
+        ring_count: rings.num_rings(),
         bond_ring_counts,
     })
 }
@@ -693,18 +696,13 @@ fn bond_order_for_template_probe(query: &crate::QueryNode<crate::BondQueryPredic
 }
 
 fn expand_template_smarts_bonds(
-    compiled_query: &Molecule,
+    compiled_query: &crate::QueryGraph,
 ) -> Result<Vec<TemplateGraphBond>, Coordinate2DError> {
     compiled_query
         .bonds()
         .iter()
         .map(|bond| {
-            let query = bond.query().cloned().ok_or_else(|| {
-                Coordinate2DError::UnsupportedFeature(format!(
-                    "compiled RDKit template SMARTS bond {} has no query",
-                    bond.id()
-                ))
-            })?;
+            let query = bond.predicate().clone();
             Ok(TemplateGraphBond {
                 begin_atom_idx: bond.begin().index(),
                 end_atom_idx: bond.end().index(),
@@ -1876,15 +1874,10 @@ impl RdkitEmbeddedFrag {
                 continue;
             }
             let template_mol = build_rdkit_template_query_molecule(&template).ok()?;
-            if crate::symmetrize_sssr(&template_mol)
-                .ok()
-                .map(|rings| rings.num_rings())
-                .unwrap_or(usize::MAX)
-                != ring_count
-            {
+            if template.ring_count != ring_count {
                 continue;
             }
-            let template_degree_counts = rdkit_template_degree_counts(&template_mol, None);
+            let template_degree_counts = rdkit_query_template_degree_counts(&template_mol, None);
             if rs_degree_counts != template_degree_counts {
                 continue;
             }
@@ -3352,11 +3345,12 @@ impl RdkitEmbeddedFrag {
 
 fn build_rdkit_template_query_molecule(
     template: &RdkitTemplateRuntimeModel,
-) -> Result<Molecule, Coordinate2DError> {
+) -> Result<crate::QueryGraph, Coordinate2DError> {
     if let Some(coords) = &template.coords_2d {
         template
             .graph
             .compiled_query
+            .clone()
             .with_2d_coordinate_block(coords.clone())
             .map_err(|error| {
                 Coordinate2DError::UnsupportedFeature(format!(
@@ -3534,6 +3528,36 @@ fn rdkit_template_degree_counts(mol: &Molecule, dummy_atomic_num: Option<u8>) ->
         for nbr in adjacency.neighbors_of(atom.id().index()) {
             if dummy_atomic_num
                 .is_some_and(|anum| mol.atoms()[nbr.atom_index].atomic_number() == anum)
+            {
+                continue;
+            }
+            degree += 1;
+            if degree == 4 {
+                break;
+            }
+        }
+        counts[degree] += 1;
+    }
+    counts
+}
+
+fn rdkit_query_template_degree_counts(
+    query: &crate::QueryGraph,
+    dummy_atomic_num: Option<u8>,
+) -> [i32; 5] {
+    let mut counts = [0i32; 5];
+    for atom in query.atoms() {
+        if dummy_atomic_num.is_some_and(|anum| atom.atomic_number() == anum) {
+            continue;
+        }
+        let mut degree = 0usize;
+        for &(neighbor, _) in query
+            .adjacency()
+            .get(atom.id().index())
+            .into_iter()
+            .flatten()
+        {
+            if dummy_atomic_num.is_some_and(|anum| query.atoms()[neighbor].atomic_number() == anum)
             {
                 continue;
             }
@@ -5510,7 +5534,10 @@ fn rdkit_get_best_alignment_transform(
         ))
 }
 
-fn rdkit_substruct_matches_unordered(mol: &Molecule, query: &Molecule) -> Vec<Vec<(usize, usize)>> {
+fn rdkit_substruct_matches_unordered(
+    mol: &Molecule,
+    query: &crate::QueryGraph,
+) -> Vec<Vec<(usize, usize)>> {
     let params = crate::SubstructMatchParams {
         max_matches: 1000,
         uniquify: false,
@@ -5842,12 +5869,19 @@ pub(crate) fn generate_depiction_matching_2d_structure(
         query_adj = Some(query_adj_value);
     }
 
+    let ref_query = QueryGraph::from_concrete_molecule(&ref_mol).map_err(|_| {
+        Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph")
+    })?;
+    let pattern_query = QueryGraph::from_concrete_molecule(query).map_err(|_| {
+        Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph")
+    })?;
+
     if let Some(reference_pattern) = reference_pattern {
         if p.allow_rgroups {
             let reference_hs_value = rdkit_add_hs_copy(reference)?;
             let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
             pattern_to_ref_matches =
-                rdkit_substruct_matches_unordered(&reference_hs_value, &ref_mol);
+                rdkit_substruct_matches_unordered(&reference_hs_value, &ref_query);
             if let Some(reduced_query) = reduced_query.as_ref() {
                 rdkit_reduced_to_full_matches(
                     reduced_query,
@@ -5864,8 +5898,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
                 .unwrap_or_default();
             }
             reference_hs = Some(reference_hs_value);
-        } else if let Some(match_result) = crate::get_substruct_match(reference, reference_pattern)
-        {
+        } else if let Some(match_result) = crate::get_substruct_match(reference, &pattern_query) {
             pattern_to_ref_match = match_result.atom_mapping.into_iter().enumerate().collect();
         }
         if pattern_to_ref_match.is_empty() {
@@ -5892,7 +5925,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
     }
 
     if p.align_only {
-        let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_mol);
+        let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_query);
         if !matches.is_empty() {
             if p.allow_rgroups {
                 if let Some(reduced_query) = reduced_query.as_ref() {
@@ -5991,7 +6024,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
         }
     } else {
         if p.allow_rgroups {
-            let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_mol);
+            let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_query);
             if !matches.is_empty() {
                 if let Some(reduced_query) = reduced_query.as_ref() {
                     rdkit_reduced_to_full_matches(
@@ -6012,7 +6045,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
                     }
                 }
             }
-        } else if let Some(match_result) = crate::get_substruct_match(&prb_mol, &ref_mol) {
+        } else if let Some(match_result) = crate::get_substruct_match(&prb_mol, &ref_query) {
             match_vect = match_result.atom_mapping.into_iter().enumerate().collect();
         }
         if !match_vect.is_empty() {
@@ -6099,8 +6132,14 @@ pub(crate) fn generate_depiction_matching_3d_structure(
 
     let mut mol_to_ref = vec![-1isize; num_ats];
     if let Some(reference_pattern) = reference_pattern.filter(|pattern| pattern.num_atoms() > 0) {
-        let mol_match_vect = crate::get_substruct_match(mol, reference_pattern);
-        let ref_match_vect = crate::get_substruct_match(reference, reference_pattern);
+        let pattern_query =
+            QueryGraph::from_concrete_molecule(reference_pattern).map_err(|_| {
+                Coordinate2DError::InvalidInput(
+                    "reference pattern cannot be represented as a query graph",
+                )
+            })?;
+        let mol_match_vect = crate::get_substruct_match(mol, &pattern_query);
+        let ref_match_vect = crate::get_substruct_match(reference, &pattern_query);
         let (Some(mol_match_vect), Some(ref_match_vect)) = (mol_match_vect, ref_match_vect) else {
             if accept_failure {
                 let _ =
@@ -6953,6 +6992,9 @@ mod tests {
 
     #[test]
     fn test_single_atom() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::C));
         let mol = builder.build().unwrap();
@@ -6963,6 +7005,9 @@ mod tests {
 
     #[test]
     fn test_two_atoms() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
@@ -6980,6 +7025,9 @@ mod tests {
 
     #[test]
     fn test_three_linear_chain() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
@@ -7536,6 +7584,8 @@ mod tests {
 
     #[test]
     fn prefer_coordgen_defaults_false_like_rdkit_global() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
         set_prefer_coord_gen(false);
         assert!(!prefer_coord_gen());
         assert!(!is_coordgen_support_available());
@@ -9066,6 +9116,8 @@ mod tests {
             .expect("template registry lock poisoned")
             .templates = HashMap::from([(core_union.len(), vec![template.clone()])]);
         let template_mol = build_rdkit_template_query_molecule(&template).unwrap();
+        let template_concrete =
+            Molecule::from_smiles("C1C2CC3CC1CC3C2").expect("template concrete graph");
         assert_eq!(core_ring_ids.len(), core_rings.len());
         assert_eq!(core_mol.num_bonds(), template_mol.num_bonds());
         assert_eq!(
@@ -9073,12 +9125,14 @@ mod tests {
             core_rings.len()
         );
         assert_eq!(
-            crate::symmetrize_sssr(&template_mol).unwrap().num_rings(),
+            crate::symmetrize_sssr(&template_concrete)
+                .unwrap()
+                .num_rings(),
             core_rings.len()
         );
         assert_eq!(
             rdkit_template_degree_counts(&core_mol, None),
-            rdkit_template_degree_counts(&template_mol, None)
+            rdkit_template_degree_counts(&template_concrete, None)
         );
         assert!(
             get_substruct_match(&core_mol, &template_mol).is_some(),

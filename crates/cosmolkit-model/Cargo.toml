@@ -1,0 +1,14 @@
+[package]
+name = "cosmolkit-model"
+description = "Shared concrete molecular value model for COSMolKit algorithms"
+keywords = ["chemistry", "molecule", "graph", "cheminformatics"]
+categories = ["science", "data-structures"]
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cosmolkit-types = { version = "0.3.0", path = "../cosmolkit-types" }
+thiserror = "2.0.18"
