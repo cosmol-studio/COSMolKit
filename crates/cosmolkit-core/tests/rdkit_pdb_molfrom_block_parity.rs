@@ -220,10 +220,7 @@ fn bond_stereo_name(stereo: BondStereo) -> &'static str {
 }
 
 fn assert_close(left: f64, right: f64, label: &str) {
-    assert!(
-        (left - right).abs() <= 1.0e-5,
-        "{label}: expected {right}, got {left}"
-    );
+    assert!((left - right).abs() <= 1.0e-5, "{label}: expected {right}, got {left}");
 }
 
 #[test]
@@ -231,15 +228,11 @@ fn pdb_7sh6_molfrompdbblock_state_matches_rdkit() {
     let pdb_path = ensure_7sh6_pdb();
     let oracle = rdkit_oracle_for_pdb(&pdb_path);
     assert_eq!(oracle.pdb_id, "7SH6");
-    assert_eq!(
-        oracle.source_url,
-        "https://files.rcsb.org/download/7SH6.pdb"
-    );
+    assert_eq!(oracle.source_url, "https://files.rcsb.org/download/7SH6.pdb");
 
-    let pdb = fs::read_to_string(&pdb_path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", pdb_path.display()));
-    let mol = Molecule::from_pdb_block(&pdb)
-        .unwrap_or_else(|error| panic!("COSMolKit PDB conversion failed: {error}"));
+    let pdb =
+        fs::read_to_string(&pdb_path).unwrap_or_else(|error| panic!("failed to read {}: {error}", pdb_path.display()));
+    let mol = Molecule::from_pdb_block(&pdb).unwrap_or_else(|error| panic!("COSMolKit PDB conversion failed: {error}"));
 
     assert_eq!(mol.num_atoms(), oracle.atoms.len(), "atom count mismatch");
     assert_eq!(mol.num_bonds(), oracle.bonds.len(), "bond count mismatch");
@@ -253,11 +246,7 @@ fn pdb_7sh6_molfrompdbblock_state_matches_rdkit() {
 
     for (idx, (atom, expected)) in mol.atoms().iter().zip(&oracle.atoms).enumerate() {
         assert_eq!(expected.idx, idx, "RDKit atom index mismatch at row {idx}");
-        assert_eq!(
-            atom.id().index(),
-            idx,
-            "COSMolKit atom index mismatch at row {idx}"
-        );
+        assert_eq!(atom.id().index(), idx, "COSMolKit atom index mismatch at row {idx}");
         assert_eq!(
             atom.atomic_number(),
             expected.atomic_num,
@@ -268,11 +257,7 @@ fn pdb_7sh6_molfrompdbblock_state_matches_rdkit() {
             expected.formal_charge,
             "formal charge mismatch at atom {idx}"
         );
-        assert_eq!(
-            atom.isotope(),
-            expected.isotope,
-            "isotope mismatch at atom {idx}"
-        );
+        assert_eq!(atom.isotope(), expected.isotope, "isotope mismatch at atom {idx}");
         assert_eq!(
             atom.is_aromatic(),
             expected.is_aromatic,
@@ -359,11 +344,7 @@ fn pdb_7sh6_molfrompdbblock_state_matches_rdkit() {
             expected.begin,
             "bond begin mismatch at bond {idx}"
         );
-        assert_eq!(
-            bond.end().index(),
-            expected.end,
-            "bond end mismatch at bond {idx}"
-        );
+        assert_eq!(bond.end().index(), expected.end, "bond end mismatch at bond {idx}");
         assert_eq!(
             bond.order().rdkit_name(),
             expected.bond_type,

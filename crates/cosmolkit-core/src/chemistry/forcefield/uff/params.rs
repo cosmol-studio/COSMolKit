@@ -146,10 +146,7 @@ impl fmt::Display for UffParamError {
         match self {
             Self::MissingDefaultParamData => write!(f, "missing RDKit UFF default parameter data"),
             Self::MalformedDefaultParamData { line } => {
-                write!(
-                    f,
-                    "malformed RDKit UFF default parameter string line: {line}"
-                )
+                write!(f, "malformed RDKit UFF default parameter string line: {line}")
             }
             Self::MalformedLine {
                 line_number,
@@ -219,17 +216,13 @@ impl ParamCollection {
 
         let registry = param_collection_registry();
         {
-            let guard = registry
-                .read()
-                .expect("UFF ParamCollection registry lock poisoned");
+            let guard = registry.read().expect("UFF ParamCollection registry lock poisoned");
             if let Some(existing) = guard.get(param_data) {
                 return Ok(Arc::clone(existing));
             }
         }
 
-        let mut guard = registry
-            .write()
-            .expect("UFF ParamCollection registry lock poisoned");
+        let mut guard = registry.write().expect("UFF ParamCollection registry lock poisoned");
         if let Some(existing) = guard.get(param_data) {
             return Ok(Arc::clone(existing));
         }
@@ -310,8 +303,7 @@ fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, 
             r1: parse_param_float(line_number, "r1", columns[1])?,
             // RDKit✔️✔️:       paramObj.theta0 = boost::lexical_cast<double>(*token);
             // RDKit✔️✔️:       paramObj.theta0 = paramObj.theta0 * M_PI / 180.;
-            theta0: parse_param_float(line_number, "theta0", columns[2])? * std::f64::consts::PI
-                / 180.0,
+            theta0: parse_param_float(line_number, "theta0", columns[2])? * std::f64::consts::PI / 180.0,
             // RDKit✔️✔️:       paramObj.x1 = boost::lexical_cast<double>(*token);
             x1: parse_param_float(line_number, "x1", columns[3])?,
             // RDKit✔️✔️:       paramObj.D1 = boost::lexical_cast<double>(*token);
@@ -337,11 +329,7 @@ fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, 
     Ok(params)
 }
 
-fn parse_param_float(
-    line_number: usize,
-    column_name: &'static str,
-    value: &str,
-) -> Result<f64, UffParamError> {
+fn parse_param_float(line_number: usize, column_name: &'static str, value: &str) -> Result<f64, UffParamError> {
     value
         .parse::<f64>()
         .map_err(|_err: ParseFloatError| UffParamError::ParseFloat {
@@ -405,28 +393,10 @@ mod tests {
     #[test]
     fn uff_params_structs_store_contrib_fields_in_source_order() {
         assert_eq!(UffBond { kb: 1.0, r0: 2.0 }, UffBond { kb: 1.0, r0: 2.0 });
-        assert_eq!(
-            UffAngle {
-                ka: 3.0,
-                theta0: 4.0,
-            },
-            UffAngle {
-                ka: 3.0,
-                theta0: 4.0,
-            }
-        );
+        assert_eq!(UffAngle { ka: 3.0, theta0: 4.0 }, UffAngle { ka: 3.0, theta0: 4.0 });
         assert_eq!(UffTor { v: 5.0 }.v, 5.0);
         assert_eq!(UffInv { k: 6.0 }.k, 6.0);
-        assert_eq!(
-            UffVdw {
-                x_ij: 7.0,
-                d_ij: 8.0,
-            },
-            UffVdw {
-                x_ij: 7.0,
-                d_ij: 8.0,
-            }
-        );
+        assert_eq!(UffVdw { x_ij: 7.0, d_ij: 8.0 }, UffVdw { x_ij: 7.0, d_ij: 8.0 });
     }
 
     #[test]
@@ -439,8 +409,7 @@ mod tests {
         assert_eq!(
             ATOMIC_PARAMS_TSV_COLUMNS,
             [
-                "Atom", "r1", "theta0", "x1", "D1", "zeta", "Z1", "Vi", "Uj", "Xi", "Hard",
-                "Radius",
+                "Atom", "r1", "theta0", "x1", "D1", "zeta", "Z1", "Vi", "Uj", "Xi", "Hard", "Radius",
             ]
         );
     }
@@ -471,36 +440,23 @@ mod tests {
 
     #[test]
     fn uff_param_collection_get_params_reuses_same_param_data_instance() {
-        let first = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n")
-            .expect("valid UFF params");
-        let second = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n")
-            .expect("valid UFF params");
+        let first = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n").expect("valid UFF params");
+        let second = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n").expect("valid UFF params");
 
         assert!(Arc::ptr_eq(&first, &second));
-        assert_eq!(
-            first.source_param_data(),
-            "A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n"
-        );
+        assert_eq!(first.source_param_data(), "A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n");
         assert!(!first.is_empty());
         assert_eq!(first.len(), 1);
     }
 
     #[test]
     fn uff_param_collection_get_params_distinguishes_different_param_data() {
-        let first = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n")
-            .expect("valid UFF params");
-        let second = ParamCollection::get_params("B\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\n")
-            .expect("valid UFF params");
+        let first = ParamCollection::get_params("A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n").expect("valid UFF params");
+        let second = ParamCollection::get_params("B\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\n").expect("valid UFF params");
 
         assert!(!Arc::ptr_eq(&first, &second));
-        assert_eq!(
-            first.source_param_data(),
-            "A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n"
-        );
-        assert_eq!(
-            second.source_param_data(),
-            "B\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\n"
-        );
+        assert_eq!(first.source_param_data(), "A\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n");
+        assert_eq!(second.source_param_data(), "B\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\n");
     }
 
     #[test]
@@ -565,17 +521,13 @@ mod tests {
         let theta0_degrees = std::hint::black_box(104.51);
         let rdkit_theta0 = theta0_degrees * std::f64::consts::PI / 180.0;
         let previously_reassociated_theta0 = theta0_degrees * std::hint::black_box(DEG2RAD);
-        assert_ne!(
-            rdkit_theta0.to_bits(),
-            previously_reassociated_theta0.to_bits()
-        );
+        assert_ne!(rdkit_theta0.to_bits(), previously_reassociated_theta0.to_bits());
 
         let defaults = ParamCollection::get_params("").expect("valid default UFF params");
         let default_o3 = defaults.get("O_3").expect("O_3 default params");
         assert_eq!(default_o3.theta0.to_bits(), rdkit_theta0.to_bits());
 
-        let custom_data =
-            "O_3\t0.658\t104.51\t3.5\t0.06\t14.085\t2.3\t0.018\t2\t8.741\t6.682\t0.669\n";
+        let custom_data = "O_3\t0.658\t104.51\t3.5\t0.06\t14.085\t2.3\t0.018\t2\t8.741\t6.682\t0.669\n";
         let custom = ParamCollection::get_params(custom_data).expect("valid custom UFF params");
         let custom_o3 = custom.get("O_3").expect("O_3 custom params");
         assert_eq!(custom_o3.theta0.to_bits(), rdkit_theta0.to_bits());
@@ -610,8 +562,7 @@ mod tests {
 
     #[test]
     fn uff_param_collection_loader_reports_float_parse_error() {
-        let err = ParamCollection::get_params("C_3\tbad\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n")
-            .expect_err("invalid float");
+        let err = ParamCollection::get_params("C_3\tbad\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n").expect_err("invalid float");
 
         assert_eq!(
             err,

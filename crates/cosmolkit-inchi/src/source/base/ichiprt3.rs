@@ -1,23 +1,17 @@
 use crate::source::base::ichi_io::inchi_strbuf_printf;
 use crate::source::base::ichimak2::MakeHillFormulaString;
 use crate::source::base::ichiprt2::{
-    Eql_INChI_Aux_Equ, Eql_INChI_Isotopic, Eql_INChI_Stereo, EqlOrigInfo, MakeCRVString,
-    MakeCtString, MakeCtStringNew, MakeDelim, MakeEqStr, MakeEquString, MakeHString,
-    MakeIsoAtomString, MakeIsoTautString, MakeMult, MakeStereoString, MakeTautString,
-    bHasEquString, bHasOrigInfo,
+    Eql_INChI_Aux_Equ, Eql_INChI_Isotopic, Eql_INChI_Stereo, EqlOrigInfo, MakeCRVString, MakeCtString, MakeCtStringNew,
+    MakeDelim, MakeEqStr, MakeEquString, MakeHString, MakeIsoAtomString, MakeIsoTautString, MakeMult, MakeStereoString,
+    MakeTautString, bHasEquString, bHasOrigInfo,
 };
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    INCHI_IOS_STRING, INCHI_SORT, OUT_N1, OUT_NN, OUT_NT, OUT_T1, OUT_TN, SourceConstPointer,
-    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, TAUT_NON,
-    TAUT_YES,
+    INCHI_IOS_STRING, INCHI_SORT, OUT_N1, OUT_NN, OUT_NT, OUT_T1, OUT_TN, SourceConstPointer, SourceFormatArgument,
+    SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, TAUT_NON, TAUT_YES,
 };
 
-fn get_ii(
-    heap: &SourceHeap,
-    output_type: i32,
-    sort: &INCHI_SORT,
-) -> Result<Option<usize>, SourceHeapError> {
+fn get_ii(heap: &SourceHeap, output_type: i32, sort: &INCHI_SORT) -> Result<Option<usize>, SourceHeapError> {
     // BEGIN INCHI ACTIVE MACRO: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.h:69 GET_II dependencies
     // INCHI✔️✔️: #define HAS_T(S)  (S->pINChI[TAUT_YES] && S->pINChI[TAUT_YES]->nNumberOfAtoms)
     // INCHI✔️✔️: #define HAS_N(S)  (S->pINChI[TAUT_NON] && S->pINChI[TAUT_NON]->nNumberOfAtoms)
@@ -57,8 +51,7 @@ fn get_ii(
     let has_n = non_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0);
     let has_t = taut_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0);
     let has_nn = non_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0 && inchi.lenTautomer == 0);
-    let has_tn =
-        taut_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0 && inchi.lenTautomer == 0);
+    let has_tn = taut_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0 && inchi.lenTautomer == 0);
     let has_tt = taut_value.is_some_and(|inchi| inchi.nNumberOfAtoms != 0 && inchi.lenTautomer > 0);
     Ok(if output_type == OUT_N1 as i32 {
         has_tn
@@ -88,14 +81,10 @@ fn selected_inchi(
         .slice(sort_pointer)?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    Ok(get_ii(heap, output_type, sort)?
-        .map_or(SourceMutPointer::null(), |index| sort.pINChI[index]))
+    Ok(get_ii(heap, output_type, sort)?.map_or(SourceMutPointer::null(), |index| sort.pINChI[index]))
 }
 
-fn c_string<'a>(
-    heap: &'a SourceHeap,
-    pointer: SourceConstPointer<i8>,
-) -> Result<&'a [i8], SourceHeapError> {
+fn c_string<'a>(heap: &'a SourceHeap, pointer: SourceConstPointer<i8>) -> Result<&'a [i8], SourceHeapError> {
     let bytes = heap.slice(pointer)?;
     let length = bytes
         .iter()
@@ -200,16 +189,11 @@ pub(crate) fn str_HillFormula(
     let mut index = 1_i32;
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
-        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null()
-        {
+        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null() {
             let current_inchi = heap
                 .slice(current.as_const())?
                 .first()
@@ -375,8 +359,7 @@ pub(crate) fn str_HillFormula2(
         Ok(taut.bDeleted == 0
             && !fixed.szHillFormula.is_null()
             && !taut.szHillFormula.is_null()
-            && c_string(heap, fixed.szHillFormula.as_const())?
-                == c_string(heap, taut.szHillFormula.as_const())?)
+            && c_string(heap, fixed.szHillFormula.as_const())? == c_string(heap, taut.szHillFormula.as_const())?)
     }
 
     let initial_length = string_buffer.nUsedLength;
@@ -390,28 +373,19 @@ pub(crate) fn str_HillFormula2(
     let mut index = 1_i32;
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
         if equal_to_taut && (!current.is_null() || !taut_current.is_null()) {
             equal_to_taut = equal_formula(heap, current, taut_current)?;
         }
-        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null()
-        {
+        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null() {
             let current_value = heap
                 .slice(current.as_const())?
                 .first()
@@ -464,8 +438,7 @@ pub(crate) fn str_HillFormula2(
     if equal_to_taut {
         string_buffer.nUsedLength = initial_length;
     }
-    let used = usize::try_from(string_buffer.nUsedLength)
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let used = usize::try_from(string_buffer.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(string_buffer.pStr)?
         .get_mut(used)
@@ -580,16 +553,11 @@ pub(crate) fn str_Connections(
     let mut index = 1_i32;
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
-        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null()
-        {
+        let equal_to_previous = if use_multipliers != 0 && !current.is_null() && !previous.is_null() {
             let current_inchi = heap
                 .slice(current.as_const())?
                 .first()
@@ -598,11 +566,9 @@ pub(crate) fn str_Connections(
                 .slice(previous.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if current_inchi.lenConnTable > 1
-                && previous_inchi.lenConnTable == current_inchi.lenConnTable
-            {
-                let length = usize::try_from(current_inchi.lenConnTable)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            if current_inchi.lenConnTable > 1 && previous_inchi.lenConnTable == current_inchi.lenConnTable {
+                let length =
+                    usize::try_from(current_inchi.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 heap.slice(current_inchi.nConnTable.as_const())?
                     .get(..length)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -623,12 +589,7 @@ pub(crate) fn str_Connections(
         }
         if !previous.is_null() {
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             let previous_inchi = heap
@@ -668,8 +629,7 @@ pub(crate) fn str_Connections(
     }
     if number_empty == number_of_components && string_buffer.nUsedLength > initial_length {
         string_buffer.nUsedLength = initial_length;
-        let used =
-            usize::try_from(initial_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let used = usize::try_from(initial_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         heap.slice_mut(string_buffer.pStr)?[used] = 0;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
@@ -813,11 +773,7 @@ pub(crate) fn str_H_atoms(
     let mut index = 1_i32;
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
@@ -874,12 +830,7 @@ pub(crate) fn str_H_atoms(
         }
         if !previous.is_null() {
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             let value = heap
@@ -887,8 +838,7 @@ pub(crate) fn str_H_atoms(
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
-            let count = usize::try_from(value.nNumberOfAtoms)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count = usize::try_from(value.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let nonempty = if value.lenTautomer > 1 {
                 true
             } else if count == 0 {
@@ -1087,8 +1037,7 @@ pub(crate) fn str_FixedH_atoms(
             .slice(pointer.as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let count = usize::try_from(value.nNumberOfAtoms)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(value.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         heap.slice(value.nNum_H_fixed.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)
@@ -1103,11 +1052,7 @@ pub(crate) fn str_FixedH_atoms(
     let mut index = 1_i32;
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
@@ -1172,8 +1117,7 @@ pub(crate) fn str_FixedH_atoms(
     }
     if empty_count == number_of_components && string_buffer.nUsedLength > initial_length {
         string_buffer.nUsedLength = initial_length;
-        let used =
-            usize::try_from(initial_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let used = usize::try_from(initial_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         heap.slice_mut(string_buffer.pStr)?[used] = 0;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
@@ -1397,18 +1341,9 @@ pub(crate) fn str_Charge2(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     let initial_length = string_buffer.nUsedLength;
@@ -1425,20 +1360,12 @@ pub(crate) fn str_Charge2(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -1446,9 +1373,7 @@ pub(crate) fn str_Charge2(
         let taut_current_value = clone_inchi(heap, taut_current)?;
         let equal_to_taut = second_non_taut_pass != 0
             && omit_repetitions != 0
-            && current_value
-                .as_ref()
-                .is_some_and(|value| value.nTotalCharge != 0)
+            && current_value.as_ref().is_some_and(|value| value.nTotalCharge != 0)
             && taut_current_value
                 .as_ref()
                 .is_some_and(|value| value.nTotalCharge != 0 && value.bDeleted == 0)
@@ -1457,17 +1382,9 @@ pub(crate) fn str_Charge2(
 
         if equal_to_taut {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|value| value.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|value| value.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 if let Some(charge) = previous_value
@@ -1492,12 +1409,7 @@ pub(crate) fn str_Charge2(
                     .is_some_and(|value| value.nNumberOfAtoms != 0 && value.bDeleted == 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -1508,26 +1420,14 @@ pub(crate) fn str_Charge2(
             );
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -1543,22 +1443,11 @@ pub(crate) fn str_Charge2(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -1570,12 +1459,8 @@ pub(crate) fn str_Charge2(
         } else {
             let previous_value = clone_inchi(heap, previous)?;
             let equal_to_previous = use_multipliers != 0
-                && current_value
-                    .as_ref()
-                    .is_some_and(|value| value.nTotalCharge != 0)
-                && previous_value
-                    .as_ref()
-                    .is_some_and(|value| value.nTotalCharge != 0)
+                && current_value.as_ref().is_some_and(|value| value.nTotalCharge != 0)
+                && previous_value.as_ref().is_some_and(|value| value.nTotalCharge != 0)
                 && current_value.as_ref().map(|value| value.nTotalCharge)
                     == previous_value.as_ref().map(|value| value.nTotalCharge);
             if equal_to_previous {
@@ -1584,18 +1469,10 @@ pub(crate) fn str_Charge2(
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
-            if previous_value
-                .as_ref()
-                .is_some_and(|value| value.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|value| value.nNumberOfAtoms != 0) {
                 if let Some(charge) = previous_value
                     .as_ref()
                     .map(|value| value.nTotalCharge)
@@ -1901,18 +1778,9 @@ pub(crate) fn str_Sp2(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn output_stereo(
@@ -1961,20 +1829,12 @@ pub(crate) fn str_Sp2(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -1999,17 +1859,9 @@ pub(crate) fn str_Sp2(
 
         if equal_to_taut {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -2028,12 +1880,7 @@ pub(crate) fn str_Sp2(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -2043,26 +1890,14 @@ pub(crate) fn str_Sp2(
             );
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -2078,22 +1913,11 @@ pub(crate) fn str_Sp2(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -2124,12 +1948,7 @@ pub(crate) fn str_Sp2(
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -2436,18 +2255,9 @@ pub(crate) fn str_Sp3(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn output_stereo(
@@ -2498,20 +2308,12 @@ pub(crate) fn str_Sp3(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -2536,17 +2338,9 @@ pub(crate) fn str_Sp3(
 
         if equal_to_taut {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -2566,12 +2360,7 @@ pub(crate) fn str_Sp3(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -2581,26 +2370,14 @@ pub(crate) fn str_Sp3(
             );
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -2616,22 +2393,11 @@ pub(crate) fn str_Sp3(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -2662,12 +2428,7 @@ pub(crate) fn str_Sp3(
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -2740,11 +2501,7 @@ pub(crate) fn str_StereoAbsInv(
     let absent = heap.allocate_model_storage(vec![b'.' as i8, 0])?;
     let mut index = 0_i32;
     while *overflow == 0 && index < number_of_components {
-        let inchi = selected_inchi(
-            heap,
-            sorted_inchi.as_const().offset(i64::from(index))?,
-            output_type,
-        )?;
+        let inchi = selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?;
         let inversion = if inchi.is_null() {
             None
         } else {
@@ -2828,11 +2585,7 @@ pub(crate) fn str_IsoStereoAbsInv(
     let absent = heap.allocate_model_storage(vec![b'.' as i8, 0])?;
     let mut index = 0_i32;
     while *overflow == 0 && index < number_of_components {
-        let inchi = selected_inchi(
-            heap,
-            sorted_inchi.as_const().offset(i64::from(index))?,
-            output_type,
-        )?;
+        let inchi = selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?;
         let inversion = if inchi.is_null() {
             None
         } else {
@@ -3144,18 +2897,9 @@ pub(crate) fn str_IsoAtoms(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3225,20 +2969,12 @@ pub(crate) fn str_IsoAtoms(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -3250,17 +2986,9 @@ pub(crate) fn str_IsoAtoms(
 
         if equal_to_taut {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_isotopic(
@@ -3282,12 +3010,7 @@ pub(crate) fn str_IsoAtoms(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -3297,26 +3020,14 @@ pub(crate) fn str_IsoAtoms(
             );
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -3332,22 +3043,11 @@ pub(crate) fn str_IsoAtoms(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -3358,20 +3058,15 @@ pub(crate) fn str_IsoAtoms(
             multiplier = 0;
         } else {
             let previous_value = clone_inchi(heap, previous)?;
-            let equal_to_previous = use_multipliers != 0
-                && Eql_INChI_Isotopic(heap, current_value.as_ref(), previous_value.as_ref())? != 0;
+            let equal_to_previous =
+                use_multipliers != 0 && Eql_INChI_Isotopic(heap, current_value.as_ref(), previous_value.as_ref())? != 0;
             if equal_to_previous {
                 multiplier = multiplier.wrapping_add(1);
                 index = index.wrapping_add(1);
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_isotopic(
@@ -3723,11 +3418,7 @@ pub(crate) fn str_IsoSp2(
         let Some(inchi) = inchi else {
             return Ok(None);
         };
-        let pointer = if isotopic {
-            inchi.StereoIsotopic
-        } else {
-            inchi.Stereo
-        };
+        let pointer = if isotopic { inchi.StereoIsotopic } else { inchi.Stereo };
         if pointer.is_null() {
             Ok(None)
         } else {
@@ -3740,18 +3431,9 @@ pub(crate) fn str_IsoSp2(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn stereo_equal(
@@ -3817,20 +3499,12 @@ pub(crate) fn str_IsoSp2(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -3867,17 +3541,9 @@ pub(crate) fn str_IsoSp2(
 
         if equivalence != 0 {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -3896,12 +3562,7 @@ pub(crate) fn str_IsoSp2(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -3909,26 +3570,14 @@ pub(crate) fn str_IsoSp2(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -3944,22 +3593,11 @@ pub(crate) fn str_IsoSp2(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -3971,20 +3609,15 @@ pub(crate) fn str_IsoSp2(
         } else {
             let previous_value = clone_inchi(heap, previous)?;
             let previous_iso = clone_stereo(heap, previous_value.as_ref(), true)?;
-            let equal_to_previous = use_multipliers != 0
-                && stereo_equal(heap, current_iso.as_ref(), previous_iso.as_ref())?;
+            let equal_to_previous =
+                use_multipliers != 0 && stereo_equal(heap, current_iso.as_ref(), previous_iso.as_ref())?;
             if equal_to_previous {
                 multiplier = multiplier.wrapping_add(1);
                 index = index.wrapping_add(1);
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -4078,9 +3711,7 @@ pub(crate) fn str_AuxTgroupEqu(
     if sorted_inchi.is_null() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    let aux_at = |heap: &SourceHeap,
-                  index: i32|
-     -> Result<Option<crate::source_types::INChI_Aux>, SourceHeapError> {
+    let aux_at = |heap: &SourceHeap, index: i32| -> Result<Option<crate::source_types::INChI_Aux>, SourceHeapError> {
         let sort = heap
             .slice(sorted_inchi.as_const().offset(i64::from(index))?)?
             .first()
@@ -4124,11 +3755,7 @@ pub(crate) fn str_AuxTgroupEqu(
         next = next.wrapping_add(1);
         if let Some(aux) = previous.as_ref() {
             if aux.nNumberOfTGroups != 0
-                && bHasEquString(
-                    &*heap,
-                    aux.nConstitEquTGroupNumbers.as_const(),
-                    aux.nNumberOfTGroups,
-                )? != 0
+                && bHasEquString(&*heap, aux.nConstitEquTGroupNumbers.as_const(), aux.nNumberOfTGroups)? != 0
             {
                 MakeMult(
                     heap,
@@ -4243,9 +3870,7 @@ pub(crate) fn str_AuxChargeRadVal(
     // END INCHI C FUNCTION: str_AuxChargeRadVal
 
     let initial_length = string_buffer.nUsedLength;
-    let aux_at = |heap: &SourceHeap,
-                  index: i32|
-     -> Result<Option<crate::source_types::INChI_Aux>, SourceHeapError> {
+    let aux_at = |heap: &SourceHeap, index: i32| -> Result<Option<crate::source_types::INChI_Aux>, SourceHeapError> {
         let sort = heap
             .slice(sorted_inchi.as_const().offset(i64::from(index))?)?
             .first()
@@ -4283,9 +3908,7 @@ pub(crate) fn str_AuxChargeRadVal(
             }
             next = next.wrapping_add(1);
             if let Some(aux) = previous.as_ref() {
-                if aux.nNumberOfAtoms != 0
-                    && bHasOrigInfo(&*heap, aux.OrigInfo.as_const(), aux.nNumberOfAtoms)? != 0
-                {
+                if aux.nNumberOfAtoms != 0 && bHasOrigInfo(&*heap, aux.OrigInfo.as_const(), aux.nNumberOfAtoms)? != 0 {
                     MakeMult(
                         heap,
                         multiplier.wrapping_add(1),
@@ -4503,8 +4126,7 @@ pub(crate) fn str_AuxIsoTgroupEqu(
     let mut multiplier = 0_i32;
     let mut next = 0_i32;
     let mut equal_to_taut_previous = true;
-    let equivalence_mode =
-        (crate::source_types::EQL_EQU_TG | crate::source_types::EQL_EQU_ISO) as i32;
+    let equivalence_mode = (crate::source_types::EQL_EQU_TG | crate::source_types::EQL_EQU_ISO) as i32;
 
     for component in 0..=number_of_components {
         let current_aux = if component < number_of_components {
@@ -4572,17 +4194,15 @@ pub(crate) fn str_AuxIsoTgroupEqu(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
                         MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                     MakeEqStr(
                         heap,
                         value.as_const(),
@@ -4607,9 +4227,7 @@ pub(crate) fn str_AuxIsoTgroupEqu(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                 MakeEqStr(
                     heap,
                     value.as_const(),
@@ -4934,15 +4552,13 @@ pub(crate) fn str_AuxEqu(
         } else {
             None
         };
-        let current_taut_aux = if second_non_taut_pass != 0
-            && component < number_of_components
-            && !sorted_inchi2.is_null()
-        {
-            let sort_pointer = sorted_inchi2.as_const().offset(i64::from(component))?;
-            aux_for(&*heap, sort_pointer, OUT_T1 as i32)?
-        } else {
-            None
-        };
+        let current_taut_aux =
+            if second_non_taut_pass != 0 && component < number_of_components && !sorted_inchi2.is_null() {
+                let sort_pointer = sorted_inchi2.as_const().offset(i64::from(component))?;
+                aux_for(&*heap, sort_pointer, OUT_T1 as i32)?
+            } else {
+                None
+            };
 
         let equal_to_taut = second_non_taut_pass != 0
             && omit_repetitions != 0
@@ -4954,21 +4570,13 @@ pub(crate) fn str_AuxEqu(
                 crate::source_types::EQL_EQU as i32,
             )? != 0;
         if equal_to_taut {
-            if previous_aux
-                .as_ref()
-                .is_some_and(|aux| aux.nNumberOfAtoms != 0)
-            {
+            if previous_aux.as_ref().is_some_and(|aux| aux.nNumberOfAtoms != 0) {
                 if next != 0 {
                     MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 let aux = previous_aux.as_ref().unwrap();
-                if bHasEquString(
-                    &*heap,
-                    aux.nConstitEquNumbers.as_const(),
-                    aux.nNumberOfAtoms,
-                )? != 0
-                {
+                if bHasEquString(&*heap, aux.nConstitEquNumbers.as_const(), aux.nNumberOfAtoms)? != 0 {
                     let star = heap.allocate_model_storage(vec![b'*' as i8, 0])?;
                     MakeMult(
                         heap,
@@ -4988,10 +4596,7 @@ pub(crate) fn str_AuxEqu(
                         overflow,
                     )?;
                 }
-            } else if previous_taut_aux
-                .as_ref()
-                .is_some_and(|aux| aux.nNumberOfAtoms != 0)
-            {
+            } else if previous_taut_aux.as_ref().is_some_and(|aux| aux.nNumberOfAtoms != 0) {
                 if next != 0 {
                     MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                 }
@@ -5009,16 +4614,9 @@ pub(crate) fn str_AuxEqu(
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
-                    MakeEqStr(
-                        heap,
-                        value.as_const(),
-                        previous_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                    MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_multiplier = 1;
                 }
@@ -5040,16 +4638,8 @@ pub(crate) fn str_AuxEqu(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
-                MakeEqStr(
-                    heap,
-                    value.as_const(),
-                    previous_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_multiplier = 0;
             }
@@ -5078,11 +4668,7 @@ pub(crate) fn str_AuxEqu(
         next = next.wrapping_add(1);
         if let Some(aux) = previous_aux.as_ref() {
             if aux.nNumberOfAtoms != 0
-                && bHasEquString(
-                    &*heap,
-                    aux.nConstitEquNumbers.as_const(),
-                    aux.nNumberOfAtoms,
-                )? != 0
+                && bHasEquString(&*heap, aux.nConstitEquNumbers.as_const(), aux.nNumberOfAtoms)? != 0
             {
                 let star = heap.allocate_model_storage(vec![b'*' as i8, 0])?;
                 MakeMult(
@@ -5113,15 +4699,8 @@ pub(crate) fn str_AuxEqu(
             MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
         }
         let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let value =
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
-        MakeEqStr(
-            heap,
-            value.as_const(),
-            previous_multiplier,
-            string_buffer,
-            overflow,
-        )?;
+        let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+        MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
 }
@@ -5427,26 +5006,20 @@ pub(crate) fn str_AuxIsoEqu(
 
     for component in 0..=number_of_components {
         let current_aux = if component < number_of_components && !sorted_inchi.is_null() {
-            aux_for(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(component))?,
-                output_type,
-            )?
+            aux_for(heap, sorted_inchi.as_const().offset(i64::from(component))?, output_type)?
         } else {
             None
         };
-        let current_taut_aux = if second_non_taut_pass != 0
-            && component < number_of_components
-            && !sorted_inchi2.is_null()
-        {
-            aux_for(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(component))?,
-                OUT_T1 as i32,
-            )?
-        } else {
-            None
-        };
+        let current_taut_aux =
+            if second_non_taut_pass != 0 && component < number_of_components && !sorted_inchi2.is_null() {
+                aux_for(
+                    heap,
+                    sorted_inchi2.as_const().offset(i64::from(component))?,
+                    OUT_T1 as i32,
+                )?
+            } else {
+                None
+            };
         let equal_equivalence = |left: Option<&crate::source_types::INChI_Aux>,
                                  left_mode: i32,
                                  right: Option<&crate::source_types::INChI_Aux>,
@@ -5465,9 +5038,8 @@ pub(crate) fn str_AuxIsoEqu(
                 current_taut_aux.as_ref(),
                 crate::source_types::EQL_EQU as i32,
             )? {
-                equivalence = (crate::source_types::iiEQU
-                    | crate::source_types::iitNONTAUT
-                    | crate::source_types::iitISO) as i32;
+                equivalence =
+                    (crate::source_types::iiEQU | crate::source_types::iitNONTAUT | crate::source_types::iitISO) as i32;
             } else if equal_equivalence(
                 current_aux.as_ref(),
                 crate::source_types::EQL_EQU_ISO as i32,
@@ -5510,12 +5082,7 @@ pub(crate) fn str_AuxIsoEqu(
                     MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
-                if bHasEquString(
-                    heap,
-                    aux.nConstitEquIsotopicNumbers.as_const(),
-                    aux.nNumberOfAtoms,
-                )? != 0
-                {
+                if bHasEquString(heap, aux.nConstitEquIsotopicNumbers.as_const(), aux.nNumberOfAtoms)? != 0 {
                     MakeMult(
                         heap,
                         multiplier.wrapping_add(1),
@@ -5534,11 +5101,7 @@ pub(crate) fn str_AuxIsoEqu(
                         overflow,
                     )?;
                 }
-            } else if previous_aux.is_none()
-                && previous_taut_aux
-                    .as_ref()
-                    .is_some_and(|aux| aux.nNumberOfAtoms != 0)
-            {
+            } else if previous_aux.is_none() && previous_taut_aux.as_ref().is_some_and(|aux| aux.nNumberOfAtoms != 0) {
                 if next != 0 {
                     MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                 }
@@ -5548,17 +5111,15 @@ pub(crate) fn str_AuxIsoEqu(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
                         MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                     MakeEqStr(
                         heap,
                         value.as_const(),
@@ -5587,9 +5148,7 @@ pub(crate) fn str_AuxIsoEqu(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                 MakeEqStr(
                     heap,
                     value.as_const(),
@@ -5624,11 +5183,7 @@ pub(crate) fn str_AuxIsoEqu(
         next = next.wrapping_add(1);
         if let Some(aux) = previous_aux.as_ref()
             && aux.nNumberOfAtoms != 0
-            && bHasEquString(
-                heap,
-                aux.nConstitEquIsotopicNumbers.as_const(),
-                aux.nNumberOfAtoms,
-            )? != 0
+            && bHasEquString(heap, aux.nConstitEquIsotopicNumbers.as_const(), aux.nNumberOfAtoms)? != 0
         {
             MakeMult(
                 heap,
@@ -6017,11 +5572,7 @@ pub(crate) fn str_AuxInvIsoSp3(
         isotopic: bool,
     ) -> Result<Option<crate::source_types::INChI_Stereo>, SourceHeapError> {
         let Some(inchi) = inchi else { return Ok(None) };
-        let pointer = if isotopic {
-            inchi.StereoIsotopic
-        } else {
-            inchi.Stereo
-        };
+        let pointer = if isotopic { inchi.StereoIsotopic } else { inchi.Stereo };
         if pointer.is_null() {
             Ok(None)
         } else {
@@ -6044,18 +5595,9 @@ pub(crate) fn str_AuxInvIsoSp3(
         Ok(left.is_some() && Eql_INChI_Stereo(heap, left, left_mode, right, right_mode, 0)? != 0)
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn has_isotopic_layer(
@@ -6137,20 +5679,12 @@ pub(crate) fn str_AuxInvIsoSp3(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -6258,8 +5792,7 @@ pub(crate) fn str_AuxInvIsoSp3(
                 current_normal.as_ref(),
                 crate::source_types::EQL_SP3_INV as i32,
             )? {
-                equivalence =
-                    (crate::source_types::iiSTEREO_INV | crate::source_types::iitISO) as i32;
+                equivalence = (crate::source_types::iiSTEREO_INV | crate::source_types::iitISO) as i32;
             } else if stereo_equal(
                 heap,
                 current_iso.as_ref(),
@@ -6286,17 +5819,9 @@ pub(crate) fn str_AuxInvIsoSp3(
 
         if equivalence != 0 {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -6316,12 +5841,7 @@ pub(crate) fn str_AuxInvIsoSp3(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -6329,26 +5849,14 @@ pub(crate) fn str_AuxInvIsoSp3(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -6363,25 +5871,12 @@ pub(crate) fn str_AuxInvIsoSp3(
         } else if equal_to_taut_previous != 0 {
             if previous_equivalence_multiplier != 0 {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
-                let pointer = equivalence_pointer(
-                    heap,
-                    previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )?;
-                MakeEqStr(
-                    heap,
-                    pointer,
-                    previous_equivalence_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let pointer =
+                    equivalence_pointer(heap, previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?)?;
+                MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_equivalence_multiplier = 0;
             }
@@ -6408,12 +5903,7 @@ pub(crate) fn str_AuxInvIsoSp3(
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -6742,18 +6232,9 @@ pub(crate) fn str_AuxInvSp3(
         Ok(left.is_some() && Eql_INChI_Stereo(heap, left, left_mode, right, right_mode, 0)? != 0)
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn output_stereo(
@@ -6808,20 +6289,12 @@ pub(crate) fn str_AuxInvSp3(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -6838,8 +6311,7 @@ pub(crate) fn str_AuxInvSp3(
                 taut_stereo.as_ref(),
                 crate::source_types::EQL_SP3_INV as i32,
             )? {
-                equivalence =
-                    (crate::source_types::iiSTEREO_INV | crate::source_types::iitNONTAUT) as i32;
+                equivalence = (crate::source_types::iiSTEREO_INV | crate::source_types::iitNONTAUT) as i32;
             } else if stereo_equal(
                 heap,
                 current_stereo.as_ref(),
@@ -6872,23 +6344,14 @@ pub(crate) fn str_AuxInvSp3(
                 crate::source_types::EQL_SP3 as i32,
             )?
         {
-            equivalence =
-                (crate::source_types::iiSTEREO_INV | crate::source_types::iiEq2INV) as i32;
+            equivalence = (crate::source_types::iiSTEREO_INV | crate::source_types::iiEq2INV) as i32;
         }
 
         if equivalence != 0 {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -6908,12 +6371,7 @@ pub(crate) fn str_AuxInvSp3(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -6921,26 +6379,14 @@ pub(crate) fn str_AuxInvSp3(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -6955,25 +6401,12 @@ pub(crate) fn str_AuxInvSp3(
         } else if equal_to_taut_previous != 0 {
             if previous_equivalence_multiplier != 0 {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
-                let pointer = equivalence_pointer(
-                    heap,
-                    previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )?;
-                MakeEqStr(
-                    heap,
-                    pointer,
-                    previous_equivalence_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let pointer =
+                    equivalence_pointer(heap, previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?)?;
+                MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_equivalence_multiplier = 0;
             }
@@ -7000,12 +6433,7 @@ pub(crate) fn str_AuxInvSp3(
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -7241,10 +6669,8 @@ pub(crate) fn str_AuxInvSp3Numb(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
         let selected = get_ii(heap, output_type, &sort)?;
-        let current_inchi_pointer =
-            selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI[slot]);
-        let current_aux_pointer =
-            selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
+        let current_inchi_pointer = selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI[slot]);
+        let current_aux_pointer = selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
         let taut = if second_non_taut_pass != 0 {
             get_ii(heap, OUT_T1 as i32, &sort)?
         } else {
@@ -7320,25 +6746,17 @@ pub(crate) fn str_AuxInvSp3Numb(
         } else {
             None
         };
-        let has_inversion = current_stereo
-            .as_ref()
-            .is_some_and(|stereo| stereo.nCompInv2Abs != 0);
+        let has_inversion = current_stereo.as_ref().is_some_and(|stereo| stereo.nCompInv2Abs != 0);
         let equal_numbers = |heap: &SourceHeap,
                              left: Option<&crate::source_types::INChI_Aux>,
                              left_mode: i32,
                              right: Option<&crate::source_types::INChI_Aux>,
                              right_mode: i32|
          -> Result<bool, SourceHeapError> {
-            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(
-                heap, left, left_mode, right, right_mode,
-            )? != 0)
+            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(heap, left, left_mode, right, right_mode)? != 0)
         };
         let mut equivalence = 0_i32;
-        if second_non_taut_pass != 0
-            && omit_repetitions != 0
-            && current_inchi.is_some()
-            && has_inversion
-        {
+        if second_non_taut_pass != 0 && omit_repetitions != 0 && current_inchi.is_some() && has_inversion {
             if taut_inchi.is_some()
                 && equal_numbers(
                     heap,
@@ -7363,9 +6781,7 @@ pub(crate) fn str_AuxInvSp3Numb(
                     | crate::source_types::iitNONTAUT
                     | crate::source_types::iiEq2NONTAUT) as i32;
             } else if taut_inchi.is_some()
-                && taut_stereo
-                    .as_ref()
-                    .is_some_and(|stereo| stereo.nCompInv2Abs != 0)
+                && taut_stereo.as_ref().is_some_and(|stereo| stereo.nCompInv2Abs != 0)
                 && equal_numbers(
                     heap,
                     current_aux.as_ref(),
@@ -7405,16 +6821,9 @@ pub(crate) fn str_AuxInvSp3Numb(
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
-                    MakeEqStr(
-                        heap,
-                        value.as_const(),
-                        previous_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                    MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_multiplier = 1;
                 }
@@ -7429,16 +6838,8 @@ pub(crate) fn str_AuxInvSp3Numb(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
-                MakeEqStr(
-                    heap,
-                    value.as_const(),
-                    previous_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_multiplier = 0;
             }
@@ -7446,11 +6847,9 @@ pub(crate) fn str_AuxInvSp3Numb(
                 MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
-            if let (Some(inchi), Some(aux), Some(stereo)) = (
-                current_inchi.as_ref(),
-                current_aux.as_ref(),
-                current_stereo.as_ref(),
-            ) {
+            if let (Some(inchi), Some(aux), Some(stereo)) =
+                (current_inchi.as_ref(), current_aux.as_ref(), current_stereo.as_ref())
+            {
                 if inchi.nNumberOfAtoms != 0
                     && aux.nNumberOfAtoms != 0
                     && stereo.nNumberOfStereoCenters != 0
@@ -7478,15 +6877,8 @@ pub(crate) fn str_AuxInvSp3Numb(
             MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
         }
         let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let value =
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
-        MakeEqStr(
-            heap,
-            value.as_const(),
-            previous_multiplier,
-            string_buffer,
-            overflow,
-        )?;
+        let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+        MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
 }
@@ -7752,8 +7144,7 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
     let mut previous_equivalence: Option<&'static str> = None;
     let mut previous_multiplier = 0_i32;
     let mut next = 0_i32;
-    let iso_inverted_mode =
-        (crate::source_types::EQL_NUM_INV | crate::source_types::EQL_NUM_ISO) as i32;
+    let iso_inverted_mode = (crate::source_types::EQL_NUM_INV | crate::source_types::EQL_NUM_ISO) as i32;
 
     for index in 0..number_of_components {
         let sort = heap
@@ -7762,10 +7153,8 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
         let selected = get_ii(heap, output_type, &sort)?;
-        let current_inchi_pointer =
-            selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI[slot]);
-        let current_aux_pointer =
-            selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
+        let current_inchi_pointer = selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI[slot]);
+        let current_aux_pointer = selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
         let taut = if second_non_taut_pass != 0 {
             get_ii(heap, OUT_T1 as i32, &sort)?
         } else {
@@ -7803,35 +7192,28 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
         let taut_inchi = load_inchi(taut_inchi_pointer)?;
         let current_aux = load_aux(current_aux_pointer)?;
         let taut_aux = load_aux(taut_aux_pointer)?;
-        let load_stereo =
-            |inchi: Option<&crate::source_types::INChI>,
-             isotopic: bool|
-             -> Result<Option<crate::source_types::INChI_Stereo>, SourceHeapError> {
-                let Some(inchi) = inchi else { return Ok(None) };
-                let pointer = if isotopic {
-                    inchi.StereoIsotopic
-                } else {
-                    inchi.Stereo
-                };
-                if pointer.is_null() {
-                    Ok(None)
-                } else {
-                    Ok(Some(
-                        heap.slice(pointer.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone(),
-                    ))
-                }
-            };
+        let load_stereo = |inchi: Option<&crate::source_types::INChI>,
+                           isotopic: bool|
+         -> Result<Option<crate::source_types::INChI_Stereo>, SourceHeapError> {
+            let Some(inchi) = inchi else { return Ok(None) };
+            let pointer = if isotopic { inchi.StereoIsotopic } else { inchi.Stereo };
+            if pointer.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(
+                    heap.slice(pointer.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .clone(),
+                ))
+            }
+        };
         let current_iso_stereo = load_stereo(current_inchi.as_ref(), true)?;
         let taut_normal_stereo = load_stereo(taut_inchi.as_ref(), false)?;
         let taut_iso_stereo = load_stereo(taut_inchi.as_ref(), true)?;
         let eligible = current_inchi.is_some()
             && current_aux.as_ref().is_some_and(|aux| {
-                aux.bIsIsotopic != 0
-                    && aux.nNumberOfAtoms > 0
-                    && !aux.nIsotopicOrigAtNosInCanonOrdInv.is_null()
+                aux.bIsIsotopic != 0 && aux.nNumberOfAtoms > 0 && !aux.nIsotopicOrigAtNosInCanonOrdInv.is_null()
             })
             && current_iso_stereo
                 .as_ref()
@@ -7841,9 +7223,7 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
                              right: Option<&crate::source_types::INChI_Aux>,
                              right_mode: i32|
          -> Result<bool, SourceHeapError> {
-            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(
-                heap, left, left_mode, right, right_mode,
-            )? != 0)
+            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(heap, left, left_mode, right, right_mode)? != 0)
         };
         let mut equivalence = 0_i32;
         if second_non_taut_pass != 0 && omit_repetitions != 0 && eligible {
@@ -7928,9 +7308,7 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
                     | crate::source_types::iiEq2INV
                     | crate::source_types::iiEq2NONTAUT) as i32;
             } else if taut_inchi.is_some()
-                && taut_iso_stereo
-                    .as_ref()
-                    .is_some_and(|stereo| stereo.nCompInv2Abs != 0)
+                && taut_iso_stereo.as_ref().is_some_and(|stereo| stereo.nCompInv2Abs != 0)
                 && equal_numbers(
                     current_aux.as_ref(),
                     iso_inverted_mode,
@@ -7965,9 +7343,7 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
                     | crate::source_types::iitISO
                     | crate::source_types::iiNUMB
                     | crate::source_types::iiEq2ISO) as i32;
-            } else if current_inchi
-                .as_ref()
-                .is_some_and(|inchi| !inchi.Stereo.is_null())
+            } else if current_inchi.as_ref().is_some_and(|inchi| !inchi.Stereo.is_null())
                 && equal_numbers(
                     current_aux.as_ref(),
                     iso_inverted_mode,
@@ -7993,16 +7369,9 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
-                    MakeEqStr(
-                        heap,
-                        value.as_const(),
-                        previous_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                    MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_multiplier = 1;
                 }
@@ -8017,16 +7386,8 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
-                MakeEqStr(
-                    heap,
-                    value.as_const(),
-                    previous_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_multiplier = 0;
             }
@@ -8061,15 +7422,8 @@ pub(crate) fn str_AuxInvIsoSp3Numb(
             MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
         }
         let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let value =
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
-        MakeEqStr(
-            heap,
-            value.as_const(),
-            previous_multiplier,
-            string_buffer,
-            overflow,
-        )?;
+        let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+        MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
 }
@@ -8295,11 +7649,9 @@ pub(crate) fn str_AuxIsoNumb(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
         let selected = get_ii(heap, output_type, &sort)?;
-        let current_aux_pointer =
-            selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
+        let current_aux_pointer = selected.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot]);
         let taut_aux_pointer = if second_non_taut_pass != 0 {
-            get_ii(heap, OUT_T1 as i32, &sort)?
-                .map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot])
+            get_ii(heap, OUT_T1 as i32, &sort)?.map_or(SourceMutPointer::null(), |slot| sort.pINChI_Aux[slot])
         } else {
             SourceMutPointer::null()
         };
@@ -8328,9 +7680,7 @@ pub(crate) fn str_AuxIsoNumb(
                              right: Option<&crate::source_types::INChI_Aux>,
                              right_mode: i32|
          -> Result<bool, SourceHeapError> {
-            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(
-                heap, left, left_mode, right, right_mode,
-            )? != 0)
+            Ok(crate::source::base::ichiprt2::Eql_INChI_Aux_Num(heap, left, left_mode, right, right_mode)? != 0)
         };
         let mut equivalence = 0_i32;
         if second_non_taut_pass != 0
@@ -8391,16 +7741,9 @@ pub(crate) fn str_AuxIsoNumb(
                     }
                     next = next.wrapping_add(1);
                     let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let value = heap.allocate_model_storage(
-                        value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
-                    MakeEqStr(
-                        heap,
-                        value.as_const(),
-                        previous_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    let value =
+                        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                    MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_multiplier = 1;
                 }
@@ -8415,16 +7758,8 @@ pub(crate) fn str_AuxIsoNumb(
                 }
                 next = next.wrapping_add(1);
                 let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = heap.allocate_model_storage(
-                    value.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                )?;
-                MakeEqStr(
-                    heap,
-                    value.as_const(),
-                    previous_multiplier,
-                    string_buffer,
-                    overflow,
-                )?;
+                let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+                MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
                 previous_equivalence = None;
                 previous_multiplier = 0;
             }
@@ -8457,15 +7792,8 @@ pub(crate) fn str_AuxIsoNumb(
             MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
         }
         let value = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let value =
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
-        MakeEqStr(
-            heap,
-            value.as_const(),
-            previous_multiplier,
-            string_buffer,
-            overflow,
-        )?;
+        let value = heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain([0]).collect())?;
+        MakeEqStr(heap, value.as_const(), previous_multiplier, string_buffer, overflow)?;
     }
     Ok(string_buffer.nUsedLength.wrapping_sub(initial_length))
 }
@@ -8633,10 +7961,8 @@ pub(crate) fn str_AuxNumb(
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let current_index = get_ii(heap, output_type, sort)?;
-        let current_inchi =
-            current_index.map_or(SourceMutPointer::null(), |value| sort.pINChI[value]);
-        let current_aux =
-            current_index.map_or(SourceMutPointer::null(), |value| sort.pINChI_Aux[value]);
+        let current_inchi = current_index.map_or(SourceMutPointer::null(), |value| sort.pINChI[value]);
+        let current_aux = current_index.map_or(SourceMutPointer::null(), |value| sort.pINChI_Aux[value]);
         let taut_index = if second_non_taut_pass != 0 {
             get_ii(heap, OUT_T1 as i32, sort)?
         } else {
@@ -8696,11 +8022,9 @@ pub(crate) fn str_AuxNumb(
                         MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
-                    let previous =
-                        previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let previous_pointer = heap.allocate_model_storage(
-                        previous.bytes().map(|byte| byte as i8).chain([0]).collect(),
-                    )?;
+                    let previous = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let previous_pointer =
+                        heap.allocate_model_storage(previous.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                     MakeEqStr(
                         heap,
                         previous_pointer.as_const(),
@@ -8721,15 +8045,9 @@ pub(crate) fn str_AuxNumb(
                     MakeDelim(heap, delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
-                let equivalence =
-                    previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let equivalence_pointer = heap.allocate_model_storage(
-                    equivalence
-                        .bytes()
-                        .map(|byte| byte as i8)
-                        .chain([0])
-                        .collect(),
-                )?;
+                let equivalence = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let equivalence_pointer =
+                    heap.allocate_model_storage(equivalence.bytes().map(|byte| byte as i8).chain([0]).collect())?;
                 MakeEqStr(
                     heap,
                     equivalence_pointer.as_const(),
@@ -8771,13 +8089,8 @@ pub(crate) fn str_AuxNumb(
         }
         next = next.wrapping_add(1);
         let equivalence = previous_equivalence.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let equivalence_pointer = heap.allocate_model_storage(
-            equivalence
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain([0])
-                .collect(),
-        )?;
+        let equivalence_pointer =
+            heap.allocate_model_storage(equivalence.bytes().map(|byte| byte as i8).chain([0]).collect())?;
         MakeEqStr(
             heap,
             equivalence_pointer.as_const(),
@@ -9084,11 +8397,7 @@ pub(crate) fn str_IsoSp3(
         let Some(inchi) = inchi else {
             return Ok(None);
         };
-        let pointer = if isotopic {
-            inchi.StereoIsotopic
-        } else {
-            inchi.Stereo
-        };
+        let pointer = if isotopic { inchi.StereoIsotopic } else { inchi.Stereo };
         if pointer.is_null() {
             Ok(None)
         } else {
@@ -9101,18 +8410,9 @@ pub(crate) fn str_IsoSp3(
         }
     }
 
-    fn equivalence_pointer(
-        heap: &mut SourceHeap,
-        value: &str,
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .map(SourceMutPointer::as_const)
+    fn equivalence_pointer(heap: &mut SourceHeap, value: &str) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .map(SourceMutPointer::as_const)
     }
 
     fn stereo_equal(
@@ -9181,20 +8481,12 @@ pub(crate) fn str_IsoSp3(
 
     while index <= number_of_components {
         let current = if index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi.as_const().offset(i64::from(index))?,
-                output_type,
-            )?
+            selected_inchi(heap, sorted_inchi.as_const().offset(i64::from(index))?, output_type)?
         } else {
             SourceMutPointer::null()
         };
         let taut_current = if second_non_taut_pass != 0 && index < number_of_components {
-            selected_inchi(
-                heap,
-                sorted_inchi2.as_const().offset(i64::from(index))?,
-                OUT_T1 as i32,
-            )?
+            selected_inchi(heap, sorted_inchi2.as_const().offset(i64::from(index))?, OUT_T1 as i32)?
         } else {
             SourceMutPointer::null()
         };
@@ -9206,31 +8498,16 @@ pub(crate) fn str_IsoSp3(
         let taut_iso = clone_stereo(heap, taut_current_value.as_ref(), true)?;
         let mut equivalence = 0_i32;
         if second_non_taut_pass != 0 && omit_repetitions != 0 {
-            if stereo_equal(
-                heap,
-                current_iso.as_ref(),
-                current_main.as_ref(),
-                relative_or_racemic,
-            )? {
+            if stereo_equal(heap, current_iso.as_ref(), current_main.as_ref(), relative_or_racemic)? {
                 equivalence = (crate::source_types::iiSTEREO
                     | crate::source_types::iitISO
                     | crate::source_types::iitNONTAUT
                     | crate::source_types::iiEq2NONTAUT) as i32;
-            } else if stereo_equal(
-                heap,
-                current_iso.as_ref(),
-                taut_main.as_ref(),
-                relative_or_racemic,
-            )? {
+            } else if stereo_equal(heap, current_iso.as_ref(), taut_main.as_ref(), relative_or_racemic)? {
                 equivalence = (crate::source_types::iiSTEREO
                     | crate::source_types::iitISO
                     | crate::source_types::iitNONTAUT) as i32;
-            } else if stereo_equal(
-                heap,
-                current_iso.as_ref(),
-                taut_iso.as_ref(),
-                relative_or_racemic,
-            )? {
+            } else if stereo_equal(heap, current_iso.as_ref(), taut_iso.as_ref(), relative_or_racemic)? {
                 equivalence = (crate::source_types::iiSTEREO
                     | crate::source_types::iitISO
                     | crate::source_types::iitNONTAUT
@@ -9238,29 +8515,16 @@ pub(crate) fn str_IsoSp3(
             }
         } else if second_non_taut_pass == 0
             && omit_repetitions != 0
-            && stereo_equal(
-                heap,
-                current_iso.as_ref(),
-                current_main.as_ref(),
-                relative_or_racemic,
-            )?
+            && stereo_equal(heap, current_iso.as_ref(), current_main.as_ref(), relative_or_racemic)?
         {
             equivalence = (crate::source_types::iiSTEREO | crate::source_types::iitISO) as i32;
         }
 
         if equivalence != 0 {
             let previous_value = clone_inchi(heap, previous)?;
-            if previous_value
-                .as_ref()
-                .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
-            {
+            if previous_value.as_ref().is_some_and(|inchi| inchi.nNumberOfAtoms != 0) {
                 if next != 0 {
-                    MakeDelim(
-                        heap,
-                        component_delimiter.as_const(),
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                 }
                 next = next.wrapping_add(1);
                 output_stereo(
@@ -9280,12 +8544,7 @@ pub(crate) fn str_IsoSp3(
                     .is_some_and(|inchi| inchi.nNumberOfAtoms != 0)
                 {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                 }
@@ -9293,26 +8552,14 @@ pub(crate) fn str_IsoSp3(
             let current_equivalence = crate::source::base::ichiprt1::EquString(equivalence);
             if previous_equivalence_multiplier != 0 && previous_equivalence.is_some() {
                 if previous_equivalence == Some(current_equivalence) {
-                    previous_equivalence_multiplier =
-                        previous_equivalence_multiplier.wrapping_add(1);
+                    previous_equivalence_multiplier = previous_equivalence_multiplier.wrapping_add(1);
                 } else {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, previous_equivalence.unwrap())?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = Some(current_equivalence);
                     previous_equivalence_multiplier = 1;
                 }
@@ -9328,22 +8575,11 @@ pub(crate) fn str_IsoSp3(
             if previous_equivalence_multiplier != 0 {
                 if let Some(value) = previous_equivalence {
                     if next != 0 {
-                        MakeDelim(
-                            heap,
-                            component_delimiter.as_const(),
-                            string_buffer,
-                            overflow,
-                        )?;
+                        MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
                     }
                     next = next.wrapping_add(1);
                     let pointer = equivalence_pointer(heap, value)?;
-                    MakeEqStr(
-                        heap,
-                        pointer,
-                        previous_equivalence_multiplier,
-                        string_buffer,
-                        overflow,
-                    )?;
+                    MakeEqStr(heap, pointer, previous_equivalence_multiplier, string_buffer, overflow)?;
                     previous_equivalence = None;
                     previous_equivalence_multiplier = 0;
                 }
@@ -9356,24 +8592,14 @@ pub(crate) fn str_IsoSp3(
             let previous_value = clone_inchi(heap, previous)?;
             let previous_iso = clone_stereo(heap, previous_value.as_ref(), true)?;
             let equal_to_previous = use_multipliers != 0
-                && stereo_equal(
-                    heap,
-                    current_iso.as_ref(),
-                    previous_iso.as_ref(),
-                    relative_or_racemic,
-                )?;
+                && stereo_equal(heap, current_iso.as_ref(), previous_iso.as_ref(), relative_or_racemic)?;
             if equal_to_previous {
                 multiplier = multiplier.wrapping_add(1);
                 index = index.wrapping_add(1);
                 continue;
             }
             if next != 0 {
-                MakeDelim(
-                    heap,
-                    component_delimiter.as_const(),
-                    string_buffer,
-                    overflow,
-                )?;
+                MakeDelim(heap, component_delimiter.as_const(), string_buffer, overflow)?;
             }
             next = next.wrapping_add(1);
             output_stereo(
@@ -9534,18 +8760,16 @@ pub(crate) fn bin_AuxTautTrans(
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
-        let inchi = get_ii(heap, output_type, &sort)?
-            .map_or(SourceMutPointer::null(), |selected| sort.pINChI[selected]);
-        let taut = get_ii(heap, OUT_T1 as i32, &sort2)?
-            .map_or(SourceMutPointer::null(), |selected| sort2.pINChI[selected]);
-        if has_atoms(heap, inchi)? && has_atoms(heap, taut)? && sort.ord_number != sort2.ord_number
-        {
+        let inchi =
+            get_ii(heap, output_type, &sort)?.map_or(SourceMutPointer::null(), |selected| sort.pINChI[selected]);
+        let taut =
+            get_ii(heap, OUT_T1 as i32, &sort2)?.map_or(SourceMutPointer::null(), |selected| sort2.pINChI[selected]);
+        if has_atoms(heap, inchi)? && has_atoms(heap, taut)? && sort.ord_number != sort2.ord_number {
             if non_taut_transposition.is_null() {
                 non_taut_transposition = match inchi_calloc(
                     heap,
                     allocation_count,
-                    u64::try_from(std::mem::size_of::<u16>())
-                        .map_err(|_| SourceHeapError::AllocationSizeOverflow)?,
+                    u64::try_from(std::mem::size_of::<u16>()).map_err(|_| SourceHeapError::AllocationSizeOverflow)?,
                 ) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -9556,8 +8780,7 @@ pub(crate) fn bin_AuxTautTrans(
                 taut_transposition = match inchi_calloc(
                     heap,
                     allocation_count,
-                    u64::try_from(std::mem::size_of::<u16>())
-                        .map_err(|_| SourceHeapError::AllocationSizeOverflow)?,
+                    u64::try_from(std::mem::size_of::<u16>()).map_err(|_| SourceHeapError::AllocationSizeOverflow)?,
                 ) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -9565,8 +8788,7 @@ pub(crate) fn bin_AuxTautTrans(
                 };
             }
             if !non_taut_transposition.is_null() && !taut_transposition.is_null() {
-                let order = usize::try_from(sort.ord_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let order = usize::try_from(sort.ord_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 *heap
                     .slice_mut(non_taut_transposition)?
                     .get_mut(order)
@@ -9589,12 +8811,11 @@ pub(crate) fn bin_AuxTautTrans(
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
-            let inchi = get_ii(heap, output_type, &sort)?
-                .map_or(SourceMutPointer::null(), |selected| sort.pINChI[selected]);
+            let inchi =
+                get_ii(heap, output_type, &sort)?.map_or(SourceMutPointer::null(), |selected| sort.pINChI[selected]);
             let taut = get_ii(heap, OUT_T1 as i32, &sort2)?
                 .map_or(SourceMutPointer::null(), |selected| sort2.pINChI[selected]);
-            let source_order = usize::try_from(sort2.ord_number)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_order = usize::try_from(sort2.ord_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let transposed = *heap
                 .slice(non_taut_transposition.as_const())?
                 .get(source_order)
@@ -9604,8 +8825,8 @@ pub(crate) fn bin_AuxTautTrans(
                 && sort.ord_number != sort2.ord_number
                 && transposed != 0
             {
-                let destination = usize::try_from(index.wrapping_add(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let destination =
+                    usize::try_from(index.wrapping_add(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 *heap
                     .slice_mut(taut_transposition)?
                     .get_mut(destination)
@@ -9693,8 +8914,7 @@ pub(crate) fn str_AuxTautTrans(
         let closing = heap.allocate_model_storage(vec![b')' as i8, 0])?;
         let mut index = 1_i32;
         while index <= number_of_components {
-            let index_usize =
-                usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index_usize = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let first = *heap
                 .slice(transposed_taut.as_const())?
                 .get(index_usize)
@@ -9703,8 +8923,7 @@ pub(crate) fn str_AuxTautTrans(
                 let mut current = index;
                 let mut length = 0_i32;
                 loop {
-                    let current_usize = usize::try_from(current)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let current_usize = usize::try_from(current).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let next = *heap
                         .slice(transposed_taut.as_const())?
                         .get(current_usize)
@@ -9712,8 +8931,7 @@ pub(crate) fn str_AuxTautTrans(
                     if next == 0 {
                         break;
                     }
-                    let length_usize =
-                        usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let length_usize = usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     *heap
                         .slice_mut(transposed_non_taut)?
                         .get_mut(length_usize)
@@ -9755,22 +8973,11 @@ mod tests {
     use crate::source_types::{INChI, INChI_Aux, INChI_Stereo, OUT_N1, OUT_T1};
 
     fn text(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-        heap.allocate_model_storage(
-            value
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain(std::iter::once(0))
-                .collect(),
-        )
-        .unwrap()
+        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
+            .unwrap()
     }
 
-    fn inchi(
-        heap: &mut SourceHeap,
-        formula: &str,
-        atoms: i32,
-        tautomer: i32,
-    ) -> SourceMutPointer<INChI> {
+    fn inchi(heap: &mut SourceHeap, formula: &str, atoms: i32, tautomer: i32) -> SourceMutPointer<INChI> {
         let formula = text(heap, formula);
         heap.allocate_model_storage(vec![INChI {
             nNumberOfAtoms: atoms,
@@ -9781,11 +8988,7 @@ mod tests {
         .unwrap()
     }
 
-    fn hydrogen_inchi(
-        heap: &mut SourceHeap,
-        hydrogens: &[i8],
-        tautomer: &[u16],
-    ) -> SourceMutPointer<INChI> {
+    fn hydrogen_inchi(heap: &mut SourceHeap, hydrogens: &[i8], tautomer: &[u16]) -> SourceMutPointer<INChI> {
         let hydrogen_pointer = if hydrogens.is_empty() {
             SourceMutPointer::null()
         } else {
@@ -9896,11 +9099,7 @@ mod tests {
     fn source_port__ichiprt3__str_auxisoequ__line_2962() {
         use crate::source_types::{INChI_Aux, OUT_NT, OUT_T1, TAUT_NON, TAUT_YES};
 
-        fn aux(
-            heap: &mut SourceHeap,
-            normal: &[u16],
-            isotopic: Option<&[u16]>,
-        ) -> SourceMutPointer<INChI_Aux> {
+        fn aux(heap: &mut SourceHeap, normal: &[u16], isotopic: Option<&[u16]>) -> SourceMutPointer<INChI_Aux> {
             let normal_pointer = heap.allocate_model_storage(normal.to_vec()).unwrap();
             let isotopic_pointer = isotopic.map_or(SourceMutPointer::null(), |values| {
                 heap.allocate_model_storage(values.to_vec()).unwrap()
@@ -9915,11 +9114,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sort(
-            heap: &mut SourceHeap,
-            normal: &[u16],
-            isotopic: Option<&[u16]>,
-        ) -> INCHI_SORT {
+        fn taut_sort(heap: &mut SourceHeap, normal: &[u16], isotopic: Option<&[u16]>) -> INCHI_SORT {
             let aux = aux(heap, normal, isotopic);
             let inchi = heap
                 .allocate_model_storage(vec![INChI {
@@ -9933,11 +9128,7 @@ mod tests {
             sort
         }
 
-        fn non_taut_sort(
-            heap: &mut SourceHeap,
-            normal: &[u16],
-            isotopic: Option<&[u16]>,
-        ) -> INCHI_SORT {
+        fn non_taut_sort(heap: &mut SourceHeap, normal: &[u16], isotopic: Option<&[u16]>) -> INCHI_SORT {
             let taut_aux = aux(heap, &[1, 2, 3], None);
             let taut_inchi = heap
                 .allocate_model_storage(vec![INChI {
@@ -10082,16 +9273,7 @@ mod tests {
         let mut output = output_buffer(&mut heap, "");
         let mut overflow = 0;
         assert_eq!(
-            str_AuxTgroupEqu(
-                &mut heap,
-                sort,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                0,
-                1,
-                0,
-            ),
+            str_AuxTgroupEqu(&mut heap, sort, &mut output, &mut overflow, OUT_T1 as i32, 0, 1, 0,),
             Ok(5)
         );
         assert_eq!(visible(&heap, &output), "(1,2)");
@@ -10209,11 +9391,7 @@ mod tests {
             (Ok(6), "pre:1+1;1d".into(), 0)
         );
 
-        let trivial = component(
-            &mut heap,
-            vec![crate::source_types::ORIG_INFO::default()],
-            true,
-        );
+        let trivial = component(&mut heap, vec![crate::source_types::ORIG_INFO::default()], true);
         let charged = component(&mut heap, vec![info(1, 0, 0)], true);
         assert_eq!(
             run(&mut heap, vec![trivial, charged], OUT_T1 as i32, 0, 0, 0,),
@@ -10222,22 +9400,12 @@ mod tests {
 
         let non_taut = component(&mut heap, vec![info(-2, 0, 3)], false);
         assert_eq!(
-            run(
-                &mut heap,
-                vec![non_taut],
-                crate::source_types::OUT_NN as i32,
-                0,
-                0,
-                0,
-            ),
+            run(&mut heap, vec![non_taut], crate::source_types::OUT_NN as i32, 0, 0, 0,),
             (Ok(5), "pre:1-2.3".into(), 0)
         );
 
         let selected = component(&mut heap, vec![info(1, 0, 0)], true);
-        assert_eq!(
-            run(&mut heap, vec![selected], -1, 0, 0, 0),
-            (Ok(0), "pre:".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![selected], -1, 0, 0, 0), (Ok(0), "pre:".into(), 0));
         let held = component(&mut heap, vec![info(1, 0, 0)], true);
         assert_eq!(
             run(&mut heap, vec![held], OUT_T1 as i32, 0, 0, 7),
@@ -10335,20 +9503,14 @@ mod tests {
         assert_eq!(run(&mut heap, vec![], 0, 0), (0, "pre:".into(), 0));
 
         let concrete = component(&mut heap, &[1, 2], &[1, 1]);
-        assert_eq!(
-            run(&mut heap, vec![concrete], 0, 0),
-            (5, "pre:(1,2)".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![concrete], 0, 0), (5, "pre:(1,2)".into(), 0));
 
         let equal = component(&mut heap, &[1, 1], &[1, 1]);
         assert_eq!(run(&mut heap, vec![equal], 1, 0), (1, "pre:m".into(), 0));
 
         let equal_a = component(&mut heap, &[1, 1], &[1, 1]);
         let equal_b = equal_a.clone();
-        assert_eq!(
-            run(&mut heap, vec![equal_a, equal_b], 1, 0),
-            (2, "pre:2m".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![equal_a, equal_b], 1, 0), (2, "pre:2m".into(), 0));
 
         let concrete_a = component(&mut heap, &[1, 2], &[1, 1]);
         let concrete_b = concrete_a.clone();
@@ -10412,30 +9574,14 @@ mod tests {
             .unwrap();
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_HillFormula(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                3,
-                1
-            ),
+            str_HillFormula(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 3, 1),
             Ok(9)
         );
         assert_eq!(visible(&heap, &output), "2C2H6.H2O");
 
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_HillFormula(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                3,
-                0
-            ),
+            str_HillFormula(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 3, 0),
             Ok(13)
         );
         assert_eq!(visible(&heap, &output), "C2H6.C2H6.H2O");
@@ -10457,15 +9603,7 @@ mod tests {
             .unwrap();
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_HillFormula(
-                &mut heap,
-                selection,
-                &mut output,
-                &mut overflow,
-                OUT_N1 as i32,
-                2,
-                1
-            ),
+            str_HillFormula(&mut heap, selection, &mut output, &mut overflow, OUT_N1 as i32, 2, 1),
             Ok(4)
         );
         assert_eq!(visible(&heap, &output), ".CH4");
@@ -10473,15 +9611,7 @@ mod tests {
         output = output_buffer(&mut heap, "");
         overflow = 1;
         assert_eq!(
-            str_HillFormula(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                3,
-                1
-            ),
+            str_HillFormula(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 3, 1),
             Ok(0)
         );
         assert_eq!(visible(&heap, &output), "");
@@ -10534,32 +9664,14 @@ mod tests {
             .unwrap();
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_Connections(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                0,
-                2,
-                1,
-            ),
+            str_Connections(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 0, 2, 1,),
             Ok(7)
         );
         assert_eq!(visible(&heap, &output), "2*1-2-3");
 
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_Connections(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                0,
-                2,
-                0,
-            ),
+            str_Connections(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 0, 2, 0,),
             Ok(11)
         );
         assert_eq!(visible(&heap, &output), "1-2-3;1-2-3");
@@ -10614,17 +9726,7 @@ mod tests {
             let mut output = output_buffer(&mut heap, "");
             let mut overflow = 0;
             assert_eq!(
-                str_H_atoms(
-                    &mut heap,
-                    sorts,
-                    &mut output,
-                    &mut overflow,
-                    OUT_T1 as i32,
-                    0,
-                    0,
-                    1,
-                    1,
-                ),
+                str_H_atoms(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 0, 0, 1, 1,),
                 Ok(i32::try_from(expected.len()).unwrap())
             );
             assert_eq!(visible(&heap, &output), expected);
@@ -10674,17 +9776,7 @@ mod tests {
             .unwrap();
         output = output_buffer(&mut heap, "");
         assert_eq!(
-            str_H_atoms(
-                &mut heap,
-                mixed,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                0,
-                0,
-                2,
-                1,
-            ),
+            str_H_atoms(&mut heap, mixed, &mut output, &mut overflow, OUT_T1 as i32, 0, 0, 2, 1,),
             Ok(9)
         );
         assert_eq!(visible(&heap, &output), ";1H,(H,5)");
@@ -10753,10 +9845,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -10898,10 +9987,7 @@ mod tests {
         let only_taut = charged(&mut heap, -1, 1, 1, 0);
         let later_non = charged(&mut heap, 2, 1, 0, 0);
         let later_taut = charged(&mut heap, 3, 1, 1, 0);
-        let missing_then_explicit = non_taut_sorts(
-            &mut heap,
-            &[(missing_non, only_taut), (later_non, later_taut)],
-        );
+        let missing_then_explicit = non_taut_sorts(&mut heap, &[(missing_non, only_taut), (later_non, later_taut)]);
         let missing_taut_pass = taut_sorts(&mut heap, &[only_taut, later_taut]);
         output = output_buffer(&mut heap, "");
         assert_eq!(
@@ -11030,10 +10116,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -11228,8 +10311,7 @@ mod tests {
             tautomer_length: i32,
         ) -> SourceMutPointer<INChI> {
             let main = main.map_or(SourceMutPointer::null(), |(a, b, p)| stereo(heap, a, b, p));
-            let isotopic =
-                isotopic.map_or(SourceMutPointer::null(), |(a, b, p)| stereo(heap, a, b, p));
+            let isotopic = isotopic.map_or(SourceMutPointer::null(), |(a, b, p)| stereo(heap, a, b, p));
             heap.allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
                 lenTautomer: tautomer_length,
@@ -11240,10 +10322,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -11343,17 +10422,7 @@ mod tests {
         let non_a = value(&mut heap, Some((1, 2, 1)), Some((1, 2, 1)), 0);
         let non_a_sorts = non_taut_sorts(&mut heap, &[(non_a, internal_taut)]);
         let external_b_sorts = taut_sorts(&mut heap, &[external_b]);
-        assert_output(
-            &mut heap,
-            non_a_sorts,
-            external_b_sorts,
-            OUT_NT as i32,
-            1,
-            1,
-            1,
-            1,
-            "n",
-        );
+        assert_output(&mut heap, non_a_sorts, external_b_sorts, OUT_NT as i32, 1, 1, 1, 1, "n");
 
         let non_b = value(&mut heap, Some((3, 4, 2)), Some((1, 2, 1)), 0);
         let external_main = value(&mut heap, Some((1, 2, 1)), None, 1);
@@ -11417,10 +10486,9 @@ mod tests {
             let (atom_count, atom_pointer) = atom.map_or((0, SourceMutPointer::null()), |value| {
                 (1, heap.allocate_model_storage(vec![value]).unwrap())
             });
-            let (group_count, group_pointer) = group
-                .map_or((0, SourceMutPointer::null()), |value| {
-                    (1, heap.allocate_model_storage(vec![value]).unwrap())
-                });
+            let (group_count, group_pointer) = group.map_or((0, SourceMutPointer::null()), |value| {
+                (1, heap.allocate_model_storage(vec![value]).unwrap())
+            });
             heap.allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
                 lenTautomer: tautomer_length,
@@ -11433,10 +10501,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -11581,19 +10646,7 @@ mod tests {
         let taut_a_copy = a_copy;
         let equal_non = non_taut_sorts(&mut heap, &[(non_a, taut_a), (non_a_copy, taut_a_copy)]);
         let equal_taut = taut_sorts(&mut heap, &[taut_a, taut_a_copy]);
-        assert_output(
-            &mut heap,
-            equal_non,
-            equal_taut,
-            OUT_NT as i32,
-            2,
-            0,
-            0,
-            1,
-            1,
-            1,
-            "2m",
-        );
+        assert_output(&mut heap, equal_non, equal_taut, OUT_NT as i32, 2, 0, 0, 1, 1, 1, "2m");
 
         let mut output = output_buffer(&mut heap, "held");
         let mut overflow = 1;
@@ -11647,10 +10700,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -11747,38 +10797,15 @@ mod tests {
         let taut_a_copy = stereo_inchi(&mut heap, &[1], &[2], &[1], 1);
         let equal_non = non_taut_sorts(&mut heap, &[(non_a, taut_a), (non_a_copy, taut_a_copy)]);
         let equal_taut = taut_sorts(&mut heap, &[taut_a, taut_a_copy]);
-        assert_output(
-            &mut heap,
-            equal_non,
-            equal_taut,
-            OUT_NT as i32,
-            2,
-            1,
-            1,
-            1,
-            "2m",
-        );
+        assert_output(&mut heap, equal_non, equal_taut, OUT_NT as i32, 2, 1, 1, 1, "2m");
 
         let non_b = stereo_inchi(&mut heap, &[3], &[4], &[2], 0);
         let taut_other = stereo_inchi(&mut heap, &[5], &[6], &[1], 1);
         let mixed_non = non_taut_sorts(&mut heap, &[(non_a, taut_a), (non_b, taut_other)]);
         let mixed_taut = taut_sorts(&mut heap, &[taut_a, taut_other]);
-        assert_output(
-            &mut heap,
-            mixed_non,
-            mixed_taut,
-            OUT_NT as i32,
-            2,
-            1,
-            1,
-            1,
-            "m;3-4+",
-        );
+        assert_output(&mut heap, mixed_non, mixed_taut, OUT_NT as i32, 2, 1, 1, 1, "m;3-4+");
 
-        let missing_then_b = non_taut_sorts(
-            &mut heap,
-            &[(SourceMutPointer::null(), taut_a), (non_b, taut_other)],
-        );
+        let missing_then_b = non_taut_sorts(&mut heap, &[(SourceMutPointer::null(), taut_a), (non_b, taut_other)]);
         let missing_taut = taut_sorts(&mut heap, &[taut_a, taut_other]);
         assert_output(
             &mut heap,
@@ -11840,10 +10867,7 @@ mod tests {
             .unwrap()
         }
 
-        fn taut_sorts(
-            heap: &mut SourceHeap,
-            values: &[SourceMutPointer<INChI>],
-        ) -> SourceMutPointer<INCHI_SORT> {
+        fn taut_sorts(heap: &mut SourceHeap, values: &[SourceMutPointer<INChI>]) -> SourceMutPointer<INCHI_SORT> {
             heap.allocate_model_storage(
                 values
                     .iter()
@@ -11941,38 +10965,15 @@ mod tests {
         let taut_a_copy = stereo_inchi(&mut heap, &[1], &[1], 1);
         let equal_non = non_taut_sorts(&mut heap, &[(non_a, taut_a), (non_a_copy, taut_a_copy)]);
         let equal_taut = taut_sorts(&mut heap, &[taut_a, taut_a_copy]);
-        assert_output(
-            &mut heap,
-            equal_non,
-            equal_taut,
-            OUT_NT as i32,
-            2,
-            1,
-            1,
-            1,
-            "2m",
-        );
+        assert_output(&mut heap, equal_non, equal_taut, OUT_NT as i32, 2, 1, 1, 1, "2m");
 
         let non_b = stereo_inchi(&mut heap, &[3], &[2], 0);
         let taut_other = stereo_inchi(&mut heap, &[5], &[1], 1);
         let mixed_non = non_taut_sorts(&mut heap, &[(non_a, taut_a), (non_b, taut_other)]);
         let mixed_taut = taut_sorts(&mut heap, &[taut_a, taut_other]);
-        assert_output(
-            &mut heap,
-            mixed_non,
-            mixed_taut,
-            OUT_NT as i32,
-            2,
-            1,
-            1,
-            1,
-            "m;3+",
-        );
+        assert_output(&mut heap, mixed_non, mixed_taut, OUT_NT as i32, 2, 1, 1, 1, "m;3+");
 
-        let missing_then_b = non_taut_sorts(
-            &mut heap,
-            &[(SourceMutPointer::null(), taut_a), (non_b, taut_other)],
-        );
+        let missing_then_b = non_taut_sorts(&mut heap, &[(SourceMutPointer::null(), taut_a), (non_b, taut_other)]);
         let missing_taut = taut_sorts(&mut heap, &[taut_a, taut_other]);
         assert_output(
             &mut heap,
@@ -12057,14 +11058,8 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            &heap.slice(transposed_non.as_const()).unwrap()[..4],
-            &[2, 3, 1, 0]
-        );
-        assert_eq!(
-            &heap.slice(transposed_taut.as_const()).unwrap()[..4],
-            &[0, 2, 3, 1]
-        );
+        assert_eq!(&heap.slice(transposed_non.as_const()).unwrap()[..4], &[2, 3, 1, 0]);
+        assert_eq!(&heap.slice(transposed_taut.as_const()).unwrap()[..4], &[0, 2, 3, 1]);
 
         let equal = sorts(&mut heap, present, &[0, 1, 2]);
         transposed_non = old_non;
@@ -12088,12 +11083,8 @@ mod tests {
         let present = inchi(&mut first_fail_heap, 1);
         let non = sorts(&mut first_fail_heap, present, &[1]);
         let taut = sorts(&mut first_fail_heap, present, &[0]);
-        let old_non = first_fail_heap
-            .allocate_model_storage(vec![71_u16])
-            .unwrap();
-        let old_taut = first_fail_heap
-            .allocate_model_storage(vec![72_u16])
-            .unwrap();
+        let old_non = first_fail_heap.allocate_model_storage(vec![71_u16]).unwrap();
+        let old_taut = first_fail_heap.allocate_model_storage(vec![72_u16]).unwrap();
         let mut transposed_non = old_non;
         let mut transposed_taut = old_taut;
         first_fail_heap.fail_after_allocations(0);
@@ -12154,10 +11145,7 @@ mod tests {
 
     #[test]
     fn source_port__ichiprt3__str_isostereoabsinv__line_2058() {
-        fn isotopic_stereo_inchi(
-            heap: &mut SourceHeap,
-            inversion: Option<i32>,
-        ) -> SourceMutPointer<INChI> {
+        fn isotopic_stereo_inchi(heap: &mut SourceHeap, inversion: Option<i32>) -> SourceMutPointer<INChI> {
             let stereo = inversion.map_or(SourceMutPointer::null(), |value| {
                 heap.allocate_model_storage(vec![crate::source_types::INChI_Stereo {
                     nCompInv2Abs: value,
@@ -12203,14 +11191,7 @@ mod tests {
         let mut output = output_buffer(&mut heap, "pre:");
         let mut overflow = 0;
         assert_eq!(
-            str_IsoStereoAbsInv(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                5,
-            ),
+            str_IsoStereoAbsInv(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 5,),
             Ok(5)
         );
         assert_eq!(visible(&heap, &output), "pre:10...");
@@ -12303,14 +11284,7 @@ mod tests {
         let mut output = output_buffer(&mut heap, "pre:");
         let mut overflow = 0;
         assert_eq!(
-            str_StereoAbsInv(
-                &mut heap,
-                sorts,
-                &mut output,
-                &mut overflow,
-                OUT_T1 as i32,
-                5,
-            ),
+            str_StereoAbsInv(&mut heap, sorts, &mut output, &mut overflow, OUT_T1 as i32, 5,),
             Ok(5)
         );
         assert_eq!(visible(&heap, &output), "pre:10...");
@@ -12365,8 +11339,7 @@ mod tests {
         ) -> (i32, String, i32, bool, bool) {
             let mut heap = SourceHeap::default();
             let work = mapping.map_or(SourceMutPointer::null(), |values| {
-                heap.allocate_model_storage(vec![91_u16; values.len()])
-                    .unwrap()
+                heap.allocate_model_storage(vec![91_u16; values.len()]).unwrap()
             });
             let transposition = mapping.map_or(SourceMutPointer::null(), |values| {
                 heap.allocate_model_storage(values.to_vec()).unwrap()
@@ -12402,18 +11375,9 @@ mod tests {
             ),
             (8, "pre:(AB)(CD)".to_owned(), 0, true, true)
         );
-        assert_eq!(
-            run(Some(&[0, 2, 0]), 0, 2, 0),
-            (3, "pre:(1)".to_owned(), 0, true, true)
-        );
-        assert_eq!(
-            run(Some(&[0, 2, 1]), 0, 2, 1),
-            (0, "pre:".to_owned(), 1, true, true)
-        );
-        assert_eq!(
-            run(None, 0, i32::MIN, 0),
-            (0, "pre:".to_owned(), 0, true, true)
-        );
+        assert_eq!(run(Some(&[0, 2, 0]), 0, 2, 0), (3, "pre:(1)".to_owned(), 0, true, true));
+        assert_eq!(run(Some(&[0, 2, 1]), 0, 2, 1), (0, "pre:".to_owned(), 1, true, true));
+        assert_eq!(run(None, 0, i32::MIN, 0), (0, "pre:".to_owned(), 0, true, true));
 
         let mut heap = SourceHeap::default();
         let only_work = heap.allocate_model_storage(vec![7_u16]).unwrap();
@@ -12436,12 +11400,7 @@ mod tests {
 
     #[test]
     fn source_port__ichiprt3__str_hillformula2__line_137() {
-        fn formula_inchi(
-            heap: &mut SourceHeap,
-            formula: &str,
-            tautomer: i32,
-            deleted: i32,
-        ) -> SourceMutPointer<INChI> {
+        fn formula_inchi(heap: &mut SourceHeap, formula: &str, tautomer: i32, deleted: i32) -> SourceMutPointer<INChI> {
             let formula = text(heap, formula);
             heap.allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
@@ -12509,31 +11468,17 @@ mod tests {
             run(&[("C2H6", 0), ("H2O", 0)], &[("C2H6", 0), ("H2O", 0)], 1, 0),
             (0, "pre:".to_owned(), 0)
         );
+        assert_eq!(run(&[("C2H6", 0)], &[("CH4", 0)], 1, 0), (4, "pre:C2H6".to_owned(), 0));
         assert_eq!(
-            run(&[("C2H6", 0)], &[("CH4", 0)], 1, 0),
-            (4, "pre:C2H6".to_owned(), 0)
-        );
-        assert_eq!(
-            run(
-                &[("C", 0), ("C", 0), ("O", 0)],
-                &[("N", 0), ("N", 0), ("N", 0)],
-                1,
-                0
-            ),
+            run(&[("C", 0), ("C", 0), ("O", 0)], &[("N", 0), ("N", 0), ("N", 0)], 1, 0),
             (4, "pre:2C.O".to_owned(), 0)
         );
         assert_eq!(
             run(&[("", 0), ("O", 0)], &[("N", 0), ("N", 0)], 0, 0),
             (2, "pre:.O".to_owned(), 0)
         );
-        assert_eq!(
-            run(&[("C", 0)], &[("C", 1)], 1, 0),
-            (1, "pre:C".to_owned(), 0)
-        );
-        assert_eq!(
-            run(&[("C", 0)], &[("N", 0)], 1, 7),
-            (0, "pre:".to_owned(), 7)
-        );
+        assert_eq!(run(&[("C", 0)], &[("C", 1)], 1, 0), (1, "pre:C".to_owned(), 0));
+        assert_eq!(run(&[("C", 0)], &[("N", 0)], 1, 7), (0, "pre:".to_owned(), 7));
     }
 
     #[test]
@@ -12581,10 +11526,7 @@ mod tests {
         }
 
         assert_eq!(run(&[&[1, 0, 2]], 1, 0), (6, "pre:1H,3H2".to_owned(), 0));
-        assert_eq!(
-            run(&[&[1, 0, 2], &[1, 0, 2]], 1, 0),
-            (8, "pre:2*1H,3H2".to_owned(), 0)
-        );
+        assert_eq!(run(&[&[1, 0, 2], &[1, 0, 2]], 1, 0), (8, "pre:2*1H,3H2".to_owned(), 0));
         assert_eq!(run(&[&[0, 0], &[0, 0]], 1, 0), (0, "pre:".to_owned(), 0));
         assert_eq!(run(&[&[0], &[1]], 0, 0), (3, "pre:;1H".to_owned(), 0));
         assert_eq!(run(&[&[1]], 1, 5), (0, "pre:".to_owned(), 5));
@@ -12594,11 +11536,7 @@ mod tests {
     fn source_port__ichiprt3__str_auxnumb__line_3818() {
         use crate::source_types::{INChI, INChI_Aux, OUT_NT, OUT_T1, TAUT_NON, TAUT_YES};
 
-        fn component(
-            heap: &mut SourceHeap,
-            taut_numbers: &[u16],
-            non_taut_numbers: Option<&[u16]>,
-        ) -> INCHI_SORT {
+        fn component(heap: &mut SourceHeap, taut_numbers: &[u16], non_taut_numbers: Option<&[u16]>) -> INCHI_SORT {
             let taut_number_pointer = heap.allocate_model_storage(taut_numbers.to_vec()).unwrap();
             let taut_aux = heap
                 .allocate_model_storage(vec![INChI_Aux {
@@ -12618,9 +11556,7 @@ mod tests {
             sort.pINChI[TAUT_YES as usize] = taut_inchi;
             sort.pINChI_Aux[TAUT_YES as usize] = taut_aux;
             if let Some(non_taut_numbers) = non_taut_numbers {
-                let numbers = heap
-                    .allocate_model_storage(non_taut_numbers.to_vec())
-                    .unwrap();
+                let numbers = heap.allocate_model_storage(non_taut_numbers.to_vec()).unwrap();
                 let aux = heap
                     .allocate_model_storage(vec![INChI_Aux {
                         nNumberOfAtoms: non_taut_numbers.len() as i32,
@@ -12704,9 +11640,7 @@ mod tests {
         );
         assert_eq!(visible(&heap, &output), "pre:m");
 
-        let repeated = heap
-            .allocate_model_storage(vec![equal.clone(), equal])
-            .unwrap();
+        let repeated = heap.allocate_model_storage(vec![equal.clone(), equal]).unwrap();
         let mut output = output_buffer(&mut heap, "pre:");
         assert_eq!(
             str_AuxNumb(
@@ -12728,9 +11662,7 @@ mod tests {
 
         let different = component(&mut heap, &[1, 2, 3], Some(&[3, 2, 1]));
         let same_again = component(&mut heap, &[1, 2, 3], Some(&[1, 2, 3]));
-        let mixed = heap
-            .allocate_model_storage(vec![same_again, different])
-            .unwrap();
+        let mixed = heap.allocate_model_storage(vec![same_again, different]).unwrap();
         let mut output = output_buffer(&mut heap, "pre:");
         assert_eq!(
             str_AuxNumb(
@@ -12755,11 +11687,7 @@ mod tests {
     fn source_port__ichiprt3__str_auxisonumb__line_2769() {
         use crate::source_types::{INChI, INChI_Aux, OUT_NT, OUT_T1, TAUT_NON, TAUT_YES};
 
-        fn aux(
-            heap: &mut SourceHeap,
-            normal: &[u16],
-            isotopic: Option<&[u16]>,
-        ) -> SourceMutPointer<INChI_Aux> {
+        fn aux(heap: &mut SourceHeap, normal: &[u16], isotopic: Option<&[u16]>) -> SourceMutPointer<INChI_Aux> {
             let number_of_atoms = i32::try_from(normal.len()).unwrap();
             let normal = heap.allocate_model_storage(normal.to_vec()).unwrap();
             let isotopic_pointer = isotopic.map_or(SourceMutPointer::null(), |values| {
@@ -12840,10 +11768,7 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            run(&mut heap, vec![], OUT_T1 as i32, 0, 0),
-            (0, "pre:".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![], OUT_T1 as i32, 0, 0), (0, "pre:".into(), 0));
 
         let concrete = component(&mut heap, &[1, 2, 3], Some(&[3, 1, 2]), None);
         assert_eq!(
@@ -12939,12 +11864,8 @@ mod tests {
         fn stereo(heap: &mut SourceHeap, spec: StereoSpec) -> SourceMutPointer<INChI_Stereo> {
             let number = heap.allocate_model_storage(vec![spec.number]).unwrap();
             let parity = heap.allocate_model_storage(vec![spec.parity]).unwrap();
-            let inverted_number = heap
-                .allocate_model_storage(vec![spec.inverted_number])
-                .unwrap();
-            let inverted_parity = heap
-                .allocate_model_storage(vec![spec.inverted_parity])
-                .unwrap();
+            let inverted_number = heap.allocate_model_storage(vec![spec.inverted_number]).unwrap();
+            let inverted_parity = heap.allocate_model_storage(vec![spec.inverted_parity]).unwrap();
             heap.allocate_model_storage(vec![INChI_Stereo {
                 nNumberOfStereoCenters: 1,
                 nNumber: number,
@@ -13000,10 +11921,7 @@ mod tests {
         fn visible(heap: &SourceHeap, output: &INCHI_IOS_STRING) -> String {
             let bytes = heap.slice(output.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end]
-                .iter()
-                .map(|byte| *byte as u8 as char)
-                .collect()
+            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
         }
 
         fn run(
@@ -13059,14 +11977,7 @@ mod tests {
             (2, "2+".into(), 0)
         );
         assert_eq!(
-            run(
-                &mut heap,
-                vec![sort(concrete), sort(concrete)],
-                vec![],
-                0,
-                0,
-                1,
-            ),
+            run(&mut heap, vec![sort(concrete), sort(concrete)], vec![], 0, 0, 1,),
             (4, "2*2+".into(), 0)
         );
 
@@ -13095,10 +12006,7 @@ mod tests {
             1,
             false,
         );
-        assert_eq!(
-            run(&mut heap, vec![sort(first_im)], vec![], 0, 1, 0).1,
-            "im"
-        );
+        assert_eq!(run(&mut heap, vec![sort(first_im)], vec![], 0, 1, 0).1, "im");
 
         let self_inverted = StereoSpec {
             number: 2,
@@ -13106,10 +12014,7 @@ mod tests {
             ..ISO
         };
         let first_i_m = inchi(&mut heap, None, Some(self_inverted), 0, true);
-        assert_eq!(
-            run(&mut heap, vec![sort(first_i_m)], vec![], 0, 1, 0).1,
-            "iM"
-        );
+        assert_eq!(run(&mut heap, vec![sort(first_i_m)], vec![], 0, 1, 0).1, "iM");
 
         let second_a = inchi(&mut heap, None, Some(ISO), 1, false);
         let taut_a = inchi(
@@ -13123,10 +12028,7 @@ mod tests {
             0,
             false,
         );
-        assert_eq!(
-            run(&mut heap, vec![sort(second_a)], vec![sort(taut_a)], 1, 1, 0).1,
-            "m"
-        );
+        assert_eq!(run(&mut heap, vec![sort(second_a)], vec![sort(taut_a)], 1, 1, 0).1, "m");
 
         let second_b = inchi(
             &mut heap,
@@ -13150,15 +12052,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            run(
-                &mut heap,
-                vec![sort(second_b)],
-                vec![sort(taut_different)],
-                1,
-                1,
-                0,
-            )
-            .1,
+            run(&mut heap, vec![sort(second_b)], vec![sort(taut_different)], 1, 1, 0,).1,
             "n"
         );
 
@@ -13173,10 +12067,7 @@ mod tests {
             1,
             false,
         );
-        assert_eq!(
-            run(&mut heap, vec![sort(second_c)], vec![sort(taut_c)], 1, 1, 0).1,
-            "M"
-        );
+        assert_eq!(run(&mut heap, vec![sort(second_c)], vec![sort(taut_c)], 1, 1, 0).1, "M");
 
         let taut_e = inchi(
             &mut heap,
@@ -13211,29 +12102,13 @@ mod tests {
             false,
         );
         assert_eq!(
-            run(
-                &mut heap,
-                vec![sort(second_f)],
-                vec![sort(taut_different)],
-                1,
-                1,
-                0,
-            )
-            .1,
+            run(&mut heap, vec![sort(second_f)], vec![sort(taut_different)], 1, 1, 0,).1,
             "in"
         );
 
         let second_g = inchi(&mut heap, None, Some(self_inverted), 1, false);
         assert_eq!(
-            run(
-                &mut heap,
-                vec![sort(second_g)],
-                vec![sort(taut_different)],
-                1,
-                1,
-                0,
-            )
-            .1,
+            run(&mut heap, vec![sort(second_g)], vec![sort(taut_different)], 1, 1, 0,).1,
             "iN"
         );
 
@@ -13290,15 +12165,9 @@ mod tests {
             numbering: Numbering,
             tautomer_length: i32,
         ) -> (SourceMutPointer<INChI>, SourceMutPointer<INChI_Aux>) {
-            let normal = heap
-                .allocate_model_storage(numbering.normal.to_vec())
-                .unwrap();
-            let isotopic = heap
-                .allocate_model_storage(numbering.isotopic.to_vec())
-                .unwrap();
-            let inverted = heap
-                .allocate_model_storage(numbering.inverted.to_vec())
-                .unwrap();
+            let normal = heap.allocate_model_storage(numbering.normal.to_vec()).unwrap();
+            let isotopic = heap.allocate_model_storage(numbering.isotopic.to_vec()).unwrap();
+            let inverted = heap.allocate_model_storage(numbering.inverted.to_vec()).unwrap();
             let isotopic_inverted = heap
                 .allocate_model_storage(numbering.isotopic_inverted.to_vec())
                 .unwrap();
@@ -13341,11 +12210,7 @@ mod tests {
             sort
         }
 
-        fn second_pass_component(
-            heap: &mut SourceHeap,
-            current: Numbering,
-            taut: Numbering,
-        ) -> INCHI_SORT {
+        fn second_pass_component(heap: &mut SourceHeap, current: Numbering, taut: Numbering) -> INCHI_SORT {
             let (taut_inchi, taut_aux) = layer(heap, taut, 1);
             let (current_inchi, current_aux) = layer(heap, current, 0);
             let mut sort = INCHI_SORT::default();
@@ -13389,10 +12254,7 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            run(&mut heap, vec![], OUT_T1 as i32, 0, 0),
-            (0, "".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![], OUT_T1 as i32, 0, 0), (0, "".into(), 0));
 
         let concrete = first_pass_component(&mut heap, DIFFERENT);
         assert_eq!(
@@ -13407,10 +12269,7 @@ mod tests {
                 ..DIFFERENT
             },
         );
-        assert_eq!(
-            run(&mut heap, vec![missing], OUT_T1 as i32, 0, 1),
-            (0, "".into(), 0)
-        );
+        assert_eq!(run(&mut heap, vec![missing], OUT_T1 as i32, 0, 1), (0, "".into(), 0));
 
         let first_a = first_pass_component(
             &mut heap,
@@ -13587,10 +12446,7 @@ mod tests {
         fn visible(heap: &SourceHeap, output: &INCHI_IOS_STRING) -> String {
             let bytes = heap.slice(output.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end]
-                .iter()
-                .map(|byte| *byte as u8 as char)
-                .collect()
+            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
         }
 
         let mut heap = SourceHeap::default();
@@ -13722,17 +12578,9 @@ mod tests {
         fn visible(heap: &SourceHeap, output: &INCHI_IOS_STRING) -> String {
             let bytes = heap.slice(output.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end]
-                .iter()
-                .map(|byte| *byte as u8 as char)
-                .collect()
+            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
         }
-        fn component(
-            heap: &mut SourceHeap,
-            normal: &[u16],
-            inverted: &[u16],
-            with_inversion: bool,
-        ) -> INCHI_SORT {
+        fn component(heap: &mut SourceHeap, normal: &[u16], inverted: &[u16], with_inversion: bool) -> INCHI_SORT {
             let normal_numbers = heap.allocate_model_storage(normal.to_vec()).unwrap();
             let inverted_numbers = heap.allocate_model_storage(inverted.to_vec()).unwrap();
             let aux = heap
@@ -13770,9 +12618,7 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let ordinary_component = component(&mut heap, &[1, 2], &[2, 1], true);
-        let ordinary = heap
-            .allocate_model_storage(vec![ordinary_component])
-            .unwrap();
+        let ordinary = heap.allocate_model_storage(vec![ordinary_component]).unwrap();
         let mut output = output_buffer(&mut heap);
         let mut overflow = 0;
         assert_eq!(

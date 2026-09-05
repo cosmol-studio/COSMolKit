@@ -1,29 +1,21 @@
 use super::*;
 
 #[mol_op_body(with_hydrogens, parts)]
-pub(super) fn with_hydrogens_impl(
-    params: crate::hydrogens::AddHsParams,
-) -> Result<(), OperationError> {
+pub(super) fn with_hydrogens_impl(params: crate::hydrogens::AddHsParams) -> Result<(), OperationError> {
     // RDKit✔️✔️:   mol.clearComputedProps(false);
     parts.clear_computed_properties();
-    parts.with_topology_coordinates_properties_mut(
-        |parts, topology, coordinates, properties| {
-            let assignment = parts.with_block_read_parts(
-                topology.clone(),
-                coordinates.clone(),
-                properties.clone(),
-                |read| {
-                    read.add_hs_assignment(&params)
-                        .map_err(|source| OperationError::AddHydrogens {
-                            operation: &WITH_HYDROGENS_SPEC,
-                            source,
-                        })
-                },
-            )?;
+    parts.with_topology_coordinates_properties_mut(|parts, topology, coordinates, properties| {
+        let assignment =
+            parts.with_block_read_parts(topology.clone(), coordinates.clone(), properties.clone(), |read| {
+                read.add_hs_assignment(&params)
+                    .map_err(|source| OperationError::AddHydrogens {
+                        operation: &WITH_HYDROGENS_SPEC,
+                        source,
+                    })
+            })?;
 
-            apply_add_hs_assignment(parts, topology, coordinates, properties, &assignment)
-        },
-    )?;
+        apply_add_hs_assignment(parts, topology, coordinates, properties, &assignment)
+    })?;
     parts.prove_preserved(
         DerivedState::RINGS | DerivedState::RING_FAMILIES,
         PreservationProof::LeafAtomAppend,
@@ -57,11 +49,8 @@ pub(super) fn apply_add_hs_assignment(
         || !assignment.atom_pdb_residue_info_updates.is_empty()
         || !assignment.clear_isotopic_hydrogen_properties.is_empty();
 
-    let (coords_2d_to_append, conformer_coords_to_append) = parts.with_block_read_parts(
-        topology.clone(),
-        coordinates.clone(),
-        properties.clone(),
-        |read| {
+    let (coords_2d_to_append, conformer_coords_to_append) =
+        parts.with_block_read_parts(topology.clone(), coordinates.clone(), properties.clone(), |read| {
             let coords_2d_to_append = read
                 .coordinates_2d()
                 .map(|coords| add_hs_terminal_coords_2d(read, assignment, coords));
@@ -72,13 +61,10 @@ pub(super) fn apply_add_hs_assignment(
             let conformer_coords_to_append = read
                 .conformers_3d()
                 .iter()
-                .map(|conformer| {
-                    add_hs_terminal_coords_3d(read, assignment, conformer.coordinates())
-                })
+                .map(|conformer| add_hs_terminal_coords_3d(read, assignment, conformer.coordinates()))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((coords_2d_to_append, conformer_coords_to_append))
-        },
-    )?;
+        })?;
 
     for update in &assignment.atom_explicit_hydrogen_updates {
         let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
@@ -150,23 +136,14 @@ pub(super) fn apply_add_hs_assignment(
         }
     }
     if !conformer_coords_to_append.is_empty() {
-        for (conformer, coords) in coordinates
-            .conformers_3d
-            .iter_mut()
-            .zip(conformer_coords_to_append)
-        {
+        for (conformer, coords) in coordinates.conformers_3d.iter_mut().zip(conformer_coords_to_append) {
             for coord in coords {
                 conformer.push_coord(coord);
             }
         }
     }
 
-    let mapping = TopologyMapping::with_appended(
-        old_atom_count,
-        old_bond_count,
-        added_atom_count,
-        added_bond_count,
-    );
+    let mapping = TopologyMapping::with_appended(old_atom_count, old_bond_count, added_atom_count, added_bond_count);
     properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
 
     let adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
@@ -195,16 +172,11 @@ pub(super) fn add_hs_terminal_coords_2d(
     coords: &[[f64; 2]],
 ) -> Result<Vec<[f64; 2]>, OperationError> {
     let molecule = read_parts;
-    let coords_3d = coords
-        .iter()
-        .map(|coord| [coord[0], coord[1], 0.0])
-        .collect::<Vec<_>>();
-    Ok(
-        add_hs_terminal_coords(molecule, assignment, &coords_3d, false)?
-            .into_iter()
-            .map(|coord| [coord[0], coord[1]])
-            .collect(),
-    )
+    let coords_3d = coords.iter().map(|coord| [coord[0], coord[1], 0.0]).collect::<Vec<_>>();
+    Ok(add_hs_terminal_coords(molecule, assignment, &coords_3d, false)?
+        .into_iter()
+        .map(|coord| [coord[0], coord[1]])
+        .collect())
 }
 
 pub(super) fn add_hs_terminal_coords_3d(
@@ -300,12 +272,10 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
             message: "AddHs terminal coordinate assignment received degenerate atoms",
         });
     }
-    let atom_neighbors = adjacency
-        .get(atom_index)
-        .ok_or(OperationError::InvalidInput {
-            operation: &WITH_HYDROGENS_SPEC,
-            message: "AddHs terminal coordinate assignment references an out-of-range atom",
-        })?;
+    let atom_neighbors = adjacency.get(atom_index).ok_or(OperationError::InvalidInput {
+        operation: &WITH_HYDROGENS_SPEC,
+        message: "AddHs terminal coordinate assignment references an out-of-range atom",
+    })?;
     if atom_neighbors.len() != 1 {
         return Err(OperationError::InvalidInput {
             operation: &WITH_HYDROGENS_SPEC,
@@ -318,22 +288,16 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
             message: "AddHs terminal coordinate assignment requires a bond to the heavy atom",
         });
     }
-    let other_atom = molecule
-        .atoms()
-        .get(other_index)
-        .ok_or(OperationError::InvalidInput {
-            operation: &WITH_HYDROGENS_SPEC,
-            message: "AddHs coordinate append references an out-of-range heavy atom",
-        })?;
-    let other_pos = *coords
-        .get(other_index)
-        .ok_or(OperationError::InvalidInput {
-            operation: &WITH_HYDROGENS_SPEC,
-            message: "AddHs coordinate append references an out-of-range heavy atom",
-        })?;
+    let other_atom = molecule.atoms().get(other_index).ok_or(OperationError::InvalidInput {
+        operation: &WITH_HYDROGENS_SPEC,
+        message: "AddHs coordinate append references an out-of-range heavy atom",
+    })?;
+    let other_pos = *coords.get(other_index).ok_or(OperationError::InvalidInput {
+        operation: &WITH_HYDROGENS_SPEC,
+        message: "AddHs coordinate append references an out-of-range heavy atom",
+    })?;
     let bond_length = if is_3d {
-        crate::chemistry::valence::rdkit_rb0(1)
-            + crate::chemistry::valence::rdkit_rb0(other_atom.atomic_number())
+        crate::chemistry::valence::rdkit_rb0(1) + crate::chemistry::valence::rdkit_rb0(other_atom.atomic_number())
     } else {
         1.0
     };
@@ -353,11 +317,7 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
             // RDKit✔️✔️:     case 1:
             // RDKit✔️✔️:       // No other atoms present.
             // RDKit✔️✔️: if ((*cfi)->is3D()) { dirVect.z = 1; } else { dirVect.x = 1; }
-            dir = if is_3d {
-                [0.0, 0.0, 1.0]
-            } else {
-                [1.0, 0.0, 0.0]
-            };
+            dir = if is_3d { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
         }
         2 => {
             // RDKit✔️✔️:     case 2:
@@ -386,13 +346,11 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
                     };
                     if adjacency[nbr1].len() > 1
                         && add_hs_bond_is_pi_like(molecule, adjacency, other_index, nbr1)
-                        && let Some(nbr2) = adjacency[nbr1].iter().find_map(|(neighbor, _)| {
-                            (*neighbor != other_index).then_some(*neighbor)
-                        })
-                        && let (Some(nbr1_pos), Some(nbr2_pos)) =
-                            (coords.get(nbr1).copied(), coords.get(nbr2).copied())
-                        && let Some(nbr2_vec) =
-                            add_hs_normalized(add_hs_vec_sub(nbr2_pos, nbr1_pos))
+                        && let Some(nbr2) = adjacency[nbr1]
+                            .iter()
+                            .find_map(|(neighbor, _)| (*neighbor != other_index).then_some(*neighbor))
+                        && let (Some(nbr1_pos), Some(nbr2_pos)) = (coords.get(nbr1).copied(), coords.get(nbr2).copied())
+                        && let Some(nbr2_vec) = add_hs_normalized(add_hs_vec_sub(nbr2_pos, nbr1_pos))
                     {
                         let cross = add_hs_cross(nbr2_vec, nbr1_vec);
                         if add_hs_len_sq(cross) >= ADD_HS_SQ_DIST_ZERO_TOL {
@@ -432,8 +390,7 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
                         let nbr_perp = add_hs_cross(nbr1_vec, nbr2_vec);
                         let rotn_axis = add_hs_cross(nbr_perp, avg_dir);
                         if let Some(axis) = add_hs_normalized(rotn_axis) {
-                            avg_dir =
-                                add_hs_rotate(avg_dir, axis, (109.471_f64 / 2.0).to_radians());
+                            avg_dir = add_hs_rotate(avg_dir, axis, (109.471_f64 / 2.0).to_radians());
                         }
                     }
                     crate::Hybridization::Sp2 => {}
@@ -472,10 +429,8 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
                         let v2 = add_hs_vec_sub(nbr1_vec, nbr3_vec);
                         let v3 = add_hs_vec_sub(nbr2_vec, nbr3_vec);
                         let vol = add_hs_dot(v1, add_hs_cross(v2, v3));
-                        if (other_atom.chiral_tag() == crate::ChiralTag::TetrahedralCcw
-                            && vol < 0.0)
-                            || (other_atom.chiral_tag() == crate::ChiralTag::TetrahedralCw
-                                && vol > 0.0)
+                        if (other_atom.chiral_tag() == crate::ChiralTag::TetrahedralCcw && vol < 0.0)
+                            || (other_atom.chiral_tag() == crate::ChiralTag::TetrahedralCw && vol > 0.0)
                         {
                             dir = add_hs_vec_scale(dir, -1.0);
                         }
@@ -509,10 +464,7 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
     }
 
     let dir = add_hs_normalized(dir).unwrap_or(dir);
-    Ok(add_hs_vec_add(
-        other_pos,
-        add_hs_vec_scale(dir, bond_length),
-    ))
+    Ok(add_hs_vec_add(other_pos, add_hs_vec_scale(dir, bond_length)))
 }
 
 const ADD_HS_SQ_DIST_ZERO_TOL: f64 = 1.0e-8;
@@ -528,21 +480,12 @@ fn add_hs_bond_is_pi_like(
         .find(|(neighbor, _)| *neighbor == end)
         .and_then(|(_, bond)| *bond)
         .and_then(|bond| molecule.bonds().get(bond.index()))
-        .is_some_and(|bond| {
-            bond.is_aromatic() || bond.order() == crate::BondOrder::Double || bond.is_conjugated()
-        })
+        .is_some_and(|bond| bond.is_aromatic() || bond.order() == crate::BondOrder::Double || bond.is_conjugated())
 }
 
-fn add_hs_direction_away(
-    coords: &[[f64; 3]],
-    other_pos: [f64; 3],
-    neighbor: usize,
-) -> Option<[f64; 3]> {
+fn add_hs_direction_away(coords: &[[f64; 3]], other_pos: [f64; 3], neighbor: usize) -> Option<[f64; 3]> {
     let neighbor_pos = *coords.get(neighbor)?;
-    add_hs_normalized(add_hs_vec_scale(
-        add_hs_vec_sub(neighbor_pos, other_pos),
-        -1.0,
-    ))
+    add_hs_normalized(add_hs_vec_scale(add_hs_vec_sub(neighbor_pos, other_pos), -1.0))
 }
 
 fn add_hs_pick_bisector(nbr1_vec: [f64; 3], nbr2_vec: [f64; 3], nbr3_vec: [f64; 3]) -> [f64; 3] {
@@ -634,12 +577,7 @@ pub(super) fn without_hydrogens_with_params_impl(
     params: crate::hydrogens::RemoveHsParams,
     sanitize: bool,
 ) -> Result<(), OperationError> {
-    without_hydrogens_apply(
-        parts,
-        &params,
-        sanitize,
-        &WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
-    )
+    without_hydrogens_apply(parts, &params, sanitize, &WITHOUT_HYDROGENS_WITH_PARAMS_SPEC)
 }
 
 fn without_hydrogens_apply(
@@ -648,57 +586,45 @@ fn without_hydrogens_apply(
     sanitize: bool,
     operation: &'static MoleculeOpSpec,
 ) -> Result<(), OperationError> {
-    parts.with_topology_coordinates_properties_mut(
-        |parts, topology, coordinates, properties| {
-            let assignment = parts.with_block_read_parts(
-                topology.clone(),
-                coordinates.clone(),
-                properties.clone(),
-                |read| {
-                    read.remove_hs_assignment(params, sanitize)
-                        .map_err(|source| OperationError::RemoveHydrogens { operation, source })
-                },
-            )?;
+    parts.with_topology_coordinates_properties_mut(|parts, topology, coordinates, properties| {
+        let assignment =
+            parts.with_block_read_parts(topology.clone(), coordinates.clone(), properties.clone(), |read| {
+                read.remove_hs_assignment(params, sanitize)
+                    .map_err(|source| OperationError::RemoveHydrogens { operation, source })
+            })?;
 
-            let mut changed = apply_remove_hs_assignment(topology, &assignment, operation)?;
-            let atoms_to_remove = assignment.atoms_to_remove.clone();
-            let mapping = if atoms_to_remove.is_empty() {
-                let atom_count = topology.atoms.len();
-                let bond_count = topology.bonds.len();
-                parts.record_topology_edit(TopologyEditKind::Compacting)?;
-                TopologyMapping::identity(atom_count, bond_count)
-            } else {
-                let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
-                coordinates.remap_topology(&mapping.retained_atom_indices());
-                properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
-                parts.record_topology_edit(TopologyEditKind::Compacting)?;
-                changed = true;
-                mapping
-            };
-            let valence = remap_remove_hs_valence_cache(&assignment, &mapping, operation)?;
-            parts.record_topology_mapping(mapping);
-            parts.clear_cache(
-                WITHOUT_HYDROGENS_SPEC
-                    .derived_effects
-                    .recompute()
-                    .union(WITHOUT_HYDROGENS_SPEC.derived_effects.invalidate()),
-            );
-            parts.set_valence_cache(valence);
-            // RDKit✔️✔️:   mol.clearComputedProps(true);
-            crate::chemistry::cip::clear_computed_source_properties(topology, properties);
-            parts.clear_computed_properties();
-            if assignment.sanitize_after_removal {
-                changed |= sanitize_after_remove_hs_removal(
-                    parts,
-                    topology,
-                    coordinates,
-                    properties,
-                    operation,
-                )?;
-            }
-            Ok(changed)
-        },
-    )?;
+        let mut changed = apply_remove_hs_assignment(topology, &assignment, operation)?;
+        let atoms_to_remove = assignment.atoms_to_remove.clone();
+        let mapping = if atoms_to_remove.is_empty() {
+            let atom_count = topology.atoms.len();
+            let bond_count = topology.bonds.len();
+            parts.record_topology_edit(TopologyEditKind::Compacting)?;
+            TopologyMapping::identity(atom_count, bond_count)
+        } else {
+            let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
+            coordinates.remap_topology(&mapping.retained_atom_indices());
+            properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
+            parts.record_topology_edit(TopologyEditKind::Compacting)?;
+            changed = true;
+            mapping
+        };
+        let valence = remap_remove_hs_valence_cache(&assignment, &mapping, operation)?;
+        parts.record_topology_mapping(mapping);
+        parts.clear_cache(
+            WITHOUT_HYDROGENS_SPEC
+                .derived_effects
+                .recompute()
+                .union(WITHOUT_HYDROGENS_SPEC.derived_effects.invalidate()),
+        );
+        parts.set_valence_cache(valence);
+        // RDKit✔️✔️:   mol.clearComputedProps(true);
+        crate::chemistry::cip::clear_computed_source_properties(topology, properties);
+        parts.clear_computed_properties();
+        if assignment.sanitize_after_removal {
+            changed |= sanitize_after_remove_hs_removal(parts, topology, coordinates, properties, operation)?;
+        }
+        Ok(changed)
+    })?;
 
     Ok(())
 }
@@ -730,20 +656,22 @@ fn remap_remove_hs_valence_cache(
         explicit_valence[new_atom.index()] = Some(update.explicit_valence);
         implicit_hydrogens[new_atom.index()] = Some(update.implicit_hydrogens);
     }
-    let explicit_valence = explicit_valence
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .ok_or(OperationError::InvalidInput {
-            operation,
-            message: "remove-H valence migration did not cover every surviving atom",
-        })?;
-    let implicit_hydrogens = implicit_hydrogens
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .ok_or(OperationError::InvalidInput {
-            operation,
-            message: "remove-H implicit-H migration did not cover every surviving atom",
-        })?;
+    let explicit_valence =
+        explicit_valence
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or(OperationError::InvalidInput {
+                operation,
+                message: "remove-H valence migration did not cover every surviving atom",
+            })?;
+    let implicit_hydrogens =
+        implicit_hydrogens
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or(OperationError::InvalidInput {
+                operation,
+                message: "remove-H implicit-H migration did not cover every surviving atom",
+            })?;
     Ok(crate::ValenceAssignment {
         explicit_valence,
         implicit_hydrogens,
@@ -815,9 +743,7 @@ fn apply_remove_hs_assignment(
                     };
                     atom.set_tracked_isotopic_hydrogens(Vec::new());
                 }
-                crate::hydrogens::AtomPropertyUpdate::ClearExcessChiralExplicitHydrogens {
-                    atom,
-                } => {
+                crate::hydrogens::AtomPropertyUpdate::ClearExcessChiralExplicitHydrogens { atom } => {
                     let Some(atom) = topology.atoms.get_mut(atom.index()) else {
                         return Err(OperationError::InvalidInput {
                             operation,
@@ -858,11 +784,7 @@ fn apply_remove_hs_assignment(
                 continue;
             };
             let stereo_atoms = [
-                if left == update.old_atom {
-                    update.new_atom
-                } else {
-                    left
-                },
+                if left == update.old_atom { update.new_atom } else { left },
                 if right == update.old_atom {
                     update.new_atom
                 } else {
@@ -883,9 +805,7 @@ fn apply_remove_hs_assignment(
                     crate::hydrogens::SGroupRemoveHsUpdate::RemoveParentAtom { atom } => {
                         substance_group.remove_parent_atom(*atom);
                     }
-                    crate::hydrogens::SGroupRemoveHsUpdate::ClearAttachPointLeavingAtom {
-                        atom,
-                    } => {
+                    crate::hydrogens::SGroupRemoveHsUpdate::ClearAttachPointLeavingAtom { atom } => {
                         substance_group.clear_attach_point_leaving_atom(*atom);
                     }
                 }

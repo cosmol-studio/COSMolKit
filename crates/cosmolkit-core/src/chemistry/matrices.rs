@@ -206,15 +206,14 @@ pub(crate) fn distance_matrix(
                 let row_offset = row * dimension;
                 for column in 0..dimension {
                     let direct = last_distances[row_offset + column];
-                    let through = last_distances[row_offset + intermediate]
-                        + last_distances[intermediate_offset + column];
+                    let through =
+                        last_distances[row_offset + intermediate] + last_distances[intermediate_offset + column];
                     if direct <= through {
                         current_distances[row_offset + column] = direct;
                         current_paths[row_offset + column] = last_paths[row_offset + column];
                     } else {
                         current_distances[row_offset + column] = through;
-                        current_paths[row_offset + column] =
-                            last_paths[intermediate_offset + column];
+                        current_paths[row_offset + column] = last_paths[intermediate_offset + column];
                     }
                 }
             }
@@ -228,8 +227,7 @@ pub(crate) fn distance_matrix(
 
 #[must_use]
 pub(crate) fn topological_distance_matrix(molecule: &Molecule) -> Arc<[f64]> {
-    distance_matrix(molecule, false, false)
-        .expect("the unweighted distance-matrix boundary is infallible")
+    distance_matrix(molecule, false, false).expect("the unweighted distance-matrix boundary is infallible")
 }
 
 /// Reproduce `MolOps::get3DDistanceMat()` for the selected unweighted boundary.
@@ -324,16 +322,10 @@ pub(crate) fn distance_matrix_3d(
             actual: conformer.coordinates().len(),
         });
     }
-    Ok(
-        molecule.distance_matrix_3d_cache_or_init(conformer.id(), || {
-            distance_matrix_3d_from_coordinates(
-                conformer.coordinates(),
-                molecule.num_atoms(),
-                conf_id,
-            )
+    Ok(molecule.distance_matrix_3d_cache_or_init(conformer.id(), || {
+        distance_matrix_3d_from_coordinates(conformer.coordinates(), molecule.num_atoms(), conf_id)
             .expect("coordinate dimensions were validated before caching")
-        }),
-    )
+    }))
 }
 
 fn distance_matrix_3d_from_coordinates(
@@ -368,9 +360,7 @@ mod tests {
     use super::*;
     use crate::{AtomPairFingerprintParams, AtomSpec, Conformer3D, Element};
 
-    fn two_atom_molecule_with_conformers(
-        conformers: impl IntoIterator<Item = Conformer3D>,
-    ) -> Molecule {
+    fn two_atom_molecule_with_conformers(conformers: impl IntoIterator<Item = Conformer3D>) -> Molecule {
         let mut builder = Molecule::builder();
         builder.add_atom(AtomSpec::new(Element::C));
         builder.add_atom(AtomSpec::new(Element::O));
@@ -434,10 +424,7 @@ mod tests {
     fn distgeom_uses_the_shared_distance_matrix_without_a_local_copy() {
         let source = include_str!("distgeom.rs");
         assert!(source.contains("topological_distance_matrix as compute_topological_distances"));
-        assert_eq!(
-            source.matches("fn compute_topological_distances(").count(),
-            0
-        );
+        assert_eq!(source.matches("fn compute_topological_distances(").count(), 0);
         assert_eq!(source.matches("const LOCAL_INF_DIST").count(), 0);
     }
 
@@ -448,14 +435,8 @@ mod tests {
             Conformer3D::new(2, vec![[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]], true),
         ]);
         let expected = vec![0.0, 5.0, 5.0, 0.0];
-        assert_eq!(
-            distance_matrix_3d(&molecule, -1, false).unwrap().as_ref(),
-            expected
-        );
-        assert_eq!(
-            distance_matrix_3d(&molecule, -9, false).unwrap().as_ref(),
-            expected
-        );
+        assert_eq!(distance_matrix_3d(&molecule, -1, false).unwrap().as_ref(), expected);
+        assert_eq!(distance_matrix_3d(&molecule, -9, false).unwrap().as_ref(), expected);
     }
 
     #[test]
@@ -473,20 +454,15 @@ mod tests {
     #[test]
     fn rdkit_3d_distance_empty_molecule_with_empty_conformer_is_empty() {
         let mut builder = Molecule::builder();
-        builder
-            .add_conformer(Conformer3D::new(4, Vec::new(), true))
-            .unwrap();
+        builder.add_conformer(Conformer3D::new(4, Vec::new(), true)).unwrap();
         let molecule = builder.build().unwrap();
         assert!(distance_matrix_3d(&molecule, -1, false).unwrap().is_empty());
     }
 
     #[test]
     fn rdkit_3d_distance_preserves_fractional_euclidean_arithmetic_and_order() {
-        let molecule = two_atom_molecule_with_conformers([Conformer3D::new(
-            0,
-            vec![[0.25, -0.5, 1.5], [1.75, 1.5, -0.5]],
-            true,
-        )]);
+        let molecule =
+            two_atom_molecule_with_conformers([Conformer3D::new(0, vec![[0.25, -0.5, 1.5], [1.75, 1.5, -0.5]], true)]);
         let expected = (1.5_f64 * 1.5 + 2.0 * 2.0 + 2.0 * 2.0).sqrt();
         assert_eq!(
             distance_matrix_3d(&molecule, 0, false).unwrap().as_ref(),
@@ -504,11 +480,8 @@ mod tests {
             Err(DistanceMatrixError::MissingConformer { conf_id: -1 })
         );
 
-        let molecule = two_atom_molecule_with_conformers([Conformer3D::new(
-            7,
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            true,
-        )]);
+        let molecule =
+            two_atom_molecule_with_conformers([Conformer3D::new(7, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], true)]);
         assert_eq!(
             distance_matrix_3d(&molecule, 3, false),
             Err(DistanceMatrixError::MissingConformer { conf_id: 3 })
@@ -533,9 +506,7 @@ mod tests {
 
     #[test]
     fn rdkit_3d_distance_propagates_non_finite_coordinate_arithmetic_like_source() {
-        let distances =
-            distance_matrix_3d_from_coordinates(&[[0.0, 0.0, 0.0], [f64::NAN, 0.0, 0.0]], 2, 0)
-                .unwrap();
+        let distances = distance_matrix_3d_from_coordinates(&[[0.0, 0.0, 0.0], [f64::NAN, 0.0, 0.0]], 2, 0).unwrap();
         assert!(distances[1].is_nan());
         assert!(distances[2].is_nan());
         assert_eq!(distances[0], 0.0);
@@ -561,10 +532,7 @@ mod tests {
 
         let hydrogenated = clone.with_hydrogens().unwrap();
         let changed = topological_distance_matrix(&hydrogenated);
-        assert_eq!(
-            changed.len(),
-            hydrogenated.num_atoms() * hydrogenated.num_atoms()
-        );
+        assert_eq!(changed.len(), hydrogenated.num_atoms() * hydrogenated.num_atoms());
         assert!(!Arc::ptr_eq(&inherited, &changed));
 
         let source_warm = topological_distance_matrix(&molecule);
@@ -590,21 +558,15 @@ mod tests {
 
     #[test]
     fn rdkit_3d_distance_cache_is_invalidated_by_coordinate_operations() {
-        let molecule = two_atom_molecule_with_conformers([Conformer3D::new(
-            0,
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            true,
-        )]);
+        let molecule =
+            two_atom_molecule_with_conformers([Conformer3D::new(0, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], true)]);
         let before = distance_matrix_3d(&molecule, 0, false).unwrap();
         let moved = molecule.with_atom_position(1, [0.0, 0.0, 6.0], 0).unwrap();
         let after = distance_matrix_3d(&moved, 0, false).unwrap();
 
         assert!(!Arc::ptr_eq(&before, &after));
         assert_eq!(after.as_ref(), &[0.0, 6.0, 6.0, 0.0]);
-        assert!(Arc::ptr_eq(
-            &before,
-            &distance_matrix_3d(&molecule, 0, false).unwrap()
-        ));
+        assert!(Arc::ptr_eq(&before, &distance_matrix_3d(&molecule, 0, false).unwrap()));
     }
 
     #[test]
@@ -623,12 +585,7 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        assert!(
-            matrices
-                .iter()
-                .skip(1)
-                .all(|matrix| Arc::ptr_eq(&matrices[0], matrix))
-        );
+        assert!(matrices.iter().skip(1).all(|matrix| Arc::ptr_eq(&matrices[0], matrix)));
     }
 
     #[test]

@@ -26,8 +26,7 @@ fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
 }
 
 fn production_source(path: &Path) -> String {
-    let source = fs::read_to_string(path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     source
         .find("#[cfg(test)]\nmod ")
         .map_or(source.as_str(), |test_module| &source[..test_module])
@@ -70,22 +69,13 @@ fn potential_stereo_flippers_and_configurations_have_one_owner_each() {
         "pub(crate) fn find_potential_stereo_in_workspace(",
         "src/chemistry/potential_stereo.rs",
     );
-    assert_owned_once(
-        "pub(crate) enum StereoFlipper {",
-        "src/chemistry/stereo_enumerate.rs",
-    );
+    assert_owned_once("pub(crate) enum StereoFlipper {", "src/chemistry/stereo_enumerate.rs");
     assert_owned_once(
         "pub(crate) fn select_stereo_flippers(",
         "src/chemistry/stereo_enumerate.rs",
     );
-    assert_owned_once(
-        "enum ConfigurationSource {",
-        "src/chemistry/stereo_enumerate.rs",
-    );
-    assert_owned_once(
-        "pub struct StereoisomerIterator {",
-        "src/chemistry/stereo_enumerate.rs",
-    );
+    assert_owned_once("enum ConfigurationSource {", "src/chemistry/stereo_enumerate.rs");
+    assert_owned_once("pub struct StereoisomerIterator {", "src/chemistry/stereo_enumerate.rs");
 }
 
 #[test]
@@ -95,12 +85,7 @@ fn public_surfaces_are_value_style_delegates_to_the_lazy_core() {
     let molecule = production_source(&root.join("src/model/molecule.rs"));
     let facade = production_source(&root.join("src/lib.rs"));
 
-    assert_eq!(
-        enumeration
-            .matches("pub fn enumerate_stereoisomers(")
-            .count(),
-        1,
-    );
+    assert_eq!(enumeration.matches("pub fn enumerate_stereoisomers(").count(), 1,);
     assert_eq!(
         enumeration
             .matches("StereoisomerIterator::new(molecule, options)")
@@ -119,9 +104,7 @@ fn public_surfaces_are_value_style_delegates_to_the_lazy_core() {
             .count(),
         1,
     );
-    assert!(facade.contains(
-        "EnumerationError, StereoisomerIterator, StereoisomerOptions, enumerate_stereoisomers,"
-    ));
+    assert!(facade.contains("EnumerationError, StereoisomerIterator, StereoisomerOptions, enumerate_stereoisomers,"));
 
     assert!(!enumeration.contains("pub fn enumerate_stereoisomers(\n    molecule: &mut Molecule"));
     assert!(!enumeration.contains("pub fn stereoisomer_count(\n    molecule: &mut Molecule"));
@@ -165,10 +148,7 @@ fn enumeration_source_functions_are_not_duplicated() {
             "fn theoretical_configuration_count(",
             "src/chemistry/stereo_enumerate.rs",
         ),
-        (
-            "fn default_python_random_seed(",
-            "src/chemistry/stereo_enumerate.rs",
-        ),
+        ("fn default_python_random_seed(", "src/chemistry/stereo_enumerate.rs"),
         (
             "fn clear_computed_props_preserving_rings(",
             "src/chemistry/stereo_enumerate.rs",

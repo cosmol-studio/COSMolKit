@@ -1,6 +1,5 @@
 use cosmolkit::{
-    BatchRecord, Fingerprint, LayeredFingerprintLayers, LayeredFingerprintParams, Molecule,
-    MoleculeBatch,
+    BatchRecord, Fingerprint, LayeredFingerprintLayers, LayeredFingerprintParams, Molecule, MoleculeBatch,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,8 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         BatchRecord::Molecule(molecule.clone()),
         BatchRecord::Molecule(Molecule::from_smiles("CCCO")?),
     ]);
-    let batch_result =
-        batch.layered_fingerprint_list_with_options(&params, Some(2), Some(false))?;
+    let batch_result = batch.layered_fingerprint_list_with_options(&params, Some(2), Some(false))?;
     assert_eq!(batch_result[0], Some(result.fingerprint));
 
     Ok(())

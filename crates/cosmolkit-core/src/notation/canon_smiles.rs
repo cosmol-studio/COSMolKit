@@ -54,10 +54,7 @@ pub fn build_noncanonical_fragment(
     super::smiles_write::mol_to_smiles(molecule, &writer_params)
 }
 
-pub fn canonicalize_fragment(
-    molecule: &Molecule,
-    params: &SmilesWriteParams,
-) -> Result<String, SmilesWriteError> {
+pub fn canonicalize_fragment(molecule: &Molecule, params: &SmilesWriteParams) -> Result<String, SmilesWriteError> {
     let mut writer_params = params.clone();
     writer_params.canonical = true;
     writer_params.do_random = false;
@@ -79,8 +76,7 @@ mod tests {
 
         let mut expected_params = params.clone();
         expected_params.canonical = false;
-        let expected =
-            crate::notation::smiles_write::mol_to_smiles(&molecule, &expected_params).unwrap();
+        let expected = crate::notation::smiles_write::mol_to_smiles(&molecule, &expected_params).unwrap();
 
         let actual = build_noncanonical_fragment(&molecule, &params).unwrap();
         assert_eq!(actual, expected);
@@ -110,8 +106,7 @@ mod tests {
         let mut expected_params = params.clone();
         expected_params.canonical = true;
         expected_params.do_random = false;
-        let expected =
-            crate::notation::smiles_write::mol_to_smiles(&molecule, &expected_params).unwrap();
+        let expected = crate::notation::smiles_write::mol_to_smiles(&molecule, &expected_params).unwrap();
 
         let actual = canonicalize_fragment(&molecule, &params).unwrap();
         assert_eq!(actual, expected);

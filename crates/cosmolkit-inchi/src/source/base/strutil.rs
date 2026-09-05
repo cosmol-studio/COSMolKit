@@ -2,26 +2,23 @@ use crate::source::base::ichisort::insertions_sort_AT_RANK;
 use crate::source::base::ichister::get_opposite_sb_atom_slice;
 use crate::source::base::runichi2::bIsSameBond;
 use crate::source::base::util::{
-    get_el_type, get_el_valence, get_periodic_table_number, has_other_ion_in_sphere_2,
-    has_other_ion_neigh, inchi_calloc, inchi_free, ion_el_group, is_in_the_ilist, is_in_the_list,
-    n_no_metal_bonds_valence, n_no_metal_neigh_index, n_no_metal_num_bonds,
-    n_no_metal_other_neigh_index, n_no_metal_other_neigh_index2, num_of_H,
+    get_el_type, get_el_valence, get_periodic_table_number, has_other_ion_in_sphere_2, has_other_ion_neigh,
+    inchi_calloc, inchi_free, ion_el_group, is_in_the_ilist, is_in_the_list, n_no_metal_bonds_valence,
+    n_no_metal_neigh_index, n_no_metal_num_bonds, n_no_metal_other_neigh_index, n_no_metal_other_neigh_index2,
+    num_of_H,
 };
 use crate::source_types::{
-    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF, AT_NUMB, AT_RANK,
-    ATW_H, BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE, BOND_TYPE_TRIPLE, COMP_ATOM_DATA, CT_OUT_OF_RAM,
-    INCHI_MODE, INCHI_T_NUM_MOVABLE, INChI, INChI_Aux, INChI_IsotopicAtom, INChI_IsotopicTGroup,
-    INChI_Stereo, MAX_ATOMS, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD,
-    NUM_H_ISOTOPES, ORIG_ATOM_DATA, ORIG_INFO, RADICAL_DOUBLET, RADICAL_SINGLET, REQ_MODE_ISO,
-    S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer, TG_FLAG_CHECK_VALENCE_COORD_DONE,
-    TG_FLAG_MOVE_CHARGE_COORD_DONE, U_CHAR, inp_ATOM, subgraf, subgraf_edge, subgraf_pathfinder,
+    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF, AT_NUMB, AT_RANK, ATW_H, BOND_TYPE_DOUBLE,
+    BOND_TYPE_SINGLE, BOND_TYPE_TRIPLE, COMP_ATOM_DATA, CT_OUT_OF_RAM, INCHI_MODE, INCHI_T_NUM_MOVABLE, INChI,
+    INChI_Aux, INChI_IsotopicAtom, INChI_IsotopicTGroup, INChI_Stereo, MAX_ATOMS, MAX_NUM_STEREO_ATOM_NEIGH,
+    MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NUM_H_ISOTOPES, ORIG_ATOM_DATA, ORIG_INFO, RADICAL_DOUBLET,
+    RADICAL_SINGLET, REQ_MODE_ISO, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer,
+    TG_FLAG_CHECK_VALENCE_COORD_DONE, TG_FLAG_MOVE_CHARGE_COORD_DONE, U_CHAR, inp_ATOM, subgraf, subgraf_edge,
+    subgraf_pathfinder,
 };
 
 #[allow(non_snake_case)]
-pub(crate) fn add_DT_to_num_H(
-    num_atoms: i32,
-    atoms: &mut [inp_ATOM],
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn add_DT_to_num_H(num_atoms: i32, atoms: &mut [inp_ATOM]) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:3705 add_DT_to_num_H
     // INCHI✔️✔️: int add_DT_to_num_H( int num_atoms, inp_ATOM *at )
     // INCHI✔️✔️: /*  assume num_1H, num_D and num_T are not included in num_H */
@@ -42,11 +39,8 @@ pub(crate) fn add_DT_to_num_H(
     // INCHI✔️✔️: typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: add_DT_to_num_H
 
-    let atom_count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let selected = atoms
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let selected = atoms.get_mut(..atom_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for atom in selected {
         for isotope_hydrogens in atom.num_iso_H {
             atom.num_H = atom.num_H.wrapping_add(isotope_hydrogens);
@@ -210,17 +204,13 @@ pub(crate) fn nFindOneOM(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: nFindOneOM
 
     if num_om == 1 {
-        return ord_om
-            .first()
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds);
+        return ord_om.first().copied().ok_or(SourceHeapError::PointerOutOfBounds);
     }
     if num_om < 1 {
         return Ok(-1);
     }
 
-    let candidate_count =
-        usize::try_from(num_om).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let candidate_count = usize::try_from(num_om).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if candidate_count > ord_om.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -234,10 +224,7 @@ pub(crate) fn nFindOneOM(
             .get(ordinal)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let atom = usize::from(*atom);
-        atoms
-            .get(atom)
-            .map(|_| atom)
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+        atoms.get(atom).map(|_| atom).ok_or(SourceHeapError::PointerOutOfBounds)
     };
 
     let mut num_best = 1_usize;
@@ -308,10 +295,7 @@ pub(crate) fn nFindOneOM(
     Ok(ord_om[0])
 }
 
-pub(crate) fn remove_ion_pairs(
-    num_atoms: i32,
-    atoms: &mut [inp_ATOM],
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn remove_ion_pairs(num_atoms: i32, atoms: &mut [inp_ATOM]) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:1049 remove_ion_pairs
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: remove_ion_pairs
     // INCHI✔️❌: int remove_ion_pairs( int num_atoms, inp_ATOM *at )
@@ -1318,27 +1302,19 @@ pub(crate) fn remove_ion_pairs(
     // INCHI✔️❌: #define NUMH(AT,N) (AT[N].num_H+NUM_ISO_H(AT,N))
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: remove_ion_pairs
 
-    let atom_count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let atoms = atoms
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atoms = atoms.get_mut(..atom_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let numh = |atom: &inp_ATOM| {
         i32::from(atom.num_H)
             + i32::from(atom.num_iso_H[0])
             + i32::from(atom.num_iso_H[1])
             + i32::from(atom.num_iso_H[2])
     };
-    let reciprocal =
-        |atoms: &[inp_ATOM], atom: usize, neighbor: usize| -> Result<usize, SourceHeapError> {
-            let target = atoms.get(atom).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            is_in_the_list(
-                Some(&target.neighbor),
-                neighbor as AT_NUMB,
-                i32::from(target.valence),
-            )?
+    let reciprocal = |atoms: &[inp_ATOM], atom: usize, neighbor: usize| -> Result<usize, SourceHeapError> {
+        let target = atoms.get(atom).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        is_in_the_list(Some(&target.neighbor), neighbor as AT_NUMB, i32::from(target.valence))?
             .ok_or(SourceHeapError::PointerOutOfBounds)
-        };
+    };
 
     let mut num_changes = 0_i32;
     let mut num_c_ii = 0_i32;
@@ -1375,10 +1351,7 @@ pub(crate) fn remove_ion_pairs(
                         num_n_minus += 1;
                     }
                     num_p_iv_plus += i32::from(
-                        atom.el_number != 7
-                            && charge == 1
-                            && atom.valence == 4
-                            && atom.chem_bonds_valence == 4,
+                        atom.el_number != 7 && charge == 1 && atom.valence == 4 && atom.chem_bonds_valence == 4,
                     );
                 }
                 _ => {}
@@ -1391,8 +1364,7 @@ pub(crate) fn remove_ion_pairs(
             num_c_ii += 1;
         }
     }
-    let mut num_all =
-        num_c_ii + num_c_plus + num_c_minus + num_n_plus + num_n_minus + num_o_plus + num_o_minus;
+    let mut num_all = num_c_ii + num_c_plus + num_c_minus + num_n_plus + num_n_minus + num_o_plus + num_o_minus;
     if num_all == 0 {
         return Ok(0);
     }
@@ -1415,24 +1387,17 @@ pub(crate) fn remove_ion_pairs(
                 let mut num_o = 0_i32;
                 let mut num_o_other = 0_i32;
                 for i1 in 0..i32::from(atoms[i].valence) {
-                    let i1u =
-                        usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let i1u = usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     let n = usize::from(atoms[i].neighbor[i1u]);
                     if n_no_metal_num_bonds(Some(atoms), n as i32)? == 1
                         && num_of_H(atoms, n as i32)? == 0
                         && ion_el_group(i32::from(atoms[n].el_number)) == 8
                     {
-                        if atoms[i].bond_type[i1u] == BOND_TYPE_SINGLE as u8
-                            && atoms[n].charge == -1
-                        {
-                            let slot = ord_om
-                                .get_mut(num_om)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if atoms[i].bond_type[i1u] == BOND_TYPE_SINGLE as u8 && atoms[n].charge == -1 {
+                            let slot = ord_om.get_mut(num_om).ok_or(SourceHeapError::PointerOutOfBounds)?;
                             *slot = i1;
                             num_om += 1;
-                        } else if atoms[n].bond_type[0] == BOND_TYPE_DOUBLE as u8
-                            && atoms[n].charge == 0
-                        {
+                        } else if atoms[n].bond_type[0] == BOND_TYPE_DOUBLE as u8 && atoms[n].charge == 0 {
                             num_o += 1;
                         } else {
                             num_o_other += 1;
@@ -1476,8 +1441,7 @@ pub(crate) fn remove_ion_pairs(
                 let mut num_om = 0_usize;
                 let mut ord_om = [0_i32; 4];
                 for i1 in 0..i32::from(atoms[i].valence) {
-                    let i1u =
-                        usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let i1u = usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     let n = usize::from(atoms[i].neighbor[i1u]);
                     if n_no_metal_num_bonds(Some(atoms), n as i32)? == 1
                         && num_of_H(atoms, n as i32)? == 0
@@ -1485,9 +1449,7 @@ pub(crate) fn remove_ion_pairs(
                         && atoms[i].bond_type[i1u] == BOND_TYPE_SINGLE as u8
                         && atoms[n].charge == -1
                     {
-                        let slot = ord_om
-                            .get_mut(num_om)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let slot = ord_om.get_mut(num_om).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         *slot = i1;
                         num_om += 1;
                     }
@@ -1539,8 +1501,7 @@ pub(crate) fn remove_ion_pairs(
                             && ion_el_group(i32::from(atoms[n].el_number)) == 7
                         {
                             let i2 = n_no_metal_other_neigh_index(Some(atoms), n as i32, i as i32)?;
-                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8
-                            {
+                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8 {
                                 let n2 = usize::from(atoms[n].neighbor[i2 as usize]);
                                 if atoms[n2].charge == 0
                                     && atoms[n2].valence == 2
@@ -1571,23 +1532,18 @@ pub(crate) fn remove_ion_pairs(
                             && ion_el_group(i32::from(atoms[n].el_number)) == 8
                         {
                             let i2 = n_no_metal_other_neigh_index(Some(atoms), n as i32, i as i32)?;
-                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8
-                            {
+                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8 {
                                 let n2 = usize::from(atoms[n].neighbor[i2 as usize]);
                                 if atoms[n2].charge == -1
                                     && n_no_metal_num_bonds(Some(atoms), n2 as i32)? <= 3
-                                    && n_no_metal_bonds_valence(Some(atoms), n2 as i32)?
-                                        + numh(&atoms[n2])
-                                        == 3
+                                    && n_no_metal_bonds_valence(Some(atoms), n2 as i32)? + numh(&atoms[n2]) == 3
                                     && ion_el_group(i32::from(atoms[n2].el_number)) == 6
                                 {
                                     let i3 = usize::from(atoms[n2].neighbor[0] != n as u16);
                                     atoms[n].charge = atoms[n].charge.wrapping_sub(1);
                                     atoms[n2].charge = atoms[n2].charge.wrapping_add(1);
-                                    atoms[n].chem_bonds_valence =
-                                        atoms[n].chem_bonds_valence.wrapping_add(1);
-                                    atoms[n2].chem_bonds_valence =
-                                        atoms[n2].chem_bonds_valence.wrapping_add(1);
+                                    atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
+                                    atoms[n2].chem_bonds_valence = atoms[n2].chem_bonds_valence.wrapping_add(1);
                                     atoms[n].bond_type[i2 as usize] = BOND_TYPE_DOUBLE as u8;
                                     atoms[n2].bond_type[i3] = BOND_TYPE_DOUBLE as u8;
                                     num_changes += 1;
@@ -1634,10 +1590,8 @@ pub(crate) fn remove_ion_pairs(
                             let i2 = reciprocal(atoms, n, i)?;
                             atoms[i].charge = atoms[i].charge.wrapping_add(1);
                             atoms[n].charge = atoms[n].charge.wrapping_sub(1);
-                            atoms[i].chem_bonds_valence =
-                                atoms[i].chem_bonds_valence.wrapping_add(1);
-                            atoms[n].chem_bonds_valence =
-                                atoms[n].chem_bonds_valence.wrapping_add(1);
+                            atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                            atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
                             atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(1);
                             atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
                             num_changes += 1;
@@ -1660,26 +1614,20 @@ pub(crate) fn remove_ion_pairs(
                             && ion_el_group(i32::from(atoms[n].el_number)) == 8
                         {
                             let i2 = n_no_metal_other_neigh_index(Some(atoms), n as i32, i as i32)?;
-                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8
-                            {
+                            if i2 >= 0 && atoms[n].bond_type[i2 as usize] <= BOND_TYPE_TRIPLE as u8 {
                                 let n2 = usize::from(atoms[n].neighbor[i2 as usize]);
                                 if atoms[n2].charge == 1
                                     && n_no_metal_num_bonds(Some(atoms), n2 as i32)? <= 3
-                                    && n_no_metal_bonds_valence(Some(atoms), n2 as i32)?
-                                        + numh(&atoms[n2])
-                                        == 3
+                                    && n_no_metal_bonds_valence(Some(atoms), n2 as i32)? + numh(&atoms[n2]) == 3
                                     && ion_el_group(i32::from(atoms[n2].el_number)) == 6
                                 {
                                     let i3 = reciprocal(atoms, n2, n)?;
                                     let i4 = reciprocal(atoms, n, i)?;
                                     atoms[i].charge = atoms[i].charge.wrapping_add(1);
                                     atoms[n2].charge = atoms[n2].charge.wrapping_sub(1);
-                                    atoms[i].chem_bonds_valence =
-                                        atoms[i].chem_bonds_valence.wrapping_add(1);
-                                    atoms[n].chem_bonds_valence =
-                                        atoms[n].chem_bonds_valence.wrapping_add(2);
-                                    atoms[n2].chem_bonds_valence =
-                                        atoms[n2].chem_bonds_valence.wrapping_add(1);
+                                    atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                                    atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(2);
+                                    atoms[n2].chem_bonds_valence = atoms[n2].chem_bonds_valence.wrapping_add(1);
                                     atoms[i].bond_type[i1] = BOND_TYPE_DOUBLE as u8;
                                     atoms[n].bond_type[i4] = BOND_TYPE_DOUBLE as u8;
                                     atoms[n].bond_type[i2 as usize] = BOND_TYPE_DOUBLE as u8;
@@ -1704,9 +1652,7 @@ pub(crate) fn remove_ion_pairs(
                     && ion_el_group(i32::from(atoms[i].el_number)) == 7;
                 if terminal_n_minus {
                     let i1_check = n_no_metal_neigh_index(Some(atoms), i as i32)?;
-                    if i1_check >= 0
-                        && atoms[i].bond_type[i1_check as usize] <= BOND_TYPE_TRIPLE as u8
-                    {
+                    if i1_check >= 0 && atoms[i].bond_type[i1_check as usize] <= BOND_TYPE_TRIPLE as u8 {
                         let i1 = 0_usize;
                         let n = usize::from(atoms[i].neighbor[i1]);
                         let target = (pair_type == 7
@@ -1734,10 +1680,8 @@ pub(crate) fn remove_ion_pairs(
                             let i2 = reciprocal(atoms, n, i)?;
                             atoms[i].charge = atoms[i].charge.wrapping_add(1);
                             atoms[n].charge = atoms[n].charge.wrapping_sub(1);
-                            atoms[i].chem_bonds_valence =
-                                atoms[i].chem_bonds_valence.wrapping_add(1);
-                            atoms[n].chem_bonds_valence =
-                                atoms[n].chem_bonds_valence.wrapping_add(1);
+                            atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                            atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
                             atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(1);
                             atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
                             num_changes += 1;
@@ -1789,20 +1733,16 @@ pub(crate) fn remove_ion_pairs(
                         }
                         if num_neigh == 1 {
                             let n = usize::from(atoms[i].neighbor[position]);
-                            if (pair_type != 10
-                                || atoms[i].bond_type[position] <= BOND_TYPE_TRIPLE as u8)
+                            if (pair_type != 10 || atoms[i].bond_type[position] <= BOND_TYPE_TRIPLE as u8)
                                 && has_other_ion_neigh(atoms, i as i32, n as i32)? == 0
                                 && has_other_ion_neigh(atoms, n as i32, i as i32)? == 0
                             {
                                 let i2 = reciprocal(atoms, n, i)?;
                                 atoms[i].charge = atoms[i].charge.wrapping_sub(1);
                                 atoms[n].charge = atoms[n].charge.wrapping_add(1);
-                                atoms[i].chem_bonds_valence =
-                                    atoms[i].chem_bonds_valence.wrapping_add(1);
-                                atoms[n].chem_bonds_valence =
-                                    atoms[n].chem_bonds_valence.wrapping_add(1);
-                                atoms[i].bond_type[position] =
-                                    atoms[i].bond_type[position].wrapping_add(1);
+                                atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                                atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
+                                atoms[i].bond_type[position] = atoms[i].bond_type[position].wrapping_add(1);
                                 atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
                                 num_changes += 1;
                                 num_c_minus -= 1;
@@ -1820,9 +1760,7 @@ pub(crate) fn remove_ion_pairs(
                             let n = usize::from(atoms[i].neighbor[i1]);
                             if atoms[n].charge == -1
                                 && n_no_metal_num_bonds(Some(atoms), n as i32)? <= 2
-                                && n_no_metal_bonds_valence(Some(atoms), n as i32)?
-                                    + numh(&atoms[n])
-                                    == 2
+                                && n_no_metal_bonds_valence(Some(atoms), n as i32)? + numh(&atoms[n]) == 2
                                 && atoms[i].bond_type[i1] == BOND_TYPE_SINGLE as u8
                                 && ion_el_group(i32::from(atoms[n].el_number)) == 7
                             {
@@ -1838,12 +1776,9 @@ pub(crate) fn remove_ion_pairs(
                                 let i2 = reciprocal(atoms, n, i)?;
                                 atoms[i].charge = atoms[i].charge.wrapping_sub(1);
                                 atoms[n].charge = atoms[n].charge.wrapping_add(1);
-                                atoms[i].chem_bonds_valence =
-                                    atoms[i].chem_bonds_valence.wrapping_add(1);
-                                atoms[n].chem_bonds_valence =
-                                    atoms[n].chem_bonds_valence.wrapping_add(1);
-                                atoms[i].bond_type[position] =
-                                    atoms[i].bond_type[position].wrapping_add(1);
+                                atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                                atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
+                                atoms[i].bond_type[position] = atoms[i].bond_type[position].wrapping_add(1);
                                 atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
                                 num_changes += 1;
                                 num_n_minus -= 1;
@@ -1864,21 +1799,20 @@ pub(crate) fn remove_ion_pairs(
                     && num_of_H(atoms, i as i32)? == 0
                     && ion_el_group(i32::from(atoms[i].el_number)) == 8
                 {
-                    let (target_group, max_bonds, target_valence, expected_bond) =
-                        if pair_type == 15 {
-                            (7_u8, 2_i32, 2_i32, BOND_TYPE_SINGLE as u8)
-                        } else {
-                            (
-                                6_u8,
-                                3_i32,
-                                3_i32,
-                                if pair_type == 14 {
-                                    BOND_TYPE_DOUBLE as u8
-                                } else {
-                                    BOND_TYPE_SINGLE as u8
-                                },
-                            )
-                        };
+                    let (target_group, max_bonds, target_valence, expected_bond) = if pair_type == 15 {
+                        (7_u8, 2_i32, 2_i32, BOND_TYPE_SINGLE as u8)
+                    } else {
+                        (
+                            6_u8,
+                            3_i32,
+                            3_i32,
+                            if pair_type == 14 {
+                                BOND_TYPE_DOUBLE as u8
+                            } else {
+                                BOND_TYPE_SINGLE as u8
+                            },
+                        )
+                    };
                     if (pair_type == 13 && num_c_minus > 0)
                         || (pair_type == 14 && num_c_minus > 0)
                         || (pair_type == 15 && num_n_minus > 0)
@@ -1916,12 +1850,9 @@ pub(crate) fn remove_ion_pairs(
                                 let i2 = reciprocal(atoms, n, i)?;
                                 atoms[i].charge = atoms[i].charge.wrapping_sub(1);
                                 atoms[n].charge = atoms[n].charge.wrapping_add(1);
-                                atoms[i].chem_bonds_valence =
-                                    atoms[i].chem_bonds_valence.wrapping_add(1);
-                                atoms[n].chem_bonds_valence =
-                                    atoms[n].chem_bonds_valence.wrapping_add(1);
-                                atoms[i].bond_type[position] =
-                                    atoms[i].bond_type[position].wrapping_add(1);
+                                atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(1);
+                                atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(1);
+                                atoms[i].bond_type[position] = atoms[i].bond_type[position].wrapping_add(1);
                                 atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
                                 num_changes += 1;
                                 if pair_type == 15 {
@@ -1999,11 +1930,7 @@ pub(crate) fn remove_ion_pairs(
                 }
                 for k in 0..2 {
                     let n = if k == 1 { n_c } else { n_n };
-                    let i1 = if k == 1 {
-                        positions[i_c]
-                    } else {
-                        positions[1 - i_c]
-                    };
+                    let i1 = if k == 1 { positions[i_c] } else { positions[1 - i_c] };
                     let i2 = reciprocal(atoms, n, i)?;
                     atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(1);
                     atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(1);
@@ -2042,8 +1969,7 @@ pub(crate) fn remove_ion_pairs(
                     continue;
                 }
                 let m1 = usize::from(atoms[i].neighbor[j1 as usize]);
-                let j2 =
-                    n_no_metal_other_neigh_index2(Some(atoms), i as i32, m0 as i32, m1 as i32)?;
+                let j2 = n_no_metal_other_neigh_index2(Some(atoms), i as i32, m0 as i32, m1 as i32)?;
                 if j2 < 0 {
                     continue;
                 }
@@ -2056,8 +1982,7 @@ pub(crate) fn remove_ion_pairs(
                     || members
                         .iter()
                         .filter(|&&n| {
-                            atoms[n].charge != 0
-                                && i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]) == 3
+                            atoms[n].charge != 0 && i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]) == 3
                         })
                         .count()
                         != 2
@@ -2138,8 +2063,7 @@ pub(crate) fn remove_ion_pairs(
                 }
                 let members = [m0, m1];
                 let positions = [j0 as usize, j1 as usize];
-                let values =
-                    members.map(|n| i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]));
+                let values = members.map(|n| i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]));
                 if values[0] + values[1] != 6 || (values[0] - values[1]).abs() > 2 {
                     continue;
                 }
@@ -2148,15 +2072,12 @@ pub(crate) fn remove_ion_pairs(
                 let mut i_cp = 0_usize;
                 let mut i_cm = 0_usize;
                 for k in 0..2 {
-                    if values[k] == 4
-                        || (values[k] == 3
-                            && atoms[i].bond_type[positions[k]] == BOND_TYPE_SINGLE as u8)
+                    if values[k] == 4 || (values[k] == 3 && atoms[i].bond_type[positions[k]] == BOND_TYPE_SINGLE as u8)
                     {
                         n_cm = Some(members[k]);
                         i_cm = k;
                     } else if values[k] == 2
-                        || (values[k] == 3
-                            && atoms[i].bond_type[positions[k]] == BOND_TYPE_DOUBLE as u8)
+                        || (values[k] == 3 && atoms[i].bond_type[positions[k]] == BOND_TYPE_DOUBLE as u8)
                     {
                         n_cp = Some(members[k]);
                         i_cp = k;
@@ -2170,9 +2091,8 @@ pub(crate) fn remove_ion_pairs(
                 }
                 if values[i_cp] == 2 || atoms[n_cp].charge == 0 {
                     if atoms[n_cp].valence == 2 {
-                        let opposite = usize::from(
-                            atoms[n_cp].neighbor[usize::from(atoms[n_cp].neighbor[0] == i as u16)],
-                        );
+                        let opposite =
+                            usize::from(atoms[n_cp].neighbor[usize::from(atoms[n_cp].neighbor[0] == i as u16)]);
                         if ion_el_group(i32::from(atoms[opposite].el_number)) == 7 {
                             continue;
                         }
@@ -2202,10 +2122,8 @@ pub(crate) fn remove_ion_pairs(
                         let i2 = reciprocal(atoms, n, i)?;
                         atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(delta as u8);
                         atoms[n].bond_type[i2] = atoms[n].bond_type[i2].wrapping_add(delta as u8);
-                        atoms[i].chem_bonds_valence =
-                            atoms[i].chem_bonds_valence.wrapping_add(delta as i8);
-                        atoms[n].chem_bonds_valence =
-                            atoms[n].chem_bonds_valence.wrapping_add(delta as i8);
+                        atoms[i].chem_bonds_valence = atoms[i].chem_bonds_valence.wrapping_add(delta as i8);
+                        atoms[n].chem_bonds_valence = atoms[n].chem_bonds_valence.wrapping_add(delta as i8);
                         atoms[n].charge = 0;
                         atoms[n].radical = 0;
                     }
@@ -2360,26 +2278,18 @@ pub(crate) fn bIsAmmoniumSalt(
     let mut disconnect = true;
     for j in 0..valence.max(0) as usize {
         let neighbor_index = usize::from(atom.neighbor[j]);
-        let neighbor = atoms
-            .get(neighbor_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let neighbor = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if neighbor.num_H != 0
             || (neighbor.charge != 0
-                && (neighbor.el_number != 8
-                    || i32::from(neighbor.charge) + i32::from(atom.charge) != 0))
+                && (neighbor.el_number != 8 || i32::from(neighbor.charge) + i32::from(atom.charge) != 0))
             || (neighbor.radical != 0 && neighbor.radical != RADICAL_SINGLET as i8)
         {
             disconnect = false;
             break;
         }
-        if neighbor.el_number == 1
-            && neighbor.valence == 1
-            && neighbor.charge == 0
-            && neighbor.radical == 0
-        {
+        if neighbor.el_number == 1 && neighbor.valence == 1 && neighbor.charge == 0 && neighbor.radical == 0 {
             num_h += 1;
-            let isotope = usize::try_from(neighbor.iso_atw_diff)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let isotope = usize::try_from(neighbor.iso_atw_diff).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let explicit = num_explicit_h
                 .get_mut(isotope)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2390,9 +2300,7 @@ pub(crate) fn bIsAmmoniumSalt(
             found_position = j as i32;
             let opposite_position = usize::from(neighbor.neighbor[0] == i as AT_NUMB);
             let carbon_index = usize::from(neighbor.neighbor[opposite_position]);
-            let carbon = atoms
-                .get(carbon_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let carbon = atoms.get(carbon_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if carbon.el_number != 6
                 || carbon.charge != 0
                 || (carbon.radical != 0 && carbon.radical != RADICAL_SINGLET as i8)
@@ -2555,22 +2463,12 @@ pub(crate) fn DisconnectAmmoniumSalt(
     // INCHI✔️✔️: #define NUM_H_ISOTOPES 3
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectAmmoniumSalt
 
-    let nitrogen =
-        usize::try_from(nitrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let nitrogen = usize::try_from(nitrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let oxygen = usize::try_from(oxygen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut k = nitrogen_bond_position;
-    let mut val = i32::from(
-        atoms
-            .get(nitrogen)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence,
-    );
-    let oxygen_atom = atoms
-        .get(oxygen)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if atoms[nitrogen].charge != 0
-        && i32::from(atoms[nitrogen].charge) + i32::from(oxygen_atom.charge) == 0
-    {
+    let mut val = i32::from(atoms.get(nitrogen).ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
+    let oxygen_atom = atoms.get(oxygen).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if atoms[nitrogen].charge != 0 && i32::from(atoms[nitrogen].charge) + i32::from(oxygen_atom.charge) == 0 {
         atoms[nitrogen].charge = 0;
         atoms[oxygen].charge = 0;
     }
@@ -2611,12 +2509,8 @@ pub(crate) fn DisconnectAmmoniumSalt(
         let mut hydrogen_position = None;
         for j in 0..val.max(0) as usize {
             let neighbor = usize::from(atoms[nitrogen].neighbor[j]);
-            let candidate = atoms
-                .get(neighbor)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if candidate.el_number == 1
-                && i32::from(candidate.iso_atw_diff) == move_explicit_isotope
-            {
+            let candidate = atoms.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if candidate.el_number == 1 && i32::from(candidate.iso_atw_diff) == move_explicit_isotope {
                 let dx = candidate.x - atoms[oxygen].x;
                 let dy = candidate.y - atoms[oxygen].y;
                 let dz = candidate.z - atoms[oxygen].z;
@@ -2630,8 +2524,8 @@ pub(crate) fn DisconnectAmmoniumSalt(
         }
         let hydrogen = hydrogen.ok_or(SourceHeapError::PointerOutOfBounds)?;
         let hydrogen_position = hydrogen_position.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let oxygen_position = usize::try_from(atoms[oxygen].valence)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let oxygen_position =
+            usize::try_from(atoms[oxygen].valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if oxygen_position >= MAXVAL as usize {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -2639,9 +2533,7 @@ pub(crate) fn DisconnectAmmoniumSalt(
         atoms[oxygen].neighbor[oxygen_position] = hydrogen as AT_NUMB;
         atoms[oxygen].bond_stereo[oxygen_position] = 0;
         atoms[oxygen].bond_type[oxygen_position] = hydrogen_bond;
-        atoms[oxygen].chem_bonds_valence = atoms[oxygen]
-            .chem_bonds_valence
-            .wrapping_add(hydrogen_bond as S_CHAR);
+        atoms[oxygen].chem_bonds_valence = atoms[oxygen].chem_bonds_valence.wrapping_add(hydrogen_bond as S_CHAR);
         atoms[oxygen].valence = atoms[oxygen].valence.wrapping_add(1);
         atoms[hydrogen].neighbor[0] = oxygen as AT_NUMB;
         atoms[hydrogen].bond_stereo[0] = 0;
@@ -2777,8 +2669,7 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
 
     let valid_valence = if metal.charge == 0 {
         (element_type & 1 != 0 && valence == get_el_valence(i32::from(metal.el_number), 0, 0)?)
-            || (element_type & 2 != 0
-                && valence == get_el_valence(i32::from(metal.el_number), 0, 1)?)
+            || (element_type & 2 != 0 && valence == get_el_valence(i32::from(metal.el_number), 0, 1)?)
     } else {
         metal.charge > 0
             && element_type & 1 != 0
@@ -2790,11 +2681,8 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
 
     for position in 0..valence.max(0) as usize {
         let ligand_index = usize::from(metal.neighbor[position]);
-        let ligand = atoms
-            .get(ligand_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let ligand_h =
-            i32::from(ligand.num_H) + ligand.num_iso_H.into_iter().map(i32::from).sum::<i32>();
+        let ligand = atoms.get(ligand_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let ligand_h = i32::from(ligand.num_H) + ligand.num_iso_H.into_iter().map(i32::from).sum::<i32>();
         let halogen = matches!(ligand.el_number, 9 | 17 | 35 | 53)
             && ligand.valence == 1
             && ligand.chem_bonds_valence == 1
@@ -2815,9 +2703,7 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
         }
         let carbon_position = usize::from(ligand.neighbor[0] == i as AT_NUMB);
         let carbon_index = usize::from(ligand.neighbor[carbon_position]);
-        let carbon = atoms
-            .get(carbon_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let carbon = atoms.get(carbon_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if carbon.el_number != 6
             || carbon.num_H != 0
             || carbon.chem_bonds_valence != 4
@@ -2843,10 +2729,7 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn DisconnectMetalSalt(
-    atoms: &mut [inp_ATOM],
-    atom_index: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn DisconnectMetalSalt(atoms: &mut [inp_ATOM], atom_index: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:2612 DisconnectMetalSalt
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: DisconnectMetalSalt
     // INCHI✔️✔️: int DisconnectMetalSalt( inp_ATOM *at, int i )
@@ -2909,8 +2792,7 @@ pub(crate) fn DisconnectMetalSalt(
     // INCHI✔️✔️: typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectMetalSalt
 
-    let metal_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let metal_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let metal_valence = i32::from(
         atoms
             .get(metal_index)
@@ -2944,8 +2826,7 @@ pub(crate) fn DisconnectMetalSalt(
         }
         atoms[ligand_index].charge = -1;
         atoms[ligand_index].valence = atoms[ligand_index].valence.wrapping_sub(1);
-        atoms[ligand_index].chem_bonds_valence =
-            atoms[ligand_index].chem_bonds_valence.wrapping_sub(1);
+        atoms[ligand_index].chem_bonds_valence = atoms[ligand_index].chem_bonds_valence.wrapping_sub(1);
         atoms[metal_index].neighbor[position] = 0;
         atoms[metal_index].bond_stereo[position] = 0;
         atoms[metal_index].bond_type[position] = 0;
@@ -3023,9 +2904,7 @@ pub(crate) fn DisconnectSalts(
     let atoms = heap.slice_mut(atom_pointer)?;
     let mut number_of_changes = 0_i32;
     for atom_index in 0..number_of_atoms.max(0) as usize {
-        let atom = atoms
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let valence = i32::from(atom.valence);
         if valence == 0
             || valence != i32::from(atom.chem_bonds_valence)
@@ -3126,15 +3005,12 @@ pub(crate) fn bIsMetalToDisconnect(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsMetalToDisconnect
 
     let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let element_type = get_el_type(i32::from(atom.el_number))?;
     if element_type == 0 || element_type & 3 == 0 {
         return Ok(0);
     }
-    let number_of_hydrogens =
-        i32::from(atom.num_H) + atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
+    let number_of_hydrogens = i32::from(atom.num_H) + atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
     let atom_valence = number_of_hydrogens + i32::from(atom.chem_bonds_valence);
     if atom_valence == 0 {
         return Ok(0);
@@ -3239,12 +3115,9 @@ pub(crate) fn bMayDisconnectMetals(
     let mut number_of_changes = 0_i32;
     let mut number_of_implicit_hydrogens = 0_i32;
     for atom_index in 0..number_of_atoms as usize {
-        let atom = atoms
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let valence = i32::from(atom.valence);
-        let number_of_hydrogens =
-            i32::from(atom.num_H) + atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
+        let number_of_hydrogens = i32::from(atom.num_H) + atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
         if valence == 0 && number_of_hydrogens == 0 {
             continue;
         }
@@ -3271,8 +3144,7 @@ pub(crate) fn bMayDisconnectMetals(
         }
         let metal_status = bIsMetalToDisconnect(atoms, source_index, check_metal_valence)?;
         if metal_status == 1 {
-            number_of_implicit_hydrogens =
-                number_of_implicit_hydrogens.wrapping_add(number_of_hydrogens);
+            number_of_implicit_hydrogens = number_of_implicit_hydrogens.wrapping_add(number_of_hydrogens);
             number_of_changes = number_of_changes.wrapping_add(1);
         } else if metal_status == 2
             && let Some(flags) = taut_flags_done.as_deref_mut()
@@ -3562,24 +3434,22 @@ pub(crate) fn DisconnectMetals(
         return Ok(-6);
     }
     let total_count = total_count as u64;
-    let atom_pointer =
-        match inchi_calloc::<inp_ATOM>(heap, total_count, std::mem::size_of::<inp_ATOM>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => return Ok(-6),
-            Err(error) => return Err(error),
-        };
-    let metal_pointer =
-        match inchi_calloc::<S_CHAR>(heap, total_count, std::mem::size_of::<S_CHAR>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => {
-                inchi_free(heap, atom_pointer)?;
-                return Ok(-6);
-            }
-            Err(error) => {
-                inchi_free(heap, atom_pointer)?;
-                return Err(error);
-            }
-        };
+    let atom_pointer = match inchi_calloc::<inp_ATOM>(heap, total_count, std::mem::size_of::<inp_ATOM>() as u64) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed) => return Ok(-6),
+        Err(error) => return Err(error),
+    };
+    let metal_pointer = match inchi_calloc::<S_CHAR>(heap, total_count, std::mem::size_of::<S_CHAR>() as u64) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed) => {
+            inchi_free(heap, atom_pointer)?;
+            return Ok(-6);
+        }
+        Err(error) => {
+            inchi_free(heap, atom_pointer)?;
+            return Err(error);
+        }
+    };
     if number_of_atoms < 0 {
         inchi_free(heap, atom_pointer)?;
         inchi_free(heap, metal_pointer)?;
@@ -3614,37 +3484,25 @@ pub(crate) fn DisconnectMetals(
 
             for index in 0..number_of_atoms as usize {
                 let valence = i32::from(atoms[index].valence);
-                let hydrogen_count = i32::from(atoms[index].num_H)
-                    + atoms[index]
-                        .num_iso_H
-                        .into_iter()
-                        .map(i32::from)
-                        .sum::<i32>();
+                let hydrogen_count =
+                    i32::from(atoms[index].num_H) + atoms[index].num_iso_H.into_iter().map(i32::from).sum::<i32>();
                 if valence == 0 && hydrogen_count == 0 {
                     continue;
                 }
                 let radical_or_multiple = valence == 0
                     || valence != i32::from(atoms[index].chem_bonds_valence)
-                    || (atoms[index].radical != 0
-                        && atoms[index].radical != RADICAL_SINGLET as S_CHAR);
+                    || (atoms[index].radical != 0 && atoms[index].radical != RADICAL_SINGLET as S_CHAR);
                 let mut oxygen = 0_i32;
                 let mut ordinal = 0_i32;
                 let mut explicit_hydrogens = [0_i8; NUM_H_ISOTOPES as usize + 1];
                 if !radical_or_multiple
-                    && bIsAmmoniumSalt(
-                        atoms,
-                        index as i32,
-                        &mut oxygen,
-                        &mut ordinal,
-                        &mut explicit_hydrogens,
-                    )? != 0
+                    && bIsAmmoniumSalt(atoms, index as i32, &mut oxygen, &mut ordinal, &mut explicit_hydrogens)? != 0
                 {
                 } else if !radical_or_multiple && bIsMetalSalt(atoms, index as i32)? != 0 {
                 } else {
                     let status = bIsMetalToDisconnect(atoms, index as i32, check_metal_valence)?;
                     if status == 1 {
-                        number_of_implicit_hydrogens =
-                            number_of_implicit_hydrogens.wrapping_add(hydrogen_count);
+                        number_of_implicit_hydrogens = number_of_implicit_hydrogens.wrapping_add(hydrogen_count);
                         metal_marks[index] = (1_i32 + hydrogen_count) as S_CHAR;
                         number_of_changes = number_of_changes.wrapping_add(1);
                     } else if status == 2
@@ -3655,11 +3513,7 @@ pub(crate) fn DisconnectMetals(
                 }
             }
             if number_of_implicit_hydrogens != number_of_explicit_hydrogens {
-                return Ok((
-                    2_i32,
-                    number_of_atoms_after_expansion,
-                    number_of_disconnections,
-                ));
+                return Ok((2_i32, number_of_atoms_after_expansion, number_of_disconnections));
             }
 
             for index in 0..number_of_atoms as usize {
@@ -3676,19 +3530,12 @@ pub(crate) fn DisconnectMetals(
                         i32::from(atoms[index].num_iso_H[isotope - 1])
                     };
                     for _ in 0..count.max(0) {
-                        if number_of_atoms_after_expansion
-                            >= number_of_atoms + number_of_explicit_hydrogens
-                        {
-                            return Ok((
-                                3,
-                                number_of_atoms_after_expansion,
-                                number_of_disconnections,
-                            ));
+                        if number_of_atoms_after_expansion >= number_of_atoms + number_of_explicit_hydrogens {
+                            return Ok((3, number_of_atoms_after_expansion, number_of_disconnections));
                         }
                         let hydrogen = number_of_atoms_after_expansion as usize;
                         atoms[hydrogen].elname[0] = b'H' as i8;
-                        atoms[hydrogen].el_number =
-                            get_periodic_table_number(Some(&atoms[hydrogen].elname))? as U_CHAR;
+                        atoms[hydrogen].el_number = get_periodic_table_number(Some(&atoms[hydrogen].elname))? as U_CHAR;
                         atoms[hydrogen].iso_atw_diff = isotope as S_CHAR;
                         atoms[hydrogen].component = atoms[index].component;
                         let _ = move_explicit_Hcation(
@@ -3698,16 +3545,14 @@ pub(crate) fn DisconnectMetals(
                             number_of_atoms_after_expansion,
                             1,
                         )?;
-                        atoms[hydrogen].orig_at_number =
-                            (number_of_atoms_after_expansion + 1) as AT_NUMB;
+                        atoms[hydrogen].orig_at_number = (number_of_atoms_after_expansion + 1) as AT_NUMB;
                         number_of_atoms_after_expansion += 1;
                         number_of_implicit_hydrogens -= 1;
                         metal_marks[index] = metal_marks[index].wrapping_sub(1);
                         if isotope == 0 {
                             atoms[index].num_H = atoms[index].num_H.wrapping_sub(1);
                         } else {
-                            atoms[index].num_iso_H[isotope - 1] =
-                                atoms[index].num_iso_H[isotope - 1].wrapping_sub(1);
+                            atoms[index].num_iso_H[isotope - 1] = atoms[index].num_iso_H[isotope - 1].wrapping_sub(1);
                         }
                     }
                 }
@@ -3728,23 +3573,20 @@ pub(crate) fn DisconnectMetals(
                     while ordinal >= 0 {
                         if ordinal < i32::from(atoms[index].valence) {
                             let neighbor = usize::from(atoms[index].neighbor[ordinal as usize]);
-                            let neighbor_is_metal = *metal_marks
-                                .get(neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                != 0;
+                            let neighbor_is_metal =
+                                *metal_marks.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)? != 0;
                             if neighbor_is_metal == disconnect_metal_bonds {
-                                number_of_disconnections =
-                                    number_of_disconnections.wrapping_add(DisconnectOneLigand(
-                                        atoms,
-                                        old_component_numbers.as_deref_mut(),
-                                        metal_marks,
-                                        &HETEROATOM_ELEMENTS,
-                                        5,
-                                        number_of_atoms,
-                                        index as i32,
-                                        ordinal,
-                                        taut_flags_done.as_deref_mut(),
-                                    )?);
+                                number_of_disconnections = number_of_disconnections.wrapping_add(DisconnectOneLigand(
+                                    atoms,
+                                    old_component_numbers.as_deref_mut(),
+                                    metal_marks,
+                                    &HETEROATOM_ELEMENTS,
+                                    5,
+                                    number_of_atoms,
+                                    index as i32,
+                                    ordinal,
+                                    taut_flags_done.as_deref_mut(),
+                                )?);
                             }
                         }
                         ordinal -= 1;
@@ -3987,10 +3829,7 @@ int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bNumHeterAtomHasIsotopicH(
-    atoms: &[inp_ATOM],
-    number_of_atoms: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn bNumHeterAtomHasIsotopicH(atoms: &[inp_ATOM], number_of_atoms: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:4133 bNumHeterAtomHasIsotopicH
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: bNumHeterAtomHasIsotopicH
     // INCHI✔️✔️: int bNumHeterAtomHasIsotopicH( inp_ATOM *atom, int num_atoms )
@@ -4109,28 +3948,22 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
     // INCHI✔️✔️: #define NUMH(AT,N) (AT[N].num_H+NUM_ISO_H(AT,N))
     // INCHI✔️✔️: #define RADICAL_SINGLET 1
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bNumHeterAtomHasIsotopicH
-    let atom_count =
-        usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = atoms
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atoms = atoms.get(..atom_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut is_hydrogen = false;
     let mut number_of_isotopic_hydrogen_atoms = 0_i32;
     let mut number_of_isotopic_atoms = 0_i32;
 
     for atom in atoms {
         let implicit_isotopic_hydrogens = atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
-        number_of_isotopic_atoms = number_of_isotopic_atoms.wrapping_add(i32::from(
-            atom.iso_atw_diff != 0 || implicit_isotopic_hydrogens != 0,
-        ));
+        number_of_isotopic_atoms = number_of_isotopic_atoms
+            .wrapping_add(i32::from(atom.iso_atw_diff != 0 || implicit_isotopic_hydrogens != 0));
 
         let ion_atom_type = get_iat_number(i32::from(atom.el_number));
         if ion_atom_type < 0 {
             continue;
         }
-        if i32::from(atom.charge).abs() > 1
-            || (atom.radical != 0 && atom.radical != RADICAL_SINGLET as S_CHAR)
-        {
+        if i32::from(atom.charge).abs() > 1 || (atom.radical != 0 && atom.radical != RADICAL_SINGLET as S_CHAR) {
             continue;
         }
 
@@ -4168,8 +4001,8 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
         } else {
             current_isotopic_hydrogens = 0_i32;
             accept = true;
-            let neighbor_count = usize::try_from(i32::from(atom.valence).max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_count =
+                usize::try_from(i32::from(atom.valence).max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             for &neighbor in atom
                 .neighbor
                 .get(..neighbor_count)
@@ -4183,26 +4016,20 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
                 {
                     accept = false;
                     break;
-                } else if neighbor.el_number == 1
-                    && neighbor.valence == 1
-                    && neighbor.iso_atw_diff != 0
-                {
+                } else if neighbor.el_number == 1 && neighbor.valence == 1 && neighbor.iso_atw_diff != 0 {
                     current_isotopic_hydrogens = current_isotopic_hydrogens.wrapping_add(1);
                 }
             }
             if accept {
-                number_of_isotopic_atoms =
-                    number_of_isotopic_atoms.wrapping_sub(current_isotopic_hydrogens);
-                current_isotopic_hydrogens =
-                    current_isotopic_hydrogens.wrapping_add(implicit_isotopic_hydrogens);
+                number_of_isotopic_atoms = number_of_isotopic_atoms.wrapping_sub(current_isotopic_hydrogens);
+                current_isotopic_hydrogens = current_isotopic_hydrogens.wrapping_add(implicit_isotopic_hydrogens);
             }
         }
-        number_of_isotopic_hydrogen_atoms = number_of_isotopic_hydrogen_atoms
-            .wrapping_add(i32::from(accept && current_isotopic_hydrogens != 0));
+        number_of_isotopic_hydrogen_atoms =
+            number_of_isotopic_hydrogen_atoms.wrapping_add(i32::from(accept && current_isotopic_hydrogens != 0));
     }
 
-    Ok(i32::from(number_of_isotopic_hydrogen_atoms != 0)
-        | (i32::from(number_of_isotopic_atoms != 0) << 1))
+    Ok(i32::from(number_of_isotopic_hydrogen_atoms != 0) | (i32::from(number_of_isotopic_atoms != 0) << 1))
 }
 
 pub(crate) fn the_only_doublet_neigh(
@@ -4262,11 +4089,8 @@ pub(crate) fn the_only_doublet_neigh(
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define RADICAL_DOUBLET 2
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: the_only_doublet_neigh
-    let first_index =
-        usize::try_from(first_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let first = atoms
-        .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first_index = usize::try_from(first_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first = atoms.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if first.radical != RADICAL_DOUBLET as S_CHAR {
         return Ok(-1);
     }
@@ -4290,8 +4114,8 @@ pub(crate) fn the_only_doublet_neigh(
     }
 
     if first_doublet_count == 1 {
-        let selected_ordinal = usize::try_from(*first_neighbor_ordinal)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let selected_ordinal =
+            usize::try_from(*first_neighbor_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let selected_number = *first
             .neighbor
             .get(selected_ordinal)
@@ -4560,8 +4384,7 @@ pub(crate) fn fix_non_uniform_drawn_oxoanions(
     // INCHI✔️✔️: #define RADICAL_SINGLET 1
     // INCHI✔️✔️: typedef unsigned char U_CHAR; typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: fix_non_uniform_drawn_oxoanions
-    let atom_count =
-        usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if atoms.len() < atom_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -4581,9 +4404,7 @@ pub(crate) fn fix_non_uniform_drawn_oxoanions(
                 continue;
             }
         }
-        if atoms[center_index].radical != 0
-            && atoms[center_index].radical != RADICAL_SINGLET as S_CHAR
-        {
+        if atoms[center_index].radical != 0 && atoms[center_index].radical != RADICAL_SINGLET as S_CHAR {
             center_index += 1;
             continue;
         }
@@ -4601,9 +4422,7 @@ pub(crate) fn fix_non_uniform_drawn_oxoanions(
                 .get(ordinal_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor_index = usize::from(neighbor_number);
-            let terminal = atoms
-                .get(neighbor_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let terminal = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
 
             if terminal.valence != 1
                 || *atoms[center_index]
@@ -4663,10 +4482,8 @@ pub(crate) fn fix_non_uniform_drawn_oxoanions(
             atoms[terminal_index].bond_type[0] = BOND_TYPE_SINGLE as u8;
             atoms[terminal_index].bond_stereo[0] = 0;
             atoms[center_index].bond_stereo[selected_ordinal] = 0;
-            atoms[center_index].chem_bonds_valence =
-                atoms[center_index].chem_bonds_valence.wrapping_sub(1);
-            atoms[terminal_index].chem_bonds_valence =
-                atoms[terminal_index].chem_bonds_valence.wrapping_sub(1);
+            atoms[center_index].chem_bonds_valence = atoms[center_index].chem_bonds_valence.wrapping_sub(1);
+            atoms[terminal_index].chem_bonds_valence = atoms[terminal_index].chem_bonds_valence.wrapping_sub(1);
             *number_of_changes = number_of_changes.wrapping_add(1);
         }
         center_index += 1;
@@ -4825,8 +4642,7 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
     // INCHI✔️✔️: #define RADICAL_SINGLET 1
     // INCHI✔️✔️: #define MAXVAL 20
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: fix_non_uniform_drawn_amidiniums
-    let atom_count =
-        usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if atoms.len() < atom_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -4838,8 +4654,7 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
             || ![6_u8, 16, 15].contains(&atoms[center_index].el_number)
             || atoms[center_index].valence != 3
             || atoms[center_index].chem_bonds_valence != 3
-            || (atoms[center_index].radical != 0
-                && atoms[center_index].radical != RADICAL_SINGLET as S_CHAR)
+            || (atoms[center_index].radical != 0 && atoms[center_index].radical != RADICAL_SINGLET as S_CHAR)
         {
             center_index += 1;
             continue;
@@ -4859,9 +4674,7 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
                 .get(ordinal as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor_index = usize::from(neighbor_number);
-            let neighbor = atoms
-                .get(neighbor_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor.charge != 0 {
                 mismatch = true;
                 break;
@@ -4871,8 +4684,8 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
                     mismatch = true;
                     break;
                 }
-                let neighbor_hydrogens = i32::from(neighbor.num_H)
-                    .wrapping_add(neighbor.num_iso_H.into_iter().map(i32::from).sum::<i32>());
+                let neighbor_hydrogens =
+                    i32::from(neighbor.num_H).wrapping_add(neighbor.num_iso_H.into_iter().map(i32::from).sum::<i32>());
                 number_of_hydrogens = number_of_hydrogens.wrapping_add(neighbor_hydrogens);
                 number_of_nitrogens = number_of_nitrogens.wrapping_add(1);
                 if first_nitrogen.is_none() {
@@ -4908,10 +4721,8 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
                 .bond_type
                 .get_mut(reciprocal_ordinal as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = BOND_TYPE_DOUBLE as u8;
-            atoms[center_index].chem_bonds_valence =
-                atoms[center_index].chem_bonds_valence.wrapping_add(1);
-            atoms[nitrogen_index].chem_bonds_valence =
-                atoms[nitrogen_index].chem_bonds_valence.wrapping_add(1);
+            atoms[center_index].chem_bonds_valence = atoms[center_index].chem_bonds_valence.wrapping_add(1);
+            atoms[nitrogen_index].chem_bonds_valence = atoms[nitrogen_index].chem_bonds_valence.wrapping_add(1);
             *number_of_changes = number_of_changes.wrapping_add(1);
         }
         center_index += 1;
@@ -5254,15 +5065,13 @@ pub(crate) fn fix_odd_things(
     // INCHI✔️✔️: #define FIRST_CENTER2 5
     // INCHI✔️✔️: The #ifndef FIX_P_IV_Plus_O_Minus phosphorus branch is inactive.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: fix_odd_things
-    let atom_count =
-        usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if atoms.len() < atom_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     const ELIGIBLE_ELEMENTS: [u8; 8] = [7, 15, 33, 51, 8, 16, 34, 52];
-    let num_h = |atom: &inp_ATOM| {
-        i32::from(atom.num_H).wrapping_add(atom.num_iso_H.into_iter().map(i32::from).sum::<i32>())
-    };
+    let num_h =
+        |atom: &inp_ATOM| i32::from(atom.num_H).wrapping_add(atom.num_iso_H.into_iter().map(i32::from).sum::<i32>());
     let mut number_of_changes = 0_i32;
 
     if fix_non_uniform_draw != 0 {
@@ -5273,19 +5082,14 @@ pub(crate) fn fix_odd_things(
     for first_index in 0..atom_count {
         if atoms[first_index].valence == 1
             && i32::from(atoms[first_index].charge).abs() == 1
-            && (atoms[first_index].radical == 0
-                || atoms[first_index].radical == RADICAL_SINGLET as S_CHAR)
+            && (atoms[first_index].radical == 0 || atoms[first_index].radical == RADICAL_SINGLET as S_CHAR)
             && atoms[first_index].bond_type[0] == BOND_TYPE_SINGLE as u8
             && atoms[first_index].el_number == 1
         {
             let second_index = usize::from(atoms[first_index].neighbor[0]);
-            let second = atoms
-                .get(second_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if second.el_number != 1 && num_h(&atoms[first_index]) == 0 && num_h(second) == 0 {
-                atoms[second_index].charge = atoms[second_index]
-                    .charge
-                    .wrapping_add(atoms[first_index].charge);
+                atoms[second_index].charge = atoms[second_index].charge.wrapping_add(atoms[first_index].charge);
                 atoms[first_index].charge = 0;
             }
         }
@@ -5293,23 +5097,19 @@ pub(crate) fn fix_odd_things(
 
     for first_index in 0..atom_count {
         if atoms[first_index].charge != 1
-            || (atoms[first_index].radical != 0
-                && atoms[first_index].radical != RADICAL_SINGLET as S_CHAR)
+            || (atoms[first_index].radical != 0 && atoms[first_index].radical != RADICAL_SINGLET as S_CHAR)
             || atoms[first_index].chem_bonds_valence == atoms[first_index].valence
             || !ELIGIBLE_ELEMENTS.contains(&atoms[first_index].el_number)
             || get_el_valence(
                 i32::from(atoms[first_index].el_number),
                 i32::from(atoms[first_index].charge),
                 0,
-            )? != i32::from(atoms[first_index].chem_bonds_valence)
-                .wrapping_add(num_h(&atoms[first_index]))
+            )? != i32::from(atoms[first_index].chem_bonds_valence).wrapping_add(num_h(&atoms[first_index]))
         {
             continue;
         }
 
-        if atoms[first_index].valence == 1
-            && atoms[first_index].bond_type[0] == BOND_TYPE_DOUBLE as u8
-        {
+        if atoms[first_index].valence == 1 && atoms[first_index].bond_type[0] == BOND_TYPE_DOUBLE as u8 {
             let center_index = usize::from(atoms[first_index].neighbor[0]);
             let center_valence = i32::from(
                 atoms
@@ -5325,9 +5125,7 @@ pub(crate) fn fix_odd_things(
                         .get(second_ordinal as usize)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let second = atoms
-                    .get(second_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let second = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if second.valence == 1
                     && second.charge == -1
                     && second.el_number == atoms[first_index].el_number
@@ -5338,8 +5136,7 @@ pub(crate) fn fix_odd_things(
                 {
                     let mut first_ordinal = 0_i32;
                     while first_ordinal < center_valence
-                        && atoms[center_index].neighbor[first_ordinal as usize]
-                            != first_index as AT_NUMB
+                        && atoms[center_index].neighbor[first_ordinal as usize] != first_index as AT_NUMB
                     {
                         first_ordinal = first_ordinal.wrapping_add(1);
                     }
@@ -5347,12 +5144,10 @@ pub(crate) fn fix_odd_things(
                     atoms[first_index].charge = 0;
                     atoms[first_index].bond_type[0] = BOND_TYPE_SINGLE as u8;
                     atoms[center_index].bond_type[first_ordinal as usize] = BOND_TYPE_SINGLE as u8;
-                    atoms[first_index].chem_bonds_valence =
-                        atoms[first_index].chem_bonds_valence.wrapping_sub(1);
+                    atoms[first_index].chem_bonds_valence = atoms[first_index].chem_bonds_valence.wrapping_sub(1);
                     atoms[second_index].bond_type[0] = BOND_TYPE_DOUBLE as u8;
                     atoms[center_index].bond_type[second_ordinal as usize] = BOND_TYPE_DOUBLE as u8;
-                    atoms[second_index].chem_bonds_valence =
-                        atoms[second_index].chem_bonds_valence.wrapping_add(1);
+                    atoms[second_index].chem_bonds_valence = atoms[second_index].chem_bonds_valence.wrapping_add(1);
                     number_of_changes = number_of_changes.wrapping_add(1);
                     break;
                 }
@@ -5371,9 +5166,7 @@ pub(crate) fn fix_odd_things(
                         .get(ordinal as usize)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let neighbor = atoms
-                    .get(neighbor_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let neighbor = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if neighbor.el_number == 1 {
                     if neighbor.chem_bonds_valence == 1
                         && (neighbor.radical == 0 || neighbor.radical == RADICAL_SINGLET as S_CHAR)
@@ -5401,9 +5194,7 @@ pub(crate) fn fix_odd_things(
                         .get(second_ordinal as usize)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let second = atoms
-                    .get(second_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let second = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if second.charge == -1
                     && second.el_number == atoms[first_index].el_number
                     && (second.radical == 0 || second.radical == RADICAL_SINGLET as S_CHAR)
@@ -5421,21 +5212,17 @@ pub(crate) fn fix_odd_things(
                                 .get(neighbor_ordinal as usize)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
-                        let neighbor = atoms
-                            .get(neighbor_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if neighbor.el_number == 1 {
                             if neighbor.chem_bonds_valence == 1
-                                && (neighbor.radical == 0
-                                    || neighbor.radical == RADICAL_SINGLET as S_CHAR)
+                                && (neighbor.radical == 0 || neighbor.radical == RADICAL_SINGLET as S_CHAR)
                             {
                                 second_hydrogens = second_hydrogens.wrapping_add(1);
                             } else {
                                 break;
                             }
                         } else if center_index == neighbor_index
-                            && atoms[second_index].bond_type[neighbor_ordinal as usize]
-                                == BOND_TYPE_SINGLE as u8
+                            && atoms[second_index].bond_type[neighbor_ordinal as usize] == BOND_TYPE_SINGLE as u8
                         {
                             second_center_ordinal = neighbor_ordinal;
                         } else {
@@ -5443,35 +5230,26 @@ pub(crate) fn fix_odd_things(
                         }
                         neighbor_ordinal = neighbor_ordinal.wrapping_add(1);
                     }
-                    if second_hydrogens.wrapping_add(i32::from(second_center_ordinal >= 0))
-                        != second_valence
-                    {
+                    if second_hydrogens.wrapping_add(i32::from(second_center_ordinal >= 0)) != second_valence {
                         second_ordinal = second_ordinal.wrapping_add(1);
                         continue;
                     }
 
                     let mut center_first_ordinal = 0_i32;
                     while center_first_ordinal < center_valence
-                        && atoms[center_index].neighbor[center_first_ordinal as usize]
-                            != first_index as AT_NUMB
+                        && atoms[center_index].neighbor[center_first_ordinal as usize] != first_index as AT_NUMB
                     {
                         center_first_ordinal = center_first_ordinal.wrapping_add(1);
                     }
                     if second_center_ordinal >= 0 {
                         atoms[second_index].charge = 0;
                         atoms[first_index].charge = 0;
-                        atoms[first_index].bond_type[first_center_ordinal as usize] =
-                            BOND_TYPE_SINGLE as u8;
-                        atoms[center_index].bond_type[center_first_ordinal as usize] =
-                            BOND_TYPE_SINGLE as u8;
-                        atoms[first_index].chem_bonds_valence =
-                            atoms[first_index].chem_bonds_valence.wrapping_sub(1);
-                        atoms[second_index].bond_type[second_center_ordinal as usize] =
-                            BOND_TYPE_DOUBLE as u8;
-                        atoms[center_index].bond_type[second_ordinal as usize] =
-                            BOND_TYPE_DOUBLE as u8;
-                        atoms[second_index].chem_bonds_valence =
-                            atoms[second_index].chem_bonds_valence.wrapping_add(1);
+                        atoms[first_index].bond_type[first_center_ordinal as usize] = BOND_TYPE_SINGLE as u8;
+                        atoms[center_index].bond_type[center_first_ordinal as usize] = BOND_TYPE_SINGLE as u8;
+                        atoms[first_index].chem_bonds_valence = atoms[first_index].chem_bonds_valence.wrapping_sub(1);
+                        atoms[second_index].bond_type[second_center_ordinal as usize] = BOND_TYPE_DOUBLE as u8;
+                        atoms[center_index].bond_type[second_ordinal as usize] = BOND_TYPE_DOUBLE as u8;
+                        atoms[second_index].chem_bonds_valence = atoms[second_index].chem_bonds_valence.wrapping_add(1);
                         number_of_changes = number_of_changes.wrapping_add(1);
                         break;
                     }
@@ -5484,8 +5262,7 @@ pub(crate) fn fix_odd_things(
     for first_index in 0..atom_count {
         if atoms[first_index].valence != 1
             || atoms[first_index].charge != -1
-            || (atoms[first_index].radical != 0
-                && atoms[first_index].radical != RADICAL_SINGLET as S_CHAR)
+            || (atoms[first_index].radical != 0 && atoms[first_index].radical != RADICAL_SINGLET as S_CHAR)
             || num_h(&atoms[first_index]) != 0
             || atoms[first_index].bond_type[0] != BOND_TYPE_SINGLE as u8
             || ![8_u8, 16, 34, 52].contains(&atoms[first_index].el_number)
@@ -5493,9 +5270,7 @@ pub(crate) fn fix_odd_things(
             continue;
         }
         let center_index = usize::from(atoms[first_index].neighbor[0]);
-        let center = atoms
-            .get(center_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let center = atoms.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let charge = 2_i32;
         if center.charge != charge as S_CHAR
             || ![16_u8, 34, 52].contains(&center.el_number)
@@ -5519,9 +5294,7 @@ pub(crate) fn fix_odd_things(
                 second_ordinal = second_ordinal.wrapping_add(1);
                 continue;
             }
-            let second = atoms
-                .get(second_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if second.valence == 1
                 && second.charge == -1
                 && [8_u8, 16, 34, 52].contains(&second.el_number)
@@ -5531,8 +5304,7 @@ pub(crate) fn fix_odd_things(
             {
                 let mut first_ordinal = 0_i32;
                 while first_ordinal < center_valence
-                    && atoms[center_index].neighbor[first_ordinal as usize]
-                        != first_index as AT_NUMB
+                    && atoms[center_index].neighbor[first_ordinal as usize] != first_index as AT_NUMB
                 {
                     first_ordinal = first_ordinal.wrapping_add(1);
                 }
@@ -5541,10 +5313,8 @@ pub(crate) fn fix_odd_things(
                 atoms[center_index].bond_type[first_ordinal as usize] = BOND_TYPE_DOUBLE as u8;
                 atoms[first_index].bond_stereo[0] = 0;
                 atoms[center_index].bond_stereo[first_ordinal as usize] = 0;
-                atoms[first_index].chem_bonds_valence =
-                    atoms[first_index].chem_bonds_valence.wrapping_add(1);
-                atoms[center_index].chem_bonds_valence =
-                    atoms[center_index].chem_bonds_valence.wrapping_add(1);
+                atoms[first_index].chem_bonds_valence = atoms[first_index].chem_bonds_valence.wrapping_add(1);
+                atoms[center_index].chem_bonds_valence = atoms[center_index].chem_bonds_valence.wrapping_add(1);
                 if fix_bug != 0 {
                     atoms[center_index].charge = atoms[center_index].charge.wrapping_sub(1);
                 }
@@ -5555,10 +5325,8 @@ pub(crate) fn fix_odd_things(
                 atoms[center_index].bond_type[second_ordinal as usize] = BOND_TYPE_DOUBLE as u8;
                 atoms[second_index].bond_stereo[0] = 0;
                 atoms[center_index].bond_stereo[second_ordinal as usize] = 0;
-                atoms[second_index].chem_bonds_valence =
-                    atoms[second_index].chem_bonds_valence.wrapping_add(1);
-                atoms[center_index].chem_bonds_valence =
-                    atoms[center_index].chem_bonds_valence.wrapping_add(1);
+                atoms[second_index].chem_bonds_valence = atoms[second_index].chem_bonds_valence.wrapping_add(1);
+                atoms[center_index].chem_bonds_valence = atoms[center_index].chem_bonds_valence.wrapping_add(1);
                 if fix_bug != 0 {
                     atoms[center_index].charge = atoms[center_index].charge.wrapping_sub(1);
                 }
@@ -5573,23 +5341,17 @@ pub(crate) fn fix_odd_things(
         if atoms[first_index].radical == RADICAL_DOUBLET as S_CHAR {
             let mut first_ordinal = 0_i32;
             let mut second_ordinal = 0_i32;
-            let second_index = the_only_doublet_neigh(
-                atoms,
-                first_index as i32,
-                &mut first_ordinal,
-                &mut second_ordinal,
-            )?;
+            let second_index =
+                the_only_doublet_neigh(atoms, first_index as i32, &mut first_ordinal, &mut second_ordinal)?;
             if second_index >= 0 {
                 let second_index = second_index as usize;
                 if atoms[first_index].bond_type[first_ordinal as usize] <= BOND_TYPE_DOUBLE as u8 {
                     atoms[first_index].bond_type[first_ordinal as usize] =
                         atoms[first_index].bond_type[first_ordinal as usize].wrapping_add(1);
-                    atoms[first_index].chem_bonds_valence =
-                        atoms[first_index].chem_bonds_valence.wrapping_add(1);
+                    atoms[first_index].chem_bonds_valence = atoms[first_index].chem_bonds_valence.wrapping_add(1);
                     atoms[second_index].bond_type[second_ordinal as usize] =
                         atoms[second_index].bond_type[second_ordinal as usize].wrapping_add(1);
-                    atoms[second_index].chem_bonds_valence =
-                        atoms[second_index].chem_bonds_valence.wrapping_add(1);
+                    atoms[second_index].chem_bonds_valence = atoms[second_index].chem_bonds_valence.wrapping_add(1);
                     atoms[first_index].radical = 0;
                     atoms[second_index].radical = 0;
                 }
@@ -5776,11 +5538,8 @@ pub(crate) fn DisconnectOneLigand(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectOneLigand
 
     let metal = usize::try_from(metal_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let ordinal =
-        usize::try_from(ligand_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let metal_atom = atoms
-        .get(metal)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let ordinal = usize::try_from(ligand_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let metal_atom = atoms.get(metal).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if ligand_ordinal < 0 || ligand_ordinal >= i32::from(metal_atom.valence) {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -5790,12 +5549,7 @@ pub(crate) fn DisconnectOneLigand(
             .get(ordinal)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    let ligand_valence = i32::from(
-        atoms
-            .get(ligand)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence,
-    );
+    let ligand_valence = i32::from(atoms.get(ligand).ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
     if ligand_valence > MAXVAL as i32 {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -5811,24 +5565,16 @@ pub(crate) fn DisconnectOneLigand(
         let neighbor = usize::from(atoms[ligand].neighbor[source_ordinal]);
         let bond_type = atoms[ligand].bond_type[source_ordinal];
         if (neighbor as i32) < number_of_atoms
-            && *metal_marks
-                .get(neighbor)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != 0
+            && *metal_marks.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)? != 0
         {
             metal_neighbor_ordinals[number_of_metal_neighbors] = source_ordinal as i32;
             number_of_metal_neighbors += 1;
             if i32::from(bond_type) > BOND_TYPE_TRIPLE as i32 {
-                let neighbor_valence = i32::from(
-                    atoms
-                        .get(neighbor)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .valence,
-                );
+                let neighbor_valence =
+                    i32::from(atoms.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
                 for neighbor_ordinal in 0..neighbor_valence.max(0) as usize {
-                    neighbor_aromatic_bond_counts[source_ordinal] += i32::from(
-                        atoms[neighbor].bond_type[neighbor_ordinal] > BOND_TYPE_TRIPLE as u8,
-                    );
+                    neighbor_aromatic_bond_counts[source_ordinal] +=
+                        i32::from(atoms[neighbor].bond_type[neighbor_ordinal] > BOND_TYPE_TRIPLE as u8);
                 }
                 number_of_deleted_aromatic_bonds += 1;
             }
@@ -5846,16 +5592,12 @@ pub(crate) fn DisconnectOneLigand(
                 atoms
                     .get_mut(neighbor)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .chem_bonds_valence = atoms[neighbor]
-                    .chem_bonds_valence
-                    .wrapping_sub(decrement as S_CHAR);
+                    .chem_bonds_valence = atoms[neighbor].chem_bonds_valence.wrapping_sub(decrement as S_CHAR);
             }
         }
         let decrement = number_of_total_aromatic_bonds / 2
             - (number_of_total_aromatic_bonds - number_of_deleted_aromatic_bonds) / 2;
-        atoms[ligand].chem_bonds_valence = atoms[ligand]
-            .chem_bonds_valence
-            .wrapping_sub(decrement as S_CHAR);
+        atoms[ligand].chem_bonds_valence = atoms[ligand].chem_bonds_valence.wrapping_sub(decrement as S_CHAR);
     }
 
     for source_index in (0..number_of_metal_neighbors).rev() {
@@ -5867,12 +5609,8 @@ pub(crate) fn DisconnectOneLigand(
         )?);
     }
 
-    let remaining_aromatic_bonds =
-        number_of_total_aromatic_bonds - number_of_deleted_aromatic_bonds;
-    if remaining_aromatic_bonds != 0
-        && remaining_aromatic_bonds != 2
-        && remaining_aromatic_bonds != 3
-    {
+    let remaining_aromatic_bonds = number_of_total_aromatic_bonds - number_of_deleted_aromatic_bonds;
+    if remaining_aromatic_bonds != 0 && remaining_aromatic_bonds != 2 && remaining_aromatic_bonds != 3 {
         return Ok(number_of_disconnections);
     }
     let ligand_radical = atoms[ligand].radical;
@@ -6237,16 +5975,11 @@ pub(crate) fn GetMinDistDistribution(
         let source_valence = i32::from(atoms[source_index].valence);
         for neighbor_ordinal in 0..source_valence.max(0) as usize {
             let neighbor = i32::from(atoms[source_index].neighbor[neighbor_ordinal]);
-            if (neighbor > source_index as i32 && neighbor != atom_index)
-                || neighbor == hydrogen_index
-            {
+            if (neighbor > source_index as i32 && neighbor != atom_index) || neighbor == hydrogen_index {
                 continue;
             }
-            let neighbor_index =
-                usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let neighbor_atom = atoms
-                .get(neighbor_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index = usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_atom = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut xi = atoms[source_index].x - atoms[target].x;
             let mut yi = atoms[source_index].y - atoms[target].y;
             let mut xn = neighbor_atom.x - atoms[target].x;
@@ -6281,11 +6014,7 @@ pub(crate) fn GetMinDistDistribution(
             if minimum_distance >= 0.1 * 1.0e-6 {
                 let mut calculate_projection = true;
                 let mut fi = yi.atan2(xi);
-                let mut fn_angle = if neighbor == atom_index {
-                    fi
-                } else {
-                    yn.atan2(xn)
-                };
+                let mut fn_angle = if neighbor == atom_index { fi } else { yn.atan2(xn) };
                 if fi > fn_angle {
                     fn_angle += TWO_PI;
                 }
@@ -6327,17 +6056,14 @@ pub(crate) fn GetMinDistDistribution(
             } else {
                 let source_radius = xi * xi + yi * yi;
                 let neighbor_radius = xn * xn + yn * yn;
-                if source_radius > MIN_BOND_LENGTH_SQUARED
-                    && neighbor_radius > MIN_BOND_LENGTH_SQUARED
-                {
+                if source_radius > MIN_BOND_LENGTH_SQUARED && neighbor_radius > MIN_BOND_LENGTH_SQUARED {
                     let dot_product = xn * xi + yn * yi;
                     if dot_product > 0.01 * MIN_BOND_LENGTH_SQUARED {
                         let mut angle = yi.atan2(xi);
                         if angle < 0.0 {
                             angle += TWO_PI;
                         }
-                        let segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments) as usize;
+                        let segment = (((angle + half_step) / full_step).floor() as i32 % number_of_segments) as usize;
                         if minimum_distances[segment] > minimum_distance {
                             minimum_distances[segment] = minimum_distance;
                         }
@@ -6346,22 +6072,18 @@ pub(crate) fn GetMinDistDistribution(
                         if angle < 0.0 {
                             angle += TWO_PI;
                         }
-                        let segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments) as usize;
+                        let segment = (((angle + half_step) / full_step).floor() as i32 % number_of_segments) as usize;
                         if minimum_distances[segment] > minimum_distance {
                             minimum_distances[segment] = minimum_distance;
                         }
                         angle += ONE_PI;
-                        let opposite_segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments)
-                            as usize;
+                        let opposite_segment =
+                            (((angle + half_step) / full_step).floor() as i32 % number_of_segments) as usize;
                         if minimum_distances[opposite_segment] > minimum_distance {
                             minimum_distances[opposite_segment] = minimum_distance;
                         }
                     }
-                } else if source_radius <= MIN_BOND_LENGTH_SQUARED
-                    && neighbor_radius <= MIN_BOND_LENGTH_SQUARED
-                {
+                } else if source_radius <= MIN_BOND_LENGTH_SQUARED && neighbor_radius <= MIN_BOND_LENGTH_SQUARED {
                 } else {
                     let mut angle = if source_radius > neighbor_radius {
                         yi.atan2(xi)
@@ -6371,8 +6093,7 @@ pub(crate) fn GetMinDistDistribution(
                     if angle < 0.0 {
                         angle += TWO_PI;
                     }
-                    let segment = (((angle + half_step) / full_step).floor() as i32
-                        % number_of_segments) as usize;
+                    let segment = (((angle + half_step) / full_step).floor() as i32 % number_of_segments) as usize;
                     if minimum_distances[segment] > minimum_distance {
                         minimum_distances[segment] = minimum_distance;
                     }
@@ -6638,8 +6359,7 @@ pub(crate) fn move_explicit_Hcation(
     let full_step = TWO_PI / NUMBER_OF_SEGMENTS as f64;
     let half_step = full_step / 2.0;
     let target = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let hydrogen =
-        usize::try_from(hydrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let hydrogen = usize::try_from(hydrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if target >= atoms.len() || hydrogen >= atoms.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -6655,9 +6375,7 @@ pub(crate) fn move_explicit_Hcation(
         radius = 0.0;
         for ordinal in 0..target_valence.max(0) as usize {
             let neighbor = usize::from(atoms[target].neighbor[ordinal]);
-            let neighbor_atom = atoms
-                .get(neighbor)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_atom = atoms.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?;
             xd += neighbor_atom.x;
             yd += neighbor_atom.y;
             zd += neighbor_atom.z;
@@ -6668,17 +6386,14 @@ pub(crate) fn move_explicit_Hcation(
         yd /= f64::from(number_of_bonds);
         zd /= f64::from(number_of_bonds);
         radius /= f64::from(number_of_bonds);
-        radial_offset = ((xd - atoms[target].x) * (xd - atoms[target].x)
-            + (yd - atoms[target].y) * (yd - atoms[target].y))
-            .sqrt();
+        radial_offset =
+            ((xd - atoms[target].x) * (xd - atoms[target].x) + (yd - atoms[target].y) * (yd - atoms[target].y)).sqrt();
     } else {
         radius = if atoms[hydrogen].valence != 0 {
             let neighbor = usize::from(atoms[hydrogen].neighbor[0]);
             dist3D(
                 &atoms[hydrogen],
-                atoms
-                    .get(neighbor)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                atoms.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?,
             )
         } else {
             0.0
@@ -6723,8 +6438,7 @@ pub(crate) fn move_explicit_Hcation(
         if angle < 0.0 {
             angle += TWO_PI;
         }
-        let segment =
-            (((angle + half_step) / full_step).floor() as i32 % NUMBER_OF_SEGMENTS as i32) as usize;
+        let segment = (((angle + half_step) / full_step).floor() as i32 % NUMBER_OF_SEGMENTS as i32) as usize;
         if minimum_distances[segment] < 1.5 * radius {
             let mut distance = 1.5 * radius;
             let mut start_max = -1_i32;
@@ -6754,8 +6468,7 @@ pub(crate) fn move_explicit_Hcation(
                     }
                     break;
                 }
-                angle =
-                    full_step * (f64::from(start_max) + (f64::from(maximum_length) - 1.0) / 2.0);
+                angle = full_step * (f64::from(start_max) + (f64::from(maximum_length) - 1.0) / 2.0);
                 radial_offset = distance / 1.5;
                 xr = radial_offset * angle.cos();
                 yr = radial_offset * angle.sin();
@@ -6773,12 +6486,7 @@ pub(crate) fn move_explicit_Hcation(
     let removal_index;
     if atoms[hydrogen].valence != 0 {
         next = usize::from(atoms[hydrogen].neighbor[0]);
-        let next_valence = i32::from(
-            atoms
-                .get(next)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .valence,
-        );
+        let next_valence = i32::from(atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
         let mut found = next_valence <= 0;
         for ordinal in 0..next_valence.max(0) as usize {
             if atoms[next].neighbor[ordinal] == hydrogen as AT_NUMB {
@@ -6803,8 +6511,7 @@ pub(crate) fn move_explicit_Hcation(
         }
         let valence = i32::from(atoms[target].valence);
         if valence < MAXVAL as i32 {
-            let ordinal =
-                usize::try_from(valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let ordinal = usize::try_from(valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             atoms[target].neighbor[ordinal] = hydrogen as AT_NUMB;
             atoms[target].bond_type[ordinal] = atoms[hydrogen].bond_type[0];
             atoms[target].bond_stereo[ordinal] = 0;
@@ -7124,20 +6831,18 @@ pub(crate) fn remove_terminal_HDT(
     // INCHI✔️❌: typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: remove_terminal_HDT
 
-    let count = usize::try_from(num_atoms)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let source_atoms = heap
         .slice(at.as_const())?
         .get(..count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .to_vec();
 
-    let new_ord_pointer =
-        match inchi_calloc::<AT_NUMB>(heap, count as u64, std::mem::size_of::<AT_NUMB>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
+    let new_ord_pointer = match inchi_calloc::<AT_NUMB>(heap, count as u64, std::mem::size_of::<AT_NUMB>() as u64) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+        Err(error) => return Err(error),
+    };
     let new_at_pointer = match heap.allocate(vec![inp_ATOM::default(); count]) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -7159,9 +6864,8 @@ pub(crate) fn remove_terminal_HDT(
         let mut num_h = 0_i32;
         const K_MAX: i32 = 4;
 
-        let total_hydrogens = |atom: &inp_ATOM| {
-            i32::from(atom.num_H) + atom.num_iso_H.iter().copied().map(i32::from).sum::<i32>()
-        };
+        let total_hydrogens =
+            |atom: &inp_ATOM| i32::from(atom.num_H) + atom.num_iso_H.iter().copied().map(i32::from).sum::<i32>();
 
         for (index, atom) in atoms.iter_mut().enumerate() {
             atom.component = index as AT_NUMB;
@@ -7179,18 +6883,11 @@ pub(crate) fn remove_terminal_HDT(
                 atom.iso_atw_diff = kind as S_CHAR;
             }
             num_h += i32::from(
-                kind != K_MAX
-                    && atom.valence == 1
-                    && atom.chem_bonds_valence == 1
-                    && total_hydrogens(atom) == 0,
+                kind != K_MAX && atom.valence == 1 && atom.chem_bonds_valence == 1 && total_hydrogens(atom) == 0,
             );
         }
 
-        if num_h == 2
-            && count == 2
-            && total_hydrogens(&atoms[0]) == 0
-            && total_hydrogens(&atoms[1]) == 0
-        {
+        if num_h == 2 && count == 2 && total_hydrogens(&atoms[0]) == 0 && total_hydrogens(&atoms[1]) == 0 {
             if atoms[0].iso_atw_diff >= atoms[1].iso_atw_diff {
                 new_ord[0] = 0;
                 new_ord[1] = 1;
@@ -7209,8 +6906,7 @@ pub(crate) fn remove_terminal_HDT(
             num_hydrogens = 1;
         } else {
             for index in 0..count {
-                let mut kind = if atoms[index].elname[1] != 0 || total_hydrogens(&atoms[index]) != 0
-                {
+                let mut kind = if atoms[index].elname[1] != 0 || total_hydrogens(&atoms[index]) != 0 {
                     K_MAX
                 } else if atoms[index].elname[0] == b'H' as i8 {
                     i32::from(atoms[index].iso_atw_diff)
@@ -7222,11 +6918,8 @@ pub(crate) fn remove_terminal_HDT(
                     && atoms[index].valence == 1
                     && atoms[index].chem_bonds_valence == 1
                     && (neighbor > index
-                        || usize::from(
-                            *new_ord
-                                .get(neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        ) < count - num_hydrogens);
+                        || usize::from(*new_ord.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?)
+                            < count - num_hydrogens);
                 if removable {
                     num_hydrogens += 1;
                     if kind == 0
@@ -7255,8 +6948,7 @@ pub(crate) fn remove_terminal_HDT(
         let result = if num_hydrogens != 0 {
             let num_others = count - num_hydrogens;
             if num_hydrogens > 1 {
-                new_at[num_others..]
-                    .sort_by(|first, second| cmp_iso_atw_diff_component_no(first, second).cmp(&0));
+                new_at[num_others..].sort_by(|first, second| cmp_iso_atw_diff_component_no(first, second).cmp(&0));
             }
             for (index, atom) in new_at.iter().enumerate().skip(num_others) {
                 new_ord[usize::from(atom.component)] = index as AT_NUMB;
@@ -7279,8 +6971,8 @@ pub(crate) fn remove_terminal_HDT(
                     *old = 2 - (sn + sb + S_CHAR::from(sn > sb)) % 2;
                 }
 
-                let old_valence = usize::try_from(new_at[index].valence)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let old_valence =
+                    usize::try_from(new_at[index].valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let mut val = 0_usize;
                 for ordinal in 0..old_valence {
                     let original_neighbor = usize::from(new_at[index].neighbor[ordinal]);
@@ -7304,8 +6996,7 @@ pub(crate) fn remove_terminal_HDT(
                             ordinary_h_count += 1;
                             hydrogen_order[0] = (ordinal + 1) as AT_RANK;
                         }
-                        new_at[index].chem_bonds_valence =
-                            0.max(new_at[index].chem_bonds_valence - 1);
+                        new_at[index].chem_bonds_valence = 0.max(new_at[index].chem_bonds_valence - 1);
                         new_at[neighbor].neighbor[0] = index as AT_NUMB;
                         if new_at[index].sb_parity[0] != 0 {
                             for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
@@ -7313,8 +7004,7 @@ pub(crate) fn remove_terminal_HDT(
                                     break;
                                 }
                                 if ordinal == new_at[index].sn_ord[stereo_index] as usize {
-                                    new_at[index].sn_ord[stereo_index] =
-                                        -(new_at[neighbor].iso_atw_diff + 1);
+                                    new_at[index].sn_ord[stereo_index] = -(new_at[neighbor].iso_atw_diff + 1);
                                 }
                             }
                         }
@@ -7331,8 +7021,7 @@ pub(crate) fn remove_terminal_HDT(
                                     }
                                     if ordinal == new_at[index].sb_ord[stereo_index] as usize {
                                         new_at[index].sb_ord[stereo_index] = val as S_CHAR;
-                                    } else if ordinal == new_at[index].sn_ord[stereo_index] as usize
-                                    {
+                                    } else if ordinal == new_at[index].sn_ord[stereo_index] as usize {
                                         new_at[index].sn_ord[stereo_index] = val as S_CHAR;
                                     }
                                 }
@@ -7359,9 +7048,7 @@ pub(crate) fn remove_terminal_HDT(
                                     if new_at[index].sb_parity[stereo_index] == 0 {
                                         break;
                                     }
-                                    if i32::from(new_at[index].sn_ord[stereo_index])
-                                        == -(isotope as i32 + 1)
-                                    {
+                                    if i32::from(new_at[index].sn_ord[stereo_index]) == -(isotope as i32 + 1) {
                                         new_at[index].sn_ord[stereo_index] = -contiguous as S_CHAR;
                                     }
                                 }
@@ -7630,12 +7317,7 @@ pub(crate) fn RemoveInpAtBond(
     }
 
     let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let val = i32::from(
-        atoms
-            .get(iat)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence,
-    ) - 1;
+    let val = i32::from(atoms.get(iat).ok_or(SourceHeapError::PointerOutOfBounds)?.valence) - 1;
     if val < 0 {
         return Ok(0);
     }
@@ -7650,20 +7332,11 @@ pub(crate) fn RemoveInpAtBond(
 
     if atoms[iat].p_parity != 0 {
         let original = atoms[iat].orig_at_number;
-        if atoms[iat]
-            .p_orig_at_num
-            .iter()
-            .any(|&number| number == original)
-        {
+        if atoms[iat].p_orig_at_num.iter().any(|&number| number == original) {
             atoms[iat].p_parity = 0;
         }
         if atoms[iat].p_parity != 0 {
-            let neighbor = usize::from(
-                *atoms[iat]
-                    .neighbor
-                    .get(k)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+            let neighbor = usize::from(*atoms[iat].neighbor.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?);
             let neighbor_original = atoms
                 .get(neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7700,8 +7373,7 @@ pub(crate) fn RemoveInpAtBond(
                 Some(&mut next_parity_ordinal),
             )?;
             let opposite_order = if len != 0 {
-                usize::try_from(next_parity_ordinal)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                usize::try_from(next_parity_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?
             } else {
                 MAX_NUM_STEREO_BONDS as usize
             };
@@ -7744,10 +7416,9 @@ pub(crate) fn RemoveInpAtBond(
                         Some(&mut next_parity_ordinal),
                     )?;
                     if len > 0 {
-                        let next = usize::try_from(next_atom)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let order = usize::try_from(next_parity_ordinal)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let next = usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let order =
+                            usize::try_from(next_parity_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         atoms
                             .get_mut(next)
                             .and_then(|atom| atom.sb_parity.get_mut(order))
@@ -7769,8 +7440,8 @@ pub(crate) fn RemoveInpAtBond(
                 if i32::from(atoms[iat].sb_ord[m]) > bond_ordinal {
                     atoms[iat].sb_ord[m] = atoms[iat].sb_ord[m].wrapping_sub(1);
                 }
-                let replacement_index = usize::try_from(replacement)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let replacement_index =
+                    usize::try_from(replacement).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let neighbor = usize::from(atoms[iat].neighbor[replacement_index]);
                 atoms[iat].sn_orig_at_num[m] = atoms
                     .get(neighbor)
@@ -7852,19 +7523,16 @@ pub(crate) fn DisconnectInpAtBond(
     // END INCHI C FUNCTION: DisconnectInpAtBond
 
     let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let ordinal =
-        usize::try_from(neighbor_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let ordinal = usize::try_from(neighbor_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let neighbor = usize::from(
         *atoms
             .get(iat)
             .and_then(|atom| atom.neighbor.get(ordinal))
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    let opposite = atoms
-        .get(neighbor)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let opposite_valence = usize::try_from(i32::from(opposite.valence))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let opposite = atoms.get(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let opposite_valence =
+        usize::try_from(i32::from(opposite.valence)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut reverse_ordinal = 0_usize;
     while reverse_ordinal < opposite_valence {
         if i32::from(
@@ -7922,11 +7590,8 @@ pub(crate) fn SetConnectedComponentNumber(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: SetConnectedComponentNumber
 
-    let count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let selected = atoms
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let selected = atoms.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for atom in selected {
         atom.component = component_number as AT_NUMB;
     }
@@ -8062,38 +7727,30 @@ pub(crate) fn Alloc_INChI_Stereo(
         )
     }
 
-    let stereo =
-        match inchi_calloc::<INChI_Stereo>(heap, 1, std::mem::size_of::<INChI_Stereo>() as u64) {
-            Ok(pointer) => pointer,
-            Err(error) if allocation_error(error) => return Ok(SourceMutPointer::null()),
-            Err(error) => return Err(error),
-        };
+    let stereo = match inchi_calloc::<INChI_Stereo>(heap, 1, std::mem::size_of::<INChI_Stereo>() as u64) {
+        Ok(pointer) => pointer,
+        Err(error) if allocation_error(error) => return Ok(SourceMutPointer::null()),
+        Err(error) => return Err(error),
+    };
     let atom_count = num_atoms as i64 as u64;
     let bond_count = num_bonds as i64 as u64;
     let allocation = (|| {
         if num_atoms != 0 {
-            let pointer =
-                inchi_calloc::<AT_NUMB>(heap, atom_count, std::mem::size_of::<AT_NUMB>() as u64)?;
+            let pointer = inchi_calloc::<AT_NUMB>(heap, atom_count, std::mem::size_of::<AT_NUMB>() as u64)?;
             heap.slice_mut(stereo)?[0].nNumber = pointer;
-            let pointer =
-                inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
+            let pointer = inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
             heap.slice_mut(stereo)?[0].t_parity = pointer;
-            let pointer =
-                inchi_calloc::<AT_NUMB>(heap, atom_count, std::mem::size_of::<AT_NUMB>() as u64)?;
+            let pointer = inchi_calloc::<AT_NUMB>(heap, atom_count, std::mem::size_of::<AT_NUMB>() as u64)?;
             heap.slice_mut(stereo)?[0].nNumberInv = pointer;
-            let pointer =
-                inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
+            let pointer = inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
             heap.slice_mut(stereo)?[0].t_parityInv = pointer;
         }
         if num_bonds != 0 {
-            let pointer =
-                inchi_calloc::<AT_NUMB>(heap, bond_count, std::mem::size_of::<AT_NUMB>() as u64)?;
+            let pointer = inchi_calloc::<AT_NUMB>(heap, bond_count, std::mem::size_of::<AT_NUMB>() as u64)?;
             heap.slice_mut(stereo)?[0].nBondAtom1 = pointer;
-            let pointer =
-                inchi_calloc::<AT_NUMB>(heap, bond_count, std::mem::size_of::<AT_NUMB>() as u64)?;
+            let pointer = inchi_calloc::<AT_NUMB>(heap, bond_count, std::mem::size_of::<AT_NUMB>() as u64)?;
             heap.slice_mut(stereo)?[0].nBondAtom2 = pointer;
-            let pointer =
-                inchi_calloc::<S_CHAR>(heap, bond_count, std::mem::size_of::<S_CHAR>() as u64)?;
+            let pointer = inchi_calloc::<S_CHAR>(heap, bond_count, std::mem::size_of::<S_CHAR>() as u64)?;
             heap.slice_mut(stereo)?[0].b_parity = pointer;
         }
         Ok(())
@@ -8260,22 +7917,15 @@ pub(crate) fn Alloc_INChI(
         Err(error) => return Err(error),
     };
     let processing = (|| {
-        let count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let selected = atoms
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let selected = atoms.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut num_bonds = 0_i32;
         let mut num_isotopic_atoms = 0_i32;
         for atom in selected {
             num_bonds = num_bonds.wrapping_add(i32::from(atom.valence));
             let is_deuterium = atom.elname[0] == b'D' as i8 && atom.elname[1] == 0;
             let is_tritium = atom.elname[0] == b'T' as i8 && atom.elname[1] == 0;
-            if atom.iso_atw_diff != 0
-                || is_deuterium
-                || is_tritium
-                || atom.num_iso_H.iter().any(|value| *value != 0)
-            {
+            if atom.iso_atw_diff != 0 || is_deuterium || is_tritium || atom.num_iso_H.iter().any(|value| *value != 0) {
                 num_isotopic_atoms = num_isotopic_atoms.wrapping_add(1);
             }
         }
@@ -8285,26 +7935,17 @@ pub(crate) fn Alloc_INChI(
 
         let atom_count = num_atoms as u64;
         let connection_count = i64::from(num_atoms).wrapping_add(i64::from(num_bonds)) as u64;
-        let tautomer_count = ((i64::from(3 + INCHI_T_NUM_MOVABLE as i32) * i64::from(num_atoms))
-            / 2)
-        .wrapping_add(1) as u64;
-        let pointer =
-            inchi_calloc::<U_CHAR>(heap, atom_count, std::mem::size_of::<U_CHAR>() as u64)?;
+        let tautomer_count =
+            ((i64::from(3 + INCHI_T_NUM_MOVABLE as i32) * i64::from(num_atoms)) / 2).wrapping_add(1) as u64;
+        let pointer = inchi_calloc::<U_CHAR>(heap, atom_count, std::mem::size_of::<U_CHAR>() as u64)?;
         heap.slice_mut(inchi)?[0].nAtom = pointer;
-        let pointer = inchi_calloc::<AT_NUMB>(
-            heap,
-            connection_count,
-            std::mem::size_of::<AT_NUMB>() as u64,
-        )?;
+        let pointer = inchi_calloc::<AT_NUMB>(heap, connection_count, std::mem::size_of::<AT_NUMB>() as u64)?;
         heap.slice_mut(inchi)?[0].nConnTable = pointer;
-        let pointer =
-            inchi_calloc::<AT_NUMB>(heap, tautomer_count, std::mem::size_of::<AT_NUMB>() as u64)?;
+        let pointer = inchi_calloc::<AT_NUMB>(heap, tautomer_count, std::mem::size_of::<AT_NUMB>() as u64)?;
         heap.slice_mut(inchi)?[0].nTautomer = pointer;
-        let pointer =
-            inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
+        let pointer = inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
         heap.slice_mut(inchi)?[0].nNum_H = pointer;
-        let pointer =
-            inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
+        let pointer = inchi_calloc::<S_CHAR>(heap, atom_count, std::mem::size_of::<S_CHAR>() as u64)?;
         heap.slice_mut(inchi)?[0].nNum_H_fixed = pointer;
         heap.slice_mut(inchi)?[0].szHillFormula = SourceMutPointer::null();
 
@@ -8734,8 +8375,7 @@ pub(crate) fn Alloc_INChI_Aux(
     if num_atoms <= 0 {
         return Ok(SourceMutPointer::null());
     }
-    let mut aux = match inchi_calloc::<INChI_Aux>(heap, 1, std::mem::size_of::<INChI_Aux>() as u64)
-    {
+    let mut aux = match inchi_calloc::<INChI_Aux>(heap, 1, std::mem::size_of::<INChI_Aux>() as u64) {
         Ok(pointer) => pointer,
         Err(error) if allocation_error(error) => return Ok(SourceMutPointer::null()),
         Err(error) => return Err(error),
@@ -8754,15 +8394,10 @@ pub(crate) fn Alloc_INChI_Aux(
             let pointer = inchi_calloc::<AT_NUMB>(heap, tgroup_count, 2)?;
             heap.slice_mut(aux)?[0].nConstitEquTGroupNumbers = pointer;
         }
-        let pointer =
-            inchi_calloc::<ORIG_INFO>(heap, atom_count, std::mem::size_of::<ORIG_INFO>() as u64)?;
+        let pointer = inchi_calloc::<ORIG_INFO>(heap, atom_count, std::mem::size_of::<ORIG_INFO>() as u64)?;
         heap.slice_mut(aux)?[0].OrigInfo = pointer;
         if original_coordinates != 0 {
-            let pointer = inchi_calloc::<MOL_COORD>(
-                heap,
-                atom_count,
-                std::mem::size_of::<MOL_COORD>() as u64,
-            )?;
+            let pointer = inchi_calloc::<MOL_COORD>(heap, atom_count, std::mem::size_of::<MOL_COORD>() as u64)?;
             heap.slice_mut(aux)?[0].szOrigCoord = pointer;
         }
         if allocation_mode & REQ_MODE_ISO as i32 != 0 {
@@ -8773,11 +8408,8 @@ pub(crate) fn Alloc_INChI_Aux(
                         Ok(pointer) => {
                             heap.slice_mut(aux)?[0].nIsotopicOrigAtNosInCanonOrdInv = pointer;
                             match inchi_calloc::<AT_NUMB>(heap, atom_tgroup_count, 2) {
-                                Ok(pointer) => {
-                                    heap.slice_mut(aux)?[0].nConstitEquIsotopicNumbers = pointer
-                                }
-                                Err(error)
-                                    if num_isotopic_atoms == 0 && allocation_error(error) => {}
+                                Ok(pointer) => heap.slice_mut(aux)?[0].nConstitEquIsotopicNumbers = pointer,
+                                Err(error) if num_isotopic_atoms == 0 && allocation_error(error) => {}
                                 Err(error) => return Err(error),
                             }
                         }
@@ -8790,8 +8422,7 @@ pub(crate) fn Alloc_INChI_Aux(
             }
             match inchi_calloc::<AT_NUMB>(heap, tgroup_count, 2) {
                 Ok(pointer) => heap.slice_mut(aux)?[0].nConstitEquIsotopicTGroupNumbers = pointer,
-                Err(error)
-                    if !(num_isotopic_atoms != 0 && num_atoms > 1) && allocation_error(error) => {}
+                Err(error) if !(num_isotopic_atoms != 0 && num_atoms > 1) && allocation_error(error) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -8851,10 +8482,7 @@ pub(crate) fn imat_free(
     Ok(())
 }
 
-pub(crate) fn subgraf_free(
-    heap: &mut SourceHeap,
-    graph: SourceMutPointer<subgraf>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn subgraf_free(heap: &mut SourceHeap, graph: SourceMutPointer<subgraf>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:5155 subgraf_free
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: subgraf_free
     // INCHI✔️❌: void subgraf_free( subgraf *sg )
@@ -8910,8 +8538,7 @@ pub(crate) fn subgraf_free(
     inchi_free(heap, graph_value.degrees)?;
     inchi_free(heap, graph_value.orig2node)?;
     if !graph_value.adj.is_null() {
-        let row_count = usize::try_from(graph_value.nnodes.max(0))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let row_count = usize::try_from(graph_value.nnodes.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let rows = heap.slice(graph_value.adj.as_const())?;
         if rows.len() < row_count {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -9053,8 +8680,7 @@ pub(crate) fn subgraf_new(
         let degrees = inchi_calloc::<i32>(heap, source_node_count, 4)?;
         heap.slice_mut(graph)?[0].degrees = degrees;
 
-        let count =
-            usize::try_from(node_count.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let count = usize::try_from(node_count.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if input_nodes.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -9074,8 +8700,7 @@ pub(crate) fn subgraf_new(
         map[..map_length].fill(-1);
         for (index, node) in input_nodes[..count].iter().copied().enumerate() {
             let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            *map.get_mut(node)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = index as i32;
+            *map.get_mut(node).ok_or(SourceHeapError::PointerOutOfBounds)? = index as i32;
         }
 
         let adjacency = inchi_calloc::<SourceMutPointer<subgraf_edge>>(heap, source_node_count, 8)?;
@@ -9086,8 +8711,8 @@ pub(crate) fn subgraf_new(
             heap.slice(original_input.at.as_const())?.to_vec()
         };
         for index in 0..count {
-            let atom_index = usize::try_from(input_nodes[index].wrapping_sub(1))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index =
+                usize::try_from(input_nodes[index].wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = atoms
                 .get(atom_index)
                 .cloned()
@@ -9095,8 +8720,7 @@ pub(crate) fn subgraf_new(
             let source_degree = i32::from(atom.valence);
             let row = inchi_calloc::<subgraf_edge>(heap, source_degree as u64, 8)?;
             heap.slice_mut(adjacency)?[index] = row;
-            let degree = usize::try_from(source_degree.max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let degree = usize::try_from(source_degree.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let mut included = 0_usize;
             for neighbor_index in 0..degree {
                 let original_neighbor = usize::from(atom.neighbor[neighbor_index]) + 1;
@@ -9316,12 +8940,8 @@ pub(crate) fn add_bond_if_unseen(
     let node0 = usize::try_from(node0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let source_nodes = heap.slice(nodes.as_const())?;
-    let atom1 = *source_nodes
-        .get(node0)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let atom2 = *source_nodes
-        .get(node)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom1 = *source_nodes.get(node0).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom2 = *source_nodes.get(node).ok_or(SourceHeapError::PointerOutOfBounds)?;
 
     let count = usize::try_from(*bond_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for index in 0..count {
@@ -9485,21 +9105,13 @@ pub(crate) fn subgraf_pathfinder_run(
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
-    fn graph_value(
-        heap: &SourceHeap,
-        graph: SourceMutPointer<subgraf>,
-    ) -> Result<subgraf, SourceHeapError> {
+    fn graph_value(heap: &SourceHeap, graph: SourceMutPointer<subgraf>) -> Result<subgraf, SourceHeapError> {
         heap.slice(graph.as_const())?
             .first()
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
-    fn neighbor_at(
-        heap: &SourceHeap,
-        graph: &subgraf,
-        node: i32,
-        edge: i32,
-    ) -> Result<i32, SourceHeapError> {
+    fn neighbor_at(heap: &SourceHeap, graph: &subgraf, node: i32, edge: i32) -> Result<i32, SourceHeapError> {
         let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let edge = usize::try_from(edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let row = *heap
@@ -9528,12 +9140,8 @@ pub(crate) fn subgraf_pathfinder_run(
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                 .checked_mul(2)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            let edge_first = *values
-                .get(offset)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let edge_second = *values
-                .get(offset + 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let edge_first = *values.get(offset).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let edge_second = *values.get(offset + 1).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if bIsSameBond(first, second, edge_first, edge_second) != 0 {
                 return Ok(true);
             }
@@ -9545,8 +9153,7 @@ pub(crate) fn subgraf_pathfinder_run(
     if initial.nseen < 1 {
         return Ok(());
     }
-    let seen_index = usize::try_from(initial.nseen.wrapping_sub(1))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let seen_index = usize::try_from(initial.nseen.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let node0 = *heap
         .slice(initial.seen.as_const())?
         .get(seen_index)
@@ -9561,21 +9168,14 @@ pub(crate) fn subgraf_pathfinder_run(
     for edge in 0..degree.max(0) {
         let node = neighbor_at(heap, &graph, node0, edge)?;
         let current = pathfinder_value(heap, pathfinder)?;
-        if is_in_the_ilist(
-            Some(heap.slice(current.seen.as_const())?),
-            node,
-            current.nseen,
-        )?
-        .is_some()
-        {
+        if is_in_the_ilist(Some(heap.slice(current.seen.as_const())?), node, current.nseen)?.is_some() {
             continue;
         }
         if is_forbidden(heap, forbidden_count, forbidden, node0, node)? {
             continue;
         }
         if node == current.end {
-            let append =
-                usize::try_from(current.nseen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let append = usize::try_from(current.nseen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             *heap
                 .slice_mut(current.seen)?
                 .get_mut(append)
@@ -9584,28 +9184,20 @@ pub(crate) fn subgraf_pathfinder_run(
 
             let found = pathfinder_value(heap, pathfinder)?;
             for path_index in 0..found.nseen.max(0) {
-                let path_index =
-                    usize::try_from(path_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let path_index = usize::try_from(path_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let graph_node = *heap
                     .slice(found.seen.as_const())?
                     .get(path_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let graph_node =
-                    usize::try_from(graph_node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let graph_node = usize::try_from(graph_node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let original_atom = *heap
                     .slice(graph.nodes.as_const())?
                     .get(graph_node)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if !atoms.is_null()
-                    && is_in_the_ilist(
-                        Some(heap.slice(atoms.as_const())?),
-                        original_atom,
-                        *atom_count,
-                    )?
-                    .is_none()
+                    && is_in_the_ilist(Some(heap.slice(atoms.as_const())?), original_atom, *atom_count)?.is_none()
                 {
-                    let output_index = usize::try_from(*atom_count)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let output_index = usize::try_from(*atom_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     *heap
                         .slice_mut(atoms)?
                         .get_mut(output_index)
@@ -9614,8 +9206,7 @@ pub(crate) fn subgraf_pathfinder_run(
                 }
             }
             for path_index in 1..found.nseen.max(0) {
-                let second =
-                    usize::try_from(path_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let second = usize::try_from(path_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let first_node = *heap
                     .slice(found.seen.as_const())?
                     .get(second - 1)
@@ -9627,8 +9218,7 @@ pub(crate) fn subgraf_pathfinder_run(
                 add_bond_if_unseen(heap, pathfinder, first_node, second_node, bond_count, bonds)?;
             }
             let after = pathfinder_value(heap, pathfinder)?;
-            let pop = usize::try_from(after.nseen.wrapping_sub(1))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let pop = usize::try_from(after.nseen.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             *heap
                 .slice_mut(after.seen)?
                 .get_mut(pop)
@@ -9642,20 +9232,14 @@ pub(crate) fn subgraf_pathfinder_run(
         let node = neighbor_at(heap, &graph, node0, edge)?;
         let current = pathfinder_value(heap, pathfinder)?;
         if node == current.end
-            || is_in_the_ilist(
-                Some(heap.slice(current.seen.as_const())?),
-                node,
-                current.nseen,
-            )?
-            .is_some()
+            || is_in_the_ilist(Some(heap.slice(current.seen.as_const())?), node, current.nseen)?.is_some()
         {
             continue;
         }
         if is_forbidden(heap, forbidden_count, forbidden, node0, node)? {
             continue;
         }
-        let append =
-            usize::try_from(current.nseen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let append = usize::try_from(current.nseen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(current.seen)?
             .get_mut(append)
@@ -9672,8 +9256,7 @@ pub(crate) fn subgraf_pathfinder_run(
             atoms,
         )?;
         let after = pathfinder_value(heap, pathfinder)?;
-        let pop = usize::try_from(after.nseen.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let pop = usize::try_from(after.nseen.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(after.seen)?
             .get_mut(pop)
@@ -9871,8 +9454,7 @@ pub(crate) fn CompAtomData_GetNumMapping(
     if original_numbers.is_null() || current_numbers.is_null() {
         return Ok(());
     }
-    let count = usize::try_from(atom_data.num_at.max(0))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let count = usize::try_from(atom_data.num_at.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if count == 0 {
         return Ok(());
     }
@@ -9892,8 +9474,7 @@ pub(crate) fn CompAtomData_GetNumMapping(
                 *original_numbers
                     .get_mut(index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = original;
-                let original_index =
-                    usize::try_from(original).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let original_index = usize::try_from(original).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 *current_numbers
                     .get_mut(original_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = index as i32;
@@ -9958,8 +9539,7 @@ pub(crate) fn imat_new(
         Err(error) => return Err(error),
     };
     *a = outer;
-    let row_count =
-        u64::try_from(n).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let row_count = u64::try_from(n).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     for row_index in 0..m {
         let row = match inchi_calloc::<i32>(heap, row_count, 4) {
             Ok(pointer) => pointer,
@@ -10305,8 +9885,7 @@ pub(crate) fn MarkDisconnectedComponents(
     if num_atoms == 0 {
         return Ok(0);
     }
-    let allocation_count =
-        u64::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let allocation_count = u64::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let mut current_lengths = SourceMutPointer::<u16>::null();
     let new_component_numbers =
         inchi_calloc::<u16>(heap, allocation_count, 2).unwrap_or_else(|_| SourceMutPointer::null());
@@ -10320,12 +9899,10 @@ pub(crate) fn MarkDisconnectedComponents(
     let mut ret = -1_i32;
 
     let processing = (|| -> Result<bool, SourceHeapError> {
-        if new_component_numbers.is_null() || previous_atoms.is_null() || neighbor_indices.is_null()
-        {
+        if new_component_numbers.is_null() || previous_atoms.is_null() || neighbor_indices.is_null() {
             return Ok(false);
         }
-        let atom_count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for start in 0..atom_count {
             if heap.slice(new_component_numbers.as_const())?[start] != 0 {
                 continue;
@@ -10342,8 +9919,8 @@ pub(crate) fn MarkDisconnectedComponents(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let neighbor_index = heap.slice(neighbor_indices.as_const())?[current_atom];
                 if neighbor_index < atom.valence {
-                    let neighbor_index = usize::try_from(i32::from(neighbor_index))
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let neighbor_index =
+                        usize::try_from(i32::from(neighbor_index)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let next_atom = usize::from(
                         *atom
                             .neighbor
@@ -10371,8 +9948,7 @@ pub(crate) fn MarkDisconnectedComponents(
                 } else if current_atom == first_atom {
                     break;
                 } else {
-                    current_atom =
-                        usize::from(heap.slice(previous_atoms.as_const())?[current_atom]);
+                    current_atom = usize::from(heap.slice(previous_atoms.as_const())?[current_atom]);
                 }
             }
         }
@@ -10404,13 +9980,11 @@ pub(crate) fn MarkDisconnectedComponents(
             6,
         )
         .unwrap_or_else(|_| SourceMutPointer::null());
-        if current_lengths.is_null() || old_component_numbers.is_null() || component_rows.is_null()
-        {
+        if current_lengths.is_null() || old_component_numbers.is_null() || component_rows.is_null() {
             return Ok(false);
         }
 
-        let component_count =
-            usize::try_from(num_components).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let component_count = usize::try_from(num_components).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for index in 0..component_count {
             let row = &mut heap.slice_mut(component_rows)?[index];
             row[0] = 0;
@@ -10436,8 +10010,7 @@ pub(crate) fn MarkDisconnectedComponents(
             let old_index = usize::from(heap.slice(new_component_numbers.as_const())?[atom_index])
                 .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let new_component =
-                heap.slice(component_rows.as_const())?[old_index][2].wrapping_sub(1);
+            let new_component = heap.slice(component_rows.as_const())?[old_index][2].wrapping_sub(1);
             if process_old_component_numbers != 0 {
                 let old_component = heap.slice(original.at.as_const())?[atom_index].component;
                 let new_index = usize::from(new_component);
@@ -10449,11 +10022,9 @@ pub(crate) fn MarkDisconnectedComponents(
                         heap.slice_mut(old_component_numbers)?[new_index] = old_component;
                     } else {
                         for component_index in 0..component_count {
-                            let value =
-                                heap.slice(old_component_numbers.as_const())?[component_index];
+                            let value = heap.slice(old_component_numbers.as_const())?[component_index];
                             if value == old_component || value == mapped {
-                                heap.slice_mut(old_component_numbers)?[component_index] =
-                                    no_component;
+                                heap.slice_mut(old_component_numbers)?[component_index] = no_component;
                             }
                         }
                     }
@@ -10482,8 +10053,7 @@ pub(crate) fn MarkDisconnectedComponents(
             }
         } else {
             for component_index in 0..component_count {
-                heap.slice_mut(old_component_numbers)?[component_index] =
-                    component_index.wrapping_add(1) as u16;
+                heap.slice_mut(old_component_numbers)?[component_index] = component_index.wrapping_add(1) as u16;
             }
         }
         ret = num_components;
@@ -10589,8 +10159,7 @@ pub(crate) fn ExtractConnectedComponent(
         Err(error) => return Err(error),
     };
     let processing = (|| -> Result<i32, SourceHeapError> {
-        let atom_count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut component_count = 0_usize;
         for (atom_index, atom) in atoms
             .get(..atom_count)
@@ -10613,8 +10182,8 @@ pub(crate) fn ExtractConnectedComponent(
             .enumerate()
         {
             atom.orig_compt_at_numb = component_index.wrapping_add(1) as u16;
-            let valence = usize::try_from(i32::from(atom.valence).max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let valence =
+                usize::try_from(i32::from(atom.valence).max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             for neighbor in atom
                 .neighbor
                 .get_mut(..valence)
@@ -10654,23 +10223,11 @@ mod tests {
         assert_eq!(minimum, minimum_before);
         assert_eq!(maximum, maximum_before);
 
-        assert_eq!(
-            cmp_iso_atw_diff_component_no(&atom(7, 0), &atom(7, u16::MAX)),
-            -65_535
-        );
-        assert_eq!(
-            cmp_iso_atw_diff_component_no(&atom(7, u16::MAX), &atom(7, 0)),
-            65_535
-        );
+        assert_eq!(cmp_iso_atw_diff_component_no(&atom(7, 0), &atom(7, u16::MAX)), -65_535);
+        assert_eq!(cmp_iso_atw_diff_component_no(&atom(7, u16::MAX), &atom(7, 0)), 65_535);
         assert_eq!(cmp_iso_atw_diff_component_no(&atom(7, 23), &atom(7, 23)), 0);
 
-        let mut atoms = [
-            atom(1, 9),
-            atom(-1, u16::MAX),
-            atom(1, 2),
-            atom(-1, 0),
-            atom(1, 2),
-        ];
+        let mut atoms = [atom(1, 9), atom(-1, u16::MAX), atom(1, 2), atom(-1, 0), atom(1, 2)];
         atoms.sort_by(|first, second| cmp_iso_atw_diff_component_no(first, second).cmp(&0));
         assert_eq!(
             atoms.map(|entry| (entry.iso_atw_diff, entry.component)),
@@ -10703,8 +10260,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -10748,10 +10304,7 @@ mod tests {
             .expect("official result must fit i32");
             assert_eq!(rust, expected, "{case_id}");
             assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
-            assert_eq!(
-                second, second_before,
-                "{case_id}: Rust second input mutation"
-            );
+            assert_eq!(second, second_before, "{case_id}: Rust second input mutation");
             assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
             record_count += 1;
@@ -10803,8 +10356,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -10862,16 +10414,10 @@ mod tests {
     fn source_port__strutil__nfindoneom__line_932() {
         let mut no_candidates = [];
         assert_eq!(nFindOneOM(&[], i32::MIN, &mut no_candidates, 0), Ok(-1));
-        assert_eq!(
-            nFindOneOM(&[], i32::MAX, &mut no_candidates, i32::MIN),
-            Ok(-1)
-        );
+        assert_eq!(nFindOneOM(&[], i32::MAX, &mut no_candidates, i32::MIN), Ok(-1));
 
         let mut one_candidate = [i32::MIN];
-        assert_eq!(
-            nFindOneOM(&[], i32::MAX, &mut one_candidate, 1),
-            Ok(i32::MIN)
-        );
+        assert_eq!(nFindOneOM(&[], i32::MAX, &mut one_candidate, 1), Ok(i32::MIN));
 
         let mut atoms = vec![inp_ATOM::default(); 5];
         atoms[0].neighbor[..4].copy_from_slice(&[1, 2, 3, 4]);
@@ -10972,12 +10518,7 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
 
-        let mut type_1 = vec![
-            ion_atom(7, 1),
-            ion_atom(8, 0),
-            ion_atom(8, -1),
-            ion_atom(6, 0),
-        ];
+        let mut type_1 = vec![ion_atom(7, 1), ion_atom(8, 0), ion_atom(8, -1), ion_atom(6, 0)];
         type_1[0].radical = 2;
         type_1[2].radical = 3;
         ion_bond(&mut type_1, 0, 1, 2);
@@ -11002,22 +10543,14 @@ mod tests {
         assert_eq!((type_1a[0].charge, type_1a[1].charge), (0, 0));
         assert_eq!((type_1a[0].bond_type[0], type_1a[1].bond_type[0]), (2, 2));
 
-        let mut type_2 = vec![
-            ion_atom(8, 0),
-            ion_atom(7, 0),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut type_2 = vec![ion_atom(8, 0), ion_atom(7, 0), ion_atom(6, 0), ion_atom(6, 0)];
         ion_bond(&mut type_2, 0, 1, 2);
         ion_bond(&mut type_2, 1, 2, 1);
         ion_bond(&mut type_2, 2, 3, 1);
         type_2[2].radical = 2;
         let type_2 = run_one_ion_pair(type_2);
         assert_eq!((type_2[1].bond_type[1], type_2[2].bond_type[0]), (3, 3));
-        assert_eq!(
-            (type_2[1].chem_bonds_valence, type_2[2].chem_bonds_valence),
-            (5, 4)
-        );
+        assert_eq!((type_2[1].chem_bonds_valence, type_2[2].chem_bonds_valence), (5, 4));
         assert_eq!(type_2[2].radical, 0);
 
         let mut type_3 = vec![ion_atom(8, 0), ion_atom(8, 1), ion_atom(6, -1)];
@@ -11028,12 +10561,7 @@ mod tests {
         assert_eq!((type_3[1].charge, type_3[2].charge), (0, 0));
         assert_eq!((type_3[1].bond_type[1], type_3[2].bond_type[0]), (2, 2));
 
-        let mut type_4 = vec![
-            ion_atom(8, -1),
-            ion_atom(7, 1),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut type_4 = vec![ion_atom(8, -1), ion_atom(7, 1), ion_atom(6, 0), ion_atom(6, 0)];
         ion_bond(&mut type_4, 0, 1, 1);
         ion_bond(&mut type_4, 1, 2, 2);
         ion_bond(&mut type_4, 1, 3, 1);
@@ -11057,12 +10585,7 @@ mod tests {
         assert_eq!((type_6[0].bond_type[0], type_6[1].bond_type[1]), (2, 2));
         assert_eq!(type_6[2].bond_type[0], 2);
 
-        let mut type_7 = vec![
-            ion_atom(7, -1),
-            ion_atom(7, 1),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut type_7 = vec![ion_atom(7, -1), ion_atom(7, 1), ion_atom(6, 0), ion_atom(6, 0)];
         ion_bond(&mut type_7, 0, 1, 2);
         ion_bond(&mut type_7, 1, 2, 1);
         ion_bond(&mut type_7, 1, 3, 1);
@@ -11099,12 +10622,7 @@ mod tests {
         assert_eq!((type_10[0].charge, type_10[1].charge), (0, 0));
         assert_eq!((type_10[0].bond_type[0], type_10[1].bond_type[0]), (2, 2));
 
-        let mut type_11 = vec![
-            ion_atom(7, 1),
-            ion_atom(6, -1),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut type_11 = vec![ion_atom(7, 1), ion_atom(6, -1), ion_atom(6, 0), ion_atom(6, 0)];
         ion_bond(&mut type_11, 0, 1, 2);
         ion_bond(&mut type_11, 0, 2, 1);
         ion_bond(&mut type_11, 0, 3, 1);
@@ -11162,12 +10680,7 @@ mod tests {
         assert_eq!((type_16[0].bond_type[0], type_16[1].bond_type[0]), (2, 2));
         assert_eq!((type_16[0].bond_type[1], type_16[2].bond_type[0]), (2, 2));
 
-        let mut type_17 = vec![
-            ion_atom(7, 0),
-            ion_atom(6, 1),
-            ion_atom(6, -1),
-            ion_atom(6, 0),
-        ];
+        let mut type_17 = vec![ion_atom(7, 0), ion_atom(6, 1), ion_atom(6, -1), ion_atom(6, 0)];
         for neighbor in 1..4 {
             ion_bond(&mut type_17, 0, neighbor, 1);
         }
@@ -11187,22 +10700,13 @@ mod tests {
         type_18_charged[1].radical = 2;
         type_18_charged[2].radical = 3;
         let type_18_charged = run_one_ion_pair(type_18_charged);
+        assert_eq!((type_18_charged[1].charge, type_18_charged[2].charge), (0, 0));
         assert_eq!(
-            (type_18_charged[1].charge, type_18_charged[2].charge),
-            (0, 0)
-        );
-        assert_eq!(
-            (
-                type_18_charged[0].bond_type[0],
-                type_18_charged[1].bond_type[0]
-            ),
+            (type_18_charged[0].bond_type[0], type_18_charged[1].bond_type[0]),
             (2, 2)
         );
         assert_eq!(
-            (
-                type_18_charged[0].bond_type[1],
-                type_18_charged[2].bond_type[0]
-            ),
+            (type_18_charged[0].bond_type[1], type_18_charged[2].bond_type[0]),
             (3, 3)
         );
         assert_eq!(
@@ -11220,22 +10724,13 @@ mod tests {
         type_18_neutral[1].num_H = 2;
         type_18_neutral[2].num_H = 1;
         let type_18_neutral = run_one_ion_pair(type_18_neutral);
+        assert_eq!((type_18_neutral[1].charge, type_18_neutral[2].charge), (0, 0));
         assert_eq!(
-            (type_18_neutral[1].charge, type_18_neutral[2].charge),
-            (0, 0)
-        );
-        assert_eq!(
-            (
-                type_18_neutral[0].bond_type[0],
-                type_18_neutral[1].bond_type[0]
-            ),
+            (type_18_neutral[0].bond_type[0], type_18_neutral[1].bond_type[0]),
             (2, 2)
         );
         assert_eq!(
-            (
-                type_18_neutral[0].bond_type[1],
-                type_18_neutral[2].bond_type[0]
-            ),
+            (type_18_neutral[0].bond_type[1], type_18_neutral[2].bond_type[0]),
             (3, 3)
         );
     }
@@ -11255,10 +10750,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (oxygen_index, neighbor_position, explicit_h),
-            (71, 72, [1, 2, 3, 4])
-        );
+        assert_eq!((oxygen_index, neighbor_position, explicit_h), (71, 72, [1, 2, 3, 4]));
         assert_eq!(
             bIsAmmoniumSalt(
                 &[ion_atom(7, 0)],
@@ -11282,10 +10774,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (oxygen_index, neighbor_position, explicit_h),
-            (71, 72, [1, 2, 3, 4])
-        );
+        assert_eq!((oxygen_index, neighbor_position, explicit_h), (71, 72, [1, 2, 3, 4]));
 
         let mut oxygen_salt = vec![ion_atom(7, 1), ion_atom(8, -1), ion_atom(6, 0)];
         oxygen_salt[0].num_H = 4;
@@ -11302,10 +10791,7 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            (oxygen_index, neighbor_position, explicit_h),
-            (1, 0, [0; 4])
-        );
+        assert_eq!((oxygen_index, neighbor_position, explicit_h), (1, 0, [0; 4]));
 
         for halogen in [9_u8, 17, 35, 53] {
             let mut halogen_salt = vec![ion_atom(7, 0), ion_atom(halogen, 0)];
@@ -11325,10 +10811,7 @@ mod tests {
                 Ok(1),
                 "halogen {halogen}"
             );
-            assert_eq!(
-                (oxygen_index, neighbor_position, explicit_h),
-                (1, 0, [0; 4])
-            );
+            assert_eq!((oxygen_index, neighbor_position, explicit_h), (1, 0, [0; 4]));
         }
 
         let mut explicit_isotopes = vec![
@@ -11359,10 +10842,7 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            (oxygen_index, neighbor_position, explicit_h),
-            (1, 0, [1, 1, 0, 1])
-        );
+        assert_eq!((oxygen_index, neighbor_position, explicit_h), (1, 0, [1, 1, 0, 1]));
 
         let mut rejected_neighbor = vec![ion_atom(7, 0), ion_atom(6, 0)];
         rejected_neighbor[0].num_H = 4;
@@ -11380,10 +10860,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (oxygen_index, neighbor_position, explicit_h),
-            (81, 82, [0; 4])
-        );
+        assert_eq!((oxygen_index, neighbor_position, explicit_h), (81, 82, [0; 4]));
 
         let mut bad_charge = oxygen_salt.clone();
         bad_charge[0].charge = i8::MIN;
@@ -11434,20 +10911,11 @@ mod tests {
         implicit[0].num_H = 4;
         ion_bond(&mut implicit, 0, 1, 1);
         ion_bond(&mut implicit, 1, 2, 1);
-        assert_eq!(
-            DisconnectAmmoniumSalt(&mut implicit, 0, 1, 0, &[0; 4]),
-            Ok(1)
-        );
+        assert_eq!(DisconnectAmmoniumSalt(&mut implicit, 0, 1, 0, &[0; 4]), Ok(1));
         assert_eq!((implicit[0].charge, implicit[1].charge), (0, 0));
         assert_eq!((implicit[0].num_H, implicit[1].num_H), (3, 1));
-        assert_eq!(
-            (implicit[0].valence, implicit[0].chem_bonds_valence),
-            (0, 0)
-        );
-        assert_eq!(
-            (implicit[1].valence, implicit[1].chem_bonds_valence),
-            (1, 1)
-        );
+        assert_eq!((implicit[0].valence, implicit[0].chem_bonds_valence), (0, 0));
+        assert_eq!((implicit[1].valence, implicit[1].chem_bonds_valence), (1, 1));
         assert_eq!(implicit[1].neighbor[0], 2);
 
         for isotope in [1_usize, 2] {
@@ -11455,10 +10923,7 @@ mod tests {
             implicit_isotope[0].num_iso_H[isotope] = 1;
             ion_bond(&mut implicit_isotope, 0, 1, 1);
             ion_bond(&mut implicit_isotope, 1, 2, 1);
-            assert_eq!(
-                DisconnectAmmoniumSalt(&mut implicit_isotope, 0, 1, 0, &[0; 4]),
-                Ok(1)
-            );
+            assert_eq!(DisconnectAmmoniumSalt(&mut implicit_isotope, 0, 1, 0, &[0; 4]), Ok(1));
             assert_eq!(implicit_isotope[0].num_iso_H[isotope], 0);
             assert_eq!(implicit_isotope[1].num_iso_H[isotope], 1);
         }
@@ -11467,20 +10932,12 @@ mod tests {
         ignored_slot_zero[0].num_iso_H[0] = 1;
         ion_bond(&mut ignored_slot_zero, 0, 1, 1);
         ion_bond(&mut ignored_slot_zero, 1, 2, 1);
-        assert_eq!(
-            DisconnectAmmoniumSalt(&mut ignored_slot_zero, 0, 1, 0, &[0; 4]),
-            Ok(1)
-        );
+        assert_eq!(DisconnectAmmoniumSalt(&mut ignored_slot_zero, 0, 1, 0, &[0; 4]), Ok(1));
         assert_eq!(ignored_slot_zero[0].num_iso_H[0], 1);
         assert_eq!(ignored_slot_zero[1].num_iso_H[0], 0);
 
         for isotope in 0..=NUM_H_ISOTOPES as usize {
-            let mut explicit = vec![
-                ion_atom(7, 0),
-                ion_atom(8, 0),
-                ion_atom(6, 0),
-                ion_atom(1, 0),
-            ];
+            let mut explicit = vec![ion_atom(7, 0), ion_atom(8, 0), ion_atom(6, 0), ion_atom(1, 0)];
             explicit[3].iso_atw_diff = isotope as i8;
             explicit[3].bond_stereo[0] = 6;
             ion_bond(&mut explicit, 0, 1, 1);
@@ -11512,10 +10969,7 @@ mod tests {
         ion_bond(&mut nearest, 1, 2, 1);
         ion_bond(&mut nearest, 0, 3, 1);
         ion_bond(&mut nearest, 0, 4, 1);
-        assert_eq!(
-            DisconnectAmmoniumSalt(&mut nearest, 0, 1, 0, &[2, 0, 0, 0]),
-            Ok(1)
-        );
+        assert_eq!(DisconnectAmmoniumSalt(&mut nearest, 0, 1, 0, &[2, 0, 0, 0]), Ok(1));
         assert_eq!(nearest[0].neighbor[0], 3);
         assert_eq!((nearest[1].neighbor[0], nearest[1].neighbor[1]), (2, 4));
         assert_eq!(nearest[4].neighbor[0], 1);
@@ -11528,13 +10982,7 @@ mod tests {
             DisconnectAmmoniumSalt(&mut noncancelling_charge, 0, 1, 0, &[0; 4]),
             Ok(1)
         );
-        assert_eq!(
-            (
-                noncancelling_charge[0].charge,
-                noncancelling_charge[1].charge
-            ),
-            (1, 1)
-        );
+        assert_eq!((noncancelling_charge[0].charge, noncancelling_charge[1].charge), (1, 1));
     }
 
     #[test]
@@ -11546,26 +10994,15 @@ mod tests {
         }
 
         fn oxygen_carbon_salt() -> Vec<inp_ATOM> {
-            let mut atoms = vec![
-                ion_atom(11, 0),
-                ion_atom(8, 0),
-                ion_atom(6, 0),
-                ion_atom(6, 0),
-            ];
+            let mut atoms = vec![ion_atom(11, 0), ion_atom(8, 0), ion_atom(6, 0), ion_atom(6, 0)];
             ion_bond(&mut atoms, 0, 1, BOND_TYPE_SINGLE as u8);
             ion_bond(&mut atoms, 1, 2, BOND_TYPE_SINGLE as u8);
             ion_bond(&mut atoms, 2, 3, BOND_TYPE_TRIPLE as u8);
             atoms
         }
 
-        assert_eq!(
-            bIsMetalSalt(&[], -1),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
-        assert_eq!(
-            bIsMetalSalt(&[], 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(bIsMetalSalt(&[], -1), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(bIsMetalSalt(&[], 0), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(bIsMetalSalt(&[ion_atom(11, 0)], 0), Ok(0));
         assert_eq!(bIsMetalSalt(&halide_salt(6, 0, 9), 0), Ok(0));
 
@@ -11581,12 +11018,7 @@ mod tests {
         let positive_metal = halide_salt(12, 1, 9);
         assert_eq!(bIsMetalSalt(&positive_metal, 0), Ok(1));
 
-        let mut second_valence_metal = vec![
-            ion_atom(25, 0),
-            ion_atom(9, 0),
-            ion_atom(17, 0),
-            ion_atom(35, 0),
-        ];
+        let mut second_valence_metal = vec![ion_atom(25, 0), ion_atom(9, 0), ion_atom(17, 0), ion_atom(35, 0)];
         for ligand in 1..second_valence_metal.len() {
             ion_bond(&mut second_valence_metal, 0, ligand, BOND_TYPE_SINGLE as u8);
         }
@@ -11605,19 +11037,12 @@ mod tests {
         assert_eq!(bIsMetalSalt(&singlet_halogen, 0), Ok(1));
 
         for (name, mutate) in [
-            (
-                "valence",
-                (|atom: &mut inp_ATOM| atom.valence = 2) as fn(&mut inp_ATOM),
-            ),
-            ("chemical valence", |atom: &mut inp_ATOM| {
-                atom.chem_bonds_valence = 2
-            }),
+            ("valence", (|atom: &mut inp_ATOM| atom.valence = 2) as fn(&mut inp_ATOM)),
+            ("chemical valence", |atom: &mut inp_ATOM| atom.chem_bonds_valence = 2),
             ("charge", |atom: &mut inp_ATOM| atom.charge = 1),
             ("radical", |atom: &mut inp_ATOM| atom.radical = 2),
             ("ordinary hydrogen", |atom: &mut inp_ATOM| atom.num_H = 1),
-            ("isotope hydrogen", |atom: &mut inp_ATOM| {
-                atom.num_iso_H[2] = 1
-            }),
+            ("isotope hydrogen", |atom: &mut inp_ATOM| atom.num_iso_H[2] = 1),
         ] {
             let mut rejected = neutral_metal.clone();
             mutate(&mut rejected[1]);
@@ -11633,15 +11058,11 @@ mod tests {
                 (|atom: &mut inp_ATOM| atom.el_number = 7) as fn(&mut inp_ATOM),
             ),
             ("ordinary hydrogen", |atom: &mut inp_ATOM| atom.num_H = 1),
-            ("isotope hydrogen", |atom: &mut inp_ATOM| {
-                atom.num_iso_H[0] = 1
-            }),
+            ("isotope hydrogen", |atom: &mut inp_ATOM| atom.num_iso_H[0] = 1),
             ("valence", |atom: &mut inp_ATOM| atom.valence = 1),
             ("charge", |atom: &mut inp_ATOM| atom.charge = -1),
             ("radical", |atom: &mut inp_ATOM| atom.radical = 2),
-            ("chemical valence", |atom: &mut inp_ATOM| {
-                atom.chem_bonds_valence = 1
-            }),
+            ("chemical valence", |atom: &mut inp_ATOM| atom.chem_bonds_valence = 1),
         ] {
             let mut rejected = oxygen_salt.clone();
             mutate(&mut rejected[1]);
@@ -11654,9 +11075,7 @@ mod tests {
                 (|atom: &mut inp_ATOM| atom.el_number = 7) as fn(&mut inp_ATOM),
             ),
             ("implicit hydrogen", |atom: &mut inp_ATOM| atom.num_H = 1),
-            ("chemical valence", |atom: &mut inp_ATOM| {
-                atom.chem_bonds_valence = 3
-            }),
+            ("chemical valence", |atom: &mut inp_ATOM| atom.chem_bonds_valence = 3),
             ("charge", |atom: &mut inp_ATOM| atom.charge = 1),
             ("radical", |atom: &mut inp_ATOM| atom.radical = 2),
             ("all single bonds", |atom: &mut inp_ATOM| atom.valence = 4),
@@ -11826,11 +11245,7 @@ mod tests {
 
     #[test]
     fn source_port__strutil__disconnectsalts__line_2668() {
-        fn original_with_atoms(
-            heap: &mut SourceHeap,
-            atoms: Vec<inp_ATOM>,
-            number_of_bonds: i32,
-        ) -> ORIG_ATOM_DATA {
+        fn original_with_atoms(heap: &mut SourceHeap, atoms: Vec<inp_ATOM>, number_of_bonds: i32) -> ORIG_ATOM_DATA {
             let number_of_atoms = atoms.len() as i32;
             ORIG_ATOM_DATA {
                 at: heap.allocate_model_storage(atoms).unwrap(),
@@ -11851,12 +11266,7 @@ mod tests {
             Err(SourceHeapError::NullPointer)
         );
 
-        let mut rejected = vec![
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut rejected = vec![ion_atom(6, 0), ion_atom(6, 0), ion_atom(6, 0), ion_atom(6, 0)];
         rejected[1].valence = 1;
         rejected[1].chem_bonds_valence = 2;
         rejected[2].valence = 1;
@@ -11867,17 +11277,9 @@ mod tests {
         rejected[3].radical = RADICAL_SINGLET as i8;
         let mut rejected_heap = SourceHeap::default();
         let mut rejected_original = original_with_atoms(&mut rejected_heap, rejected.clone(), 17);
-        assert_eq!(
-            DisconnectSalts(&mut rejected_heap, &mut rejected_original, 1),
-            Ok(0)
-        );
+        assert_eq!(DisconnectSalts(&mut rejected_heap, &mut rejected_original, 1), Ok(0));
         assert_eq!(rejected_original.num_inp_bonds, 17);
-        assert_eq!(
-            rejected_heap
-                .slice(rejected_original.at.as_const())
-                .unwrap(),
-            rejected
-        );
+        assert_eq!(rejected_heap.slice(rejected_original.at.as_const()).unwrap(), rejected);
 
         let mut ammonium = vec![ion_atom(7, 1), ion_atom(8, -1), ion_atom(6, 0)];
         ammonium[0].num_H = 4;
@@ -11885,26 +11287,15 @@ mod tests {
         ion_bond(&mut ammonium, 1, 2, BOND_TYPE_SINGLE as u8);
         let mut ammonium_dry_heap = SourceHeap::default();
         let mut ammonium_dry = original_with_atoms(&mut ammonium_dry_heap, ammonium.clone(), 2);
-        assert_eq!(
-            DisconnectSalts(&mut ammonium_dry_heap, &mut ammonium_dry, 0),
-            Ok(1)
-        );
+        assert_eq!(DisconnectSalts(&mut ammonium_dry_heap, &mut ammonium_dry, 0), Ok(1));
         assert_eq!(ammonium_dry.num_inp_bonds, 2);
-        assert_eq!(
-            ammonium_dry_heap.slice(ammonium_dry.at.as_const()).unwrap(),
-            ammonium
-        );
+        assert_eq!(ammonium_dry_heap.slice(ammonium_dry.at.as_const()).unwrap(), ammonium);
 
         let mut ammonium_heap = SourceHeap::default();
         let mut ammonium_original = original_with_atoms(&mut ammonium_heap, ammonium, 2);
-        assert_eq!(
-            DisconnectSalts(&mut ammonium_heap, &mut ammonium_original, -1),
-            Ok(1)
-        );
+        assert_eq!(DisconnectSalts(&mut ammonium_heap, &mut ammonium_original, -1), Ok(1));
         assert_eq!(ammonium_original.num_inp_bonds, 1);
-        let ammonium_output = ammonium_heap
-            .slice(ammonium_original.at.as_const())
-            .unwrap();
+        let ammonium_output = ammonium_heap.slice(ammonium_original.at.as_const()).unwrap();
         assert_eq!(
             (
                 ammonium_output[0].charge,
@@ -11919,22 +11310,13 @@ mod tests {
         ion_bond(&mut metal, 0, 1, BOND_TYPE_SINGLE as u8);
         let mut metal_dry_heap = SourceHeap::default();
         let mut metal_dry = original_with_atoms(&mut metal_dry_heap, metal.clone(), 1);
-        assert_eq!(
-            DisconnectSalts(&mut metal_dry_heap, &mut metal_dry, 0),
-            Ok(1)
-        );
+        assert_eq!(DisconnectSalts(&mut metal_dry_heap, &mut metal_dry, 0), Ok(1));
         assert_eq!(metal_dry.num_inp_bonds, 1);
-        assert_eq!(
-            metal_dry_heap.slice(metal_dry.at.as_const()).unwrap(),
-            metal
-        );
+        assert_eq!(metal_dry_heap.slice(metal_dry.at.as_const()).unwrap(), metal);
 
         let mut metal_heap = SourceHeap::default();
         let mut metal_original = original_with_atoms(&mut metal_heap, metal, i32::MIN);
-        assert_eq!(
-            DisconnectSalts(&mut metal_heap, &mut metal_original, 1),
-            Ok(1)
-        );
+        assert_eq!(DisconnectSalts(&mut metal_heap, &mut metal_original, 1), Ok(1));
         assert_eq!(metal_original.num_inp_bonds, i32::MAX);
         let metal_output = metal_heap.slice(metal_original.at.as_const()).unwrap();
         assert_eq!(
@@ -11960,10 +11342,7 @@ mod tests {
         ion_bond(&mut combined, 3, 4, BOND_TYPE_SINGLE as u8);
         let mut combined_heap = SourceHeap::default();
         let mut combined_original = original_with_atoms(&mut combined_heap, combined, 3);
-        assert_eq!(
-            DisconnectSalts(&mut combined_heap, &mut combined_original, 0),
-            Ok(2)
-        );
+        assert_eq!(DisconnectSalts(&mut combined_heap, &mut combined_original, 0), Ok(2));
         assert_eq!(combined_original.num_inp_bonds, 3);
 
         let mut partial_atoms = vec![ion_atom(11, 0), ion_atom(9, 0), ion_atom(u8::MAX, 0)];
@@ -12010,14 +11389,8 @@ mod tests {
         assert_eq!(bIsMetalToDisconnect(&[nonmetal], 0, 0), Ok(0));
 
         let disconnected_metal = ion_atom(11, 0);
-        assert_eq!(
-            bIsMetalToDisconnect(&[disconnected_metal.clone()], 0, 0),
-            Ok(0)
-        );
-        assert_eq!(
-            bIsMetalToDisconnect(&[disconnected_metal], 0, i32::MIN),
-            Ok(0)
-        );
+        assert_eq!(bIsMetalToDisconnect(&[disconnected_metal.clone()], 0, 0), Ok(0));
+        assert_eq!(bIsMetalToDisconnect(&[disconnected_metal], 0, i32::MIN), Ok(0));
 
         let mut cancelled = ion_atom(11, 0);
         cancelled.num_H = 1;
@@ -12044,11 +11417,7 @@ mod tests {
         for charge in [i8::MIN, -2, 2, i8::MAX] {
             let mut charged = ion_atom(12, charge);
             charged.chem_bonds_valence = 1;
-            assert_eq!(
-                bIsMetalToDisconnect(&[charged.clone()], 0, 1),
-                Ok(1),
-                "charge {charge}"
-            );
+            assert_eq!(bIsMetalToDisconnect(&[charged.clone()], 0, 1), Ok(1), "charge {charge}");
             assert_eq!(
                 bIsMetalToDisconnect(&[charged], 0, i32::MIN),
                 Ok(1),
@@ -12096,10 +11465,7 @@ mod tests {
         assert_eq!((empty.bDisconnectCoord, empty_flags), (0, 0x40));
         empty.num_inp_atoms = -1;
         empty.bDisconnectCoord = 88;
-        assert_eq!(
-            bMayDisconnectMetals(&mut empty_heap, &mut empty, 0, None),
-            Ok(0)
-        );
+        assert_eq!(bMayDisconnectMetals(&mut empty_heap, &mut empty, 0, None), Ok(0));
         assert_eq!(empty.bDisconnectCoord, 0);
         empty.num_inp_atoms = 1;
         assert_eq!(
@@ -12130,10 +11496,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (protected_original.bDisconnectCoord, protected_flags),
-            (0, 5)
-        );
+        assert_eq!((protected_original.bDisconnectCoord, protected_flags), (0, 5));
 
         let mut metal_carbon = vec![ion_atom(11, 0), ion_atom(6, 0)];
         ion_bond(&mut metal_carbon, 0, 1, BOND_TYPE_SINGLE as u8);
@@ -12141,12 +11504,7 @@ mod tests {
         let mut carbon_original = original_with_atoms(&mut carbon_heap, metal_carbon);
         let mut carbon_flags = 0x20_u64;
         assert_eq!(
-            bMayDisconnectMetals(
-                &mut carbon_heap,
-                &mut carbon_original,
-                1,
-                Some(&mut carbon_flags)
-            ),
+            bMayDisconnectMetals(&mut carbon_heap, &mut carbon_original, 1, Some(&mut carbon_flags)),
             Ok(1)
         );
         assert_eq!((carbon_original.bDisconnectCoord, carbon_flags), (1, 0x20));
@@ -12268,10 +11626,7 @@ mod tests {
             ..inp_ATOM::default()
         };
         assert_eq!(dist3D(&positive_infinity, &origin), f64::INFINITY);
-        assert_eq!(
-            dist3D(&positive_infinity, &negative_infinity),
-            f64::INFINITY
-        );
+        assert_eq!(dist3D(&positive_infinity, &negative_infinity), f64::INFINITY);
         assert!(dist3D(&positive_infinity, &positive_infinity).is_nan());
 
         let nan = inp_ATOM {
@@ -12299,8 +11654,7 @@ mod tests {
             atoms[2].component = components.2;
             ion_bond(&mut atoms, 1, 2, BOND_TYPE_SINGLE as u8);
             let mut output = [f64::NAN; 8];
-            let average =
-                GetMinDistDistribution(&atoms, 3, 0, -1, all_components, &mut output, 8).unwrap();
+            let average = GetMinDistDistribution(&atoms, 3, 0, -1, all_components, &mut output, 8).unwrap();
             (average, output)
         }
 
@@ -12356,10 +11710,7 @@ mod tests {
             5.0_f64.to_bits()
         );
         assert_eq!(
-            target_distances
-                .iter()
-                .filter(|&&distance| distance != 1.0e30)
-                .count(),
+            target_distances.iter().filter(|&&distance| distance != 1.0e30).count(),
             1
         );
         let mut hydrogen_excluded = [7.0; 4];
@@ -12370,34 +11721,16 @@ mod tests {
         assert_eq!(hydrogen_excluded, [1.0e30; 4]);
 
         let (_, positive_dot) = distribution((1.0e-6, 10_000.0), (2.0e-6, 0.0), (1, 1, 1), 1);
-        assert_eq!(
-            positive_dot
-                .iter()
-                .filter(|&&distance| distance != 1.0e30)
-                .count(),
-            1
-        );
+        assert_eq!(positive_dot.iter().filter(|&&distance| distance != 1.0e30).count(), 1);
         let (_, negative_dot) = distribution((-1.0e-6, 10_000.0), (2.0e-6, 0.0), (1, 1, 1), 1);
-        assert_eq!(
-            negative_dot
-                .iter()
-                .filter(|&&distance| distance != 1.0e30)
-                .count(),
-            2
-        );
+        assert_eq!(negative_dot.iter().filter(|&&distance| distance != 1.0e30).count(), 2);
         let (_, zero_dot) = distribution((0.0, 10_000.0), (2.0e-6, 0.0), (1, 1, 1), 1);
         assert_eq!(zero_dot, [1.0e30; 8]);
 
         let (_, both_coincident) = distribution((-5.0e-8, 0.0), (5.0e-8, 0.0), (1, 1, 1), 1);
         assert_eq!(both_coincident, [1.0e30; 8]);
         let (_, one_coincident) = distribution((2.0e-6, 0.0), (0.0, 0.0), (1, 1, 1), 1);
-        assert_eq!(
-            one_coincident
-                .iter()
-                .filter(|&&distance| distance != 1.0e30)
-                .count(),
-            1
-        );
+        assert_eq!(one_coincident.iter().filter(|&&distance| distance != 1.0e30).count(), 1);
 
         let mut zero_length_atoms = vec![inp_ATOM::default(); 3];
         zero_length_atoms[1].x = 2.0;
@@ -12459,10 +11792,7 @@ mod tests {
             ),
             (0, 1, 1, 1, 0, 1, 1, 7, 0, 0)
         );
-        assert_eq!(
-            (isolated[1].x, isolated[1].y, isolated[1].z),
-            (3.0, -2.0, 5.0)
-        );
+        assert_eq!((isolated[1].x, isolated[1].y, isolated[1].z), (3.0, -2.0, 5.0));
 
         let mut connected = vec![ion_atom(8, -1), ion_atom(7, 1), ion_atom(1, 0)];
         connected[0].component = 3;
@@ -12485,17 +11815,9 @@ mod tests {
             ),
             (0, 1, 0, 0, 0, 1, 0, 0, 3)
         );
-        assert_eq!(
-            (connected[2].x, connected[2].y, connected[2].z),
-            (-1.0, 0.0, 0.0)
-        );
+        assert_eq!((connected[2].x, connected[2].y, connected[2].z), (-1.0, 0.0, 0.0));
 
-        let mut missing = vec![
-            ion_atom(8, -1),
-            ion_atom(7, 1),
-            ion_atom(1, 0),
-            ion_atom(6, 0),
-        ];
+        let mut missing = vec![ion_atom(8, -1), ion_atom(7, 1), ion_atom(1, 0), ion_atom(6, 0)];
         missing[2].valence = 1;
         missing[2].chem_bonds_valence = 1;
         missing[2].neighbor[0] = 1;
@@ -12518,12 +11840,7 @@ mod tests {
         );
         assert_eq!((directed[0].valence, directed[0].neighbor[1]), (2, 2));
 
-        let mut fallback = vec![
-            ion_atom(8, 0),
-            ion_atom(1, 1),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut fallback = vec![ion_atom(8, 0), ion_atom(1, 1), ion_atom(6, 0), ion_atom(6, 0)];
         fallback[2].x = -1.0;
         fallback[3].x = 1.0;
         ion_bond(&mut fallback, 2, 3, BOND_TYPE_SINGLE as u8);
@@ -12574,10 +11891,7 @@ mod tests {
         assert_eq!(full[0].valence, MAXVAL as i8);
         assert_eq!(full[0].neighbor, target_before.neighbor);
         assert_eq!(full[0].bond_type, target_before.bond_type);
-        assert_eq!(
-            (full[hydrogen].component, full[hydrogen].neighbor[0]),
-            (11, 0)
-        );
+        assert_eq!((full[hydrogen].component, full[hydrogen].neighbor[0]), (11, 0));
 
         let mut malformed = vec![ion_atom(8, 0), ion_atom(1, 1)];
         malformed[1].valence = 1;
@@ -12604,12 +11918,7 @@ mod tests {
         for successful_allocations in [0, 1] {
             let mut heap = SourceHeap::default();
             let mut input = original(&mut heap, vec![ion_atom(11, 0), ion_atom(6, 0)]);
-            ion_bond(
-                heap.slice_mut(input.at).unwrap(),
-                0,
-                1,
-                BOND_TYPE_SINGLE as u8,
-            );
+            ion_bond(heap.slice_mut(input.at).unwrap(), 0, 1, BOND_TYPE_SINGLE as u8);
             let original_pointer = input.at;
             heap.fail_after_allocations(successful_allocations);
             assert_eq!(DisconnectMetals(&mut heap, &mut input, 0, None), Ok(-6));
@@ -12621,29 +11930,17 @@ mod tests {
         let unchanged_atoms = vec![ion_atom(6, 0)];
         let mut no_change = original(&mut no_change_heap, unchanged_atoms.clone());
         let original_pointer = no_change.at;
-        assert_eq!(
-            DisconnectMetals(&mut no_change_heap, &mut no_change, 1, None),
-            Ok(-6)
-        );
+        assert_eq!(DisconnectMetals(&mut no_change_heap, &mut no_change, 1, None), Ok(-6));
         assert_eq!(no_change.at, original_pointer);
-        assert_eq!(
-            no_change_heap.slice(no_change.at.as_const()).unwrap(),
-            unchanged_atoms
-        );
+        assert_eq!(no_change_heap.slice(no_change.at.as_const()).unwrap(), unchanged_atoms);
         assert_eq!(no_change_heap.live_allocation_count(), 1);
 
         let mut protected_heap = SourceHeap::default();
         let mut protected_atoms = vec![ion_atom(11, 0), ion_atom(9, 0)];
         ion_bond(&mut protected_atoms, 0, 1, BOND_TYPE_SINGLE as u8);
         let mut protected = original(&mut protected_heap, protected_atoms.clone());
-        assert_eq!(
-            DisconnectMetals(&mut protected_heap, &mut protected, 0, None),
-            Ok(-6)
-        );
-        assert_eq!(
-            protected_heap.slice(protected.at.as_const()).unwrap(),
-            protected_atoms
-        );
+        assert_eq!(DisconnectMetals(&mut protected_heap, &mut protected, 0, None), Ok(-6));
+        assert_eq!(protected_heap.slice(protected.at.as_const()).unwrap(), protected_atoms);
 
         let mut ligand_heap = SourceHeap::default();
         let mut ligand_atoms = vec![ion_atom(11, 0), ion_atom(6, 0)];
@@ -12654,16 +11951,10 @@ mod tests {
         let mut ligand = original(&mut ligand_heap, ligand_atoms);
         ligand.nOldCompNumber = old_components;
         let old_atom_pointer = ligand.at;
-        assert_eq!(
-            DisconnectMetals(&mut ligand_heap, &mut ligand, 0, None),
-            Ok(1)
-        );
+        assert_eq!(DisconnectMetals(&mut ligand_heap, &mut ligand, 0, None), Ok(1));
         assert_ne!(ligand.at, old_atom_pointer);
         assert_eq!(ligand.num_inp_atoms, 2);
-        assert_eq!(
-            ligand_heap.slice(old_components.as_const()).unwrap(),
-            [0, 0]
-        );
+        assert_eq!(ligand_heap.slice(old_components.as_const()).unwrap(), [0, 0]);
         let output = ligand_heap.slice(ligand.at.as_const()).unwrap();
         assert_eq!((output[0].valence, output[1].valence), (0, 0));
         assert_eq!(ligand_heap.live_allocation_count(), 2);
@@ -12673,10 +11964,7 @@ mod tests {
         implicit_atom.num_H = 1;
         let mut mismatch = original(&mut mismatch_heap, vec![implicit_atom.clone()]);
         let mismatch_pointer = mismatch.at;
-        assert_eq!(
-            DisconnectMetals(&mut mismatch_heap, &mut mismatch, 0, None),
-            Ok(-6)
-        );
+        assert_eq!(DisconnectMetals(&mut mismatch_heap, &mut mismatch, 0, None), Ok(-6));
         assert_eq!(mismatch.at, mismatch_pointer);
         assert_eq!(
             mismatch_heap.slice(mismatch.at.as_const()).unwrap(),
@@ -12686,10 +11974,7 @@ mod tests {
         let mut implicit_heap = SourceHeap::default();
         let mut implicit = original(&mut implicit_heap, vec![implicit_atom]);
         implicit.bDisconnectCoord = 2;
-        assert_eq!(
-            DisconnectMetals(&mut implicit_heap, &mut implicit, 0, None),
-            Ok(1)
-        );
+        assert_eq!(DisconnectMetals(&mut implicit_heap, &mut implicit, 0, None), Ok(1));
         assert_eq!(implicit.num_inp_atoms, 2);
         let expanded = implicit_heap.slice(implicit.at.as_const()).unwrap();
         assert_eq!((expanded[0].num_H, expanded[0].valence), (0, 0));
@@ -12707,10 +11992,7 @@ mod tests {
         let mut metals_atoms = vec![ion_atom(11, 0), ion_atom(12, 0)];
         ion_bond(&mut metals_atoms, 0, 1, BOND_TYPE_SINGLE as u8);
         let mut metals = original(&mut metals_heap, metals_atoms);
-        assert_eq!(
-            DisconnectMetals(&mut metals_heap, &mut metals, 0, None),
-            Ok(1)
-        );
+        assert_eq!(DisconnectMetals(&mut metals_heap, &mut metals, 0, None), Ok(1));
         let metals_output = metals_heap.slice(metals.at.as_const()).unwrap();
         assert_eq!((metals_output[0].valence, metals_output[1].valence), (0, 0));
     }
@@ -12735,22 +12017,7 @@ mod tests {
             assert_eq!(get_iat_number(element_number), ion_atom_type);
         }
 
-        for element_number in [
-            i32::MIN,
-            -1,
-            0,
-            2,
-            5,
-            10,
-            14,
-            18,
-            33,
-            36,
-            51,
-            54,
-            118,
-            i32::MAX,
-        ] {
+        for element_number in [i32::MIN, -1, 0, 2, 5, 10, 14, 18, 33, 36, 51, 54, 118, i32::MAX] {
             assert_eq!(get_iat_number(element_number), -1);
         }
     }
@@ -12842,26 +12109,15 @@ mod tests {
 
         let mut neutral_with_charged_neighbor = vec![ion_atom(7, 0), ion_atom(6, 1)];
         neutral_with_charged_neighbor[0].num_H = 2;
-        ion_bond(
-            &mut neutral_with_charged_neighbor,
-            0,
-            1,
-            BOND_TYPE_SINGLE as u8,
-        );
-        assert_eq!(
-            bHeteroAtomMayHaveXchgIsoH(&neutral_with_charged_neighbor, 0),
-            Ok(1)
-        );
+        ion_bond(&mut neutral_with_charged_neighbor, 0, 1, BOND_TYPE_SINGLE as u8);
+        assert_eq!(bHeteroAtomMayHaveXchgIsoH(&neutral_with_charged_neighbor, 0), Ok(1));
 
         for (radical, expected) in [(RADICAL_SINGLET as i8, 1), (RADICAL_DOUBLET as i8, 0)] {
             let mut adjacent_radical = vec![ion_atom(7, 0), ion_atom(6, 0)];
             adjacent_radical[0].num_H = 2;
             adjacent_radical[1].radical = radical;
             ion_bond(&mut adjacent_radical, 0, 1, BOND_TYPE_SINGLE as u8);
-            assert_eq!(
-                bHeteroAtomMayHaveXchgIsoH(&adjacent_radical, 0),
-                Ok(expected)
-            );
+            assert_eq!(bHeteroAtomMayHaveXchgIsoH(&adjacent_radical, 0), Ok(expected));
         }
 
         let mut negative_valence = ion_atom(7, 0);
@@ -12911,11 +12167,7 @@ mod tests {
             let mut atom = ion_atom(element, 0);
             atom.chem_bonds_valence = chemical_valence;
             atom.num_iso_H[0] = 1;
-            assert_eq!(
-                bNumHeterAtomHasIsotopicH(&[atom], 1),
-                Ok(3),
-                "element {element}"
-            );
+            assert_eq!(bNumHeterAtomHasIsotopicH(&[atom], 1), Ok(3), "element {element}");
         }
 
         let mut positive_nitrogen = ion_atom(7, 1);
@@ -13008,12 +12260,7 @@ mod tests {
         isolated_doublet.radical = RADICAL_DOUBLET as S_CHAR;
         isolated_doublet.valence = -1;
         assert_eq!(
-            the_only_doublet_neigh(
-                &[isolated_doublet],
-                0,
-                &mut first_ordinal,
-                &mut second_ordinal
-            ),
+            the_only_doublet_neigh(&[isolated_doublet], 0, &mut first_ordinal, &mut second_ordinal),
             Ok(-1)
         );
         assert_eq!((first_ordinal, second_ordinal), (17, 19));
@@ -13065,12 +12312,7 @@ mod tests {
         first_ordinal = 3;
         second_ordinal = 4;
         assert_eq!(
-            the_only_doublet_neigh(
-                &[malformed_first],
-                0,
-                &mut first_ordinal,
-                &mut second_ordinal
-            ),
+            the_only_doublet_neigh(&[malformed_first], 0, &mut first_ordinal, &mut second_ordinal),
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!((first_ordinal, second_ordinal), (3, 4));
@@ -13081,12 +12323,7 @@ mod tests {
         first_ordinal = 5;
         second_ordinal = 6;
         assert_eq!(
-            the_only_doublet_neigh(
-                &malformed_second,
-                0,
-                &mut first_ordinal,
-                &mut second_ordinal
-            ),
+            the_only_doublet_neigh(&malformed_second, 0, &mut first_ordinal, &mut second_ordinal),
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!((first_ordinal, second_ordinal), (0, 0));
@@ -13106,10 +12343,7 @@ mod tests {
         }
 
         let mut changes = 31;
-        assert_eq!(
-            fix_non_uniform_drawn_oxoanions(i32::MIN, &mut [], &mut changes),
-            Ok(0)
-        );
+        assert_eq!(fix_non_uniform_drawn_oxoanions(i32::MIN, &mut [], &mut changes), Ok(0));
         assert_eq!(changes, 31);
         assert_eq!(
             fix_non_uniform_drawn_oxoanions(1, &mut [], &mut changes),
@@ -13201,20 +12435,14 @@ mod tests {
         singlet[0].radical = RADICAL_SINGLET as S_CHAR;
         singlet[1].radical = RADICAL_SINGLET as S_CHAR;
         changes = 0;
-        assert_eq!(
-            fix_non_uniform_drawn_oxoanions(1, &mut singlet, &mut changes),
-            Ok(0)
-        );
+        assert_eq!(fix_non_uniform_drawn_oxoanions(1, &mut singlet, &mut changes), Ok(0));
         assert_eq!(changes, 1);
 
         let mut selection = vec![ion_atom(85, -1), ion_atom(16, 0), ion_atom(8, 0)];
         ion_bond(&mut selection, 0, 1, BOND_TYPE_DOUBLE as u8);
         ion_bond(&mut selection, 0, 2, BOND_TYPE_DOUBLE as u8);
         changes = 0;
-        assert_eq!(
-            fix_non_uniform_drawn_oxoanions(1, &mut selection, &mut changes),
-            Ok(0)
-        );
+        assert_eq!(fix_non_uniform_drawn_oxoanions(1, &mut selection, &mut changes), Ok(0));
         assert_eq!((selection[1].charge, selection[2].charge), (0, -1));
         assert_eq!(
             (selection[0].bond_type[0], selection[0].bond_type[1]),
@@ -13230,10 +12458,7 @@ mod tests {
             fix_non_uniform_drawn_oxoanions(1, &mut isotope_selection, &mut changes),
             Ok(0)
         );
-        assert_eq!(
-            (isotope_selection[1].charge, isotope_selection[2].charge),
-            (0, -1)
-        );
+        assert_eq!((isotope_selection[1].charge, isotope_selection[2].charge), (0, -1));
 
         let mut isotope_tie = vec![ion_atom(17, -1), ion_atom(8, 0), ion_atom(8, 0)];
         isotope_tie[1].iso_atw_diff = 1;
@@ -13251,16 +12476,9 @@ mod tests {
         wrapping[0].chem_bonds_valence = i8::MIN;
         wrapping[1].chem_bonds_valence = i8::MIN;
         changes = i32::MAX;
+        assert_eq!(fix_non_uniform_drawn_oxoanions(1, &mut wrapping, &mut changes), Ok(0));
         assert_eq!(
-            fix_non_uniform_drawn_oxoanions(1, &mut wrapping, &mut changes),
-            Ok(0)
-        );
-        assert_eq!(
-            (
-                wrapping[0].chem_bonds_valence,
-                wrapping[1].chem_bonds_valence,
-                changes
-            ),
+            (wrapping[0].chem_bonds_valence, wrapping[1].chem_bonds_valence, changes),
             (i8::MAX, i8::MAX, i32::MIN)
         );
 
@@ -13296,10 +12514,7 @@ mod tests {
         }
 
         let mut changes = 41;
-        assert_eq!(
-            fix_non_uniform_drawn_amidiniums(i32::MIN, &mut [], &mut changes),
-            Ok(0)
-        );
+        assert_eq!(fix_non_uniform_drawn_amidiniums(i32::MIN, &mut [], &mut changes), Ok(0));
         assert_eq!(changes, 41);
         assert_eq!(
             fix_non_uniform_drawn_amidiniums(1, &mut [], &mut changes),
@@ -13319,10 +12534,7 @@ mod tests {
                 (atoms[0].bond_type[0], atoms[1].bond_type[0]),
                 (BOND_TYPE_DOUBLE as u8, BOND_TYPE_DOUBLE as u8)
             );
-            assert_eq!(
-                (atoms[0].chem_bonds_valence, atoms[1].chem_bonds_valence),
-                (4, 2)
-            );
+            assert_eq!((atoms[0].chem_bonds_valence, atoms[1].chem_bonds_valence), (4, 2));
             assert_eq!((atoms[0].bond_stereo[0], atoms[1].bond_stereo[0]), (5, -5));
         }
 
@@ -13381,10 +12593,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(changes, 1);
-        assert_eq!(
-            (singlet_and_isotope[0].charge, singlet_and_isotope[1].charge),
-            (0, 1)
-        );
+        assert_eq!((singlet_and_isotope[0].charge, singlet_and_isotope[1].charge), (0, 1));
 
         let mut reciprocal_second = amidinium(6);
         reciprocal_second.extend([ion_atom(6, 0), ion_atom(6, 0)]);
@@ -13412,10 +12621,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            (
-                missing_reciprocal[1].bond_type[0],
-                missing_reciprocal[1].bond_type[1]
-            ),
+            (missing_reciprocal[1].bond_type[0], missing_reciprocal[1].bond_type[1]),
             (BOND_TYPE_SINGLE as u8, BOND_TYPE_DOUBLE as u8)
         );
 
@@ -13429,11 +12635,7 @@ mod tests {
         assert_eq!(changes, i32::MIN);
         assert_eq!(
             unchecked_initial_bonds[0].bond_type[..3],
-            [
-                BOND_TYPE_DOUBLE as u8,
-                BOND_TYPE_TRIPLE as u8,
-                BOND_TYPE_TRIPLE as u8
-            ]
+            [BOND_TYPE_DOUBLE as u8, BOND_TYPE_TRIPLE as u8, BOND_TYPE_TRIPLE as u8]
         );
 
         let mut malformed = amidinium(6);
@@ -13531,17 +12733,8 @@ mod tests {
             (implicit[0].bond_type[0], implicit[2].bond_type[0]),
             (BOND_TYPE_SINGLE as u8, BOND_TYPE_DOUBLE as u8)
         );
-        assert_eq!(
-            (
-                implicit[0].chem_bonds_valence,
-                implicit[2].chem_bonds_valence
-            ),
-            (1, 2)
-        );
-        assert_eq!(
-            (implicit[0].bond_stereo[0], implicit[2].bond_stereo[0]),
-            (9, -9)
-        );
+        assert_eq!((implicit[0].chem_bonds_valence, implicit[2].chem_bonds_valence), (1, 2));
+        assert_eq!((implicit[0].bond_stereo[0], implicit[2].bond_stereo[0]), (9, -9));
 
         let mut explicit = vec![
             ion_atom(7, 1),
@@ -13581,11 +12774,7 @@ mod tests {
         let mut no_bug_fix = divalent_center_fixture();
         assert_eq!(fix_odd_things(5, &mut no_bug_fix, 0, 0), Ok(2));
         assert_eq!(
-            (
-                no_bug_fix[0].charge,
-                no_bug_fix[1].charge,
-                no_bug_fix[2].charge
-            ),
+            (no_bug_fix[0].charge, no_bug_fix[1].charge, no_bug_fix[2].charge),
             (2, 0, 0)
         );
         assert_eq!(
@@ -13644,12 +12833,7 @@ mod tests {
         assert_eq!(fix_odd_things(2, &mut triple_doublets, 0, 0), Ok(0));
         assert_eq!(triple_doublets, triple_before);
 
-        let mut early_ion_pair = vec![
-            ion_atom(7, 1),
-            ion_atom(8, 0),
-            ion_atom(8, -1),
-            ion_atom(6, 0),
-        ];
+        let mut early_ion_pair = vec![ion_atom(7, 1), ion_atom(8, 0), ion_atom(8, -1), ion_atom(6, 0)];
         early_ion_pair[0].radical = RADICAL_DOUBLET as S_CHAR;
         early_ion_pair[2].radical = 3;
         ion_bond(&mut early_ion_pair, 0, 1, BOND_TYPE_DOUBLE as u8);
@@ -13683,10 +12867,7 @@ mod tests {
         atom.num_H = i8::MIN;
         atom.num_iso_H = [i8::MIN, 0, i8::MAX];
         let before = atom.clone();
-        assert_eq!(
-            post_fix_odd_things(i32::MIN, std::slice::from_mut(&mut atom)),
-            0
-        );
+        assert_eq!(post_fix_odd_things(i32::MIN, std::slice::from_mut(&mut atom)), 0);
         assert_eq!(atom, before);
     }
 
@@ -13764,17 +12945,7 @@ mod tests {
         ion_bond(&mut outside_count, 0, 1, BOND_TYPE_SINGLE as u8);
         ion_bond(&mut outside_count, 1, 2, BOND_TYPE_SINGLE as u8);
         assert_eq!(
-            DisconnectOneLigand(
-                &mut outside_count,
-                None,
-                &[1, 0, 1],
-                &[9, 0],
-                1,
-                2,
-                0,
-                0,
-                None,
-            ),
+            DisconnectOneLigand(&mut outside_count, None, &[1, 0, 1], &[9, 0], 1, 2, 0, 0, None,),
             Ok(1)
         );
         assert_eq!((outside_count[0].valence, outside_count[2].valence), (0, 1));
@@ -13788,17 +12959,7 @@ mod tests {
             }
             let mut marks = vec![0_i8; aromatic.len()];
             marks[0] = 1;
-            let result = DisconnectOneLigand(
-                &mut aromatic,
-                None,
-                &marks,
-                &[7],
-                0,
-                marks.len() as i32,
-                0,
-                0,
-                None,
-            );
+            let result = DisconnectOneLigand(&mut aromatic, None, &marks, &[7], 0, marks.len() as i32, 0, 0, None);
             if matches!(remaining_aromatic_bonds, 0 | 2 | 3) {
                 assert_eq!(result, Err(SourceHeapError::MissingNulTerminator));
             } else {
@@ -13815,25 +12976,12 @@ mod tests {
             DisconnectOneLigand(&mut invalid_radical, None, &[1, 0], &[8], 0, 2, 0, 0, None,),
             Ok(1)
         );
-        assert_eq!(
-            (invalid_radical[0].charge, invalid_radical[1].charge),
-            (0, 0)
-        );
+        assert_eq!((invalid_radical[0].charge, invalid_radical[1].charge), (0, 0));
 
         let mut absent_element = vec![ion_atom(11, 0), ion_atom(7, 0)];
         ion_bond(&mut absent_element, 0, 1, BOND_TYPE_SINGLE as u8);
         assert_eq!(
-            DisconnectOneLigand(
-                &mut absent_element,
-                None,
-                &[1, 0],
-                &[8, 0, 7],
-                0,
-                2,
-                0,
-                0,
-                None,
-            ),
+            DisconnectOneLigand(&mut absent_element, None, &[1, 0], &[8, 0, 7], 0, 2, 0, 0, None,),
             Ok(1)
         );
         assert_eq!((absent_element[0].charge, absent_element[1].charge), (0, 0));
@@ -13849,23 +12997,10 @@ mod tests {
         let mut nonhalogen_zero = vec![ion_atom(11, 0), ion_atom(8, 0)];
         ion_bond(&mut nonhalogen_zero, 0, 1, BOND_TYPE_SINGLE as u8);
         assert_eq!(
-            DisconnectOneLigand(
-                &mut nonhalogen_zero,
-                None,
-                &[1, 0],
-                &[8, 0],
-                0,
-                2,
-                0,
-                0,
-                None,
-            ),
+            DisconnectOneLigand(&mut nonhalogen_zero, None, &[1, 0], &[8, 0], 0, 2, 0, 0, None,),
             Ok(1)
         );
-        assert_eq!(
-            (nonhalogen_zero[0].charge, nonhalogen_zero[1].charge),
-            (0, 0)
-        );
+        assert_eq!((nonhalogen_zero[0].charge, nonhalogen_zero[1].charge), (0, 0));
 
         let mut oxygen = vec![ion_atom(11, 0), ion_atom(8, 0), ion_atom(6, 0)];
         ion_bond(&mut oxygen, 0, 1, BOND_TYPE_SINGLE as u8);
@@ -13897,12 +13032,7 @@ mod tests {
         );
         assert_eq!((isotope_h[0].charge, isotope_h[1].charge), (-1, 0));
 
-        let mut preserved_imine = vec![
-            ion_atom(11, 0),
-            ion_atom(7, 0),
-            ion_atom(6, 0),
-            ion_atom(6, 0),
-        ];
+        let mut preserved_imine = vec![ion_atom(11, 0), ion_atom(7, 0), ion_atom(6, 0), ion_atom(6, 0)];
         ion_bond(&mut preserved_imine, 0, 1, BOND_TYPE_SINGLE as u8);
         ion_bond(&mut preserved_imine, 1, 2, BOND_TYPE_DOUBLE as u8);
         ion_bond(&mut preserved_imine, 1, 3, BOND_TYPE_DOUBLE as u8);
@@ -13921,10 +13051,7 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            (preserved_imine[0].charge, preserved_imine[1].charge),
-            (0, 0)
-        );
+        assert_eq!((preserved_imine[0].charge, preserved_imine[1].charge), (0, 0));
         assert_eq!(preserved_flags, 0x80);
         assert_eq!(preserved_imine[1].bond_type[..2], [2, 2]);
 
@@ -13971,10 +13098,7 @@ mod tests {
         assert_eq!((partial[1].valence, partial[2].valence), (1, 0));
     }
 
-    fn source_remove_terminal_hdt(
-        atoms: Vec<inp_ATOM>,
-        fix_charge: i32,
-    ) -> (i32, Vec<inp_ATOM>, SourceHeap) {
+    fn source_remove_terminal_hdt(atoms: Vec<inp_ATOM>, fix_charge: i32) -> (i32, Vec<inp_ATOM>, SourceHeap) {
         let mut heap = SourceHeap::default();
         let pointer = heap.allocate_model_storage(atoms).unwrap();
         let count = heap.slice(pointer.as_const()).unwrap().len() as i32;
@@ -13995,14 +13119,8 @@ mod tests {
             component: 0,
             ..inp_ATOM::default()
         };
-        assert_eq!(
-            cmp_iso_atw_diff_component_no(&low_isotope, &high_isotope),
-            -255
-        );
-        assert_eq!(
-            cmp_iso_atw_diff_component_no(&high_isotope, &low_isotope),
-            255
-        );
+        assert_eq!(cmp_iso_atw_diff_component_no(&low_isotope, &high_isotope), -255);
+        assert_eq!(cmp_iso_atw_diff_component_no(&high_isotope, &low_isotope), 255);
         let low_component = inp_ATOM {
             iso_atw_diff: 7,
             component: 0,
@@ -14013,10 +13131,7 @@ mod tests {
             component: u16::MAX,
             ..inp_ATOM::default()
         };
-        assert_eq!(
-            cmp_iso_atw_diff_component_no(&low_component, &high_component),
-            -65_535
-        );
+        assert_eq!(cmp_iso_atw_diff_component_no(&low_component, &high_component), -65_535);
 
         let original = vec![inp_ATOM {
             elname: [b'C' as i8, 0, 0, 0, 0, 0],
@@ -14074,14 +13189,10 @@ mod tests {
             ..inp_ATOM::default()
         };
         other.neighbor[0] = 0;
-        let (result, reordered, _) =
-            source_remove_terminal_hdt(vec![center, hydrogen, deuterium, tritium, other], 1);
+        let (result, reordered, _) = source_remove_terminal_hdt(vec![center, hydrogen, deuterium, tritium, other], 1);
         assert_eq!(result, 2);
         assert_eq!(reordered[0].neighbor[0], 1);
-        assert_eq!(
-            (reordered[0].valence, reordered[0].chem_bonds_valence),
-            (1, 1)
-        );
+        assert_eq!((reordered[0].valence, reordered[0].chem_bonds_valence), (1, 1));
         assert_eq!((reordered[0].num_H, reordered[0].num_iso_H), (1, [0, 1, 1]));
         assert_eq!(
             reordered[2..]
@@ -14155,10 +13266,8 @@ mod tests {
         };
         carbon_neighbor.neighbor[0] = 0;
         let deuterium = terminal_hdt_atom(b'D', 0);
-        let (result, stereo, _) = source_remove_terminal_hdt(
-            vec![stereo_center, hydrogen, carbon_neighbor, deuterium],
-            1,
-        );
+        let (result, stereo, _) =
+            source_remove_terminal_hdt(vec![stereo_center, hydrogen, carbon_neighbor, deuterium], 1);
         assert_eq!(result, 2);
         assert_eq!(
             (
@@ -14215,18 +13324,12 @@ mod tests {
         assert_eq!(
             (atoms[1].num_H, atoms[1].num_iso_H),
             (
-                i8::MAX
-                    .wrapping_add(1)
-                    .wrapping_add(i8::MAX)
-                    .wrapping_add(i8::MIN),
+                i8::MAX.wrapping_add(1).wrapping_add(i8::MAX).wrapping_add(i8::MIN),
                 [1, i8::MAX, i8::MIN]
             )
         );
         assert_eq!((atoms[2].num_H, atoms[2].num_iso_H), (11, [12, 13, 14]));
-        assert_eq!(
-            add_DT_to_num_H(4, &mut atoms),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(add_DT_to_num_H(4, &mut atoms), Err(SourceHeapError::PointerOutOfBounds));
     }
 
     fn bonded_atom(neighbors: &[u16], bond_types: &[u8]) -> inp_ATOM {
@@ -14252,10 +13355,7 @@ mod tests {
             nOldCompNumber: preserved_old,
             ..ORIG_ATOM_DATA::default()
         };
-        assert_eq!(
-            MarkDisconnectedComponents(&mut empty_heap, &mut empty, 1),
-            Ok(0)
-        );
+        assert_eq!(MarkDisconnectedComponents(&mut empty_heap, &mut empty, 1), Ok(0));
         assert_eq!(empty.num_components, 7);
         assert_eq!(empty.nCurAtLen, preserved_lengths);
         assert_eq!(empty.nOldCompNumber, preserved_old);
@@ -14284,10 +13384,7 @@ mod tests {
             nOldCompNumber: old_numbers,
             ..ORIG_ATOM_DATA::default()
         };
-        assert_eq!(
-            MarkDisconnectedComponents(&mut heap, &mut original, 1),
-            Ok(3)
-        );
+        assert_eq!(MarkDisconnectedComponents(&mut heap, &mut original, 1), Ok(3));
         assert_eq!(original.num_components, 3);
         assert_eq!(
             heap.slice(atom_pointer.as_const())
@@ -14297,10 +13394,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![3, 1, 1, 2, 2]
         );
-        assert_eq!(
-            &heap.slice(original.nCurAtLen.as_const()).unwrap()[..3],
-            &[2, 2, 1]
-        );
+        assert_eq!(&heap.slice(original.nCurAtLen.as_const()).unwrap()[..3], &[2, 2, 1]);
         assert_eq!(
             &heap.slice(original.nOldCompNumber.as_const()).unwrap()[..3],
             &[1, 0, 0]
@@ -14315,9 +13409,7 @@ mod tests {
         );
 
         let mut failure_heap = SourceHeap::default();
-        let failure_atoms = failure_heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
+        let failure_atoms = failure_heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
         let failure_lengths = failure_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let failure_old = failure_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let mut failure = ORIG_ATOM_DATA {
@@ -14329,10 +13421,7 @@ mod tests {
             ..ORIG_ATOM_DATA::default()
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            MarkDisconnectedComponents(&mut failure_heap, &mut failure, 0),
-            Ok(-1)
-        );
+        assert_eq!(MarkDisconnectedComponents(&mut failure_heap, &mut failure, 0), Ok(-1));
         assert_eq!(failure.num_components, -1);
         assert!(failure.nCurAtLen.is_null());
         assert!(failure.nOldCompNumber.is_null());
@@ -14368,10 +13457,7 @@ mod tests {
         };
         let mut result = vec![sentinel.clone(); 4];
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            ExtractConnectedComponent(&mut heap, &source, 4, 2, &mut result),
-            Ok(2)
-        );
+        assert_eq!(ExtractConnectedComponent(&mut heap, &source, 4, 2, &mut result), Ok(2));
         assert_eq!(result[0].at_type, 41);
         assert_eq!(result[1].at_type, 42);
         assert_eq!(result[0].orig_compt_at_numb, 1);
@@ -14382,10 +13468,7 @@ mod tests {
         assert_eq!(result[3], sentinel);
 
         let before_missing_component = result.clone();
-        assert_eq!(
-            ExtractConnectedComponent(&mut heap, &source, 4, 99, &mut result),
-            Ok(0)
-        );
+        assert_eq!(ExtractConnectedComponent(&mut heap, &source, 4, 99, &mut result), Ok(0));
         assert_eq!(result, before_missing_component);
 
         let mut zero_heap = SourceHeap::default();
@@ -14437,19 +13520,13 @@ mod tests {
             [u16::MAX, u16::MAX, 33]
         );
         assert_eq!(SetConnectedComponentNumber(&mut atoms, 3, i32::MIN), Ok(0));
-        assert_eq!(
-            atoms.iter().map(|atom| atom.component).collect::<Vec<_>>(),
-            [0, 0, 0]
-        );
+        assert_eq!(atoms.iter().map(|atom| atom.component).collect::<Vec<_>>(), [0, 0, 0]);
 
         assert_eq!(
             SetConnectedComponentNumber(&mut atoms, 4, 1),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            atoms.iter().map(|atom| atom.component).collect::<Vec<_>>(),
-            [0, 0, 0]
-        );
+        assert_eq!(atoms.iter().map(|atom| atom.component).collect::<Vec<_>>(), [0, 0, 0]);
     }
 
     #[test]
@@ -14460,10 +13537,7 @@ mod tests {
         assert!(!empty.is_null());
         assert_eq!(empty_heap.source_allocation_calls(), 1);
         assert_eq!(empty_heap.live_allocation_count(), 1);
-        assert_eq!(
-            empty_heap.slice(empty.as_const()).unwrap()[0],
-            INChI_Stereo::default()
-        );
+        assert_eq!(empty_heap.slice(empty.as_const()).unwrap()[0], INChI_Stereo::default());
 
         let mut heap = SourceHeap::default();
         heap.trace_source_allocations();
@@ -14536,28 +13610,11 @@ mod tests {
         assert!(!plain.is_null());
         assert_eq!((bonds, isotopes), (1, 2));
         let plain_value = plain_heap.slice(plain.as_const()).unwrap()[0].clone();
-        assert_eq!(
-            plain_heap.slice(plain_value.nAtom.as_const()).unwrap(),
-            &[0, 0]
-        );
-        assert_eq!(
-            plain_heap.slice(plain_value.nConnTable.as_const()).unwrap(),
-            &[0, 0, 0]
-        );
-        assert_eq!(
-            plain_heap.slice(plain_value.nTautomer.as_const()).unwrap(),
-            &[0; 6]
-        );
-        assert_eq!(
-            plain_heap.slice(plain_value.nNum_H.as_const()).unwrap(),
-            &[0, 0]
-        );
-        assert_eq!(
-            plain_heap
-                .slice(plain_value.nNum_H_fixed.as_const())
-                .unwrap(),
-            &[0, 0]
-        );
+        assert_eq!(plain_heap.slice(plain_value.nAtom.as_const()).unwrap(), &[0, 0]);
+        assert_eq!(plain_heap.slice(plain_value.nConnTable.as_const()).unwrap(), &[0, 0, 0]);
+        assert_eq!(plain_heap.slice(plain_value.nTautomer.as_const()).unwrap(), &[0; 6]);
+        assert_eq!(plain_heap.slice(plain_value.nNum_H.as_const()).unwrap(), &[0, 0]);
+        assert_eq!(plain_heap.slice(plain_value.nNum_H_fixed.as_const()).unwrap(), &[0, 0]);
         assert!(plain_value.IsotopicAtom.is_null());
         assert!(plain_value.IsotopicTGroup.is_null());
         assert!(plain_value.nPossibleLocationsOfIsotopicH.is_null());
@@ -14580,10 +13637,7 @@ mod tests {
         assert_eq!(isotope_heap.live_allocation_count(), 25);
         let isotope_value = isotope_heap.slice(isotope.as_const()).unwrap()[0].clone();
         assert_eq!(
-            isotope_heap
-                .slice(isotope_value.IsotopicAtom.as_const())
-                .unwrap()
-                .len(),
+            isotope_heap.slice(isotope_value.IsotopicAtom.as_const()).unwrap().len(),
             2
         );
         assert_eq!(
@@ -14645,33 +13699,19 @@ mod tests {
         assert!(!plain.is_null());
         let value = plain_heap.slice(plain.as_const()).unwrap()[0].clone();
         assert_eq!(
-            plain_heap
-                .slice(value.nOrigAtNosInCanonOrd.as_const())
-                .unwrap(),
+            plain_heap.slice(value.nOrigAtNosInCanonOrd.as_const()).unwrap(),
             &[0; 3]
         );
         assert_eq!(
-            plain_heap
-                .slice(value.nOrigAtNosInCanonOrdInv.as_const())
-                .unwrap(),
+            plain_heap.slice(value.nOrigAtNosInCanonOrdInv.as_const()).unwrap(),
             &[0; 3]
         );
+        assert_eq!(plain_heap.slice(value.nConstitEquNumbers.as_const()).unwrap(), &[0; 3]);
         assert_eq!(
-            plain_heap
-                .slice(value.nConstitEquNumbers.as_const())
-                .unwrap(),
-            &[0; 3]
-        );
-        assert_eq!(
-            plain_heap
-                .slice(value.nConstitEquTGroupNumbers.as_const())
-                .unwrap(),
+            plain_heap.slice(value.nConstitEquTGroupNumbers.as_const()).unwrap(),
             &[0; 2]
         );
-        assert_eq!(
-            plain_heap.slice(value.OrigInfo.as_const()).unwrap().len(),
-            2
-        );
+        assert_eq!(plain_heap.slice(value.OrigInfo.as_const()).unwrap().len(), 2);
         assert!(value.szOrigCoord.is_null());
         assert!(value.nIsotopicOrigAtNosInCanonOrd.is_null());
 
@@ -14682,14 +13722,9 @@ mod tests {
         assert_eq!(full_heap.source_allocation_calls(), 11);
         assert_eq!(full_heap.live_allocation_count(), 11);
         let value = full_heap.slice(full.as_const()).unwrap()[0].clone();
+        assert_eq!(full_heap.slice(value.szOrigCoord.as_const()).unwrap(), &[[0_i8; 32]; 2]);
         assert_eq!(
-            full_heap.slice(value.szOrigCoord.as_const()).unwrap(),
-            &[[0_i8; 32]; 2]
-        );
-        assert_eq!(
-            full_heap
-                .slice(value.nIsotopicOrigAtNosInCanonOrd.as_const())
-                .unwrap(),
+            full_heap.slice(value.nIsotopicOrigAtNosInCanonOrd.as_const()).unwrap(),
             &[0; 3]
         );
         assert_eq!(
@@ -14699,9 +13734,7 @@ mod tests {
             &[0; 3]
         );
         assert_eq!(
-            full_heap
-                .slice(value.nConstitEquIsotopicNumbers.as_const())
-                .unwrap(),
+            full_heap.slice(value.nConstitEquIsotopicNumbers.as_const()).unwrap(),
             &[0; 3]
         );
         assert_eq!(
@@ -14722,8 +13755,7 @@ mod tests {
         for successful_allocations in 6..10 {
             let mut tolerated_heap = SourceHeap::default();
             tolerated_heap.fail_after_allocations(successful_allocations);
-            let result =
-                Alloc_INChI_Aux(&mut tolerated_heap, 2, 0, REQ_MODE_ISO as i32, 0).unwrap();
+            let result = Alloc_INChI_Aux(&mut tolerated_heap, 2, 0, REQ_MODE_ISO as i32, 0).unwrap();
             assert!(!result.is_null(), "failure after {successful_allocations}");
             let value = tolerated_heap.slice(result.as_const()).unwrap()[0].clone();
             match successful_allocations {
@@ -14783,11 +13815,7 @@ mod tests {
         assert_eq!(RemoveInpAtBond(&mut tetra, 0, 0), Ok(1));
         assert_eq!(tetra[0].p_parity, 0);
 
-        let mut tetra_replace = vec![
-            bonded_atom(&[1, 2], &[1, 1]),
-            inp_ATOM::default(),
-            inp_ATOM::default(),
-        ];
+        let mut tetra_replace = vec![bonded_atom(&[1, 2], &[1, 1]), inp_ATOM::default(), inp_ATOM::default()];
         tetra_replace[0].orig_at_number = 10;
         tetra_replace[0].p_parity = 2;
         tetra_replace[0].p_orig_at_num = [20, 30, 40, 50];
@@ -14884,10 +13912,7 @@ mod tests {
         atoms[0].component = 1;
         atoms[1].component = 3;
         let mut components = [11_u16, 22, 33, 44];
-        assert_eq!(
-            DisconnectInpAtBond(&mut atoms, Some(&mut components), 0, 0),
-            Ok(1)
-        );
+        assert_eq!(DisconnectInpAtBond(&mut atoms, Some(&mut components), 0, 0), Ok(1));
         assert_eq!(atoms[0].valence, 0);
         assert_eq!(atoms[1].valence, 0);
         assert_eq!(atoms[0].chem_bonds_valence, 0);
@@ -14959,10 +13984,7 @@ mod tests {
             heap.slice(old_outer.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(
-            heap.slice(old_row.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old_row.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(old_row_2.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -14971,19 +13993,13 @@ mod tests {
         let mut outer_failure_heap = SourceHeap::default();
         outer_failure_heap.fail_after_allocations(0);
         let mut outer_failure = SourceMutPointer::null();
-        assert_eq!(
-            imat_new(&mut outer_failure_heap, 2, 2, &mut outer_failure),
-            Ok(1)
-        );
+        assert_eq!(imat_new(&mut outer_failure_heap, 2, 2, &mut outer_failure), Ok(1));
         assert!(outer_failure.is_null());
 
         let mut row_failure_heap = SourceHeap::default();
         row_failure_heap.fail_after_allocations(1);
         let mut row_failure = SourceMutPointer::null();
-        assert_eq!(
-            imat_new(&mut row_failure_heap, 2, 2, &mut row_failure),
-            Ok(1)
-        );
+        assert_eq!(imat_new(&mut row_failure_heap, 2, 2, &mut row_failure), Ok(1));
         assert!(!row_failure.is_null());
         let partial_rows = row_failure_heap.slice(row_failure.as_const()).unwrap();
         assert!(partial_rows[0].is_null());
@@ -14993,10 +14009,7 @@ mod tests {
     #[test]
     fn source_port__strutil__free_inchi_stereo__line_4611() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            Free_INChI_Stereo(&mut heap, SourceMutPointer::null()),
-            Ok(0)
-        );
+        assert_eq!(Free_INChI_Stereo(&mut heap, SourceMutPointer::null()), Ok(0));
 
         let n_number = heap.allocate(vec![1_u16, 2]).unwrap();
         let t_parity = heap.allocate(vec![1_i8, 2]).unwrap();
@@ -15087,14 +14100,8 @@ mod tests {
             let mut owner = pointer;
             assert_eq!(Free_INChI(&mut heap, &mut owner), Ok(0));
             assert!(owner.is_null());
-            assert_eq!(
-                heap.slice(pointer.as_const()),
-                Err(SourceHeapError::MissingAllocation)
-            );
-            assert_eq!(
-                heap.slice(member.as_const()),
-                Err(SourceHeapError::MissingAllocation)
-            );
+            assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+            assert_eq!(heap.slice(member.as_const()), Err(SourceHeapError::MissingAllocation));
         }
     }
 
@@ -15123,9 +14130,7 @@ mod tests {
         let original_inverse = heap.allocate(vec![3_u16]).unwrap();
         let isotopic_inverse = heap.allocate(vec![4_u16]).unwrap();
         let coordinates = heap.allocate(vec![[0_i8; 32]]).unwrap();
-        let original_info = heap
-            .allocate(vec![crate::source_types::ORIG_INFO::default()])
-            .unwrap();
+        let original_info = heap.allocate(vec![crate::source_types::ORIG_INFO::default()]).unwrap();
         let equivalent = heap.allocate(vec![5_u16]).unwrap();
         let equivalent_groups = heap.allocate(vec![6_u16]).unwrap();
         let isotopic_equivalent = heap.allocate(vec![7_u16]).unwrap();
@@ -15149,14 +14154,8 @@ mod tests {
         let mut owner = pointer;
         assert_eq!(Free_INChI_Aux(&mut heap, &mut owner), Ok(0));
         assert!(owner.is_null());
-        assert_eq!(
-            heap.slice(pointer.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(original.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(original.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(isotopic_original.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -15198,10 +14197,7 @@ mod tests {
     #[test]
     fn source_port__strutil__free_inchi_members__line_4698() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            Free_INChI_Members(&mut heap, SourceMutPointer::null()),
-            Ok(0)
-        );
+        assert_eq!(Free_INChI_Members(&mut heap, SourceMutPointer::null()), Ok(0));
 
         let stereo_member = heap.allocate(vec![1_u16]).unwrap();
         let stereo = heap
@@ -15224,9 +14220,7 @@ mod tests {
         let num_h = heap.allocate(vec![1_i8]).unwrap();
         let num_h_fixed = heap.allocate(vec![2_i8]).unwrap();
         let isotopic_atom = heap.allocate(vec![INChI_IsotopicAtom::default()]).unwrap();
-        let isotopic_t_group = heap
-            .allocate(vec![INChI_IsotopicTGroup::default()])
-            .unwrap();
+        let isotopic_t_group = heap.allocate(vec![INChI_IsotopicTGroup::default()]).unwrap();
         let possible_h = heap.allocate(vec![4_u16]).unwrap();
         let inchi = heap
             .allocate(vec![INChI {
@@ -15287,19 +14281,11 @@ mod tests {
         let mut heap = SourceHeap::default();
 
         assert_eq!(
-            imat_free(
-                &mut heap,
-                i32::MAX,
-                SourceMutPointer::<SourceMutPointer<i32>>::null(),
-            ),
+            imat_free(&mut heap, i32::MAX, SourceMutPointer::<SourceMutPointer<i32>>::null(),),
             Ok(())
         );
         assert_eq!(
-            imat_free(
-                &mut heap,
-                i32::MIN,
-                SourceMutPointer::<SourceMutPointer<i32>>::null(),
-            ),
+            imat_free(&mut heap, i32::MIN, SourceMutPointer::<SourceMutPointer<i32>>::null(),),
             Ok(())
         );
 
@@ -15344,14 +14330,8 @@ mod tests {
             .allocate(vec![row_zero, SourceMutPointer::<i32>::null(), row_two])
             .unwrap();
         imat_free(&mut heap, 3, complete_outer).unwrap();
-        assert_eq!(
-            heap.slice(row_zero.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(row_two.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(row_zero.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(row_two.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(complete_outer.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -15366,12 +14346,8 @@ mod tests {
         let nodes = heap.allocate(vec![1_i32, 2]).unwrap();
         let degrees = heap.allocate(vec![1_i32, 1]).unwrap();
         let orig2node = heap.allocate(vec![-1_i32, 0, 1]).unwrap();
-        let first_row = heap
-            .allocate(vec![subgraf_edge { nbr: 1, etype: 1 }])
-            .unwrap();
-        let adjacency = heap
-            .allocate(vec![first_row, SourceMutPointer::null()])
-            .unwrap();
+        let first_row = heap.allocate(vec![subgraf_edge { nbr: 1, etype: 1 }]).unwrap();
+        let adjacency = heap.allocate(vec![first_row, SourceMutPointer::null()]).unwrap();
         let graph = heap
             .allocate(vec![subgraf {
                 nnodes: 2,
@@ -15383,10 +14359,7 @@ mod tests {
             .unwrap();
         assert_eq!(subgraf_free(&mut heap, graph), Ok(()));
         for missing in [nodes, degrees, orig2node] {
-            assert_eq!(
-                heap.slice(missing.as_const()),
-                Err(SourceHeapError::MissingAllocation)
-            );
+            assert_eq!(heap.slice(missing.as_const()), Err(SourceHeapError::MissingAllocation));
         }
         assert_eq!(
             heap.slice(first_row.as_const()),
@@ -15396,14 +14369,9 @@ mod tests {
             heap.slice(adjacency.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(
-            heap.slice(graph.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(graph.as_const()), Err(SourceHeapError::MissingAllocation));
 
-        let retained_row = heap
-            .allocate(vec![subgraf_edge { nbr: 7, etype: 3 }])
-            .unwrap();
+        let retained_row = heap.allocate(vec![subgraf_edge { nbr: 7, etype: 3 }]).unwrap();
         let negative_adjacency = heap.allocate(vec![retained_row]).unwrap();
         let negative_graph = heap
             .allocate(vec![subgraf {
@@ -15465,10 +14433,7 @@ mod tests {
         assert_eq!(value.nnodes, 2);
         assert_eq!(heap.slice(value.nodes.as_const()).unwrap(), &[1, 2]);
         assert_eq!(heap.slice(value.degrees.as_const()).unwrap(), &[1, 1]);
-        assert_eq!(
-            heap.slice(value.orig2node.as_const()).unwrap(),
-            &[-1, 0, 1, -1]
-        );
+        assert_eq!(heap.slice(value.orig2node.as_const()).unwrap(), &[-1, 0, 1, -1]);
         let rows = heap.slice(value.adj.as_const()).unwrap();
         assert_eq!(
             heap.slice(rows[0].as_const()).unwrap(),
@@ -15488,10 +14453,7 @@ mod tests {
         assert!(!empty_value.degrees.is_null());
         assert!(!empty_value.adj.is_null());
         assert!(heap.slice(empty_value.nodes.as_const()).unwrap().is_empty());
-        assert_eq!(
-            heap.slice(empty_value.orig2node.as_const()).unwrap(),
-            &[-1, -1, -1, -1]
-        );
+        assert_eq!(heap.slice(empty_value.orig2node.as_const()).unwrap(), &[-1, -1, -1, -1]);
         subgraf_free(&mut heap, empty).unwrap();
 
         for successful_allocations in 0_u64..7 {
@@ -15527,14 +14489,8 @@ mod tests {
                 ..subgraf::default()
             }])
             .unwrap();
-        let pathfinder = subgraf_pathfinder_new(
-            &mut heap,
-            graph,
-            &ORIG_ATOM_DATA::default(),
-            i32::MIN,
-            i32::MAX,
-        )
-        .unwrap();
+        let pathfinder =
+            subgraf_pathfinder_new(&mut heap, graph, &ORIG_ATOM_DATA::default(), i32::MIN, i32::MAX).unwrap();
         assert!(!pathfinder.is_null());
         let value = heap.slice(pathfinder.as_const()).unwrap()[0].clone();
         assert_eq!(value.sg, graph);
@@ -15547,11 +14503,8 @@ mod tests {
         inchi_free(&mut heap, value.seen).unwrap();
         inchi_free(&mut heap, pathfinder).unwrap();
 
-        let zero_graph = heap
-            .allocate_model_storage(vec![subgraf::default()])
-            .unwrap();
-        let zero = subgraf_pathfinder_new(&mut heap, zero_graph, &ORIG_ATOM_DATA::default(), 0, 0)
-            .unwrap();
+        let zero_graph = heap.allocate_model_storage(vec![subgraf::default()]).unwrap();
+        let zero = subgraf_pathfinder_new(&mut heap, zero_graph, &ORIG_ATOM_DATA::default(), 0, 0).unwrap();
         let zero_value = heap.slice(zero.as_const()).unwrap()[0].clone();
         assert!(!zero_value.seen.is_null());
         assert!(heap.slice(zero_value.seen.as_const()).unwrap().is_empty());
@@ -15569,15 +14522,9 @@ mod tests {
             let baseline = failure_heap.live_allocation_count();
             failure_heap.fail_after_allocations(successful_allocations);
             assert!(
-                subgraf_pathfinder_new(
-                    &mut failure_heap,
-                    failure_graph,
-                    &ORIG_ATOM_DATA::default(),
-                    1,
-                    2,
-                )
-                .unwrap()
-                .is_null()
+                subgraf_pathfinder_new(&mut failure_heap, failure_graph, &ORIG_ATOM_DATA::default(), 1, 2,)
+                    .unwrap()
+                    .is_null()
             );
             assert_eq!(failure_heap.live_allocation_count(), baseline);
         }
@@ -15598,14 +14545,9 @@ mod tests {
     #[test]
     fn source_port__strutil__subgraf_pathfinder_free__line_5252() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            subgraf_pathfinder_free(&mut heap, SourceMutPointer::null()),
-            Ok(())
-        );
+        assert_eq!(subgraf_pathfinder_free(&mut heap, SourceMutPointer::null()), Ok(()));
 
-        let graph = heap
-            .allocate_model_storage(vec![subgraf::default()])
-            .unwrap();
+        let graph = heap.allocate_model_storage(vec![subgraf::default()]).unwrap();
         let seen = heap.allocate(vec![1_i32, 2, 3]).unwrap();
         let pathfinder = heap
             .allocate(vec![subgraf_pathfinder {
@@ -15615,10 +14557,7 @@ mod tests {
             }])
             .unwrap();
         assert_eq!(subgraf_pathfinder_free(&mut heap, pathfinder), Ok(()));
-        assert_eq!(
-            heap.slice(seen.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(seen.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(pathfinder.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -15700,28 +14639,14 @@ mod tests {
 
     #[test]
     fn source_port__strutil__subgraf_pathfinder_run__line_5273() {
-        fn diamond(
-            heap: &mut SourceHeap,
-        ) -> (SourceMutPointer<subgraf_pathfinder>, SourceMutPointer<i32>) {
+        fn diamond(heap: &mut SourceHeap) -> (SourceMutPointer<subgraf_pathfinder>, SourceMutPointer<i32>) {
             let nodes = heap.allocate(vec![101_i32, 102, 103, 104]).unwrap();
             let degrees = heap.allocate(vec![2_i32, 2, 2, 2]).unwrap();
             let rows = [
-                vec![
-                    subgraf_edge { nbr: 1, etype: 1 },
-                    subgraf_edge { nbr: 2, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 0, etype: 1 },
-                    subgraf_edge { nbr: 3, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 0, etype: 1 },
-                    subgraf_edge { nbr: 3, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 1, etype: 1 },
-                    subgraf_edge { nbr: 2, etype: 1 },
-                ],
+                vec![subgraf_edge { nbr: 1, etype: 1 }, subgraf_edge { nbr: 2, etype: 1 }],
+                vec![subgraf_edge { nbr: 0, etype: 1 }, subgraf_edge { nbr: 3, etype: 1 }],
+                vec![subgraf_edge { nbr: 0, etype: 1 }, subgraf_edge { nbr: 3, etype: 1 }],
+                vec![subgraf_edge { nbr: 1, etype: 1 }, subgraf_edge { nbr: 2, etype: 1 }],
             ];
             let mut row_pointers = Vec::new();
             for row in rows {
@@ -15783,10 +14708,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(atom_count, 4);
-        assert_eq!(
-            heap.slice(atoms.as_const()).unwrap()[..4],
-            [101, 102, 104, 103]
-        );
+        assert_eq!(heap.slice(atoms.as_const()).unwrap()[..4], [101, 102, 104, 103]);
         assert_eq!(bond_count, 4);
         let found_bonds = rows[..4]
             .iter()
@@ -15794,12 +14716,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             found_bonds,
-            vec![
-                vec![101, 102],
-                vec![102, 104],
-                vec![101, 103],
-                vec![103, 104]
-            ]
+            vec![vec![101, 102], vec![102, 104], vec![101, 103], vec![103, 104]]
         );
         assert_eq!(heap.slice(seen.as_const()).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(heap.slice(pathfinder.as_const()).unwrap()[0].nseen, 1);
@@ -15821,19 +14738,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(filtered_atom_count, 3);
-        assert_eq!(
-            heap.slice(filtered_atoms.as_const()).unwrap()[..3],
-            [101, 103, 104]
-        );
+        assert_eq!(heap.slice(filtered_atoms.as_const()).unwrap()[..3], [101, 103, 104]);
         assert_eq!(filtered_bond_count, 2);
-        assert_eq!(
-            heap.slice(filtered_rows[0].as_const()).unwrap(),
-            &[101, 103]
-        );
-        assert_eq!(
-            heap.slice(filtered_rows[1].as_const()).unwrap(),
-            &[103, 104]
-        );
+        assert_eq!(heap.slice(filtered_rows[0].as_const()).unwrap(), &[101, 103]);
+        assert_eq!(heap.slice(filtered_rows[1].as_const()).unwrap(), &[103, 104]);
         assert_eq!(heap.slice(filtered_seen.as_const()).unwrap(), &[0, 0, 0, 0]);
 
         let (recursive_pathfinder, _) = diamond(&mut heap);
@@ -15875,9 +14783,7 @@ mod tests {
         assert_eq!(heap.slice(no_atoms_seen.as_const()).unwrap(), &[0, 0, 0, 0]);
 
         let empty_seen = heap.allocate(vec![9_i32]).unwrap();
-        let empty_graph = heap
-            .allocate_model_storage(vec![subgraf::default()])
-            .unwrap();
+        let empty_graph = heap.allocate_model_storage(vec![subgraf::default()]).unwrap();
         let empty_pathfinder = heap
             .allocate_model_storage(vec![subgraf_pathfinder {
                 sg: empty_graph,
@@ -15912,22 +14818,10 @@ mod tests {
             let nodes = heap.allocate(vec![101_i32, 102, 103, 104]).unwrap();
             let degrees = heap.allocate(vec![2_i32, 2, 2, 2]).unwrap();
             let rows = [
-                vec![
-                    subgraf_edge { nbr: 1, etype: 1 },
-                    subgraf_edge { nbr: 2, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 0, etype: 1 },
-                    subgraf_edge { nbr: 3, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 0, etype: 1 },
-                    subgraf_edge { nbr: 3, etype: 1 },
-                ],
-                vec![
-                    subgraf_edge { nbr: 1, etype: 1 },
-                    subgraf_edge { nbr: 2, etype: 1 },
-                ],
+                vec![subgraf_edge { nbr: 1, etype: 1 }, subgraf_edge { nbr: 2, etype: 1 }],
+                vec![subgraf_edge { nbr: 0, etype: 1 }, subgraf_edge { nbr: 3, etype: 1 }],
+                vec![subgraf_edge { nbr: 0, etype: 1 }, subgraf_edge { nbr: 3, etype: 1 }],
+                vec![subgraf_edge { nbr: 1, etype: 1 }, subgraf_edge { nbr: 2, etype: 1 }],
             ];
             let row_pointers = rows
                 .into_iter()
@@ -15963,13 +14857,7 @@ mod tests {
         let atom_numbers = heap.allocate(vec![-7_i32; 6]).unwrap();
         let allocation_count = heap.live_allocation_count();
         assert_eq!(
-            subgraf_pathfinder_collect_all(
-                &mut heap,
-                pathfinder,
-                0,
-                SourceMutPointer::null(),
-                atom_numbers,
-            ),
+            subgraf_pathfinder_collect_all(&mut heap, pathfinder, 0, SourceMutPointer::null(), atom_numbers,),
             Ok(4)
         );
         assert_eq!(heap.live_allocation_count(), allocation_count);
@@ -15985,19 +14873,10 @@ mod tests {
         let filtered_atoms = heap.allocate(vec![55_i32; 6]).unwrap();
         let forbidden = heap.allocate(vec![77_i32, 88, 3, 1, 0, 2]).unwrap();
         assert_eq!(
-            subgraf_pathfinder_collect_all(
-                &mut heap,
-                filtered_pathfinder,
-                3,
-                forbidden,
-                filtered_atoms,
-            ),
+            subgraf_pathfinder_collect_all(&mut heap, filtered_pathfinder, 3, forbidden, filtered_atoms,),
             Ok(2)
         );
-        assert_eq!(
-            heap.slice(filtered_seen.as_const()).unwrap(),
-            &[0, 1, -9, -9, -9, -9]
-        );
+        assert_eq!(heap.slice(filtered_seen.as_const()).unwrap(), &[0, 1, -9, -9, -9, -9]);
         assert_eq!(
             heap.slice(filtered_atoms.as_const()).unwrap(),
             &[101, 102, 55, 55, 55, 55]
@@ -16005,8 +14884,7 @@ mod tests {
         let state = &heap.slice(filtered_pathfinder.as_const()).unwrap()[0];
         assert_eq!((state.start, state.nseen), (1, 2));
 
-        for (forbidden_count, forbidden_pointer) in [(1, SourceMutPointer::null()), (-1, forbidden)]
-        {
+        for (forbidden_count, forbidden_pointer) in [(1, SourceMutPointer::null()), (-1, forbidden)] {
             let (unfiltered_pathfinder, unfiltered_seen) = diamond(&mut heap, &[]);
             let unfiltered_atoms = heap.allocate(vec![-1_i32; 6]).unwrap();
             assert_eq!(
@@ -16019,10 +14897,7 @@ mod tests {
                 ),
                 Ok(4)
             );
-            assert_eq!(
-                heap.slice(unfiltered_seen.as_const()).unwrap()[..4],
-                [0, 1, 3, 2]
-            );
+            assert_eq!(heap.slice(unfiltered_seen.as_const()).unwrap()[..4], [0, 1, 3, 2]);
         }
 
         let (preseen_pathfinder, preseen) = diamond(&mut heap, &[3]);
@@ -16037,10 +14912,7 @@ mod tests {
             ),
             Ok(4)
         );
-        assert_eq!(
-            heap.slice(preseen.as_const()).unwrap(),
-            &[3, 0, 1, 2, -9, -9]
-        );
+        assert_eq!(heap.slice(preseen.as_const()).unwrap(), &[3, 0, 1, 2, -9, -9]);
         assert_eq!(
             heap.slice(preseen_atoms.as_const()).unwrap(),
             &[999, 101, 102, 103, 999, 999]
@@ -16079,10 +14951,7 @@ mod tests {
             Ok(1)
         );
         assert_eq!(heap.slice(isolated_seen.as_const()).unwrap(), &[0, 72]);
-        assert_eq!(
-            heap.slice(isolated_atoms.as_const()).unwrap(),
-            &[i32::MIN, 82]
-        );
+        assert_eq!(heap.slice(isolated_atoms.as_const()).unwrap(), &[i32::MIN, 82]);
 
         let invalid_seen = heap.allocate(vec![17_i32]).unwrap();
         let invalid_pathfinder = heap
@@ -16104,10 +14973,7 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(heap.slice(invalid_seen.as_const()).unwrap(), &[17]);
-        assert_eq!(
-            heap.slice(invalid_pathfinder.as_const()).unwrap()[0].nseen,
-            0
-        );
+        assert_eq!(heap.slice(invalid_pathfinder.as_const()).unwrap()[0].nseen, 0);
     }
 
     #[test]
@@ -16127,9 +14993,7 @@ mod tests {
             ..COMP_ATOM_DATA::default()
         };
         let original = heap.allocate(vec![-7_i32; 6]).unwrap();
-        let current = heap
-            .allocate(vec![-9_i32; usize::from(u16::MAX) + 1])
-            .unwrap();
+        let current = heap.allocate(vec![-9_i32; usize::from(u16::MAX) + 1]).unwrap();
         CompAtomData_GetNumMapping(&mut heap, &data, original, current).unwrap();
         assert_eq!(
             heap.slice(original.as_const()).unwrap(),
@@ -16148,21 +15012,9 @@ mod tests {
             ..COMP_ATOM_DATA::default()
         };
         let untouched = heap.allocate(vec![11_i32, 12]).unwrap();
-        CompAtomData_GetNumMapping(
-            &mut heap,
-            &inaccessible,
-            SourceMutPointer::null(),
-            untouched,
-        )
-        .unwrap();
+        CompAtomData_GetNumMapping(&mut heap, &inaccessible, SourceMutPointer::null(), untouched).unwrap();
         assert_eq!(heap.slice(untouched.as_const()).unwrap(), &[11, 12]);
-        CompAtomData_GetNumMapping(
-            &mut heap,
-            &inaccessible,
-            untouched,
-            SourceMutPointer::null(),
-        )
-        .unwrap();
+        CompAtomData_GetNumMapping(&mut heap, &inaccessible, untouched, SourceMutPointer::null()).unwrap();
         assert_eq!(heap.slice(untouched.as_const()).unwrap(), &[11, 12]);
 
         let negative = COMP_ATOM_DATA {

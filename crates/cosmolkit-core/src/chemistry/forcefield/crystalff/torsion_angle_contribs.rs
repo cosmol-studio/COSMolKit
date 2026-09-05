@@ -164,14 +164,7 @@ pub struct TorsionAngleContribsParams {
 
 impl TorsionAngleContribsParams {
     #[must_use]
-    pub fn new(
-        idx1: usize,
-        idx2: usize,
-        idx3: usize,
-        idx4: usize,
-        force_constants: Vec<f64>,
-        signs: Vec<i32>,
-    ) -> Self {
+    pub fn new(idx1: usize, idx2: usize, idx3: usize, idx4: usize, force_constants: Vec<f64>, signs: Vec<i32>) -> Self {
         Self {
             idx1,
             idx2,
@@ -265,12 +258,7 @@ impl TorsionAngleContribs {
         // RDKit✔️✔️:                (idx2 != idx3) && (idx2 != idx4) && (idx3 != idx4),
         // RDKit✔️✔️:              "degenerate points");
         assert!(
-            idx1 != idx2
-                && idx1 != idx3
-                && idx1 != idx4
-                && idx2 != idx3
-                && idx2 != idx4
-                && idx3 != idx4,
+            idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 && idx2 != idx4 && idx3 != idx4,
             "degenerate points"
         );
         // RDKit✔️✔️: URANGE_CHECK(idx1, dp_forceField->positions().size());
@@ -565,11 +553,7 @@ impl ForceFieldContrib for TorsionAngleContribs {
             // RDKit✔️✔️:   const double sinPhiSq = 1.0 - cosPhi * cosPhi;
             let sin_phi_sq = 1.0 - cos_phi * cos_phi;
             // RDKit✔️✔️:   const double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
-            let sin_phi = if sin_phi_sq > 0.0 {
-                sin_phi_sq.sqrt()
-            } else {
-                0.0
-            };
+            let sin_phi = if sin_phi_sq > 0.0 { sin_phi_sq.sqrt() } else { 0.0 };
             // RDKit✔️✔️:   const double cosPhi2 = cosPhi * cosPhi;
             let cos_phi2 = cos_phi * cos_phi;
             // RDKit✔️✔️:   const double cosPhi3 = cosPhi * cosPhi2;
@@ -637,10 +621,7 @@ impl ForceFieldContrib for TorsionAngleContribs {
                 cos_phi,
             );
             if trace_row1_iter1 {
-                let bits: Vec<String> = grad
-                    .iter()
-                    .map(|value| format!("{:#018x}", value.to_bits()))
-                    .collect();
+                let bits: Vec<String> = grad.iter().map(|value| format!("{:#018x}", value.to_bits())).collect();
                 println!(
                     "[row1-torsion-subcontrib] idx={contrib_idx} cos_phi_bits={:#018x} sin_phi_bits={:#018x} dedphi_bits={:#018x} sin_term_bits={:#018x} grad=[{}]",
                     cos_phi.to_bits(),
@@ -761,9 +742,7 @@ impl ForceFieldContrib for TorsionAngleContribs {
 mod tests {
     use super::*;
     use crate::Molecule;
-    use crate::chemistry::forcefield::core::{
-        ForceField, ForceFieldVec3, compute_dihedral_from_flat,
-    };
+    use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3, compute_dihedral_from_flat};
     use crate::chemistry::forcefield::crystalff::TorsionAngleContribM6;
     use crate::chemistry::forcefield::crystalff::torsion_preferences::{
         CrystalFFDetails, get_experimental_torsions_without_bonds,
@@ -822,10 +801,7 @@ mod tests {
     }
 
     fn add_details_contribs(contribs: &mut TorsionAngleContribs, details: &CrystalFFDetails) {
-        for (atoms, (signs, force_constants)) in details
-            .exp_torsion_atoms
-            .iter()
-            .zip(details.exp_torsion_angles.iter())
+        for (atoms, (signs, force_constants)) in details.exp_torsion_atoms.iter().zip(details.exp_torsion_angles.iter())
         {
             contribs.add_contrib(
                 usize::try_from(atoms[0]).expect("non-negative atom index"),
@@ -850,8 +826,7 @@ mod tests {
         let cos3_phi = 4.0 * cos_phi * cos_phi * cos_phi - 3.0 * cos_phi;
         let cos4_phi = 8.0 * cos_phi.powi(4) - 8.0 * cos_phi.powi(2) + 1.0;
         let cos5_phi = 16.0 * cos_phi.powi(5) - 20.0 * cos_phi.powi(3) + 5.0 * cos_phi;
-        let cos6_phi =
-            32.0 * cos_phi.powi(6) - 48.0 * cos_phi.powi(4) + 18.0 * cos_phi.powi(2) - 1.0;
+        let cos6_phi = 32.0 * cos_phi.powi(6) - 48.0 * cos_phi.powi(4) + 18.0 * cos_phi.powi(2) - 1.0;
         let expected = force_constants[0] * (1.0 + cos_phi)
             + force_constants[1] * (1.0 - cos2_phi)
             + force_constants[2] * (1.0 + cos3_phi)
@@ -885,10 +860,7 @@ mod tests {
                 + force_constants[4] * (1.0 + f64::from(signs[4]) * cos5_phi)
                 + force_constants[5] * (1.0 + f64::from(signs[5]) * cos6_phi);
 
-            assert_close(
-                calc_torsion_energy_m6(&force_constants, &signs, cos_phi),
-                expected,
-            );
+            assert_close(calc_torsion_energy_m6(&force_constants, &signs, cos_phi), expected);
         }
     }
 
@@ -954,17 +926,8 @@ mod tests {
         let mut small_ring_details = CrystalFFDetails::default();
         let mut macrocycle_details = CrystalFFDetails::default();
 
-        get_experimental_torsions_without_bonds(
-            &linear,
-            &mut linear_details,
-            true,
-            false,
-            false,
-            false,
-            2,
-            false,
-        )
-        .expect("linear SMARTS torsions");
+        get_experimental_torsions_without_bonds(&linear, &mut linear_details, true, false, false, false, 2, false)
+            .expect("linear SMARTS torsions");
         get_experimental_torsions_without_bonds(
             &small_ring,
             &mut small_ring_details,
@@ -995,26 +958,17 @@ mod tests {
         let linear_ff = forcefield_for_atom_count(linear.num_atoms());
         let mut linear_contribs = TorsionAngleContribs::new(&linear_ff);
         add_details_contribs(&mut linear_contribs, &linear_details);
-        assert_eq!(
-            linear_contribs.len(),
-            linear_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(linear_contribs.len(), linear_details.exp_torsion_atoms.len());
 
         let small_ring_ff = forcefield_for_atom_count(small_ring.num_atoms());
         let mut small_ring_contribs = TorsionAngleContribs::new(&small_ring_ff);
         add_details_contribs(&mut small_ring_contribs, &small_ring_details);
-        assert_eq!(
-            small_ring_contribs.len(),
-            small_ring_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(small_ring_contribs.len(), small_ring_details.exp_torsion_atoms.len());
 
         let macrocycle_ff = forcefield_for_atom_count(macrocycle.num_atoms());
         let mut macrocycle_contribs = TorsionAngleContribs::new(&macrocycle_ff);
         add_details_contribs(&mut macrocycle_contribs, &macrocycle_details);
-        assert_eq!(
-            macrocycle_contribs.len(),
-            macrocycle_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(macrocycle_contribs.len(), macrocycle_details.exp_torsion_atoms.len());
     }
 
     #[test]
@@ -1026,17 +980,8 @@ mod tests {
         let mut small_ring_details = CrystalFFDetails::default();
         let mut macrocycle_details = CrystalFFDetails::default();
 
-        get_experimental_torsions_without_bonds(
-            &linear,
-            &mut linear_details,
-            true,
-            false,
-            false,
-            false,
-            2,
-            false,
-        )
-        .expect("linear SMARTS torsions");
+        get_experimental_torsions_without_bonds(&linear, &mut linear_details, true, false, false, false, 2, false)
+            .expect("linear SMARTS torsions");
         get_experimental_torsions_without_bonds(
             &small_ring,
             &mut small_ring_details,
@@ -1063,26 +1008,17 @@ mod tests {
         let linear_ff = forcefield_for_atom_count(linear.num_atoms());
         let mut linear_contribs = TorsionAngleContribs::new(&linear_ff);
         add_details_contribs(&mut linear_contribs, &linear_details);
-        assert_eq!(
-            linear_contribs.len(),
-            linear_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(linear_contribs.len(), linear_details.exp_torsion_atoms.len());
 
         let small_ring_ff = forcefield_for_atom_count(small_ring.num_atoms());
         let mut small_ring_contribs = TorsionAngleContribs::new(&small_ring_ff);
         add_details_contribs(&mut small_ring_contribs, &small_ring_details);
-        assert_eq!(
-            small_ring_contribs.len(),
-            small_ring_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(small_ring_contribs.len(), small_ring_details.exp_torsion_atoms.len());
 
         let macrocycle_ff = forcefield_for_atom_count(macrocycle.num_atoms());
         let mut macrocycle_contribs = TorsionAngleContribs::new(&macrocycle_ff);
         add_details_contribs(&mut macrocycle_contribs, &macrocycle_details);
-        assert_eq!(
-            macrocycle_contribs.len(),
-            macrocycle_details.exp_torsion_atoms.len()
-        );
+        assert_eq!(macrocycle_contribs.len(), macrocycle_details.exp_torsion_atoms.len());
     }
 
     #[test]
@@ -1287,8 +1223,7 @@ mod tests {
         params.random_seed = 61453;
         params.num_threads = 1;
         params.timeout = 10;
-        let (embedded, _) =
-            crate::chemistry::distgeom::embed_molecule(&mol, &mut params).expect("embed");
+        let (embedded, _) = crate::chemistry::distgeom::embed_molecule(&mol, &mut params).expect("embed");
         let coords = embedded.conformers_3d()[0].coordinates();
         let mut ff = ForceField::new(3);
         for coord in coords {

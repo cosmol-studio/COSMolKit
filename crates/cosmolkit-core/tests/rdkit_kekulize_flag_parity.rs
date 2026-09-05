@@ -32,12 +32,9 @@ fn load_golden() -> Vec<KekulizeFlagRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -118,15 +115,10 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
             )
         });
 
-        let actual_atom_is_aromatic: Vec<bool> =
-            mol.atoms().iter().map(|atom| atom.is_aromatic()).collect();
-        let actual_bond_types: Vec<&'static str> = mol
-            .bonds()
-            .iter()
-            .map(|bond| bond_type_name(bond.order()))
-            .collect();
-        let actual_bond_is_aromatic: Vec<bool> =
-            mol.bonds().iter().map(|bond| bond.is_aromatic()).collect();
+        let actual_atom_is_aromatic: Vec<bool> = mol.atoms().iter().map(|atom| atom.is_aromatic()).collect();
+        let actual_bond_types: Vec<&'static str> =
+            mol.bonds().iter().map(|bond| bond_type_name(bond.order())).collect();
+        let actual_bond_is_aromatic: Vec<bool> = mol.bonds().iter().map(|bond| bond.is_aromatic()).collect();
 
         assert_eq!(
             actual_atom_is_aromatic,
@@ -153,9 +145,7 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
         let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
         let batch = MoleculeBatch::from_smiles_list(&batch_smiles)
             .with_kekulized_bonds(false, BatchErrorMode::KeepErrors)
-            .expect(
-                "batch clearAromaticFlags=false kekulize should succeed after scalar branch passed",
-            );
+            .expect("batch clearAromaticFlags=false kekulize should succeed after scalar branch passed");
         for (batch_idx, batch_record) in batch.iter().enumerate() {
             let BatchRecord::Molecule(batch_mol) = batch_record else {
                 panic!(
@@ -165,21 +155,13 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
                     batch_idx
                 );
             };
-            let batch_atom_is_aromatic: Vec<bool> = batch_mol
-                .atoms()
-                .iter()
-                .map(|atom| atom.is_aromatic())
-                .collect();
+            let batch_atom_is_aromatic: Vec<bool> = batch_mol.atoms().iter().map(|atom| atom.is_aromatic()).collect();
             let batch_bond_types: Vec<&'static str> = batch_mol
                 .bonds()
                 .iter()
                 .map(|bond| bond_type_name(bond.order()))
                 .collect();
-            let batch_bond_is_aromatic: Vec<bool> = batch_mol
-                .bonds()
-                .iter()
-                .map(|bond| bond.is_aromatic())
-                .collect();
+            let batch_bond_is_aromatic: Vec<bool> = batch_mol.bonds().iter().map(|bond| bond.is_aromatic()).collect();
             assert_eq!(
                 batch_atom_is_aromatic,
                 *expected_atom_is_aromatic,
@@ -211,10 +193,7 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
 #[test]
 fn kekulize_clear_flags_false_matches_rdkit_golden_in_parallel_batch() {
     let records = load_golden();
-    let smiles = records
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let batch = batch
         .with_kekulized_bonds_with_options(false, BatchErrorMode::KeepErrors, Some(4), Some(false))
@@ -261,21 +240,13 @@ fn kekulize_clear_flags_false_matches_rdkit_golden_in_parallel_batch() {
             )
         });
 
-        let actual_atom_is_aromatic: Vec<bool> = batch_mol
-            .atoms()
-            .iter()
-            .map(|atom| atom.is_aromatic())
-            .collect();
+        let actual_atom_is_aromatic: Vec<bool> = batch_mol.atoms().iter().map(|atom| atom.is_aromatic()).collect();
         let actual_bond_types: Vec<&'static str> = batch_mol
             .bonds()
             .iter()
             .map(|bond| bond_type_name(bond.order()))
             .collect();
-        let actual_bond_is_aromatic: Vec<bool> = batch_mol
-            .bonds()
-            .iter()
-            .map(|bond| bond.is_aromatic())
-            .collect();
+        let actual_bond_is_aromatic: Vec<bool> = batch_mol.bonds().iter().map(|bond| bond.is_aromatic()).collect();
 
         assert_eq!(
             actual_atom_is_aromatic,

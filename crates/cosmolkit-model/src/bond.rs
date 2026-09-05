@@ -181,12 +181,7 @@ impl<Q: Clone> BondSpec<Q> {
         self.computed_props.contains(key)
     }
 
-    pub fn remapped_endpoints(
-        &self,
-        begin: AtomId,
-        end: AtomId,
-        stereo_atoms: Option<[AtomId; 2]>,
-    ) -> Self {
+    pub fn remapped_endpoints(&self, begin: AtomId, end: AtomId, stereo_atoms: Option<[AtomId; 2]>) -> Self {
         let mut spec = self.clone();
         spec.begin = begin;
         spec.end = end;
@@ -233,13 +228,7 @@ impl<Q: Clone> Bond<Q> {
     }
 
     #[allow(dead_code)]
-    pub fn remapped(
-        mut self,
-        id: BondId,
-        begin: AtomId,
-        end: AtomId,
-        stereo_atoms: Option<[AtomId; 2]>,
-    ) -> Self {
+    pub fn remapped(mut self, id: BondId, begin: AtomId, end: AtomId, stereo_atoms: Option<[AtomId; 2]>) -> Self {
         self.id = id;
         self.begin = begin;
         self.end = end;

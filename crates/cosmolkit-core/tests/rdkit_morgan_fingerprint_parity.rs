@@ -3,13 +3,12 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::fingerprint::{
-    AdditionalOutput, FingerprintFuncArguments, MorganFingerprintGenerator,
-    getMorganGeneratorWithParams, morgan_fingerprint_with_output,
+    AdditionalOutput, FingerprintFuncArguments, MorganFingerprintGenerator, getMorganGeneratorWithParams,
+    morgan_fingerprint_with_output,
 };
 use cosmolkit_core::{
-    Molecule, MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator,
-    MorganFingerprintParams, morgan_get_fingerprint, morgan_get_fingerprint_as_bit_vect,
-    morgan_get_hashed_fingerprint,
+    Molecule, MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganFingerprintParams,
+    morgan_get_fingerprint, morgan_get_fingerprint_as_bit_vect, morgan_get_hashed_fingerprint,
 };
 use serde::Deserialize;
 
@@ -88,21 +87,14 @@ fn load_golden() -> Vec<MorganRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
 
-fn branch_func_args(
-    name: &str,
-    mol: &Molecule,
-    collect_additional_output: bool,
-) -> FingerprintFuncArguments {
+fn branch_func_args(name: &str, mol: &Molecule, collect_additional_output: bool) -> FingerprintFuncArguments {
     let mut args = FingerprintFuncArguments {
         from_atoms: match name {
             "r2_n2048_from_atom_0" if !mol.atoms().is_empty() => Some(vec![0]),
@@ -113,9 +105,7 @@ fn branch_func_args(
             _ => None,
         },
         custom_atom_invariants: match name {
-            "r2_n2048_custom_atom_invariants" => {
-                Some((0..mol.atoms().len()).map(|idx| idx as u32 + 1).collect())
-            }
+            "r2_n2048_custom_atom_invariants" => Some((0..mol.atoms().len()).map(|idx| idx as u32 + 1).collect()),
             "r2_n2048_only_nonzero_custom_atom" => Some(
                 (0..mol.atoms().len())
                     .map(|idx| if idx % 2 == 0 { 0 } else { idx as u32 + 1 })
@@ -124,9 +114,7 @@ fn branch_func_args(
             _ => None,
         },
         custom_bond_invariants: match name {
-            "r2_n2048_custom_bond_invariants" => {
-                Some((0..mol.bonds().len()).map(|idx| idx as u32 + 7).collect())
-            }
+            "r2_n2048_custom_bond_invariants" => Some((0..mol.bonds().len()).map(|idx| idx as u32 + 7).collect()),
             _ => None,
         },
         ..Default::default()
@@ -208,17 +196,13 @@ fn branch_params(name: &str, mol: &Molecule) -> MorganFingerprintParams {
         "r2_n2048_custom_atom_invariants" => MorganFingerprintParams {
             radius: 2,
             n_bits: 2048,
-            custom_atom_invariants: Some(
-                (0..mol.atoms().len()).map(|idx| idx as u32 + 1).collect(),
-            ),
+            custom_atom_invariants: Some((0..mol.atoms().len()).map(|idx| idx as u32 + 1).collect()),
             ..Default::default()
         },
         "r2_n2048_custom_bond_invariants" => MorganFingerprintParams {
             radius: 2,
             n_bits: 2048,
-            custom_bond_invariants: Some(
-                (0..mol.bonds().len()).map(|idx| idx as u32 + 7).collect(),
-            ),
+            custom_bond_invariants: Some((0..mol.bonds().len()).map(|idx| idx as u32 + 7).collect()),
             ..Default::default()
         },
         "r2_n2048_only_nonzero_custom_atom" => MorganFingerprintParams {
@@ -271,19 +255,19 @@ fn branch_params(name: &str, mol: &Molecule) -> MorganFingerprintParams {
     }
 }
 
-fn branch_generator(
-    name: &str,
-    mol: &Molecule,
-) -> cosmolkit_core::fingerprint::MorganFingerprintGenerator {
+fn branch_generator(name: &str, mol: &Molecule) -> cosmolkit_core::fingerprint::MorganFingerprintGenerator {
     let params = branch_params(name, mol);
     let atom_invariants_generator = Some(params.atom_invariants_generator.clone());
     let bond_invariants_generator =
-        Some(params.bond_invariants_generator.clone().unwrap_or_else(|| {
-            MorganBondInvariantsGenerator {
-                use_bond_types: params.use_bond_types,
-                use_chirality: params.use_chirality,
-            }
-        }));
+        Some(
+            params
+                .bond_invariants_generator
+                .clone()
+                .unwrap_or_else(|| MorganBondInvariantsGenerator {
+                    use_bond_types: params.use_bond_types,
+                    use_chirality: params.use_chirality,
+                }),
+        );
     let mut generator = getMorganGeneratorWithParams(
         params.radius,
         params.count_simulation,
@@ -298,9 +282,7 @@ fn branch_generator(
         true,
         true,
     )
-    .unwrap_or_else(|err| {
-        panic!("failed to construct Morgan generator for branch {name} with {params:?}: {err}")
-    });
+    .unwrap_or_else(|err| panic!("failed to construct Morgan generator for branch {name} with {params:?}: {err}"));
     generator
         .fingerprint_arguments
         .fingerprint_arguments
@@ -309,10 +291,7 @@ fn branch_generator(
 }
 
 fn bimap(entries: &[(usize, &[(usize, u32)])]) -> BTreeMap<usize, Vec<(usize, u32)>> {
-    entries
-        .iter()
-        .map(|(bit, values)| (*bit, values.to_vec()))
-        .collect()
+    entries.iter().map(|(bit, values)| (*bit, values.to_vec())).collect()
 }
 
 fn normalized_nonzero_elements(golden: &BTreeMap<String, i32>) -> BTreeMap<u64, i32> {
@@ -322,37 +301,26 @@ fn normalized_nonzero_elements(golden: &BTreeMap<String, i32>) -> BTreeMap<u64, 
         .collect()
 }
 
-fn normalized_bit_info_map(
-    golden: &BTreeMap<String, Vec<[usize; 2]>>,
-) -> BTreeMap<usize, Vec<(usize, u32)>> {
+fn normalized_bit_info_map(golden: &BTreeMap<String, Vec<[usize; 2]>>) -> BTreeMap<usize, Vec<(usize, u32)>> {
     golden
         .iter()
         .map(|(bit, entries)| {
             (
                 bit.parse::<usize>().unwrap(),
-                entries
-                    .iter()
-                    .map(|entry| (entry[0], entry[1] as u32))
-                    .collect(),
+                entries.iter().map(|entry| (entry[0], entry[1] as u32)).collect(),
             )
         })
         .collect()
 }
 
-fn normalized_atoms_per_bit(
-    golden: &BTreeMap<String, Vec<Vec<usize>>>,
-) -> BTreeMap<usize, Vec<Vec<usize>>> {
+fn normalized_atoms_per_bit(golden: &BTreeMap<String, Vec<Vec<usize>>>) -> BTreeMap<usize, Vec<Vec<usize>>> {
     golden
         .iter()
         .map(|(bit, atoms_per_bit)| (bit.parse::<usize>().unwrap(), atoms_per_bit.clone()))
         .collect()
 }
 
-fn assert_additional_output_matches(
-    context: &str,
-    actual: &AdditionalOutput,
-    expected: &MorganAdditionalOutputGolden,
-) {
+fn assert_additional_output_matches(context: &str, actual: &AdditionalOutput, expected: &MorganAdditionalOutputGolden) {
     let actual_atom_counts = actual
         .atom_counts
         .as_ref()
@@ -571,8 +539,7 @@ fn assert_explicit_bit_output_matches(
 fn public_morgan_sparse_count_wrapper_matches_rdkit_golden() {
     let mol = Molecule::from_smiles("CC").unwrap();
 
-    let output =
-        morgan_get_fingerprint(&mol, 1, None, None, false, true, true, false, true, false).unwrap();
+    let output = morgan_get_fingerprint(&mol, 1, None, None, false, true, true, false, true, false).unwrap();
 
     assert_eq!(
         output.fingerprint.nonzero_elements(),
@@ -580,10 +547,7 @@ fn public_morgan_sparse_count_wrapper_matches_rdkit_golden() {
     );
     assert_eq!(
         output.atoms_setting_bits,
-        Some(bimap(&[
-            (2246728737, &[(0, 0), (1, 0)]),
-            (3545175291, &[(0, 1)])
-        ]))
+        Some(bimap(&[(2246728737, &[(0, 0), (1, 0)]), (3545175291, &[(0, 1)])]))
     );
 }
 
@@ -591,9 +555,7 @@ fn public_morgan_sparse_count_wrapper_matches_rdkit_golden() {
 fn public_morgan_sparse_bit_wrapper_matches_rdkit_golden() {
     let mol = Molecule::from_smiles("CC").unwrap();
 
-    let output =
-        morgan_get_fingerprint(&mol, 1, None, None, false, true, false, false, true, false)
-            .unwrap();
+    let output = morgan_get_fingerprint(&mol, 1, None, None, false, true, false, false, true, false).unwrap();
 
     assert_eq!(
         output.fingerprint.nonzero_elements(),
@@ -601,10 +563,7 @@ fn public_morgan_sparse_bit_wrapper_matches_rdkit_golden() {
     );
     assert_eq!(
         output.atoms_setting_bits,
-        Some(bimap(&[
-            (2246728737, &[(0, 0), (1, 0)]),
-            (3545175291, &[(0, 1)])
-        ]))
+        Some(bimap(&[(2246728737, &[(0, 0), (1, 0)]), (3545175291, &[(0, 1)])]))
     );
 }
 
@@ -612,9 +571,7 @@ fn public_morgan_sparse_bit_wrapper_matches_rdkit_golden() {
 fn public_morgan_hashed_count_wrapper_matches_rdkit_golden() {
     let mol = Molecule::from_smiles("CC").unwrap();
 
-    let output =
-        morgan_get_hashed_fingerprint(&mol, 1, 2048, None, None, false, true, false, true, false)
-            .unwrap();
+    let output = morgan_get_hashed_fingerprint(&mol, 1, 2048, None, None, false, true, false, true, false).unwrap();
 
     assert_eq!(
         output.fingerprint.nonzero_elements(),
@@ -630,10 +587,8 @@ fn public_morgan_hashed_count_wrapper_matches_rdkit_golden() {
 fn public_morgan_explicit_bit_wrapper_matches_rdkit_golden() {
     let mol = Molecule::from_smiles("CC").unwrap();
 
-    let output = morgan_get_fingerprint_as_bit_vect(
-        &mol, 1, 2048, None, None, false, true, false, true, false,
-    )
-    .unwrap();
+    let output =
+        morgan_get_fingerprint_as_bit_vect(&mol, 1, 2048, None, None, false, true, false, true, false).unwrap();
 
     assert_eq!(output.fingerprint.on_bits(), vec![1057, 1275]);
     assert_eq!(
@@ -680,8 +635,7 @@ fn public_morgan_params_apply_num_bits_per_feature_to_bits_and_additional_output
 fn public_morgan_isotope_invariant_uses_complete_rdkit_mass_table() {
     let mol = Molecule::from_smiles("[47Ca+2].[Cl-].[Cl-]").unwrap();
 
-    let default_output =
-        morgan_fingerprint_with_output(&mol, &MorganFingerprintParams::default()).unwrap();
+    let default_output = morgan_fingerprint_with_output(&mol, &MorganFingerprintParams::default()).unwrap();
     assert_eq!(default_output.fingerprint.on_bits(), vec![1302, 1866]);
 
     let two_bits_output = morgan_fingerprint_with_output(
@@ -692,10 +646,7 @@ fn public_morgan_isotope_invariant_uses_complete_rdkit_mass_table() {
         },
     )
     .unwrap();
-    assert_eq!(
-        two_bits_output.fingerprint.on_bits(),
-        vec![560, 703, 1302, 1866]
-    );
+    assert_eq!(two_bits_output.fingerprint.on_bits(), vec![560, 703, 1302, 1866]);
 }
 
 #[test]
@@ -763,14 +714,10 @@ fn public_morgan_explicit_bit_wrapper_distinguishes_chirality_like_rdkit() {
     let r_mol = Molecule::from_smiles("C[C@H](F)Cl").unwrap();
     let s_mol = Molecule::from_smiles("C[C@@H](F)Cl").unwrap();
 
-    let r_output = morgan_get_fingerprint_as_bit_vect(
-        &r_mol, 1, 2048, None, None, true, true, false, true, false,
-    )
-    .unwrap();
-    let s_output = morgan_get_fingerprint_as_bit_vect(
-        &s_mol, 1, 2048, None, None, true, true, false, true, false,
-    )
-    .unwrap();
+    let r_output =
+        morgan_get_fingerprint_as_bit_vect(&r_mol, 1, 2048, None, None, true, true, false, true, false).unwrap();
+    let s_output =
+        morgan_get_fingerprint_as_bit_vect(&s_mol, 1, 2048, None, None, true, true, false, true, false).unwrap();
 
     assert_eq!(
         r_output.fingerprint.on_bits(),
@@ -893,34 +840,11 @@ fn morgan_fingerprint_matches_rdkit_golden_across_param_branches() {
                 branch_name,
                 expected_branch.error
             );
-            let context = format!(
-                "row {} ({}) branch {}",
-                row_idx + 1,
-                record.smiles,
-                branch_name
-            );
+            let context = format!("row {} ({}) branch {}", row_idx + 1, record.smiles, branch_name);
             let generator = branch_generator(branch_name, &mol);
-            assert_sparse_count_output_matches(
-                &context,
-                branch_name,
-                &generator,
-                &mol,
-                &expected_branch.sparse_count,
-            );
-            assert_sparse_bit_output_matches(
-                &context,
-                branch_name,
-                &generator,
-                &mol,
-                &expected_branch.sparse_bit,
-            );
-            assert_hashed_count_output_matches(
-                &context,
-                branch_name,
-                &generator,
-                &mol,
-                &expected_branch.hashed_count,
-            );
+            assert_sparse_count_output_matches(&context, branch_name, &generator, &mol, &expected_branch.sparse_count);
+            assert_sparse_bit_output_matches(&context, branch_name, &generator, &mol, &expected_branch.sparse_bit);
+            assert_hashed_count_output_matches(&context, branch_name, &generator, &mol, &expected_branch.hashed_count);
             let actual = assert_explicit_bit_output_matches(
                 &context,
                 branch_name,

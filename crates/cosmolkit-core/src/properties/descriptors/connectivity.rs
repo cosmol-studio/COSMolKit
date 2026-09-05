@@ -40,40 +40,35 @@ pub(super) fn hk_deltas(molecule: &Molecule, force: bool) -> DescriptorResult<Ar
         // RDKit✔️✔️:           double(tbl->getNouterElecs(n) - at->getTotalNumHs()) /
         // RDKit✔️✔️:           (n - tbl->getNouterElecs(n) - 1);
         // RDKit✔️✔️:     }
-        let mut delta = if atomic_number <= 1 {
-            0.0
-        } else {
-            let outer_electrons = crate::chemistry::valence::periodic_table_outer_electrons(
-                atomic_number,
-            )
-            .map_err(|_| DescriptorError::Unsupported {
-                function: "hk_deltas",
-                rdkit_function: "PeriodicTable::getNouterElecs",
-            })?;
-            let total_hydrogens =
-                crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false)
+        let mut delta =
+            if atomic_number <= 1 {
+                0.0
+            } else {
+                let outer_electrons = crate::chemistry::valence::periodic_table_outer_electrons(atomic_number)
+                    .map_err(|_| DescriptorError::Unsupported {
+                        function: "hk_deltas",
+                        rdkit_function: "PeriodicTable::getNouterElecs",
+                    })?;
+                let total_hydrogens = crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false)
                     .map_err(|_| DescriptorError::Unsupported {
                         function: "hk_deltas",
                         rdkit_function: "Atom::getTotalNumHs",
                     })?;
-            // Both source subtractions undergo C++ usual arithmetic conversion
-            // to `unsigned int`; preserve that wrapping before conversion to
-            // `double`, including malformed cached-valence edge states.
-            let outer_electrons =
-                u32::try_from(outer_electrons).map_err(|_| DescriptorError::Unsupported {
+                // Both source subtractions undergo C++ usual arithmetic conversion
+                // to `unsigned int`; preserve that wrapping before conversion to
+                // `double`, including malformed cached-valence edge states.
+                let outer_electrons = u32::try_from(outer_electrons).map_err(|_| DescriptorError::Unsupported {
                     function: "hk_deltas",
                     rdkit_function: "PeriodicTable::getNouterElecs",
                 })?;
-            let valence_delta = outer_electrons.wrapping_sub(total_hydrogens);
-            if atomic_number <= 10 {
-                f64::from(valence_delta)
-            } else {
-                let denominator = u32::from(atomic_number)
-                    .wrapping_sub(outer_electrons)
-                    .wrapping_sub(1);
-                f64::from(valence_delta) / f64::from(denominator)
-            }
-        };
+                let valence_delta = outer_electrons.wrapping_sub(total_hydrogens);
+                if atomic_number <= 10 {
+                    f64::from(valence_delta)
+                } else {
+                    let denominator = u32::from(atomic_number).wrapping_sub(outer_electrons).wrapping_sub(1);
+                    f64::from(valence_delta) / f64::from(denominator)
+                }
+            };
         // RDKit✔️✔️:     if (deltas[at->getIdx()] != 0.0) {
         // RDKit✔️✔️:       deltas[at->getIdx()] = 1. / sqrt(deltas[at->getIdx()]);
         // RDKit✔️✔️:     }
@@ -114,23 +109,23 @@ pub(super) fn n_vals(molecule: &Molecule, force: bool) -> DescriptorResult<Arc<[
         // RDKit✔️✔️:     const Atom *at = mol[*atBegin];
         // RDKit✔️✔️:     double v = tbl->getNouterElecs(at->getAtomicNum()) - at->getTotalNumHs();
         let outer_electrons =
-            crate::chemistry::valence::periodic_table_outer_electrons(atom.atomic_number())
-                .map_err(|_| DescriptorError::Unsupported {
+            crate::chemistry::valence::periodic_table_outer_electrons(atom.atomic_number()).map_err(|_| {
+                DescriptorError::Unsupported {
                     function: "n_vals",
                     rdkit_function: "PeriodicTable::getNouterElecs",
-                })?;
-        let outer_electrons =
-            u32::try_from(outer_electrons).map_err(|_| DescriptorError::Unsupported {
-                function: "n_vals",
-                rdkit_function: "PeriodicTable::getNouterElecs",
+                }
             })?;
+        let outer_electrons = u32::try_from(outer_electrons).map_err(|_| DescriptorError::Unsupported {
+            function: "n_vals",
+            rdkit_function: "PeriodicTable::getNouterElecs",
+        })?;
         let total_hydrogens =
-            crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false).map_err(
-                |_| DescriptorError::Unsupported {
+            crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false).map_err(|_| {
+                DescriptorError::Unsupported {
                     function: "n_vals",
                     rdkit_function: "Atom::getTotalNumHs",
-                },
-            )?;
+                }
+            })?;
         // Source C++ converts the signed outer-electron count to `unsigned
         // int` before subtraction from the unsigned total-H count.
         let mut value = f64::from(outer_electrons.wrapping_sub(total_hydrogens));
@@ -297,18 +292,12 @@ pub(super) fn calc_chi_nv(molecule: &Molecule, order: usize, force: bool) -> Des
         function: "calc_chi_nv",
         rdkit_function: "Descriptors::calcChiNv",
     })?;
-    let paths = crate::chemistry::subgraph::find_all_paths_of_length_n(
-        molecule,
-        target_length,
-        false,
-        false,
-        -1,
-        false,
-    )
-    .map_err(|_| DescriptorError::Unsupported {
-        function: "calc_chi_nv",
-        rdkit_function: "findAllPathsOfLengthN",
-    })?;
+    let paths =
+        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, target_length, false, false, -1, false)
+            .map_err(|_| DescriptorError::Unsupported {
+                function: "calc_chi_nv",
+                rdkit_function: "findAllPathsOfLengthN",
+            })?;
     // RDKit✔️✔️:   double res = 0.0;
     let mut result = 0.0;
     // RDKit✔️✔️:   for (const auto &p : ps) {
@@ -351,18 +340,12 @@ pub(super) fn calc_chi_nn(molecule: &Molecule, order: usize, force: bool) -> Des
         function: "calc_chi_nn",
         rdkit_function: "Descriptors::calcChiNn",
     })?;
-    let paths = crate::chemistry::subgraph::find_all_paths_of_length_n(
-        molecule,
-        target_length,
-        false,
-        false,
-        -1,
-        false,
-    )
-    .map_err(|_| DescriptorError::Unsupported {
-        function: "calc_chi_nn",
-        rdkit_function: "findAllPathsOfLengthN",
-    })?;
+    let paths =
+        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, target_length, false, false, -1, false)
+            .map_err(|_| DescriptorError::Unsupported {
+                function: "calc_chi_nn",
+                rdkit_function: "findAllPathsOfLengthN",
+            })?;
     // RDKit✔️✔️:   double res = 0.0;
     let mut result = 0.0;
     // RDKit✔️✔️:   for (const auto &p : ps) {
@@ -560,10 +543,7 @@ pub(super) fn calc_chi_1(molecule: &Molecule) -> f64 {
         .bonds()
         .iter()
         .map(|bond| {
-            molecule
-                .adjacency()
-                .neighbors_of(bond.begin().index())
-                .len()
+            molecule.adjacency().neighbors_of(bond.begin().index()).len()
                 * molecule.adjacency().neighbors_of(bond.end().index()).len()
         })
         .filter(|degree_product| *degree_product != 0)
@@ -571,10 +551,7 @@ pub(super) fn calc_chi_1(molecule: &Molecule) -> f64 {
         .fold(0.0, |result, contribution| result + contribution)
 }
 
-pub(super) fn calc_hall_kier_alpha(
-    molecule: &Molecule,
-    mut atom_contributions: Option<&mut [f64]>,
-) -> f64 {
+pub(super) fn calc_hall_kier_alpha(molecule: &Molecule, mut atom_contributions: Option<&mut [f64]>) -> f64 {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcHallKierAlpha
     // RDKit✔️✔️: double calcHallKierAlpha(const ROMol &mol, std::vector<double> *atomContribs) {
     // RDKit✔️✔️:   PRECONDITION(!atomContribs || atomContribs->size() >= mol.getNumAtoms(),
@@ -642,9 +619,7 @@ fn kappa_1_helper(path_count: f64, heavy_atom_count: f64, alpha: f64) -> f64 {
     // RDKit✔️✔️:     kappa = (A + alpha) * (A + alpha - 1) * (A + alpha - 1) / (denom * denom);
     // RDKit✔️✔️:   }
     if denominator != 0.0 {
-        kappa = (heavy_atom_count + alpha)
-            * (heavy_atom_count + alpha - 1.0)
-            * (heavy_atom_count + alpha - 1.0)
+        kappa = (heavy_atom_count + alpha) * (heavy_atom_count + alpha - 1.0) * (heavy_atom_count + alpha - 1.0)
             / (denominator * denominator);
     }
     // RDKit✔️✔️:   return kappa;
@@ -664,9 +639,7 @@ fn kappa_2_helper(path_count: f64, heavy_atom_count: f64, alpha: f64) -> f64 {
     // RDKit✔️✔️:     kappa = (A + alpha - 1) * (A + alpha - 2) * (A + alpha - 2) / denom;
     // RDKit✔️✔️:   }
     if denominator != 0.0 {
-        kappa = (heavy_atom_count + alpha - 1.0)
-            * (heavy_atom_count + alpha - 2.0)
-            * (heavy_atom_count + alpha - 2.0)
+        kappa = (heavy_atom_count + alpha - 1.0) * (heavy_atom_count + alpha - 2.0) * (heavy_atom_count + alpha - 2.0)
             / denominator;
     }
     // RDKit✔️✔️:   return kappa;
@@ -715,11 +688,7 @@ pub(super) fn calc_kappa_1(molecule: &Molecule) -> f64 {
     // RDKit✔️✔️:   double P1 = mol.getNumBonds();
     let path_count = molecule.num_bonds() as f64;
     // RDKit✔️✔️:   double A = mol.getNumHeavyAtoms();
-    let heavy_atom_count = molecule
-        .atoms()
-        .iter()
-        .filter(|atom| atom.atomic_number() > 1)
-        .count() as f64;
+    let heavy_atom_count = molecule.atoms().iter().filter(|atom| atom.atomic_number() > 1).count() as f64;
     // RDKit✔️✔️:   double alpha = calcHallKierAlpha(mol);
     let alpha = calc_hall_kier_alpha(molecule, None);
     // RDKit✔️✔️:   double kappa = kappa1Helper(P1, A, alpha);
@@ -735,19 +704,16 @@ pub(super) fn calc_kappa_2(molecule: &Molecule) -> DescriptorResult<f64> {
     // RDKit✔️✔️: double calcKappa2(const ROMol &mol) {
     // RDKit✔️✔️:   PATH_LIST ps = findAllPathsOfLengthN(mol, 2);
     let paths =
-        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 2, true, false, -1, false)
-            .map_err(|_| DescriptorError::Unsupported {
+        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 2, true, false, -1, false).map_err(|_| {
+            DescriptorError::Unsupported {
                 function: "calc_kappa_2",
                 rdkit_function: "findAllPathsOfLengthN",
-            })?;
+            }
+        })?;
     // RDKit✔️✔️:   double P2 = ps.size();
     let path_count = paths.len() as f64;
     // RDKit✔️✔️:   double A = mol.getNumHeavyAtoms();
-    let heavy_atom_count = molecule
-        .atoms()
-        .iter()
-        .filter(|atom| atom.atomic_number() > 1)
-        .count() as f64;
+    let heavy_atom_count = molecule.atoms().iter().filter(|atom| atom.atomic_number() > 1).count() as f64;
     // RDKit✔️✔️:   double alpha = calcHallKierAlpha(mol);
     let alpha = calc_hall_kier_alpha(molecule, None);
     // RDKit✔️✔️:   double kappa = kappa2Helper(P2, A, alpha);
@@ -762,25 +728,18 @@ pub(super) fn calc_kappa_3(molecule: &Molecule) -> DescriptorResult<f64> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcKappa3
     // RDKit✔️✔️: double calcKappa3(const ROMol &mol) {
     // RDKit✔️✔️:   double P3 = findAllPathsOfLengthN(mol, 3).size();
-    let path_count =
-        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 3, true, false, -1, false)
-            .map_err(|_| DescriptorError::Unsupported {
-                function: "calc_kappa_3",
-                rdkit_function: "findAllPathsOfLengthN",
-            })?
-            .len() as f64;
+    let path_count = crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 3, true, false, -1, false)
+        .map_err(|_| DescriptorError::Unsupported {
+            function: "calc_kappa_3",
+            rdkit_function: "findAllPathsOfLengthN",
+        })?
+        .len() as f64;
     // RDKit✔️✔️:   int A = mol.getNumHeavyAtoms();
-    let heavy_atom_count = i32::try_from(
-        molecule
-            .atoms()
-            .iter()
-            .filter(|atom| atom.atomic_number() > 1)
-            .count(),
-    )
-    .map_err(|_| DescriptorError::Unsupported {
-        function: "calc_kappa_3",
-        rdkit_function: "ROMol::getNumHeavyAtoms int conversion",
-    })?;
+    let heavy_atom_count = i32::try_from(molecule.atoms().iter().filter(|atom| atom.atomic_number() > 1).count())
+        .map_err(|_| DescriptorError::Unsupported {
+            function: "calc_kappa_3",
+            rdkit_function: "ROMol::getNumHeavyAtoms int conversion",
+        })?;
     // RDKit✔️✔️:   double alpha = calcHallKierAlpha(mol);
     let alpha = calc_hall_kier_alpha(molecule, None);
     // RDKit✔️✔️:   double kappa = kappa3Helper(P3, A, alpha);
@@ -794,11 +753,7 @@ pub(super) fn calc_kappa_3(molecule: &Molecule) -> DescriptorResult<f64> {
 pub(super) fn calc_phi(molecule: &Molecule) -> DescriptorResult<f64> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcPhi
     // RDKit✔️✔️: double calcPhi(const ROMol &mol) {
-    let heavy_atom_count = molecule
-        .atoms()
-        .iter()
-        .filter(|atom| atom.atomic_number() > 1)
-        .count();
+    let heavy_atom_count = molecule.atoms().iter().filter(|atom| atom.atomic_number() > 1).count();
     // RDKit✔️✔️:   if (!mol.getNumHeavyAtoms()) {
     // RDKit✔️✔️:     return 0.0;
     // RDKit✔️✔️:   }
@@ -814,13 +769,12 @@ pub(super) fn calc_phi(molecule: &Molecule) -> DescriptorResult<f64> {
     // RDKit✔️✔️:   auto kappa1 = kappa1Helper(P1, A, alpha);
     let kappa_1 = kappa_1_helper(path_count_1, heavy_atom_count, alpha);
     // RDKit✔️✔️:   auto P2 = findAllPathsOfLengthN(mol, 2).size();
-    let path_count_2 =
-        crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 2, true, false, -1, false)
-            .map_err(|_| DescriptorError::Unsupported {
-                function: "calc_phi",
-                rdkit_function: "findAllPathsOfLengthN",
-            })?
-            .len() as f64;
+    let path_count_2 = crate::chemistry::subgraph::find_all_paths_of_length_n(molecule, 2, true, false, -1, false)
+        .map_err(|_| DescriptorError::Unsupported {
+            function: "calc_phi",
+            rdkit_function: "findAllPathsOfLengthN",
+        })?
+        .len() as f64;
     // RDKit✔️✔️:   auto kappa2 = kappa2Helper(P2, A, alpha);
     let kappa_2 = kappa_2_helper(path_count_2, heavy_atom_count, alpha);
     // RDKit✔️✔️:   auto Phi = kappa1 * kappa2 / A;
@@ -836,21 +790,15 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        calc_chi_0, calc_chi_0n, calc_chi_0v, calc_chi_1, calc_chi_1n, calc_chi_1v, calc_chi_2n,
-        calc_chi_2v, calc_chi_3n, calc_chi_3v, calc_chi_4n, calc_chi_4v, calc_chi_nn, calc_chi_nv,
-        calc_hall_kier_alpha, calc_kappa_1, calc_kappa_2, calc_kappa_3, calc_phi, get_alpha,
-        hk_deltas, kappa_1_helper, kappa_2_helper, kappa_3_helper, n_vals,
+        calc_chi_0, calc_chi_0n, calc_chi_0v, calc_chi_1, calc_chi_1n, calc_chi_1v, calc_chi_2n, calc_chi_2v,
+        calc_chi_3n, calc_chi_3v, calc_chi_4n, calc_chi_4v, calc_chi_nn, calc_chi_nv, calc_hall_kier_alpha,
+        calc_kappa_1, calc_kappa_2, calc_kappa_3, calc_phi, get_alpha, hk_deltas, kappa_1_helper, kappa_2_helper,
+        kappa_3_helper, n_vals,
     };
-    use crate::{
-        Atom, AtomId, AtomSpec, BondOrder, BondSpec, Element, Hybridization, Molecule,
-        MoleculeBuilder,
-    };
+    use crate::{Atom, AtomId, AtomSpec, BondOrder, BondSpec, Element, Hybridization, Molecule, MoleculeBuilder};
 
     fn atom(element: Element, hybridization: Hybridization) -> Atom {
-        Atom::from_spec(
-            AtomId::new(0),
-            AtomSpec::new(element).with_hybridization(hybridization),
-        )
+        Atom::from_spec(AtomId::new(0), AtomSpec::new(element).with_hybridization(hybridization))
     }
 
     fn assert_f64_bits(actual: f64, expected: f64, context: &str) {
@@ -970,10 +918,7 @@ mod tests {
         let n_cold = n_vals(&molecule, false).unwrap();
         let n_warm = n_vals(&molecule, false).unwrap();
         assert!(Arc::ptr_eq(&n_cold, &n_warm));
-        assert!(Arc::ptr_eq(
-            &hk_cold,
-            &molecule.connectivity_hk_deltas_cache().unwrap()
-        ));
+        assert!(Arc::ptr_eq(&hk_cold, &molecule.connectivity_hk_deltas_cache().unwrap()));
 
         molecule.set_connectivity_hk_deltas_cache(Arc::<[f64]>::from([9.0, 9.0, 9.0]));
         assert_slice_bits(
@@ -1099,9 +1044,8 @@ mod tests {
 
         for (case, fixture, expected) in CASES {
             let molecule = match fixture {
-                Fixture::Smiles(smiles) => Molecule::from_smiles(smiles).unwrap_or_else(|error| {
-                    panic!("failed to parse {case} fixture {smiles:?}: {error}")
-                }),
+                Fixture::Smiles(smiles) => Molecule::from_smiles(smiles)
+                    .unwrap_or_else(|error| panic!("failed to parse {case} fixture {smiles:?}: {error}")),
                 Fixture::ExplicitMethane => explicit_methane(),
             };
             let actual = [
@@ -1153,16 +1097,7 @@ mod tests {
         assert_eq!(actual.to_bits(), 0x4003_3620_2ecf_b9c8);
         assert_slice_bits(
             &contributions,
-            &[
-                99.0,
-                0.0,
-                0.43,
-                -0.20,
-                -0.04,
-                0.35,
-                0.29,
-                1.5714285714285712,
-            ],
+            &[99.0, 0.0, 0.43, -0.20, -0.04, 0.35, 0.29, 1.5714285714285712],
             "Hall-Kier atom contributions",
         );
     }

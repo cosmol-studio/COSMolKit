@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
 use crate::{
-    Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate,
-    BondStereo, ChiralTag, CoordinateDimension, QueryNode, SGroupBondRole, SGroupBracketStyle,
-    SGroupConnection, SGroupData, StereoGroupKind, SubstanceGroup, SubstanceGroupKind,
-    ValenceAssignment,
+    Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondStereo,
+    ChiralTag, CoordinateDimension, QueryNode, SGroupBondRole, SGroupBracketStyle, SGroupConnection, SGroupData,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupKind, ValenceAssignment,
 };
 use crate::{Molecule, RingInfo, UnsupportedFeatureError, find_sssr};
 
@@ -146,10 +145,7 @@ pub fn mol_to_mol_block_with_params(
     }
 }
 
-pub fn mol_to_2d_sdf_record(
-    molecule: &Molecule,
-    format: SdfFormat,
-) -> Result<String, MolWriteError> {
+pub fn mol_to_2d_sdf_record(molecule: &Molecule, format: SdfFormat) -> Result<String, MolWriteError> {
     let block = match format {
         SdfFormat::V2000 => mol_to_v2000_2d_block(molecule)?,
         SdfFormat::V3000 => mol_to_v3000_2d_block(molecule)?,
@@ -165,10 +161,7 @@ pub fn mol_to_sdf_record_with_params(
     Ok(append_sdf_record_fields(block, molecule))
 }
 
-pub fn mol_to_3d_sdf_record(
-    molecule: &Molecule,
-    format: SdfFormat,
-) -> Result<String, MolWriteError> {
+pub fn mol_to_3d_sdf_record(molecule: &Molecule, format: SdfFormat) -> Result<String, MolWriteError> {
     let block = match format {
         SdfFormat::V2000 => mol_to_v2000_3d_block(molecule)?,
         SdfFormat::V3000 => mol_to_v3000_3d_block(molecule)?,
@@ -186,10 +179,7 @@ fn should_auto_upgrade_to_v3000(molecule: &Molecule) -> bool {
     // RDKit✔️✔️:   isV3000 = true;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock auto-V3000 selection
-    molecule
-        .bonds()
-        .iter()
-        .any(|bond| bond.order() == BondOrder::Dative)
+    molecule.bonds().iter().any(|bond| bond.order() == BondOrder::Dative)
         || molecule.num_atoms() > 999
         || molecule.num_bonds() > 999
         || molecule.substance_groups().len() > 999
@@ -249,9 +239,7 @@ fn prepare_mol_for_writing<'a>(
     let mut selected = select_coordinates(mol.as_ref(), selection)?;
     if params.include_stereo && selected.coords.is_none() {
         let generated = mol.as_ref().with_2d_coordinates().map_err(|source| {
-            MolWriteError::Value(format!(
-                "compute2DCoords failed during MolBlock write: {source}"
-            ))
+            MolWriteError::Value(format!("compute2DCoords failed during MolBlock write: {source}"))
         })?;
         mol = Cow::Owned(generated);
         selected = select_coordinates(mol.as_ref(), CoordinateSelection::TwoD)?;
@@ -378,19 +366,16 @@ fn determine_bond_wedge_state(
     // RDKit❗✔️: TEST_ASSERT(chiralType == Atom::CHI_TETRAHEDRAL_CW ||
     // RDKit❗✔️:             chiralType == Atom::CHI_TETRAHEDRAL_CCW);
     let chiral_type = atom.chiral_tag();
-    if !matches!(
-        chiral_type,
-        ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-    ) {
+    if !matches!(chiral_type, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
         return Ok(res);
     }
 
-    let center_loc = *coords.get(atom_idx).ok_or_else(|| {
-        MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string())
-    })?;
-    let bond_atom_loc = *coords.get(bond_atom_idx).ok_or_else(|| {
-        MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string())
-    })?;
+    let center_loc = *coords
+        .get(atom_idx)
+        .ok_or_else(|| MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string()))?;
+    let bond_atom_loc = *coords
+        .get(bond_atom_idx)
+        .ok_or_else(|| MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string()))?;
     // RDKit❗✔️: centerLoc.z = 0.0;
     // RDKit❗✔️: tmpPt.z = 0.0;
     let center_loc = [center_loc[0], center_loc[1], 0.0];
@@ -411,9 +396,7 @@ fn determine_bond_wedge_state(
             continue;
         }
         let other_loc = *coords.get(other_atom_idx).ok_or_else(|| {
-            MolWriteError::Value(
-                "wedge-state coordinate count does not match atom count".to_string(),
-            )
+            MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string())
         })?;
         let other_loc = [other_loc[0], other_loc[1], 0.0];
         // RDKit❗✔️: tmpVect = centerLoc.directionVector(tmpPt);
@@ -436,8 +419,7 @@ fn determine_bond_wedge_state(
     }
 
     // RDKit❗✔️: int nSwaps = atom->getPerturbationOrder(neighborBondIndices);
-    let mut n_swaps =
-        molfile_perturbation_order_from_bond_indices(molecule, atom_idx, &neighbor_bond_indices)?;
+    let mut n_swaps = molfile_perturbation_order_from_bond_indices(molecule, atom_idx, &neighbor_bond_indices)?;
 
     // RDKit❗✔️: if (neighborBondAngles.size() == 3) {
     // RDKit❗✔️:   double angle1 = (*angleIt);
@@ -511,9 +493,8 @@ fn rdkit_point3d_signed_angle_to(reference: [f64; 3], other: [f64; 3]) -> f64 {
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/Geometry/point.h :: Point3D::angleTo / signedAngleTo
-    let lsq =
-        (reference[0] * reference[0] + reference[1] * reference[1] + reference[2] * reference[2])
-            * (other[0] * other[0] + other[1] * other[1] + other[2] * other[2]);
+    let lsq = (reference[0] * reference[0] + reference[1] * reference[1] + reference[2] * reference[2])
+        * (other[0] * other[0] + other[1] * other[1] + other[2] * other[2]);
     let mut dot = reference[0] * other[0] + reference[1] * other[1] + reference[2] * other[2];
     dot /= lsq.sqrt();
     let mut res = if dot <= -1.0 {
@@ -615,9 +596,8 @@ fn mol_to_v3000_block_with_params(
     ));
     let v3k_parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
-            let valence = molblock_valence_assignment(molecule).map_err(|source| {
-                MolWriteError::Value(format!("V3000 atom parity assignment failed: {source}"))
-            })?;
+            let valence = molblock_valence_assignment(molecule)
+                .map_err(|source| MolWriteError::Value(format!("V3000 atom parity assignment failed: {source}")))?;
             molecule
                 .atoms()
                 .iter()
@@ -771,9 +751,8 @@ fn mol_to_v2000_block_with_params(
 
     let parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
-            let valence = molblock_valence_assignment(molecule).map_err(|source| {
-                MolWriteError::Value(format!("MolBlock atom parity assignment failed: {source}"))
-            })?;
+            let valence = molblock_valence_assignment(molecule)
+                .map_err(|source| MolWriteError::Value(format!("MolBlock atom parity assignment failed: {source}")))?;
             molecule
                 .atoms()
                 .iter()
@@ -833,11 +812,7 @@ fn flatten_query_predicates<T: Clone>(node: &QueryNode<T>) -> Vec<QueryFlattenNo
     result
 }
 
-fn flatten_query_predicates_inner<T: Clone>(
-    node: &QueryNode<T>,
-    result: &mut Vec<QueryFlattenNode<T>>,
-    negated: bool,
-) {
+fn flatten_query_predicates_inner<T: Clone>(node: &QueryNode<T>, result: &mut Vec<QueryFlattenNode<T>>, negated: bool) {
     match node {
         QueryNode::Predicate(p) => {
             result.push(QueryFlattenNode {
@@ -957,8 +932,8 @@ fn atom_query_predicate_to_sap_code(pred: &AtomQueryPredicate) -> u32 {
         AtomQueryPredicate::HasRingBond => 9,
         AtomQueryPredicate::IsAromatic(_) => 12,
         AtomQueryPredicate::IsUnsaturated => 11,
-        AtomQueryPredicate::RGroupLabel(_) => 20, // ALS (atom list symbol)
-        AtomQueryPredicate::MolFileAlias(_) => 21, // AAL (atom alias)
+        AtomQueryPredicate::RGroupLabel(_) => 20,     // ALS (atom list symbol)
+        AtomQueryPredicate::MolFileAlias(_) => 21,    // AAL (atom alias)
         AtomQueryPredicate::RecursiveSmarts(_) => 22, // SMS (substructure SMARTS)
         AtomQueryPredicate::Any => 0,
         AtomQueryPredicate::UnsupportedFeature(_) => 0,
@@ -1069,9 +1044,10 @@ fn molfile_chiral_flag(molecule: &Molecule) -> Result<i32, MolWriteError> {
     molecule
         .prop("_MolFileChiralFlag")
         .map(|value| {
-            value.trim().parse::<i32>().map_err(|_| {
-                MolWriteError::Value(format!("invalid _MolFileChiralFlag value '{value}'"))
-            })
+            value
+                .trim()
+                .parse::<i32>()
+                .map_err(|_| MolWriteError::Value(format!("invalid _MolFileChiralFlag value '{value}'")))
         })
         .transpose()
         .map(|flag| flag.unwrap_or(0))
@@ -1083,35 +1059,27 @@ fn select_coordinates(
 ) -> Result<SelectedCoordinates, MolWriteError> {
     match selection {
         CoordinateSelection::TwoD => {
-            let coords = molecule
-                .coordinates_2d()
-                .ok_or(MolWriteError::UnsupportedSubset(
-                    "2D coordinates are required for V2000 2D output",
-                ))?;
+            let coords = molecule.coordinates_2d().ok_or(MolWriteError::UnsupportedSubset(
+                "2D coordinates are required for V2000 2D output",
+            ))?;
             if coords.len() != molecule.num_atoms() {
                 return Err(MolWriteError::Value(
                     "2D coordinate count does not match atom count".to_string(),
                 ));
             }
             Ok(SelectedCoordinates {
-                coords: Some(
-                    coords
-                        .iter()
-                        .map(|coord| [coord[0], coord[1], 0.0])
-                        .collect(),
-                ),
+                coords: Some(coords.iter().map(|coord| [coord[0], coord[1], 0.0]).collect()),
                 is_3d: false,
                 label: Some("2D"),
             })
         }
         CoordinateSelection::ThreeD => {
-            let conformer =
-                molecule
-                    .conformers_3d()
-                    .first()
-                    .ok_or(MolWriteError::UnsupportedSubset(
-                        "3D conformer coordinates are required for V2000 3D output",
-                    ))?;
+            let conformer = molecule
+                .conformers_3d()
+                .first()
+                .ok_or(MolWriteError::UnsupportedSubset(
+                    "3D conformer coordinates are required for V2000 3D output",
+                ))?;
             if conformer.coordinates().len() != molecule.num_atoms() {
                 return Err(MolWriteError::Value(
                     "3D coordinate count does not match atom count".to_string(),
@@ -1124,10 +1092,8 @@ fn select_coordinates(
             })
         }
         CoordinateSelection::Auto => {
-            if matches!(
-                molecule.source_coordinate_dim(),
-                Some(CoordinateDimension::ThreeD)
-            ) && !molecule.conformers_3d().is_empty()
+            if matches!(molecule.source_coordinate_dim(), Some(CoordinateDimension::ThreeD))
+                && !molecule.conformers_3d().is_empty()
             {
                 return select_coordinates(molecule, CoordinateSelection::ThreeD);
             }
@@ -1151,10 +1117,7 @@ fn validate_v2000_writer_subset(
     include_stereo: bool,
     stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(), MolWriteError> {
-    if molecule.num_atoms() > 999
-        || molecule.num_bonds() > 999
-        || molecule.substance_groups().len() > 999
-    {
+    if molecule.num_atoms() > 999 || molecule.num_bonds() > 999 || molecule.substance_groups().len() > 999 {
         return Err(MolWriteError::Value(
             "V2000 format does not support more than 999 atoms, bonds or SGroups".to_string(),
         ));
@@ -1174,9 +1137,7 @@ fn validate_v2000_writer_subset(
                     let code = atom_query_predicate_to_sap_code(&flat.predicate);
                     // Accept: standard SAP codes (1-17) + special codes (20=RGroup, 21=Alias, 22=SMARTS)
                     if code == 0 || code > 22 {
-                        return Err(MolWriteError::UnsupportedSubset(
-                            "unsupported query atom predicate",
-                        ));
+                        return Err(MolWriteError::UnsupportedSubset("unsupported query atom predicate"));
                     }
                 }
             }
@@ -1188,9 +1149,7 @@ fn validate_v2000_writer_subset(
         }
     }
     for bond in molecule.bonds() {
-        if bond.query().is_some()
-            && v2000_bond_query_symbol(bond).is_none()
-            && v2000_bond_topology_code(bond).is_none()
+        if bond.query().is_some() && v2000_bond_query_symbol(bond).is_none() && v2000_bond_topology_code(bond).is_none()
         {
             // Complex query bonds are written via SSS SBT records.
             if let Some(query) = bond.query() {
@@ -1198,9 +1157,7 @@ fn validate_v2000_writer_subset(
                 for flat in &predicates {
                     let (code, _) = bond_query_predicate_to_sbt_code(&flat.predicate);
                     if code == 0 {
-                        return Err(MolWriteError::UnsupportedSubset(
-                            "unsupported query bond predicate",
-                        ));
+                        return Err(MolWriteError::UnsupportedSubset("unsupported query bond predicate"));
                     }
                 }
             }
@@ -1255,9 +1212,7 @@ fn validate_v3000_writer_subset(
         }
     }
     for bond in molecule.bonds() {
-        if bond.query().is_some()
-            && v2000_bond_query_symbol(bond).is_none()
-            && v2000_bond_topology_code(bond).is_none()
+        if bond.query().is_some() && v2000_bond_query_symbol(bond).is_none() && v2000_bond_topology_code(bond).is_none()
         {
             // Complex query bonds in V3000 are supported via SBT equivalents.
             if let Some(query) = bond.query() {
@@ -1331,12 +1286,11 @@ fn molfile_info_line(molecule: &Molecule, label: Option<&'static str>) -> String
 // indexed by atomic number (Z). Used to compute massDiff for molfile output:
 //   massDiff = isotope - atomicWeight
 const MOLFILE_ATOMIC_WEIGHT: [i32; 119] = [
-    0, 1, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48, 51, 52,
-    55, 56, 59, 59, 64, 65, 70, 73, 75, 79, 80, 79, 85, 88, 89, 91, 93, 96, 98, 101, 103, 106, 108,
-    112, 115, 119, 122, 128, 127, 132, 133, 138, 139, 140, 141, 144, 145, 152, 153, 157, 159, 162,
-    165, 167, 169, 173, 175, 178, 181, 184, 187, 192, 195, 197, 201, 204, 207, 209, 209, 210, 222,
-    223, 226, 227, 232, 231, 238, 237, 244, 243, 247, 247, 251, 252, 257, 258, 259, 262, 263, 268,
-    269, 275, 278, 281, 282, 285, 286, 289, 290, 293, 294, 294, 294, 294,
+    0, 1, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48, 51, 52, 55, 56, 59, 59, 64,
+    65, 70, 73, 75, 79, 80, 79, 85, 88, 89, 91, 93, 96, 98, 101, 103, 106, 108, 112, 115, 119, 122, 128, 127, 132, 133,
+    138, 139, 140, 141, 144, 145, 152, 153, 157, 159, 162, 165, 167, 169, 173, 175, 178, 181, 184, 187, 192, 195, 197,
+    201, 204, 207, 209, 209, 210, 222, 223, 226, 227, 232, 231, 238, 237, 244, 243, 247, 247, 251, 252, 257, 258, 259,
+    262, 263, 268, 269, 275, 278, 281, 282, 285, 286, 289, 290, 293, 294, 294, 294, 294,
 ];
 
 fn v2000_atom_line(
@@ -1499,13 +1453,11 @@ fn has_non_default_valence(
         if !atom.no_implicit() {
             return Ok(false);
         }
-        let effective_atomic_num =
-            u32::from(atom.atomic_number()).wrapping_sub(i32::from(atom.formal_charge()) as u32);
+        let effective_atomic_num = u32::from(atom.atomic_number()).wrapping_sub(i32::from(atom.formal_charge()) as u32);
         let effective_atomic_num = u8::try_from(effective_atomic_num)
             .map_err(|_| MolWriteError::Value("Atomic number not found".to_string()))?;
-        let default_valence =
-            crate::chemistry::valence::rdkit_default_valence(effective_atomic_num)
-                .map_err(|_| MolWriteError::Value("Atomic number not found".to_string()))?;
+        let default_valence = crate::chemistry::valence::rdkit_default_valence(effective_atomic_num)
+            .map_err(|_| MolWriteError::Value("Atomic number not found".to_string()))?;
         let explicit_valence = valence.explicit_valence[atom.id().index()];
         return Ok(explicit_valence != default_valence);
     }
@@ -1513,15 +1465,11 @@ fn has_non_default_valence(
     Ok(true)
 }
 
-fn molblock_valence_assignment(
-    molecule: &Molecule,
-) -> Result<crate::ValenceAssignment, MolWriteError> {
+fn molblock_valence_assignment(molecule: &Molecule) -> Result<crate::ValenceAssignment, MolWriteError> {
     match molecule.derived_cache().valence.as_ref() {
         Some(valence) => Ok(valence.clone()),
         None => crate::assign_valence_with_options(molecule, crate::ValenceModel::RdkitLike, false)
-            .map_err(|source| {
-                MolWriteError::Value(format!("MolBlock valence assignment failed: {source}"))
-            }),
+            .map_err(|source| MolWriteError::Value(format!("MolBlock valence assignment failed: {source}"))),
     }
 }
 
@@ -1542,10 +1490,7 @@ fn molfile_total_valence_field(molecule: &Molecule, atom: &Atom) -> Result<u32, 
             atom.id().index()
         ))
     })?;
-    if let Some(value) = atom
-        .prop("molTotValence")
-        .and_then(|value| value.parse::<i32>().ok())
-    {
+    if let Some(value) = atom.prop("molTotValence").and_then(|value| value.parse::<i32>().ok()) {
         return Ok(match value {
             -1 => 15,
             value if value > 0 => value as u32,
@@ -1564,17 +1509,13 @@ fn molfile_total_valence_field(molecule: &Molecule, atom: &Atom) -> Result<u32, 
     if total_degree == 0 {
         Ok(15)
     } else {
-        let total_valence = valence.explicit_valence[atom.id().index()]
-            + valence.implicit_hydrogens[atom.id().index()].max(0);
+        let total_valence =
+            valence.explicit_valence[atom.id().index()] + valence.implicit_hydrogens[atom.id().index()].max(0);
         Ok((total_valence as u32) % 15)
     }
 }
 
-fn molfile_total_degree(
-    molecule: &Molecule,
-    atom: &Atom,
-    valence: &crate::ValenceAssignment,
-) -> i32 {
+fn molfile_total_degree(molecule: &Molecule, atom: &Atom, valence: &crate::ValenceAssignment) -> i32 {
     molecule
         .topology_block()
         .adjacency
@@ -1584,11 +1525,7 @@ fn molfile_total_degree(
         + valence.implicit_hydrogens[atom.id().index()].max(0)
 }
 
-fn should_be_crossed_bond_for_writer(
-    molecule: &Molecule,
-    bond: &Bond,
-    context: MolfileStereoContext<'_>,
-) -> bool {
+fn should_be_crossed_bond_for_writer(molecule: &Molecule, bond: &Bond, context: MolfileStereoContext<'_>) -> bool {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: shouldBeACrossedBond
     // RDKit✔️✔️: if (bond->getStereo() == Bond::STEREOANY) { ... return true; }
     // RDKit✔️✔️: if (bond->getStereo() != Bond::BondStereo::STEREONONE) { return false; }
@@ -1612,16 +1549,13 @@ fn should_be_crossed_bond_for_writer(
     if bond.stereo() == BondStereo::Any {
         for neighbor in adjacency.neighbors_of(begin_idx) {
             let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
-            if nbr_bond.direction() == BondDirection::Unknown
-                && nbr_bond.begin().index() == begin_idx
-            {
+            if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == begin_idx {
                 return false;
             }
         }
         for neighbor in adjacency.neighbors_of(end_idx) {
             let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
-            if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == end_idx
-            {
+            if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == end_idx {
                 return false;
             }
         }
@@ -1645,8 +1579,8 @@ fn should_be_crossed_bond_for_writer(
     let has_one_unsaturation = |atom_idx: usize| {
         let atom = &molecule.atoms()[atom_idx];
         let degree = adjacency.neighbors_of(atom_idx).len();
-        let total_valence = context.valence.explicit_valence[atom_idx]
-            + context.valence.implicit_hydrogens[atom_idx].max(0);
+        let total_valence =
+            context.valence.explicit_valence[atom_idx] + context.valence.implicit_hydrogens[atom_idx].max(0);
         let total_degree = molfile_total_degree(molecule, atom, context.valence);
         degree > 1 && total_valence - total_degree == 1
     };
@@ -1691,9 +1625,8 @@ fn is_bond_potential_stereo_bond_for_writer(
         usize::from(molecule.atoms()[atom_idx].explicit_hydrogens())
             + context.valence.implicit_hydrogens[atom_idx].max(0) as usize
     };
-    let total_degree = |atom_idx: usize| {
-        adjacency.neighbors_of(atom_idx).len() + total_hydrogens_without_neighbors(atom_idx)
-    };
+    let total_degree =
+        |atom_idx: usize| adjacency.neighbors_of(atom_idx).len() + total_hydrogens_without_neighbors(atom_idx);
     let begin_idx = bond.begin().index();
     let end_idx = bond.end().index();
     let begin_degree = total_degree(begin_idx);
@@ -1779,9 +1712,7 @@ fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> bool {
             ) {
                 return false;
             }
-            if nbr_bond.direction() == BondDirection::Unknown
-                && nbr_bond.begin().index() == atom_idx
-            {
+            if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == atom_idx {
                 return false;
             }
             let other_atom = &molecule.atoms()[neighbor.atom_index];
@@ -1818,8 +1749,7 @@ fn v2000_bond_line(
     // RDKit❗✔️: ss << std::setw(3) << symbol;
     // RDKit❗✔️: ss << " " << std::setw(2) << dirCode;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
-    let (mut stereo_code, reverse) =
-        v2000_bond_stereo_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
+    let (mut stereo_code, reverse) = v2000_bond_stereo_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
     // RDKit✔️✔️: do not cross bonds which were aromatic before kekulization.
     if aromatic_bonds.contains(&bond.id().index()) && stereo_code == 3 {
         stereo_code = 0;
@@ -1876,8 +1806,7 @@ fn v2000_bond_stereo_code(
     // RDKit❗✔️: UNKNOWN single bond -> 4
     // RDKit❗✔️: BEGINDASH -> 6
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileBondLine stereo dirCode branch
-    let (dir, reverse) =
-        molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
+    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
     Ok((molfile_bond_dir_code(dir), reverse))
 }
 
@@ -1925,9 +1854,7 @@ fn molfile_bond_stereo_info(
         {
             reverse = true;
         }
-    } else if bond.order() == BondOrder::Double
-        && should_be_crossed_bond_for_writer(molecule, bond, stereo_context)
-    {
+    } else if bond.order() == BondOrder::Double && should_be_crossed_bond_for_writer(molecule, bond, stereo_context) {
         dir = BondDirection::EitherDouble;
     }
     Ok((dir, reverse))
@@ -2120,8 +2047,7 @@ fn v3000_bond_line(
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondEndPts, sprop) && sprop != "0") { ss << " ENDPTS=" << sprop; }
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondAttach, sprop) && sprop != "0") { ss << " ATTACH=" << sprop; }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
-    let (mut cfg, reverse) =
-        v3000_bond_cfg_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
+    let (mut cfg, reverse) = v3000_bond_cfg_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
     let (begin_idx, end_idx) = if reverse {
         (bond.end().index(), bond.begin().index())
     } else {
@@ -2190,8 +2116,7 @@ fn v3000_bond_cfg_code(
     // RDKit❗✔️: EITHERDOUBLE double bond -> CFG=2
     // RDKit❗✔️: BEGINDASH -> CFG=3
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine stereo CFG branch
-    let (dir, reverse) =
-        molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
+    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
     let cfg = match molfile_bond_dir_code(dir) {
         0 => None,
         1 => Some(1),
@@ -2281,11 +2206,7 @@ fn v3000_generated_zbo_sgroups(molecule: &Molecule) -> Vec<SubstanceGroup> {
         return Vec::new();
     }
     let mut affected = vec![false; molecule.num_atoms()];
-    for bond in molecule
-        .bonds()
-        .iter()
-        .filter(|bond| bond.order() == BondOrder::Zero)
-    {
+    for bond in molecule.bonds().iter().filter(|bond| bond.order() == BondOrder::Zero) {
         affected[bond.begin().index()] = true;
         affected[bond.end().index()] = true;
     }
@@ -2296,11 +2217,7 @@ fn v3000_generated_zbo_sgroups(molecule: &Molecule) -> Vec<SubstanceGroup> {
         .collect::<Vec<_>>();
     let hydrogens = atoms
         .iter()
-        .map(|atom| {
-            molecule.atoms()[atom.index()]
-                .explicit_hydrogens()
-                .to_string()
-        })
+        .map(|atom| molecule.atoms()[atom.index()].explicit_hydrogens().to_string())
         .collect::<Vec<_>>()
         .join(";");
     let charges = atoms
@@ -2373,10 +2290,7 @@ fn v3000_sgroup_lines(idx: usize, sgroup: &SubstanceGroup) -> Result<String, Mol
     );
     add_v3000_sgroup_block(v3000_sgroup_bonds_block(sgroup), &mut current, &mut os);
     add_v3000_sgroup_block(
-        v3000_index_vector_block(
-            "PATOMS",
-            sgroup.parent_atoms().iter().map(|atom| atom.index() + 1),
-        ),
+        v3000_index_vector_block("PATOMS", sgroup.parent_atoms().iter().map(|atom| atom.index() + 1)),
         &mut current,
         &mut os,
     );
@@ -2390,21 +2304,14 @@ fn v3000_sgroup_lines(idx: usize, sgroup: &SubstanceGroup) -> Result<String, Mol
         &mut current,
         &mut os,
     );
-    let connect = sgroup
-        .connection()
-        .map(sgroup_connection_code)
-        .transpose()?;
+    let connect = sgroup.connection().map(sgroup_connection_code).transpose()?;
     add_v3000_sgroup_block(
         v3000_sgroup_string_property_block("CONNECT", connect),
         &mut current,
         &mut os,
     );
     if let Some(parent) = sgroup.parent() {
-        add_v3000_sgroup_block(
-            format!(" PARENT={}", parent.index() + 1),
-            &mut current,
-            &mut os,
-        );
+        add_v3000_sgroup_block(format!(" PARENT={}", parent.index() + 1), &mut current, &mut os);
     }
     if let Some(compno) = sgroup.component_number() {
         add_v3000_sgroup_block(format!(" COMPNO={compno}"), &mut current, &mut os);
@@ -2463,11 +2370,7 @@ fn v3000_sgroup_lines(idx: usize, sgroup: &SubstanceGroup) -> Result<String, Mol
         &mut current,
         &mut os,
     );
-    add_v3000_sgroup_block(
-        v3000_sgroup_attach_point_block(sgroup),
-        &mut current,
-        &mut os,
-    );
+    add_v3000_sgroup_block(v3000_sgroup_attach_point_block(sgroup), &mut current, &mut os);
     let bracket_style = v3000_sgroup_bracket_style_value(sgroup.bracket_style())?;
     add_v3000_sgroup_block(
         v3000_sgroup_string_property_block("BRKTYP", bracket_style),
@@ -2475,10 +2378,7 @@ fn v3000_sgroup_lines(idx: usize, sgroup: &SubstanceGroup) -> Result<String, Mol
         &mut os,
     );
     add_v3000_sgroup_block(
-        v3000_sgroup_string_property_block(
-            "SEQID",
-            sgroup.props().get("SEQID").map(String::as_str),
-        ),
+        v3000_sgroup_string_property_block("SEQID", sgroup.props().get("SEQID").map(String::as_str)),
         &mut current,
         &mut os,
     );
@@ -2612,9 +2512,7 @@ fn v3000_sgroup_attach_point_block(sgroup: &SubstanceGroup) -> String {
     out
 }
 
-fn v3000_sgroup_bracket_style_value(
-    style: Option<&SGroupBracketStyle>,
-) -> Result<Option<&str>, MolWriteError> {
+fn v3000_sgroup_bracket_style_value(style: Option<&SGroupBracketStyle>) -> Result<Option<&str>, MolWriteError> {
     Ok(match style {
         Some(SGroupBracketStyle::Bracket) => Some("BRACKET"),
         Some(SGroupBracketStyle::Parenthesis) => Some("PAREN"),
@@ -2678,10 +2576,7 @@ fn v3000_double_field(value: f64) -> String {
     v2000_double_field(value).trim().to_string()
 }
 
-fn append_v3000_collection_lines(
-    out: &mut String,
-    molecule: &Molecule,
-) -> Result<(), MolWriteError> {
+fn append_v3000_collection_lines(out: &mut String, molecule: &Molecule) -> Result<(), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: appendEnhancedStereoGroups
     // RDKit❗✔️: if (!tmol.getStereoGroups().empty()) {
     // RDKit❗✔️:   auto stereo_groups = tmol.getStereoGroups();
@@ -2731,10 +2626,7 @@ fn append_v3000_collection_lines(
 fn assigned_v3000_stereo_group_ids(groups: &[crate::StereoGroup]) -> Vec<Option<u32>> {
     let mut or_ids = Vec::<u32>::new();
     let mut and_ids = Vec::<u32>::new();
-    let mut assigned = groups
-        .iter()
-        .map(crate::StereoGroup::id)
-        .collect::<Vec<_>>();
+    let mut assigned = groups.iter().map(crate::StereoGroup::id).collect::<Vec<_>>();
     for (idx, group) in groups.iter().enumerate() {
         let Some(id) = assigned[idx] else {
             continue;
@@ -2771,11 +2663,7 @@ fn assigned_v3000_stereo_group_ids(groups: &[crate::StereoGroup]) -> Vec<Option<
     assigned
 }
 
-fn append_v3000_collection_group_line(
-    out: &mut String,
-    label: &str,
-    atoms: impl IntoIterator<Item = crate::AtomId>,
-) {
+fn append_v3000_collection_group_line(out: &mut String, label: &str, atoms: impl IntoIterator<Item = crate::AtomId>) {
     let atoms = atoms.into_iter().collect::<Vec<_>>();
     let mut line = format!("M  V30 MDLV30/{label} ATOMS=({}", atoms.len());
     for atom in atoms {
@@ -2811,9 +2699,7 @@ fn v2000_bond_query_symbol_from_query(query: &QueryNode<BondQueryPredicate>) -> 
     match query {
         QueryNode::Predicate(BondQueryPredicate::Any) => Some(8),
         QueryNode::Predicate(BondQueryPredicate::MolFileQueryCode(code)) => Some(*code),
-        QueryNode::Predicate(BondQueryPredicate::OrderIn(orders)) => {
-            v2000_bond_order_query_symbol(orders)
-        }
+        QueryNode::Predicate(BondQueryPredicate::OrderIn(orders)) => v2000_bond_order_query_symbol(orders),
         QueryNode::And(children) => {
             let non_topology = children
                 .iter()
@@ -2842,9 +2728,9 @@ fn v2000_bond_topology_code_from_query(query: &QueryNode<BondQueryPredicate>) ->
     match query {
         QueryNode::Predicate(BondQueryPredicate::IsInRing(true)) => Some(1),
         QueryNode::Predicate(BondQueryPredicate::IsInRing(false)) => Some(2),
-        QueryNode::And(children) if children.len() == 2 => children
-            .iter()
-            .find_map(v2000_bond_topology_code_from_query),
+        QueryNode::And(children) if children.len() == 2 => {
+            children.iter().find_map(v2000_bond_topology_code_from_query)
+        }
         _ => None,
     }
 }
@@ -2873,15 +2759,13 @@ fn append_v2000_property_lines(out: &mut String, molecule: &Molecule) -> Result<
         .atoms()
         .iter()
         .filter_map(|atom| {
-            (atom.formal_charge() != 0)
-                .then_some((atom.id().index() + 1, i32::from(atom.formal_charge())))
+            (atom.formal_charge() != 0).then_some((atom.id().index() + 1, i32::from(atom.formal_charge())))
         })
         .collect::<Vec<_>>();
     append_v2000_counted_property(out, "CHG", &charges);
 
-    let valence = molblock_valence_assignment(molecule).map_err(|source| {
-        MolWriteError::Value(format!("MolBlock RAD field assignment failed: {source}"))
-    })?;
+    let valence = molblock_valence_assignment(molecule)
+        .map_err(|source| MolWriteError::Value(format!("MolBlock RAD field assignment failed: {source}")))?;
     let radicals = molecule
         .atoms()
         .iter()
@@ -3117,22 +3001,14 @@ fn append_v2000_sgroup_lines(out: &mut String, molecule: &Molecule) -> Result<()
     let spl_entries = sgroups
         .iter()
         .enumerate()
-        .filter_map(|(idx, sgroup)| {
-            sgroup
-                .parent()
-                .map(|parent| (idx + 1, parent.index() as i32 + 1))
-        })
+        .filter_map(|(idx, sgroup)| sgroup.parent().map(|parent| (idx + 1, parent.index() as i32 + 1)))
         .collect::<Vec<_>>();
     append_v2000_counted_property(out, "SPL", &spl_entries);
 
     let snc_entries = sgroups
         .iter()
         .enumerate()
-        .filter_map(|(idx, sgroup)| {
-            sgroup
-                .component_number()
-                .map(|value| (idx + 1, value as i32))
-        })
+        .filter_map(|(idx, sgroup)| sgroup.component_number().map(|value| (idx + 1, value as i32)))
         .collect::<Vec<_>>();
     append_v2000_counted_property(out, "SNC", &snc_entries);
 
@@ -3146,24 +3022,14 @@ fn append_v2000_sgroup_lines(out: &mut String, molecule: &Molecule) -> Result<()
 
     for (idx, sgroup) in sgroups.iter().enumerate() {
         let idx = idx + 1;
-        append_v2000_sgroup_member_lines(
-            out,
-            idx,
-            "SAL",
-            sgroup.atoms().iter().map(|atom| atom.index() + 1),
-        );
+        append_v2000_sgroup_member_lines(out, idx, "SAL", sgroup.atoms().iter().map(|atom| atom.index() + 1));
         append_v2000_sgroup_member_lines(
             out,
             idx,
             "SPA",
             sgroup.parent_atoms().iter().map(|atom| atom.index() + 1),
         );
-        append_v2000_sgroup_member_lines(
-            out,
-            idx,
-            "SBL",
-            sgroup.bonds().iter().map(|bond| bond.index() + 1),
-        );
+        append_v2000_sgroup_member_lines(out, idx, "SBL", sgroup.bonds().iter().map(|bond| bond.index() + 1));
         append_v2000_sgroup_sdi_lines(out, idx, sgroup);
         append_v2000_sgroup_smt_line(out, idx, sgroup);
         append_v2000_sgroup_sbv_lines(out, idx, sgroup);
@@ -3209,9 +3075,9 @@ fn sgroup_bracket_style_code(style: &SGroupBracketStyle) -> Result<i32, MolWrite
     match style {
         SGroupBracketStyle::Bracket | SGroupBracketStyle::None => Ok(0),
         SGroupBracketStyle::Parenthesis => Ok(1),
-        SGroupBracketStyle::Unknown(value) => Err(MolWriteError::Value(format!(
-            "invalid SGroup BRKTYP value '{value}'"
-        ))),
+        SGroupBracketStyle::Unknown(value) => {
+            Err(MolWriteError::Value(format!("invalid SGroup BRKTYP value '{value}'")))
+        }
     }
 }
 
@@ -3232,12 +3098,7 @@ fn append_v2000_sgroup_string_entries<T: AsRef<str>>(
     }
 }
 
-fn append_v2000_sgroup_index_entries(
-    out: &mut String,
-    code: &str,
-    entries_per_line: usize,
-    entries: &[usize],
-) {
+fn append_v2000_sgroup_index_entries(out: &mut String, code: &str, entries_per_line: usize, entries: &[usize]) {
     for chunk in entries.chunks(entries_per_line) {
         out.push_str(&format!("M  {code}{:>3}", chunk.len()));
         for idx in chunk {
@@ -3253,11 +3114,7 @@ where
 {
     let values = values.into_iter().collect::<Vec<_>>();
     for chunk in values.chunks(15) {
-        out.push_str(&format!(
-            "M  {code}{}{:>3}",
-            v2000_int_field(sgroup_idx),
-            chunk.len()
-        ));
+        out.push_str(&format!("M  {code}{}{:>3}", v2000_int_field(sgroup_idx), chunk.len()));
         for value in chunk {
             out.push_str(&v2000_int_field(*value));
         }
@@ -3353,10 +3210,7 @@ fn append_v2000_sgroup_scd_sed_lines(
     idx: usize,
     sgroup: &SubstanceGroup,
 ) -> Result<(), MolWriteError> {
-    let values = sgroup
-        .data()
-        .map(|data| data.values.as_slice())
-        .unwrap_or(&[]);
+    let values = sgroup.data().map(|data| data.values.as_slice()).unwrap_or(&[]);
     for value in values.iter().chain(sgroup.data_fields()) {
         if value.len() > 200 {
             return Err(MolWriteError::Value(format!(
@@ -3753,22 +3607,18 @@ fn count_chiral_nbrs(mol: &Molecule, no_nbrs: i32) -> (bool, Vec<i32>) {
         }
         // RDKit❌❌: if (bond->getBeginAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
         // RDKit❌❌:     bond->getBeginAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) {
-        if mol.atom(bond.begin()).is_some_and(|a| {
-            matches!(
-                a.chiral_tag(),
-                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-            )
-        }) {
+        if mol
+            .atom(bond.begin())
+            .is_some_and(|a| matches!(a.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw))
+        {
             // RDKit❌❌: nChiralNbrs[bond->getBeginAtomIdx()] = noNbrs + 1;
             n_chiral_nbrs[bond.begin().index()] = no_nbrs + 1;
         // RDKit❌❌: } else if (bond->getEndAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
         // RDKit❌❌:                bond->getEndAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) {
-        } else if mol.atom(bond.end()).is_some_and(|a| {
-            matches!(
-                a.chiral_tag(),
-                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-            )
-        }) {
+        } else if mol
+            .atom(bond.end())
+            .is_some_and(|a| matches!(a.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw))
+        {
             // RDKit❌❌: nChiralNbrs[bond->getEndAtomIdx()] = noNbrs + 1;
             n_chiral_nbrs[bond.end().index()] = no_nbrs + 1;
         }
@@ -3786,10 +3636,7 @@ fn count_chiral_nbrs(mol: &Molecule, no_nbrs: i32) -> (bool, Vec<i32>) {
         // RDKit❌❌: if (type != Atom::CHI_TETRAHEDRAL_CW && type != Atom::CHI_TETRAHEDRAL_CCW) {
         // RDKit❌❌:   continue;
         // RDKit❌❌: }
-        if !matches!(
-            at.chiral_tag(),
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-        ) {
+        if !matches!(at.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
             continue;
         }
         // RDKit❌❌: nChiralNbrs[at->getIdx()] = 0;
@@ -3814,10 +3661,7 @@ fn count_chiral_nbrs(mol: &Molecule, no_nbrs: i32) -> (bool, Vec<i32>) {
             // RDKit❌❌:     type != Atom::CHI_TETRAHEDRAL_CCW) {
             // RDKit❌❌:   continue;
             // RDKit❌❌: }
-            if !matches!(
-                nat.chiral_tag(),
-                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-            ) {
+            if !matches!(nat.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
                 continue;
             }
             // RDKit❌❌: nChiralNbrs[at->getIdx()] -= 1;
@@ -3881,9 +3725,8 @@ fn pick_bond_to_wedge(
         } else {
             0
         };
-        let mut nbr_score = i32::from(oatom.atomic_number())
-            + 100 * i32::try_from(degree).unwrap_or(0)
-            + 1000 * chiral_penalty;
+        let mut nbr_score =
+            i32::from(oatom.atomic_number()) + 100 * i32::try_from(degree).unwrap_or(0) + 1000 * chiral_penalty;
 
         // RDKit❌❌: int oIdx = oatom->getIdx();
         // RDKit❌❌: if (nChiralNbrs[oIdx] < noNbrs) {
@@ -3893,11 +3736,9 @@ fn pick_bond_to_wedge(
         }
 
         // RDKit❌❌: nbrScore += 10000 * mol.getRingInfo()->numAtomRings(oIdx);
-        nbr_score +=
-            10_000 * i32::try_from(ring_info.num_atom_rings(AtomId::new(oaidx))).unwrap_or(0);
+        nbr_score += 10_000 * i32::try_from(ring_info.num_atom_rings(AtomId::new(oaidx))).unwrap_or(0);
         // RDKit❌❌: nbrScore += 20000 * mol.getRingInfo()->numBondRings(bid);
-        nbr_score +=
-            20_000 * i32::try_from(ring_info.num_bond_rings(BondId::new(bid))).unwrap_or(0);
+        nbr_score += 20_000 * i32::try_from(ring_info.num_bond_rings(BondId::new(bid))).unwrap_or(0);
 
         // RDKit❌❌: auto [hasDoubleBond, hasKnownDoubleBond, hasAnyDoubleBond] =
         // RDKit❌❌:     getDoubleBondPresence(mol, *oatom);
@@ -3972,10 +3813,7 @@ fn pick_bonds_to_wedge(mol: &Molecule, ring_info: &RingInfo) -> BTreeMap<usize, 
         // RDKit❌❌: if (type != Atom::CHI_TETRAHEDRAL_CW && type != Atom::CHI_TETRAHEDRAL_CCW) {
         // RDKit❌❌:   break;
         // RDKit❌❌: }
-        if !matches!(
-            atom.chiral_tag(),
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-        ) {
+        if !matches!(atom.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
             break;
         }
 
@@ -4023,12 +3861,7 @@ fn libstdcxx_less(indices: &[usize], left: usize, right: usize, n_chiral_nbrs: &
     n_chiral_nbrs[indices[left]] < n_chiral_nbrs[indices[right]]
 }
 
-fn libstdcxx_value_less(
-    value: usize,
-    right: usize,
-    indices: &[usize],
-    n_chiral_nbrs: &[i32],
-) -> bool {
+fn libstdcxx_value_less(value: usize, right: usize, indices: &[usize], n_chiral_nbrs: &[i32]) -> bool {
     n_chiral_nbrs[value] < n_chiral_nbrs[indices[right]]
 }
 
@@ -4112,12 +3945,7 @@ fn libstdcxx_introsort_loop(
     }
 }
 
-fn libstdcxx_insertion_sort(
-    indices: &mut [usize],
-    first: usize,
-    last: usize,
-    n_chiral_nbrs: &[i32],
-) {
+fn libstdcxx_insertion_sort(indices: &mut [usize], first: usize, last: usize, n_chiral_nbrs: &[i32]) {
     if first == last {
         return;
     }
@@ -4134,11 +3962,7 @@ fn libstdcxx_insertion_sort(
     }
 }
 
-fn libstdcxx_unguarded_linear_insert(
-    indices: &mut [usize],
-    mut last: usize,
-    n_chiral_nbrs: &[i32],
-) {
+fn libstdcxx_unguarded_linear_insert(indices: &mut [usize], mut last: usize, n_chiral_nbrs: &[i32]) {
     let value = indices[last];
     let mut next = last - 1;
     while libstdcxx_value_less(value, next, indices, n_chiral_nbrs) {
@@ -4149,23 +3973,13 @@ fn libstdcxx_unguarded_linear_insert(
     indices[last] = value;
 }
 
-fn libstdcxx_unguarded_insertion_sort(
-    indices: &mut [usize],
-    first: usize,
-    last: usize,
-    n_chiral_nbrs: &[i32],
-) {
+fn libstdcxx_unguarded_insertion_sort(indices: &mut [usize], first: usize, last: usize, n_chiral_nbrs: &[i32]) {
     for i in first..last {
         libstdcxx_unguarded_linear_insert(indices, i, n_chiral_nbrs);
     }
 }
 
-fn libstdcxx_final_insertion_sort(
-    indices: &mut [usize],
-    first: usize,
-    last: usize,
-    n_chiral_nbrs: &[i32],
-) {
+fn libstdcxx_final_insertion_sort(indices: &mut [usize], first: usize, last: usize, n_chiral_nbrs: &[i32]) {
     const S_THRESHOLD: usize = 16;
     if last - first > S_THRESHOLD {
         libstdcxx_insertion_sort(indices, first, first + S_THRESHOLD, n_chiral_nbrs);

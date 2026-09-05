@@ -1,7 +1,6 @@
 use cosmolkit_core::{
-    BatchRecord, BatchRecordError, Molecule, MoleculeBatch,
-    TopologicalTorsionFingerprintOutputRequest, TopologicalTorsionFingerprintParams,
-    TopologicalTorsionFingerprintVector, topological_torsion_count_fingerprint,
+    BatchRecord, BatchRecordError, Molecule, MoleculeBatch, TopologicalTorsionFingerprintOutputRequest,
+    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintVector, topological_torsion_count_fingerprint,
     topological_torsion_fingerprint, topological_torsion_fingerprint_with_output,
     topological_torsion_sparse_count_fingerprint, topological_torsion_sparse_fingerprint,
 };
@@ -18,13 +17,7 @@ fn valid_molecules() -> Vec<Molecule> {
 }
 
 fn batch_from_molecules(molecules: &[Molecule]) -> MoleculeBatch {
-    MoleculeBatch::new(
-        molecules
-            .iter()
-            .cloned()
-            .map(BatchRecord::Molecule)
-            .collect(),
-    )
+    MoleculeBatch::new(molecules.iter().cloned().map(BatchRecord::Molecule).collect())
 }
 
 #[test]
@@ -58,28 +51,18 @@ fn ordered_batch_vectors_match_the_single_scalar_core_for_every_thread_count() {
     let expected_sparse_bits = molecules
         .iter()
         .map(|molecule| {
-            Some(
-                topological_torsion_sparse_fingerprint(molecule, &params)
-                    .expect("scalar sparse-bit fingerprint"),
-            )
+            Some(topological_torsion_sparse_fingerprint(molecule, &params).expect("scalar sparse-bit fingerprint"))
         })
         .collect::<Vec<_>>();
     let expected_counts = molecules
         .iter()
         .map(|molecule| {
-            Some(
-                topological_torsion_count_fingerprint(molecule, &params)
-                    .expect("scalar count fingerprint"),
-            )
+            Some(topological_torsion_count_fingerprint(molecule, &params).expect("scalar count fingerprint"))
         })
         .collect::<Vec<_>>();
     let expected_bits = molecules
         .iter()
-        .map(|molecule| {
-            Some(
-                topological_torsion_fingerprint(molecule, &params).expect("scalar bit fingerprint"),
-            )
-        })
+        .map(|molecule| Some(topological_torsion_fingerprint(molecule, &params).expect("scalar bit fingerprint")))
         .collect::<Vec<_>>();
     let expected_with_output = molecules
         .iter()
@@ -94,33 +77,21 @@ fn ordered_batch_vectors_match_the_single_scalar_core_for_every_thread_count() {
     for n_jobs in [None, Some(1), Some(2), Some(4)] {
         assert_eq!(
             batch
-                .topological_torsion_sparse_count_fingerprint_list_with_options(
-                    &params,
-                    n_jobs,
-                    Some(false),
-                )
+                .topological_torsion_sparse_count_fingerprint_list_with_options(&params, n_jobs, Some(false),)
                 .expect("batch sparse-count fingerprints"),
             expected_sparse_counts,
             "sparse-count mismatch for n_jobs={n_jobs:?}"
         );
         assert_eq!(
             batch
-                .topological_torsion_sparse_fingerprint_list_with_options(
-                    &params,
-                    n_jobs,
-                    Some(false),
-                )
+                .topological_torsion_sparse_fingerprint_list_with_options(&params, n_jobs, Some(false),)
                 .expect("batch sparse-bit fingerprints"),
             expected_sparse_bits,
             "sparse-bit mismatch for n_jobs={n_jobs:?}"
         );
         assert_eq!(
             batch
-                .topological_torsion_count_fingerprint_list_with_options(
-                    &params,
-                    n_jobs,
-                    Some(false),
-                )
+                .topological_torsion_count_fingerprint_list_with_options(&params, n_jobs, Some(false),)
                 .expect("batch count fingerprints"),
             expected_counts,
             "count mismatch for n_jobs={n_jobs:?}"
@@ -168,10 +139,7 @@ fn ordered_batch_vectors_match_the_single_scalar_core_for_every_thread_count() {
         );
     }
 
-    assert_eq!(
-        batch, batch_before,
-        "batch generation mutated the source batch"
-    );
+    assert_eq!(batch, batch_before, "batch generation mutated the source batch");
     assert_eq!(
         molecules, molecules_before,
         "batch generation mutated a source molecule"
@@ -201,22 +169,16 @@ fn batch_invalid_records_stay_aligned_and_new_errors_keep_their_input_index() {
     assert_eq!(
         values[0],
         Some(
-            topological_torsion_fingerprint(
-                &first,
-                &TopologicalTorsionFingerprintParams::default(),
-            )
-            .expect("first scalar fingerprint"),
+            topological_torsion_fingerprint(&first, &TopologicalTorsionFingerprintParams::default(),)
+                .expect("first scalar fingerprint"),
         )
     );
     assert!(values[1].is_none());
     assert_eq!(
         values[2],
         Some(
-            topological_torsion_fingerprint(
-                &last,
-                &TopologicalTorsionFingerprintParams::default(),
-            )
-            .expect("last scalar fingerprint"),
+            topological_torsion_fingerprint(&last, &TopologicalTorsionFingerprintParams::default(),)
+                .expect("last scalar fingerprint"),
         )
     );
     assert_eq!(batch.errors(), vec![original_error]);

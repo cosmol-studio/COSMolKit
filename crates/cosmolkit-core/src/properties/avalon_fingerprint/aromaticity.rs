@@ -10,9 +10,7 @@ const DOUBLE: i32 = 2;
 const TRIPLE: i32 = 3;
 const AROMATIC: i32 = 4;
 
-pub(super) fn perceive_aromatic_bonds(
-    molecule: &mut MoleculeState,
-) -> Result<(), FingerprintError> {
+pub(super) fn perceive_aromatic_bonds(molecule: &mut MoleculeState) -> Result<(), FingerprintError> {
     perceive_aromatic_bonds_with(molecule, |_| {})
 }
 
@@ -258,11 +256,7 @@ fn validated_source_atom_number(
         .ok()
         .filter(|&number| number > 0 && number <= atom_count)
         .ok_or_else(|| FingerprintError::AvalonConversion {
-            reason: format!(
-                "Avalon bond {} references invalid atom {}",
-                bond_index + 1,
-                atom_number
-            ),
+            reason: format!("Avalon bond {} references invalid atom {}", bond_index + 1, atom_number),
         })
 }
 
@@ -294,11 +288,7 @@ mod tests {
     #[test]
     fn alternating_six_ring_matches_native_mutation_order() {
         let endpoints = [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1]];
-        let mut molecule = molecule(
-            6,
-            &endpoints,
-            &[SINGLE, DOUBLE, SINGLE, DOUBLE, SINGLE, DOUBLE],
-        );
+        let mut molecule = molecule(6, &endpoints, &[SINGLE, DOUBLE, SINGLE, DOUBLE, SINGLE, DOUBLE]);
         let mut mutations = Vec::new();
 
         perceive_aromatic_bonds_with(&mut molecule, |bond| mutations.push(bond)).unwrap();
@@ -330,11 +320,7 @@ mod tests {
     #[test]
     fn existing_aromatic_bonds_supply_source_sp2_marks() {
         let endpoints = [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1]];
-        let mut molecule = molecule(
-            6,
-            &endpoints,
-            &[AROMATIC, AROMATIC, SINGLE, DOUBLE, SINGLE, DOUBLE],
-        );
+        let mut molecule = molecule(6, &endpoints, &[AROMATIC, AROMATIC, SINGLE, DOUBLE, SINGLE, DOUBLE]);
         let mut mutations = Vec::new();
 
         perceive_aromatic_bonds_with(&mut molecule, |bond| mutations.push(bond)).unwrap();
@@ -346,20 +332,14 @@ mod tests {
     #[test]
     fn fused_proper_ring_is_processed_before_basis_rings() {
         let endpoints = [[1, 2], [2, 3], [3, 4], [4, 1], [3, 5], [5, 6], [6, 4]];
-        let mut molecule = molecule(
-            6,
-            &endpoints,
-            &[DOUBLE, SINGLE, SINGLE, SINGLE, DOUBLE, SINGLE, DOUBLE],
-        );
+        let mut molecule = molecule(6, &endpoints, &[DOUBLE, SINGLE, SINGLE, SINGLE, DOUBLE, SINGLE, DOUBLE]);
         let mut mutations = Vec::new();
 
         perceive_aromatic_bonds_with(&mut molecule, |bond| mutations.push(bond)).unwrap();
 
         assert_eq!(
             bond_types(&molecule),
-            vec![
-                AROMATIC, AROMATIC, SINGLE, AROMATIC, AROMATIC, AROMATIC, AROMATIC
-            ]
+            vec![AROMATIC, AROMATIC, SINGLE, AROMATIC, AROMATIC, AROMATIC, AROMATIC]
         );
         assert_eq!(mutations, vec![0, 1, 3, 4, 5, 6]);
     }

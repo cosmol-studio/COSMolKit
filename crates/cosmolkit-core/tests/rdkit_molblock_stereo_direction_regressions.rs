@@ -10,20 +10,7 @@ use cosmolkit_core::{
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-struct AtomState(
-    u8,
-    i8,
-    String,
-    Option<u16>,
-    bool,
-    u8,
-    usize,
-    i32,
-    i32,
-    usize,
-    i32,
-    u8,
-);
+struct AtomState(u8, i8, String, Option<u16>, bool, u8, usize, i32, i32, usize, i32, u8);
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 struct BondState(usize, usize, String, String, String, Vec<usize>, bool);
@@ -60,8 +47,8 @@ fn atom_states(molecule: &Molecule) -> Vec<AtomState> {
     let valence = if let Some(cached) = cached_valence_assignment(molecule) {
         cached
     } else {
-        computed_valence = assign_valence(molecule, ValenceModel::RdkitLike)
-            .expect("stress fixture should have computable valence");
+        computed_valence =
+            assign_valence(molecule, ValenceModel::RdkitLike).expect("stress fixture should have computable valence");
         &computed_valence
     };
     let mut degrees = vec![0usize; molecule.num_atoms()];
@@ -87,8 +74,7 @@ fn atom_states(molecule: &Molecule) -> Vec<AtomState> {
                 degrees[idx],
                 explicit_valence,
                 implicit_hydrogens,
-                usize::from(atom.explicit_hydrogens())
-                    + usize::try_from(implicit_hydrogens).unwrap(),
+                usize::from(atom.explicit_hydrogens()) + usize::try_from(implicit_hydrogens).unwrap(),
                 explicit_valence + implicit_hydrogens,
                 atom.radical_electrons(),
             )
@@ -148,9 +134,7 @@ fn stereo_direction_states_equivalent(expected: &[BondState], actual: &[BondStat
         {
             return false;
         }
-        if expected_bond.3 != actual_bond.3
-            && !(is_directional(&expected_bond.3) && is_directional(&actual_bond.3))
-        {
+        if expected_bond.3 != actual_bond.3 && !(is_directional(&expected_bond.3) && is_directional(&actual_bond.3)) {
             return false;
         }
     }
@@ -172,10 +156,7 @@ fn stereo_direction_states_equivalent(expected: &[BondState], actual: &[BondStat
             .copied()
             .filter(|index| {
                 let directional = &expected[*index];
-                directional.0 == bond.0
-                    || directional.0 == bond.1
-                    || directional.1 == bond.0
-                    || directional.1 == bond.1
+                directional.0 == bond.0 || directional.0 == bond.1 || directional.1 == bond.0 || directional.1 == bond.1
             })
             .collect::<Vec<_>>();
         constrained.extend(adjacent.iter().copied());
@@ -264,9 +245,7 @@ fn parsed_stereo_direction_components_match_stable_rdkit_semantics() {
         .molecule;
 
         assert_eq!(
-            molecule
-                .to_smiles_with_params(&SmilesWriteParams::default())
-                .unwrap(),
+            molecule.to_smiles_with_params(&SmilesWriteParams::default()).unwrap(),
             record.canonical_smiles,
             "canonical SMILES mismatch for {}",
             record.case_id
@@ -293,24 +272,8 @@ fn parsed_stereo_direction_components_match_stable_rdkit_semantics() {
 #[test]
 fn stereo_direction_equivalence_rejects_local_and_unconstrained_inversions() {
     let mut expected = vec![
-        BondState(
-            0,
-            1,
-            "SINGLE".into(),
-            "ENDUPRIGHT".into(),
-            "NONE".into(),
-            vec![],
-            false,
-        ),
-        BondState(
-            1,
-            2,
-            "DOUBLE".into(),
-            "NONE".into(),
-            "E".into(),
-            vec![0, 3],
-            false,
-        ),
+        BondState(0, 1, "SINGLE".into(), "ENDUPRIGHT".into(), "NONE".into(), vec![], false),
+        BondState(1, 2, "DOUBLE".into(), "NONE".into(), "E".into(), vec![0, 3], false),
         BondState(
             2,
             3,
@@ -320,15 +283,7 @@ fn stereo_direction_equivalence_rejects_local_and_unconstrained_inversions() {
             vec![],
             false,
         ),
-        BondState(
-            4,
-            5,
-            "SINGLE".into(),
-            "ENDUPRIGHT".into(),
-            "NONE".into(),
-            vec![],
-            false,
-        ),
+        BondState(4, 5, "SINGLE".into(), "ENDUPRIGHT".into(), "NONE".into(), vec![], false),
     ];
     let mut uniform = expected.clone();
     uniform[0].3 = "ENDDOWNRIGHT".into();

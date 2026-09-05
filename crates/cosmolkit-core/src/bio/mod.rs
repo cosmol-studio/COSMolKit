@@ -205,25 +205,16 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(amino_acids.len(), 128);
         for info in amino_acids {
-            assert_eq!(
-                classify_residue_name(residue_name(info.name)),
-                ResidueKind::AminoAcid
-            );
+            assert_eq!(classify_residue_name(residue_name(info.name)), ResidueKind::AminoAcid);
         }
     }
 
     #[test]
     fn classifies_gemmi_water_names_without_guessing_other_residues() {
         for name in ["HOH", "DOD", "WAT", "H2O"] {
-            assert_eq!(
-                classify_residue_name(residue_name(name)),
-                ResidueKind::Water
-            );
+            assert_eq!(classify_residue_name(residue_name(name)), ResidueKind::Water);
         }
-        assert_eq!(
-            classify_residue_name(residue_name("XYZ")),
-            ResidueKind::Unknown
-        );
+        assert_eq!(classify_residue_name(residue_name("XYZ")), ResidueKind::Unknown);
     }
 }
 
@@ -869,15 +860,12 @@ impl BioStructure {
 
     /// Reads a PDB file into the complete structural model.
     #[cfg(feature = "io")]
-    pub fn from_pdb(
-        path: impl AsRef<std::path::Path>,
-    ) -> Result<Self, crate::io::bio::BioReadError> {
+    pub fn from_pdb(path: impl AsRef<std::path::Path>) -> Result<Self, crate::io::bio::BioReadError> {
         let path = path.as_ref();
-        let text =
-            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
-                line_number: 0,
-                message: format!("failed to read PDB file '{}': {error}", path.display()),
-            })?;
+        let text = std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+            line_number: 0,
+            message: format!("failed to read PDB file '{}': {error}", path.display()),
+        })?;
         Self::from_str_with_format(&text, &path.to_string_lossy(), BioCoorFormat::Pdb)
     }
 
@@ -898,24 +886,18 @@ impl BioStructure {
 
     /// Reads an mmCIF file into the complete structural model.
     #[cfg(feature = "io")]
-    pub fn from_mmcif(
-        path: impl AsRef<std::path::Path>,
-    ) -> Result<Self, crate::io::bio::BioReadError> {
+    pub fn from_mmcif(path: impl AsRef<std::path::Path>) -> Result<Self, crate::io::bio::BioReadError> {
         let path = path.as_ref();
-        let text =
-            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
-                line_number: 0,
-                message: format!("failed to read mmCIF file '{}': {error}", path.display()),
-            })?;
+        let text = std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+            line_number: 0,
+            message: format!("failed to read mmCIF file '{}': {error}", path.display()),
+        })?;
         Self::from_mmcif_str(&text, &path.to_string_lossy())
     }
 
     /// Reads a Gemmi-aligned structure by detecting the input format from text.
     #[cfg(feature = "io")]
-    pub fn from_structure_str(
-        text: &str,
-        path: &str,
-    ) -> Result<Self, crate::io::bio::BioReadError> {
+    pub fn from_structure_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Detect)
     }
 
@@ -946,10 +928,7 @@ impl BioStructure {
 
     /// Writes this complete structural model as Gemmi-aligned mmCIF.
     #[cfg(feature = "io")]
-    pub fn write_mmcif(
-        &self,
-        path: impl AsRef<std::path::Path>,
-    ) -> Result<(), crate::io::bio::BioWriteError> {
+    pub fn write_mmcif(&self, path: impl AsRef<std::path::Path>) -> Result<(), crate::io::bio::BioWriteError> {
         self.write_mmcif_with_options(path, crate::io::bio::MmcifWriteOptions::default())
     }
 
@@ -1090,10 +1069,7 @@ impl BioStructure {
 
     #[must_use]
     pub fn atom_position(&self, atom: AtomId) -> Option<[f64; 3]> {
-        self.coordinates
-            .positions
-            .get(atom.index() as usize)
-            .copied()
+        self.coordinates.positions.get(atom.index() as usize).copied()
     }
 
     #[must_use]

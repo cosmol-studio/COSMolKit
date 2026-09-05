@@ -5,8 +5,7 @@ use std::sync::OnceLock;
 
 use crate::chemistry::ciplabeler::assign_cip_labels;
 use crate::chemistry::subgraph::{
-    SubgraphPathError, find_all_paths_of_length_n, find_all_paths_of_lengths_m_to_n,
-    rdkit_fp_bond_between_atoms,
+    SubgraphPathError, find_all_paths_of_length_n, find_all_paths_of_lengths_m_to_n, rdkit_fp_bond_between_atoms,
 };
 use crate::chemistry::valence::rdkit_atomic_mass;
 use crate::search::smarts_parse::{SmartsParseParams, mol_from_smarts};
@@ -20,8 +19,7 @@ mod pattern;
 pub(crate) use atom_pair::atom_pair_function_arguments;
 pub use atom_pair::{
     AtomPairAtomInvariantsGenerator as AtomPairAtomInvGenerator, AtomPairFingerprintGenerator,
-    AtomPairFingerprintOutput, AtomPairFingerprintParams, atom_pair_fingerprint,
-    atom_pair_fingerprint_with_output,
+    AtomPairFingerprintOutput, AtomPairFingerprintParams, atom_pair_fingerprint, atom_pair_fingerprint_with_output,
 };
 pub use pattern::{PATTERN_FINGERPRINT_VERSION, PatternFingerprintParams, pattern_fingerprint};
 
@@ -35,8 +33,7 @@ pub use pattern::{PATTERN_FINGERPRINT_VERSION, PatternFingerprintParams, pattern
 pub const ATOM_PAIR_NUM_TYPE_BITS: u32 = atom_pair::NUM_TYPE_BITS;
 // RDKit✔️✔️: const unsigned int atomNumberTypes[1 << numTypeBits] = {
 // RDKit✔️✔️:     5, 6, 7, 8, 9, 14, 15, 16, 17, 33, 34, 35, 51, 52, 53};
-pub const ATOM_PAIR_ATOM_NUMBER_TYPES: [u32; 1 << ATOM_PAIR_NUM_TYPE_BITS] =
-    atom_pair::ATOM_NUMBER_TYPES;
+pub const ATOM_PAIR_ATOM_NUMBER_TYPES: [u32; 1 << ATOM_PAIR_NUM_TYPE_BITS] = atom_pair::ATOM_NUMBER_TYPES;
 // RDKit✔️✔️: const unsigned int numPiBits = 2;
 pub const ATOM_PAIR_NUM_PI_BITS: u32 = atom_pair::NUM_PI_BITS;
 // RDKit✔️✔️: const unsigned int maxNumPi = (1 << numPiBits) - 1;
@@ -67,8 +64,7 @@ pub fn get_atom_code(
     branch_subtract: u32,
     include_chirality: bool,
 ) -> Result<u32, FingerprintError> {
-    atom_pair::get_atom_code(molecule, atom_id, branch_subtract, include_chirality)
-        .map_err(FingerprintError::from)
+    atom_pair::get_atom_code(molecule, atom_id, branch_subtract, include_chirality).map_err(FingerprintError::from)
 }
 
 #[must_use]
@@ -92,10 +88,7 @@ fn topological_torsion_reverse(path_codes: &[u32]) -> bool {
     false
 }
 
-pub fn get_topological_torsion_code(
-    path_codes: &[u32],
-    include_chirality: bool,
-) -> Result<u64, FingerprintError> {
+pub fn get_topological_torsion_code(path_codes: &[u32], include_chirality: bool) -> Result<u64, FingerprintError> {
     // BEGIN RDKIT CPP FUNCTION AtomPairs::getTopologicalTorsionCode
     // RDKit✔️✔️: std::uint64_t getTopologicalTorsionCode(
     // RDKit✔️✔️:     const std::vector<std::uint32_t> &pathCodes, bool includeChirality) {
@@ -143,12 +136,11 @@ pub fn get_topological_torsion_code(
         } else {
             0
         }) as usize;
-    let last_shift =
-        shift_size
-            .checked_mul(path_codes.len() - 1)
-            .ok_or(FingerprintError::InvalidArguments {
-                reason: "topological torsion code shift exceeds platform limits",
-            })?;
+    let last_shift = shift_size
+        .checked_mul(path_codes.len() - 1)
+        .ok_or(FingerprintError::InvalidArguments {
+            reason: "topological torsion code shift exceeds platform limits",
+        })?;
     if last_shift >= u64::BITS as usize {
         return Err(FingerprintError::InvalidArguments {
             reason: "topological torsion code shift must be less than 64 bits",
@@ -318,15 +310,12 @@ fn cached_default_feature_matchers() -> Result<&'static [SsMatcher], Fingerprint
     }
 }
 
-fn cached_rdkit_maccs_pattern_matchers() -> Result<&'static [(usize, SsMatcher)], FingerprintError>
-{
+fn cached_rdkit_maccs_pattern_matchers() -> Result<&'static [(usize, SsMatcher)], FingerprintError> {
     static CACHE: OnceLock<Result<Vec<(usize, SsMatcher)>, FingerprintError>> = OnceLock::new();
     match CACHE.get_or_init(|| {
         RDKIT_MACCS_PATTERNS
             .iter()
-            .map(|pattern| {
-                SsMatcher::from_pattern(pattern.smarts).map(|matcher| (pattern.bit, matcher))
-            })
+            .map(|pattern| SsMatcher::from_pattern(pattern.smarts).map(|matcher| (pattern.bit, matcher)))
             .collect()
     }) {
         Ok(matchers) => Ok(matchers.as_slice()),
@@ -575,8 +564,8 @@ impl FingerprintArguments {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
         self.from_json_value(&value)
     }
 
@@ -586,9 +575,9 @@ impl FingerprintArguments {
     }
 
     fn from_json_value(&mut self, value: &Value) -> Result<(), FingerprintError> {
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
 
         if let Some(field) = object.get("countSimulation") {
             self.df_count_simulation = json_value_as_bool("countSimulation", field)?;
@@ -605,12 +594,11 @@ impl FingerprintArguments {
 
         self.d_count_bounds.clear();
         if let Some(field) = object.get("countBounds") {
-            let bounds = field.as_array().ok_or_else(|| {
-                FingerprintError::InvalidArgumentsJson("countBounds must be an array".to_string())
-            })?;
+            let bounds = field
+                .as_array()
+                .ok_or_else(|| FingerprintError::InvalidArgumentsJson("countBounds must be an array".to_string()))?;
             for bound in bounds {
-                self.d_count_bounds
-                    .push(json_value_as_u32("countBounds entry", bound)?);
+                self.d_count_bounds.push(json_value_as_u32("countBounds entry", bound)?);
             }
         }
         Ok(())
@@ -676,13 +664,8 @@ impl TopologicalTorsionArguments {
         // RDKit✔️✔️:     : FingerprintArguments(countSimulation, countBounds, fpSize, 1,
         // RDKit✔️✔️:                            includeChirality),
         // RDKit✔️✔️:       d_torsionAtomCount(torsionAtomCount) {};
-        let fingerprint_arguments = FingerprintArguments::new(
-            count_simulation,
-            count_bounds,
-            fp_size,
-            1,
-            include_chirality,
-        )?;
+        let fingerprint_arguments =
+            FingerprintArguments::new(count_simulation, count_bounds, fp_size, 1, include_chirality)?;
         Ok(Self {
             fingerprint_arguments,
             d_torsion_atom_count: torsion_atom_count,
@@ -744,8 +727,8 @@ impl TopologicalTorsionArguments {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
         self.from_json_value(&value)
     }
 
@@ -763,9 +746,9 @@ impl TopologicalTorsionArguments {
         // RDKit✔️✔️:       pt.get<bool>("onlyShortestPaths", df_onlyShortestPaths);
         // RDKit✔️✔️:   FingerprintArguments::fromJSON(pt);
         // RDKit✔️✔️: }
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         if let Some(field) = object.get("torsionAtomCount") {
             self.d_torsion_atom_count = json_value_as_u32("torsionAtomCount", field)?;
         }
@@ -846,16 +829,10 @@ impl TopologicalTorsionAtomEnv {
             }
         }
         if let Some(bit_paths) = additional_output.bit_paths.as_mut() {
-            bit_paths
-                .entry(bit_id)
-                .or_default()
-                .push(self.atom_path.clone());
+            bit_paths.entry(bit_id).or_default().push(self.atom_path.clone());
         }
         if let Some(atoms_per_bit) = additional_output.atoms_per_bit.as_mut() {
-            atoms_per_bit
-                .entry(bit_id)
-                .or_default()
-                .push(self.atom_path.clone());
+            atoms_per_bit.entry(bit_id).or_default().push(self.atom_path.clone());
         }
     }
 }
@@ -1102,12 +1079,8 @@ impl TopologicalTorsionEnvGenerator {
                 // RDKit✔️✔️: unsigned int code = (*atomInvariants)[*pIt] % ((1 << codeSize) - 1) + 1;
                 // RDKit✔️✔️: unsigned int code = atomCodes[*pIt] - 1;
                 let mut code = match self.atom_code_mode {
-                    TopologicalTorsionAtomCodeMode::Modern => {
-                        atom_invariants[atom_id] % code_modulus + 1
-                    }
-                    TopologicalTorsionAtomCodeMode::LegacyUnfolded => {
-                        atom_invariants[atom_id].wrapping_add(1)
-                    }
+                    TopologicalTorsionAtomCodeMode::Modern => atom_invariants[atom_id] % code_modulus + 1,
+                    TopologicalTorsionAtomCodeMode::LegacyUnfolded => atom_invariants[atom_id].wrapping_add(1),
                 };
                 if position != 0 && position + 1 != path.len() {
                     code -= 1;
@@ -1120,20 +1093,14 @@ impl TopologicalTorsionEnvGenerator {
             let bit_id = if hash_results {
                 u64::from(get_topological_torsion_hash(&path_codes)?)
             } else {
-                get_topological_torsion_code(
-                    &path_codes,
-                    arguments.fingerprint_arguments.df_include_chirality,
-                )?
+                get_topological_torsion_code(&path_codes, arguments.fingerprint_arguments.df_include_chirality)?
             };
             result.push(TopologicalTorsionAtomEnv::new(bit_id, path));
         }
         Ok(result)
     }
 
-    pub fn get_result_size(
-        &self,
-        arguments: &TopologicalTorsionArguments,
-    ) -> Result<u64, FingerprintError> {
+    pub fn get_result_size(&self, arguments: &TopologicalTorsionArguments) -> Result<u64, FingerprintError> {
         // RDKit source: TopologicalTorsionGenerator.cpp lines 33-45
         // RDKit✔️✔️: template <typename OutputType>
         // RDKit✔️✔️: OutputType TopologicalTorsionEnvGenerator<OutputType>::getResultSize() const {
@@ -1154,12 +1121,13 @@ impl TopologicalTorsionEnvGenerator {
             } else {
                 0
             };
-        let shift = arguments
-            .d_torsion_atom_count
-            .checked_mul(bits_per_atom)
-            .ok_or(FingerprintError::InvalidArguments {
-                reason: "topological torsion result-size width overflow",
-            })?;
+        let shift =
+            arguments
+                .d_torsion_atom_count
+                .checked_mul(bits_per_atom)
+                .ok_or(FingerprintError::InvalidArguments {
+                    reason: "topological torsion result-size width overflow",
+                })?;
         if shift >= u64::BITS {
             return Err(FingerprintError::InvalidArguments {
                 reason: "topological torsion result-size shift must be less than 64 bits",
@@ -1169,10 +1137,7 @@ impl TopologicalTorsionEnvGenerator {
     }
 
     #[allow(non_snake_case)]
-    pub fn getResultSize(
-        &self,
-        arguments: &TopologicalTorsionArguments,
-    ) -> Result<u64, FingerprintError> {
+    pub fn getResultSize(&self, arguments: &TopologicalTorsionArguments) -> Result<u64, FingerprintError> {
         self.get_result_size(arguments)
     }
 }
@@ -1362,19 +1327,15 @@ impl RdkitFingerprintMtRng {
         let lower_mask = !upper_mask;
         for idx in 0..(Self::N - Self::M) {
             let y = (self.state[idx] & upper_mask) | (self.state[idx + 1] & lower_mask);
-            self.state[idx] = self.state[idx + Self::M]
-                ^ (y >> 1)
-                ^ ((self.state[idx + 1] & 1).wrapping_mul(Self::A));
+            self.state[idx] = self.state[idx + Self::M] ^ (y >> 1) ^ ((self.state[idx + 1] & 1).wrapping_mul(Self::A));
         }
         for idx in (Self::N - Self::M)..(Self::N - 1) {
             let y = (self.state[idx] & upper_mask) | (self.state[idx + 1] & lower_mask);
-            self.state[idx] = self.state[idx - (Self::N - Self::M)]
-                ^ (y >> 1)
-                ^ ((self.state[idx + 1] & 1).wrapping_mul(Self::A));
+            self.state[idx] =
+                self.state[idx - (Self::N - Self::M)] ^ (y >> 1) ^ ((self.state[idx + 1] & 1).wrapping_mul(Self::A));
         }
         let y = (self.state[Self::N - 1] & upper_mask) | (self.state[0] & lower_mask);
-        self.state[Self::N - 1] =
-            self.state[Self::M - 1] ^ (y >> 1) ^ ((self.state[0] & 1).wrapping_mul(Self::A));
+        self.state[Self::N - 1] = self.state[Self::M - 1] ^ (y >> 1) ^ ((self.state[0] & 1).wrapping_mul(Self::A));
         self.index = 0;
     }
 
@@ -1484,13 +1445,8 @@ impl MorganArguments {
         include_redundant_environments: bool,
         use_bond_types: bool,
     ) -> Result<Self, FingerprintError> {
-        let fingerprint_arguments = FingerprintArguments::new(
-            count_simulation,
-            count_bounds,
-            fp_size,
-            1,
-            include_chirality,
-        )?;
+        let fingerprint_arguments =
+            FingerprintArguments::new(count_simulation, count_bounds, fp_size, 1, include_chirality)?;
         Ok(Self {
             fingerprint_arguments,
             df_only_nonzero_invariants: only_nonzero_invariants,
@@ -1549,15 +1505,15 @@ impl MorganArguments {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
         self.from_json_value(&value)
     }
 
     fn from_json_value(&mut self, value: &Value) -> Result<(), FingerprintError> {
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         if let Some(field) = object.get("radius") {
             self.d_radius = json_value_as_u32("radius", field)?;
         }
@@ -1632,11 +1588,11 @@ impl MorganAtomInvGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         if let Some(field) = object.get("includeRingMembership") {
             self.include_ring_membership = json_value_as_bool("includeRingMembership", field)?;
         }
@@ -1793,23 +1749,21 @@ impl MorganFeatureAtomInvGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         let Some(field) = object.get("patternSMARTS") else {
             return Ok(());
         };
-        let patterns = field.as_array().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("patternSMARTS must be an array".to_string())
-        })?;
+        let patterns = field
+            .as_array()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("patternSMARTS must be an array".to_string()))?;
         let mut pattern_refs = Vec::with_capacity(patterns.len());
         for pattern in patterns {
             let pattern = pattern.as_str().ok_or_else(|| {
-                FingerprintError::InvalidArgumentsJson(
-                    "patternSMARTS entries must be strings".to_string(),
-                )
+                FingerprintError::InvalidArgumentsJson("patternSMARTS entries must be strings".to_string())
             })?;
             pattern_refs.push(pattern);
         }
@@ -1865,10 +1819,7 @@ impl MorganAtomInvariantsGenerator {
         match self {
             Self::Connectivity {
                 include_ring_membership,
-            } => {
-                Ok(MorganAtomInvGenerator::new(*include_ring_membership)
-                    .getAtomInvariants(molecule))
-            }
+            } => Ok(MorganAtomInvGenerator::new(*include_ring_membership).getAtomInvariants(molecule)),
             Self::Feature => MorganFeatureAtomInvGenerator::new().getAtomInvariants(molecule),
         }
     }
@@ -1956,24 +1907,19 @@ impl MorganBondInvariantsGenerator {
         // RDKit✔️✔️: }
         let needs_cip_labels = self.use_bond_types
             && self.use_chirality
-            && molecule.bonds().iter().any(|bond| {
-                bond.order() == crate::BondOrder::Double && bond.stereo() != crate::BondStereo::None
-            });
+            && molecule
+                .bonds()
+                .iter()
+                .any(|bond| bond.order() == crate::BondOrder::Double && bond.stereo() != crate::BondStereo::None);
         let labeled;
-        let molecule = if needs_cip_labels
-            && !rdkit_use_legacy_stereo_perception()
-            && molecule.prop("_CIPComputed").is_none()
-        {
-            labeled = assign_cip_labels(molecule, 0)?;
-            &labeled
-        } else {
-            molecule
-        };
-        Ok(molecule
-            .bonds()
-            .iter()
-            .map(|bond| self.bond_invariant(bond))
-            .collect())
+        let molecule =
+            if needs_cip_labels && !rdkit_use_legacy_stereo_perception() && molecule.prop("_CIPComputed").is_none() {
+                labeled = assign_cip_labels(molecule, 0)?;
+                &labeled
+            } else {
+                molecule
+            };
+        Ok(molecule.bonds().iter().map(|bond| self.bond_invariant(bond)).collect())
     }
 
     fn bond_invariant(&self, bond: &crate::Bond) -> u32 {
@@ -1993,9 +1939,7 @@ impl MorganBondInvariantsGenerator {
                 };
                 let stereo_offset = 100u32;
                 let bond_type_offset = 10u32;
-                bond_invariant = stereo_offset
-                    + bond_type_offset * bond_type
-                    + rdkit_bond_stereo_code(bond_stereo);
+                bond_invariant = stereo_offset + bond_type_offset * bond_type + rdkit_bond_stereo_code(bond_stereo);
             }
         }
         bond_invariant
@@ -2046,11 +1990,11 @@ impl MorganBondInvariantsGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         if let Some(field) = object.get("useBondTypes") {
             self.use_bond_types = json_value_as_bool("useBondTypes", field)?;
         }
@@ -2169,10 +2113,7 @@ impl MorganAtomEnv {
             atom_to_bits[self.atom_id].push(bit_id);
         }
         if let Some(atoms_per_bit) = additional_output.atoms_per_bit.as_mut() {
-            atoms_per_bit
-                .entry(bit_id)
-                .or_default()
-                .push(self.atoms_involved());
+            atoms_per_bit.entry(bit_id).or_default().push(self.atoms_involved());
         }
     }
 
@@ -2448,8 +2389,7 @@ impl MorganEnvGenerator {
         // comparison for equal-size bitsets. It avoids allocating a dense
         // bitset per atom while preserving the source ordering and equality.
         let mut chiral_atoms = vec![false; n_atoms];
-        let mut neighborhoods: HashSet<MorganBondEnvironment> =
-            HashSet::with_capacity(max_num_results);
+        let mut neighborhoods: HashSet<MorganBondEnvironment> = HashSet::with_capacity(max_num_results);
         let empty_environment = MorganBondEnvironment::new(molecule.num_bonds());
         let mut atom_neighborhoods = vec![empty_environment.clone(); n_atoms];
         let mut round_atom_neighborhoods = atom_neighborhoods.clone();
@@ -2476,16 +2416,7 @@ impl MorganEnvGenerator {
         // RDKit✔️✔️:   }
         let mut atom_order: Vec<usize> = (0..n_atoms).collect();
         if arguments.df_only_nonzero_invariants {
-            atom_order.sort_by_key(|&atom_idx| {
-                (
-                    if current_invariants[atom_idx] == 0 {
-                        1
-                    } else {
-                        0
-                    },
-                    atom_idx,
-                )
-            });
+            atom_order.sort_by_key(|&atom_idx| (if current_invariants[atom_idx] == 0 { 1 } else { 0 }, atom_idx));
         }
 
         // RDKit✔️✔️:   for (unsigned int i = 0; i < nAtoms; ++i) {
@@ -2497,9 +2428,7 @@ impl MorganEnvGenerator {
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   }
         for atom_idx in 0..n_atoms {
-            if include_atoms[atom_idx]
-                && (!arguments.df_only_nonzero_invariants || current_invariants[atom_idx] != 0)
-            {
+            if include_atoms[atom_idx] && (!arguments.df_only_nonzero_invariants || current_invariants[atom_idx] != 0) {
                 result.push(MorganAtomEnv::new(
                     u64::from(current_invariants[atom_idx]),
                     atom_idx,
@@ -2512,8 +2441,7 @@ impl MorganEnvGenerator {
         // RDKit✔️✔️:   for (unsigned int layer = 0; layer < morganArguments->d_radius; ++layer) {
         // RDKit✔️✔️:     std::vector<AccumTuple> allNeighborhoodsThisRound;
         for layer in 0..arguments.d_radius {
-            let mut all_neighborhoods_this_round: Vec<(MorganBondEnvironment, u32, usize)> =
-                Vec::new();
+            let mut all_neighborhoods_this_round: Vec<(MorganBondEnvironment, u32, usize)> = Vec::new();
 
             // RDKit✔️✔️:     for (auto atomIdx : atomOrder) {
             // RDKit✔️✔️:       if (!deadAtoms[atomIdx]) {
@@ -2550,8 +2478,7 @@ impl MorganEnvGenerator {
                 for neighbor in neighbors {
                     let bond_idx = neighbor.bond.index();
                     round_atom_neighborhoods[atom_idx].set(bond_idx);
-                    round_atom_neighborhoods[atom_idx]
-                        .union_with(&atom_neighborhoods[neighbor.atom_index]);
+                    round_atom_neighborhoods[atom_idx].union_with(&atom_neighborhoods[neighbor.atom_index]);
                     neighborhood_invariants.push((
                         bond_invariants[bond_idx] as i32,
                         current_invariants[neighbor.atom_index],
@@ -2588,10 +2515,7 @@ impl MorganEnvGenerator {
                     hash_combine(&mut pair_hash, neighbor_inv);
                     hash_combine(&mut invar, pair_hash);
 
-                    if arguments.fingerprint_arguments.df_include_chirality
-                        && looks_chiral
-                        && !chiral_atoms[atom_idx]
-                    {
+                    if arguments.fingerprint_arguments.df_include_chirality && looks_chiral && !chiral_atoms[atom_idx] {
                         if bond_inv != rdkit_bond_type_code(BondOrder::Single) as i32 {
                             looks_chiral = false;
                         } else if idx > 0 && neighbor_inv == neighborhood_invariants[idx - 1].1 {
@@ -2626,11 +2550,7 @@ impl MorganEnvGenerator {
                 // RDKit✔️❌:             std::make_tuple(roundAtomNeighborhoods[atomIdx],
                 // RDKit✔️✔️:                             static_cast<OutputType>(invar), atomIdx));
                 next_layer_invariants[atom_idx] = invar;
-                all_neighborhoods_this_round.push((
-                    round_atom_neighborhoods[atom_idx].clone(),
-                    invar,
-                    atom_idx,
-                ));
+                all_neighborhoods_this_round.push((round_atom_neighborhoods[atom_idx].clone(), invar, atom_idx));
             }
 
             // RDKit✔️❌:     std::sort(allNeighborhoodsThisRound.begin(),
@@ -2653,18 +2573,11 @@ impl MorganEnvGenerator {
                 // RDKit✔️✔️:       } else {
                 // RDKit✔️✔️:         deadAtoms[std::get<2>(*iter)] = 1;
                 // RDKit✔️✔️:       }
-                if arguments.df_include_redundant_environments
-                    || !neighborhoods.contains(&environment)
-                {
+                if arguments.df_include_redundant_environments || !neighborhoods.contains(&environment) {
                     if (!arguments.df_only_nonzero_invariants || atom_invariants[atom_idx] != 0)
                         && include_atoms[atom_idx]
                     {
-                        result.push(MorganAtomEnv::new(
-                            u64::from(code),
-                            atom_idx,
-                            layer + 1,
-                            molecule,
-                        ));
+                        result.push(MorganAtomEnv::new(u64::from(code), atom_idx, layer + 1, molecule));
                         neighborhoods.insert(environment);
                     }
                 } else {
@@ -2738,9 +2651,7 @@ impl generator::FingerprintFamily for MorganFingerprintGenerator {
             MorganAtomInvariantsGenerator::Connectivity {
                 include_ring_membership,
             } => MorganAtomInvGenerator::new(*include_ring_membership).infoString(),
-            MorganAtomInvariantsGenerator::Feature => {
-                MorganFeatureAtomInvGenerator::new().infoString()
-            }
+            MorganAtomInvariantsGenerator::Feature => MorganFeatureAtomInvGenerator::new().infoString(),
         })
     }
 
@@ -2774,8 +2685,7 @@ impl generator::FingerprintFamily for MorganFingerprintGenerator {
     }
 
     fn bond_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
-        self.bond_invariants_generator
-            .try_get_bond_invariants(molecule)
+        self.bond_invariants_generator.try_get_bond_invariants(molecule)
     }
 
     fn environments(
@@ -2918,8 +2828,7 @@ macro_rules! fingerprint_generator_api {
                 molecule: &Molecule,
                 args: &mut FingerprintFuncArguments,
             ) -> Result<SparseCountFingerprint, FingerprintError> {
-                generator::FingerprintGenerator::new(self)
-                    .get_sparse_count_fingerprint(molecule, args)
+                generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint(molecule, args)
             }
 
             pub fn sparse_fingerprint(
@@ -2989,8 +2898,7 @@ macro_rules! fingerprint_generator_api {
                 args: &mut FingerprintFuncArguments,
                 fp_size: u64,
             ) -> Result<SparseCountFingerprint, FingerprintError> {
-                generator::FingerprintGenerator::new(self)
-                    .get_fingerprint_helper(molecule, args, fp_size)
+                generator::FingerprintGenerator::new(self).get_fingerprint_helper(molecule, args, fp_size)
             }
 
             #[allow(non_snake_case)]
@@ -3008,8 +2916,7 @@ macro_rules! fingerprint_generator_api {
                 molecules: &[Option<&Molecule>],
                 num_threads: i32,
             ) -> Result<Vec<Option<SparseBitFingerprint>>, FingerprintError> {
-                generator::FingerprintGenerator::new(self)
-                    .get_sparse_fingerprints(molecules, num_threads)
+                generator::FingerprintGenerator::new(self).get_sparse_fingerprints(molecules, num_threads)
             }
 
             #[allow(non_snake_case)]
@@ -3018,8 +2925,7 @@ macro_rules! fingerprint_generator_api {
                 molecules: &[Option<&Molecule>],
                 num_threads: i32,
             ) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
-                generator::FingerprintGenerator::new(self)
-                    .get_count_fingerprints(molecules, num_threads)
+                generator::FingerprintGenerator::new(self).get_count_fingerprints(molecules, num_threads)
             }
 
             #[allow(non_snake_case)]
@@ -3028,8 +2934,7 @@ macro_rules! fingerprint_generator_api {
                 molecules: &[Option<&Molecule>],
                 num_threads: i32,
             ) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
-                generator::FingerprintGenerator::new(self)
-                    .get_sparse_count_fingerprints(molecules, num_threads)
+                generator::FingerprintGenerator::new(self).get_sparse_count_fingerprints(molecules, num_threads)
             }
         }
     };
@@ -3055,9 +2960,7 @@ pub enum FPType {
     TopologicalTorsionFP,
 }
 
-fn default_generator_for_fp_type(
-    fingerprint_type: FPType,
-) -> Result<TypedFingerprintGenerator, FingerprintError> {
+fn default_generator_for_fp_type(fingerprint_type: FPType) -> Result<TypedFingerprintGenerator, FingerprintError> {
     // RDKit source: FingerprintGenerator.cpp lines 850-874; the same switch is
     // repeated for all four source bulk output functions.
     // RDKit✔️✔️:   switch (fPType) {
@@ -3094,9 +2997,11 @@ fn default_generator_for_fp_type(
         FPType::TopologicalTorsionFP => Ok(TypedFingerprintGenerator::TopologicalTorsion(
             getTopologicalTorsionGenerator(&TopologicalTorsionArguments::default(), None, true)?,
         )),
-        FPType::AtomPairFP => Ok(TypedFingerprintGenerator::AtomPair(
-            atom_pair::atom_pair_generator(&atom_pair::AtomPairArguments::default(), None, true),
-        )),
+        FPType::AtomPairFP => Ok(TypedFingerprintGenerator::AtomPair(atom_pair::atom_pair_generator(
+            &atom_pair::AtomPairArguments::default(),
+            None,
+            true,
+        ))),
         FPType::RDKitFP => Err(FingerprintError::UnsupportedOption {
             option: "FPType::RDKitFP",
             reason: "the modern RDKitFP generator is outside the modeled shared generator core",
@@ -3105,12 +3010,9 @@ fn default_generator_for_fp_type(
 }
 
 fn scalar_dispatch_result<T>(mut results: Vec<Option<T>>) -> Result<T, FingerprintError> {
-    results
-        .pop()
-        .flatten()
-        .ok_or(FingerprintError::InvalidArguments {
-            reason: "scalar fingerprint dispatch produced no result",
-        })
+    results.pop().flatten().ok_or(FingerprintError::InvalidArguments {
+        reason: "scalar fingerprint dispatch produced no result",
+    })
 }
 
 #[allow(non_snake_case)]
@@ -3128,10 +3030,7 @@ pub fn getSparseCountFP(
 }
 
 #[allow(non_snake_case)]
-pub fn getSparseFP(
-    molecule: &Molecule,
-    fingerprint_type: FPType,
-) -> Result<SparseBitFingerprint, FingerprintError> {
+pub fn getSparseFP(molecule: &Molecule, fingerprint_type: FPType) -> Result<SparseBitFingerprint, FingerprintError> {
     // RDKit source: FingerprintGenerator.cpp lines 832-835
     // RDKit✔️✔️: SparseBitVect *getSparseFP(const ROMol &mol, FPType fPType) {
     // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
@@ -3141,10 +3040,7 @@ pub fn getSparseFP(
 }
 
 #[allow(non_snake_case)]
-pub fn getCountFP(
-    molecule: &Molecule,
-    fingerprint_type: FPType,
-) -> Result<SparseCountFingerprint, FingerprintError> {
+pub fn getCountFP(molecule: &Molecule, fingerprint_type: FPType) -> Result<SparseCountFingerprint, FingerprintError> {
     // RDKit source: FingerprintGenerator.cpp lines 837-840
     // RDKit✔️✔️: SparseIntVect<std::uint32_t> *getCountFP(const ROMol &mol, FPType fPType) {
     // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
@@ -3154,10 +3050,7 @@ pub fn getCountFP(
 }
 
 #[allow(non_snake_case)]
-pub fn getFP(
-    molecule: &Molecule,
-    fingerprint_type: FPType,
-) -> Result<Fingerprint, FingerprintError> {
+pub fn getFP(molecule: &Molecule, fingerprint_type: FPType) -> Result<Fingerprint, FingerprintError> {
     // RDKit source: FingerprintGenerator.cpp lines 842-845
     // RDKit✔️✔️: ExplicitBitVect *getFP(const ROMol &mol, FPType fPType) {
     // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
@@ -3290,10 +3183,7 @@ pub fn getMorganGenerator(
         Some(generator) => generator,
         None => {
             owns_bond_invariants_generator = true;
-            MorganBondInvariantsGenerator::new(
-                args.df_use_bond_types,
-                args.fingerprint_arguments.df_include_chirality,
-            )
+            MorganBondInvariantsGenerator::new(args.df_use_bond_types, args.fingerprint_arguments.df_include_chirality)
         }
     };
 
@@ -3509,13 +3399,7 @@ pub fn getTopologicalTorsionFingerprint(
         });
     }
 
-    let arguments = TopologicalTorsionArguments::new(
-        include_chirality,
-        target_size,
-        false,
-        vec![1, 2, 4, 8],
-        2048,
-    )?;
+    let arguments = TopologicalTorsionArguments::new(include_chirality, target_size, false, vec![1, 2, 4, 8], 2048)?;
     let mut generator = getTopologicalTorsionGenerator(&arguments, None, true)?;
     if atom_invariants.is_none() {
         // AtomPairAtomInvGenerator has already applied its source `- 2`
@@ -3523,9 +3407,7 @@ pub fn getTopologicalTorsionFingerprint(
         // leaves internal atoms unchanged, reproducing legacy `atomCode - 1`
         // followed by the internal branch correction without duplicating the
         // path-enumeration core.
-        generator
-            .atom_environment_generator
-            .use_legacy_unfolded_atom_codes();
+        generator.atom_environment_generator.use_legacy_unfolded_atom_codes();
     }
     let prepared_molecule;
     let fingerprint_molecule = if include_chirality && molecule.prop("_StereochemDone").is_none() {
@@ -3550,8 +3432,7 @@ pub fn getTopologicalTorsionFingerprint(
         custom_atom_invariants: atom_invariants.map(<[u32]>::to_vec),
         ..FingerprintFuncArguments::default()
     };
-    let mut result =
-        generator.getSparseCountFingerprint(fingerprint_molecule, &mut call_arguments)?;
+    let mut result = generator.getSparseCountFingerprint(fingerprint_molecule, &mut call_arguments)?;
     let compatibility_size = generator
         .atom_environment_generator
         .get_result_size(&generator.fingerprint_arguments)?
@@ -3773,11 +3654,11 @@ pub fn getHashedTopologicalTorsionFingerprintAsBitVect(
                     .ok_or(FingerprintError::InvalidArguments {
                         reason: "legacy topological torsion bit index overflow",
                     })?;
-                on_bits.push(usize::try_from(output_bit).map_err(|_| {
-                    FingerprintError::InvalidArguments {
+                on_bits.push(
+                    usize::try_from(output_bit).map_err(|_| FingerprintError::InvalidArguments {
                         reason: "legacy topological torsion bit index exceeds platform size",
-                    }
-                })?);
+                    })?,
+                );
             }
         }
     }
@@ -3901,8 +3782,7 @@ pub fn topological_torsion_generator(
 fn allocate_topological_torsion_output(
     request: TopologicalTorsionFingerprintOutputRequest,
 ) -> Option<AdditionalOutput> {
-    if !(request.atom_to_bits || request.atom_counts || request.bit_paths || request.atoms_per_bit)
-    {
+    if !(request.atom_to_bits || request.atom_counts || request.bit_paths || request.atoms_per_bit) {
         return None;
     }
     let mut output = AdditionalOutput::new();
@@ -3931,8 +3811,7 @@ pub fn topological_torsion_fingerprint_with_output(
     if params.fp_size == 0
         && matches!(
             request.vector,
-            TopologicalTorsionFingerprintVector::SparseBit
-                | TopologicalTorsionFingerprintVector::Bit
+            TopologicalTorsionFingerprintVector::SparseBit | TopologicalTorsionFingerprintVector::Bit
         )
     {
         return Err(FingerprintError::InvalidArguments {
@@ -3943,22 +3822,18 @@ pub fn topological_torsion_fingerprint_with_output(
     let mut arguments = params.call_arguments();
     arguments.additional_output = allocate_topological_torsion_output(request);
     let fingerprint = match request.vector {
-        TopologicalTorsionFingerprintVector::SparseCount => {
-            TopologicalTorsionFingerprintValue::SparseCount(
-                generator.getSparseCountFingerprint(molecule, &mut arguments)?,
-            )
-        }
+        TopologicalTorsionFingerprintVector::SparseCount => TopologicalTorsionFingerprintValue::SparseCount(
+            generator.getSparseCountFingerprint(molecule, &mut arguments)?,
+        ),
         TopologicalTorsionFingerprintVector::SparseBit => {
-            TopologicalTorsionFingerprintValue::SparseBit(
-                generator.getSparseFingerprint(molecule, &mut arguments)?,
-            )
+            TopologicalTorsionFingerprintValue::SparseBit(generator.getSparseFingerprint(molecule, &mut arguments)?)
         }
-        TopologicalTorsionFingerprintVector::Count => TopologicalTorsionFingerprintValue::Count(
-            generator.getCountFingerprint(molecule, &mut arguments)?,
-        ),
-        TopologicalTorsionFingerprintVector::Bit => TopologicalTorsionFingerprintValue::Bit(
-            generator.getFingerprint(molecule, &mut arguments)?,
-        ),
+        TopologicalTorsionFingerprintVector::Count => {
+            TopologicalTorsionFingerprintValue::Count(generator.getCountFingerprint(molecule, &mut arguments)?)
+        }
+        TopologicalTorsionFingerprintVector::Bit => {
+            TopologicalTorsionFingerprintValue::Bit(generator.getFingerprint(molecule, &mut arguments)?)
+        }
     };
     Ok(TopologicalTorsionFingerprintResult {
         fingerprint,
@@ -4212,10 +4087,7 @@ impl Fingerprint {
     pub fn from_on_bits(n_bits: usize, on_bits: impl IntoIterator<Item = usize>) -> Self {
         let mut bits = vec![0; n_bits.div_ceil(64)];
         for bit in on_bits {
-            assert!(
-                bit < n_bits,
-                "fingerprint bit {bit} is outside n_bits={n_bits}"
-            );
+            assert!(bit < n_bits, "fingerprint bit {bit} is outside n_bits={n_bits}");
             bits[bit / 64] |= 1u64 << (bit % 64);
         }
         Self { bits, n_bits }
@@ -4291,10 +4163,7 @@ pub enum FingerprintError {
     #[error("invalid SMARTS pattern '{pattern}': {reason}")]
     InvalidSmartsPattern { pattern: String, reason: String },
     #[error("unsupported fingerprint option {option}: {reason}")]
-    UnsupportedOption {
-        option: &'static str,
-        reason: &'static str,
-    },
+    UnsupportedOption { option: &'static str, reason: &'static str },
     #[error("fingerprint parallel execution failed: {0}")]
     ParallelExecution(String),
     #[error("Avalon REACCS conversion failed: {reason}")]
@@ -4447,9 +4316,7 @@ impl Default for LayeredFingerprintParams {
 impl LayeredFingerprintParams {
     pub fn validate(&self) -> Result<(), FingerprintError> {
         if self.min_path == 0 {
-            return Err(FingerprintError::InvalidArguments {
-                reason: "minPath==0",
-            });
+            return Err(FingerprintError::InvalidArguments { reason: "minPath==0" });
         }
         if self.max_path < self.min_path {
             return Err(FingerprintError::InvalidArguments {
@@ -4457,9 +4324,7 @@ impl LayeredFingerprintParams {
             });
         }
         if self.fp_size == 0 {
-            return Err(FingerprintError::InvalidArguments {
-                reason: "fpSize==0",
-            });
+            return Err(FingerprintError::InvalidArguments { reason: "fpSize==0" });
         }
         Ok(())
     }
@@ -4476,9 +4341,7 @@ pub struct LayeredFingerprintResult {
     pub atom_counts: Option<Vec<u32>>,
 }
 
-fn copied_atoms_setting_bits(
-    args: &FingerprintFuncArguments,
-) -> Option<BTreeMap<usize, Vec<(usize, u32)>>> {
+fn copied_atoms_setting_bits(args: &FingerprintFuncArguments) -> Option<BTreeMap<usize, Vec<(usize, u32)>>> {
     args.additional_output
         .as_ref()
         .and_then(|output| output.bit_info_map.as_ref())
@@ -4809,12 +4672,15 @@ pub fn morgan_fingerprint_with_output(
         MorganAtomInvariantsGenerator::Feature => Some(MorganAtomInvariantsGenerator::Feature),
     };
     let bond_invariants_generator =
-        Some(params.bond_invariants_generator.clone().unwrap_or_else(|| {
-            MorganBondInvariantsGenerator {
-                use_bond_types: params.use_bond_types,
-                use_chirality: params.use_chirality,
-            }
-        }));
+        Some(
+            params
+                .bond_invariants_generator
+                .clone()
+                .unwrap_or_else(|| MorganBondInvariantsGenerator {
+                    use_bond_types: params.use_bond_types,
+                    use_chirality: params.use_chirality,
+                }),
+        );
     let mut generator = getMorganGeneratorWithParams(
         params.radius,
         params.count_simulation,
@@ -4852,9 +4718,7 @@ pub fn morgan_fingerprint_with_output(
     }
 
     let fingerprint = generator.getFingerprint(molecule, &mut args)?;
-    let additional_output = args
-        .additional_output
-        .map(morgan_additional_output_from_rdkit_output);
+    let additional_output = args.additional_output.map(morgan_additional_output_from_rdkit_output);
 
     Ok(MorganFingerprintOutput {
         fingerprint,
@@ -4916,9 +4780,7 @@ fn compute_connectivity_invariants(
         let atom = &molecule.atoms()[i];
         let degree = adjacency.neighbors_of(i).len() as u32;
 
-        let implicit_hs = valence
-            .and_then(|v| v.implicit_hydrogens.get(i).copied())
-            .unwrap_or(0) as u32;
+        let implicit_hs = valence.and_then(|v| v.implicit_hydrogens.get(i).copied()).unwrap_or(0) as u32;
 
         // RDKit source: Atom.cpp lines 277-289
         // RDKit✔️✔️: unsigned int Atom::getTotalDegree() const {
@@ -5229,10 +5091,9 @@ fn duplicate_additional_output_bit(
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    if let (Some(old_atom_to_bits), Some(new_atom_to_bits)) = (
-        old_output.atom_to_bits.as_ref(),
-        new_output.atom_to_bits.as_mut(),
-    ) {
+    if let (Some(old_atom_to_bits), Some(new_atom_to_bits)) =
+        (old_output.atom_to_bits.as_ref(), new_output.atom_to_bits.as_mut())
+    {
         if new_atom_to_bits.is_empty() {
             new_atom_to_bits.resize_with(old_atom_to_bits.len(), Vec::new);
         }
@@ -5249,10 +5110,9 @@ fn duplicate_additional_output_bit(
     // RDKit✔️✔️:       (*newAO.bitInfoMap)[newBitId] = v->second;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    if let (Some(old_bit_info_map), Some(new_bit_info_map)) = (
-        old_output.bit_info_map.as_ref(),
-        new_output.bit_info_map.as_mut(),
-    ) {
+    if let (Some(old_bit_info_map), Some(new_bit_info_map)) =
+        (old_output.bit_info_map.as_ref(), new_output.bit_info_map.as_mut())
+    {
         if let Some(value) = old_bit_info_map.get(&orig_bit_id) {
             new_bit_info_map.insert(new_bit_id, value.clone());
         }
@@ -5264,9 +5124,7 @@ fn duplicate_additional_output_bit(
     // RDKit✔️✔️:       (*newAO.bitPaths)[newBitId] = v->second;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    if let (Some(old_bit_paths), Some(new_bit_paths)) =
-        (old_output.bit_paths.as_ref(), new_output.bit_paths.as_mut())
-    {
+    if let (Some(old_bit_paths), Some(new_bit_paths)) = (old_output.bit_paths.as_ref(), new_output.bit_paths.as_mut()) {
         if let Some(value) = old_bit_paths.get(&orig_bit_id) {
             new_bit_paths.insert(new_bit_id, value.clone());
         }
@@ -5279,10 +5137,9 @@ fn duplicate_additional_output_bit(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    if let (Some(old_atoms_per_bit), Some(new_atoms_per_bit)) = (
-        old_output.atoms_per_bit.as_ref(),
-        new_output.atoms_per_bit.as_mut(),
-    ) {
+    if let (Some(old_atoms_per_bit), Some(new_atoms_per_bit)) =
+        (old_output.atoms_per_bit.as_ref(), new_output.atoms_per_bit.as_mut())
+    {
         if let Some(value) = old_atoms_per_bit.get(&orig_bit_id) {
             new_atoms_per_bit.insert(new_bit_id, value.clone());
         }
@@ -5347,11 +5204,11 @@ fn validate_stateless_environment_generator_json(json: &str) -> Result<(), Finge
     if json.trim().is_empty() {
         return Ok(());
     }
-    let value: Value = serde_json::from_str(json)
-        .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-    value.as_object().ok_or_else(|| {
-        FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-    })?;
+    let value: Value =
+        serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+    value
+        .as_object()
+        .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
     Ok(())
 }
 
@@ -5389,14 +5246,13 @@ fn json_value_as_bool(name: &str, value: &Value) -> Result<bool, FingerprintErro
 
 fn json_value_as_u32(name: &str, value: &Value) -> Result<u32, FingerprintError> {
     if let Some(number) = value.as_u64() {
-        return u32::try_from(number).map_err(|_| {
-            FingerprintError::InvalidArgumentsJson(format!("{name} must be a 32-bit integer"))
-        });
+        return u32::try_from(number)
+            .map_err(|_| FingerprintError::InvalidArgumentsJson(format!("{name} must be a 32-bit integer")));
     }
     if let Some(text) = value.as_str() {
-        return text.parse::<u32>().map_err(|_| {
-            FingerprintError::InvalidArgumentsJson(format!("{name} must be a 32-bit integer"))
-        });
+        return text
+            .parse::<u32>()
+            .map_err(|_| FingerprintError::InvalidArgumentsJson(format!("{name} must be a 32-bit integer")));
     }
     Err(FingerprintError::InvalidArgumentsJson(format!(
         "{name} must be a 32-bit integer"
@@ -5729,9 +5585,7 @@ fn enumerate_fingerprint_paths_for_root(
                         && molecule.atoms()[bond.end().index()].atomic_number() != 1))
             {
                 if let Some(root) = root.map(|value| value as usize) {
-                    if root >= molecule.num_atoms()
-                        || (root != bond.begin().index() && root != bond.end().index())
-                    {
+                    if root >= molecule.num_atoms() || (root != bond.begin().index() && root != bond.end().index()) {
                         continue;
                     }
                 }
@@ -5753,16 +5607,8 @@ fn enumerate_fingerprint_paths_for_root(
         return Ok(result);
     }
 
-    find_all_paths_of_lengths_m_to_n(
-        molecule,
-        lower,
-        upper,
-        true,
-        use_hs,
-        root.map_or(-1, i64::from),
-        false,
-    )
-    .map_err(FingerprintError::from)
+    find_all_paths_of_lengths_m_to_n(molecule, lower, upper, true, use_hs, root.map_or(-1, i64::from), false)
+        .map_err(FingerprintError::from)
 }
 
 pub(crate) fn enumerate_fingerprint_paths(
@@ -5815,26 +5661,13 @@ pub(crate) fn enumerate_fingerprint_paths(
     let lower = min_path as usize;
     let upper = max_path as usize;
     let Some(roots) = from_atoms else {
-        return enumerate_fingerprint_paths_for_root(
-            molecule,
-            lower,
-            upper,
-            use_hs,
-            branched_paths,
-            None,
-        );
+        return enumerate_fingerprint_paths_for_root(molecule, lower, upper, use_hs, branched_paths, None);
     };
 
     let mut result: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
     for &root in roots {
-        let rooted_paths = enumerate_fingerprint_paths_for_root(
-            molecule,
-            lower,
-            upper,
-            use_hs,
-            branched_paths,
-            Some(root),
-        )?;
+        let rooted_paths =
+            enumerate_fingerprint_paths_for_root(molecule, lower, upper, use_hs, branched_paths, Some(root))?;
         for (length, paths) in rooted_paths {
             result.entry(length).or_default().splice(0..0, paths);
         }
@@ -5911,9 +5744,7 @@ fn prepare_layered_fingerprint<'a>(
     // bond/atom caches are each filled by one ordered O(B)/O(A) pass. The Rust
     // representation performs the same allocations and no molecule clone.
     if min_path == 0 {
-        return Err(FingerprintError::InvalidArguments {
-            reason: "minPath==0",
-        });
+        return Err(FingerprintError::InvalidArguments { reason: "minPath==0" });
     }
     if max_path < min_path {
         return Err(FingerprintError::InvalidArguments {
@@ -5921,9 +5752,7 @@ fn prepare_layered_fingerprint<'a>(
         });
     }
     if fp_size == 0 {
-        return Err(FingerprintError::InvalidArguments {
-            reason: "fpSize==0",
-        });
+        return Err(FingerprintError::InvalidArguments { reason: "fpSize==0" });
     }
     if atom_counts.is_some_and(|counts| counts.len() < molecule.num_atoms()) {
         return Err(FingerprintError::InvalidArguments {
@@ -5980,11 +5809,7 @@ fn prepare_layered_fingerprint<'a>(
 }
 
 #[inline]
-fn layered_topology_hash(
-    bond_neighbor_count: u32,
-    begin_atom_degree: u32,
-    end_atom_degree: u32,
-) -> u32 {
+fn layered_topology_hash(bond_neighbor_count: u32, begin_atom_degree: u32, end_atom_degree: u32) -> u32 {
     // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 1
     // RDKit✔️✔️:         if (layerFlags & 0x1) {
     // RDKit✔️✔️:           // layer 1: straight topology
@@ -6050,10 +5875,7 @@ fn layered_bond_order_hash(
     if path_queries & 0x1 != 0 {
         return None;
     }
-    let bond_hash = if !bond.is_aromatic()
-        && bond.order() != BondOrder::Single
-        && bond.order() != BondOrder::Aromatic
-    {
+    let bond_hash = if !bond.is_aromatic() && bond.order() != BondOrder::Single && bond.order() != BondOrder::Aromatic {
         rdkit_bond_type_code(bond.order())
     } else {
         rdkit_bond_type_code(BondOrder::Single)
@@ -6063,12 +5885,7 @@ fn layered_bond_order_hash(
     } else {
         (begin_atom_degree, end_atom_degree)
     };
-    Some(
-        (bond_hash % 8)
-            | ((bond_neighbor_count % 8) << 3)
-            | ((larger_degree % 8) << 6)
-            | ((smaller_degree % 8) << 9),
-    )
+    Some((bond_hash % 8) | ((bond_neighbor_count % 8) << 3) | ((larger_degree % 8) << 6) | ((smaller_degree % 8) << 9))
 }
 
 #[inline]
@@ -6165,19 +5982,11 @@ fn layered_aromaticity_hash(
     } else {
         (begin_aromatic, end_aromatic)
     };
-    Some(
-        u32::from(first_aromatic)
-            | (u32::from(second_aromatic) << 1)
-            | ((bond_neighbor_count % 8) << 5),
-    )
+    Some(u32::from(first_aromatic) | (u32::from(second_aromatic) << 1) | ((bond_neighbor_count % 8) << 5))
 }
 
 #[inline]
-fn layered_ring_presence_hash(
-    bond: &crate::Bond,
-    ring_info: &crate::RingInfo,
-    path_queries: u8,
-) -> Option<u32> {
+fn layered_ring_presence_hash(bond: &crate::Bond, ring_info: &crate::RingInfo, path_queries: u8) -> Option<u32> {
     // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 4
     // RDKit✔️✔️:         if (layerFlags & 0x8 && !(pathQueries & 0x6)) {
     // RDKit✔️✔️:           // layer 4: include ring information
@@ -6196,11 +6005,7 @@ fn layered_ring_presence_hash(
 }
 
 #[inline]
-fn layered_min_ring_size_hash(
-    bond: &crate::Bond,
-    ring_info: &crate::RingInfo,
-    path_queries: u8,
-) -> Option<u32> {
+fn layered_min_ring_size_hash(bond: &crate::Bond, ring_info: &crate::RingInfo, path_queries: u8) -> Option<u32> {
     // BEGIN RDKIT CPP BLOCK LayeredFingerprintMol layer 5
     // RDKit✔️✔️:         if (layerFlags & 0x10 && !(pathQueries & 0x6)) {
     // RDKit✔️✔️:           // layer 5: include ring size information
@@ -6285,8 +6090,7 @@ fn project_layered_path(
         layer.push(layer_index as u32 + 1);
 
         let bit_id = hash_range(layer) as usize % fp_size;
-        let accepted =
-            set_only_bits.is_none_or(|mask| mask.bits[bit_id / 64] & (1u64 << (bit_id % 64)) != 0);
+        let accepted = set_only_bits.is_none_or(|mask| mask.bits[bit_id / 64] & (1u64 << (bit_id % 64)) != 0);
         if !accepted {
             continue;
         }
@@ -6323,11 +6127,11 @@ pub fn layered_fingerprint_with_output(
     params: &LayeredFingerprintParams,
 ) -> Result<LayeredFingerprintResult, FingerprintError> {
     params.validate()?;
-    if params.from_atoms.as_ref().is_some_and(|roots| {
-        roots
-            .iter()
-            .any(|&root| root as usize >= molecule.num_atoms())
-    }) {
+    if params
+        .from_atoms
+        .as_ref()
+        .is_some_and(|roots| roots.iter().any(|&root| root as usize >= molecule.num_atoms()))
+    {
         return Err(FingerprintError::InvalidArguments {
             reason: "fromAtoms contains atom index out of range",
         });
@@ -6443,11 +6247,12 @@ pub fn layered_fingerprint_with_output(
             let mut atom_degrees = vec![0u32; molecule.num_atoms()];
             let mut atoms_in_path = vec![false; molecule.num_atoms()];
             for &bond_index in path {
-                let bond = *prepared.bond_cache.get(bond_index).ok_or(
-                    FingerprintError::InvalidArguments {
+                let bond = *prepared
+                    .bond_cache
+                    .get(bond_index)
+                    .ok_or(FingerprintError::InvalidArguments {
                         reason: "enumerated path contains invalid bond index",
-                    },
-                )?;
+                    })?;
                 path_queries |= prepared.query_masks[bond_index];
                 let begin = bond.begin().index();
                 let end = bond.end().index();
@@ -6467,10 +6272,8 @@ pub fn layered_fingerprint_with_output(
                         || first.end() == second.begin()
                         || first.end() == second.end()
                     {
-                        bond_neighbors[first_position] =
-                            bond_neighbors[first_position].wrapping_add(1);
-                        bond_neighbors[second_position] =
-                            bond_neighbors[second_position].wrapping_add(1);
+                        bond_neighbors[first_position] = bond_neighbors[first_position].wrapping_add(1);
+                        bond_neighbors[second_position] = bond_neighbors[second_position].wrapping_add(1);
                     }
                 }
             }
@@ -6484,20 +6287,12 @@ pub fn layered_fingerprint_with_output(
                 let end_degree = atom_degrees[end];
 
                 if params.layers.contains(LayeredFingerprintLayers::TOPOLOGY) {
-                    hash_layers[0].push(layered_topology_hash(
-                        neighbor_count,
-                        begin_degree,
-                        end_degree,
-                    ));
+                    hash_layers[0].push(layered_topology_hash(neighbor_count, begin_degree, end_degree));
                 }
                 if params.layers.contains(LayeredFingerprintLayers::BOND_ORDER) {
-                    if let Some(hash) = layered_bond_order_hash(
-                        bond,
-                        neighbor_count,
-                        begin_degree,
-                        end_degree,
-                        path_queries,
-                    ) {
+                    if let Some(hash) =
+                        layered_bond_order_hash(bond, neighbor_count, begin_degree, end_degree, path_queries)
+                    {
                         hash_layers[1].push(hash);
                     }
                 }
@@ -6513,27 +6308,17 @@ pub fn layered_fingerprint_with_output(
                         hash_layers[2].push(hash);
                     }
                 }
-                if params
-                    .layers
-                    .contains(LayeredFingerprintLayers::RING_PRESENCE)
-                {
-                    if let Some(hash) =
-                        layered_ring_presence_hash(bond, prepared.ring_info.as_ref(), path_queries)
-                    {
+                if params.layers.contains(LayeredFingerprintLayers::RING_PRESENCE) {
+                    if let Some(hash) = layered_ring_presence_hash(bond, prepared.ring_info.as_ref(), path_queries) {
                         hash_layers[3].push(hash);
                     }
                 }
                 if params.layers.contains(LayeredFingerprintLayers::RING_SIZE) {
-                    if let Some(hash) =
-                        layered_min_ring_size_hash(bond, prepared.ring_info.as_ref(), path_queries)
-                    {
+                    if let Some(hash) = layered_min_ring_size_hash(bond, prepared.ring_info.as_ref(), path_queries) {
                         hash_layers[4].push(hash);
                     }
                 }
-                if params
-                    .layers
-                    .contains(LayeredFingerprintLayers::AROMATICITY)
-                {
+                if params.layers.contains(LayeredFingerprintLayers::AROMATICITY) {
                     if let Some(hash) = layered_aromaticity_hash(
                         prepared.aromatic_atoms[begin],
                         prepared.aromatic_atoms[end],
@@ -6612,10 +6397,7 @@ impl RdkitFpEnvironment {
     // RDKit✔️✔️: }
     fn update_additional_output(&self, additional_output: &mut AdditionalOutput, bit_id: u64) {
         if let Some(bit_paths) = additional_output.bit_paths.as_mut() {
-            bit_paths
-                .entry(bit_id)
-                .or_default()
-                .push(self.bond_path.clone());
+            bit_paths.entry(bit_id).or_default().push(self.bond_path.clone());
         }
         if additional_output.atom_to_bits.is_some()
             || additional_output.atom_counts.is_some()
@@ -6692,12 +6474,8 @@ pub(crate) fn generate_rdkit_fp_environments(
             // RDKit✔️✔️: std::vector<std::uint32_t> bondHashes = RDKitFPUtils::generateBondHashes(
             // RDKit✔️✔️:     mol, atomsInPath, bondCache, isQueryBond, path,
             // RDKit✔️✔️:     fpArguments->df_useBondOrder, atomInvariants);
-            let hash_inputs = rdkit_fp_generate_bond_hash_inputs(
-                molecule,
-                path,
-                params.use_bond_order,
-                atom_invariants,
-            )?;
+            let hash_inputs =
+                rdkit_fp_generate_bond_hash_inputs(molecule, path, params.use_bond_order, atom_invariants)?;
             if hash_inputs.bond_hashes.is_empty() {
                 continue;
             }
@@ -6713,13 +6491,7 @@ pub(crate) fn generate_rdkit_fp_environments(
             let seed = if path.len() > 1 {
                 let mut bond_hashes = hash_inputs.bond_hashes;
                 bond_hashes.sort_unstable();
-                bond_hashes.push(
-                    hash_inputs
-                        .atoms_in_path
-                        .iter()
-                        .filter(|&&in_path| in_path)
-                        .count() as u32,
-                );
+                bond_hashes.push(hash_inputs.atoms_in_path.iter().filter(|&&in_path| in_path).count() as u32);
                 hash_range(&bond_hashes)
             } else {
                 hash_inputs.bond_hashes[0]
@@ -6790,9 +6562,7 @@ impl Default for TopologicalFingerprintParams {
 impl TopologicalFingerprintParams {
     pub fn validate(&self) -> Result<(), FingerprintError> {
         if self.min_path == 0 {
-            return Err(FingerprintError::InvalidArguments {
-                reason: "minPath==0",
-            });
+            return Err(FingerprintError::InvalidArguments { reason: "minPath==0" });
         }
         if self.max_path < self.min_path {
             return Err(FingerprintError::InvalidArguments {
@@ -6800,9 +6570,7 @@ impl TopologicalFingerprintParams {
             });
         }
         if self.fp_size == 0 {
-            return Err(FingerprintError::InvalidArguments {
-                reason: "fpSize==0",
-            });
+            return Err(FingerprintError::InvalidArguments { reason: "fpSize==0" });
         }
         if self.num_bits_per_feature == 0 {
             return Err(FingerprintError::InvalidArguments {
@@ -6889,10 +6657,7 @@ fn rdkit_fp_output_from_additional(
             })
             .collect()
     });
-    TopologicalFingerprintOutput {
-        atom_bits,
-        bit_info,
-    }
+    TopologicalFingerprintOutput { atom_bits, bit_info }
 }
 
 pub fn topological_fingerprint(
@@ -6938,8 +6703,7 @@ pub fn topological_fingerprint_with_output(
 
     let environments = generate_rdkit_fp_environments(molecule, params, &atom_invariants)?;
     let mut on_bits = BTreeSet::new();
-    let mut random_source =
-        (params.num_bits_per_feature > 1).then(|| RdkitFingerprintMtRng::new(42));
+    let mut random_source = (params.num_bits_per_feature > 1).then(|| RdkitFingerprintMtRng::new(42));
     for environment in environments {
         let seed = environment.bit_id();
         let mut bit_id = (seed % u64::from(params.fp_size)) as usize;
@@ -6950,8 +6714,7 @@ pub fn topological_fingerprint_with_output(
         if let Some(random_source) = random_source.as_mut() {
             random_source.seed(seed as u32);
             for _ in 1..params.num_bits_per_feature {
-                bit_id = (u64::from(random_source.uniform_int_0_to_i32_max())
-                    % u64::from(params.fp_size)) as usize;
+                bit_id = (u64::from(random_source.uniform_int_0_to_i32_max()) % u64::from(params.fp_size)) as usize;
                 on_bits.insert(bit_id);
                 if request.atom_bits || request.bit_info {
                     environment.update_additional_output(&mut additional_output, bit_id as u64);
@@ -7230,10 +6993,7 @@ pub(crate) const RDKIT_MACCS_PATTERNS: &[MaccsPatternSpec] = &[
         bit: 64,
         smarts: "*@*!@[#16]",
     },
-    MaccsPatternSpec {
-        bit: 65,
-        smarts: "c:n",
-    },
+    MaccsPatternSpec { bit: 65, smarts: "c:n" },
     MaccsPatternSpec {
         bit: 66,
         smarts: "[#6]~[#6](~[#6])(~[#6])~*",
@@ -7574,10 +7334,7 @@ pub(crate) const RDKIT_MACCS_PATTERNS: &[MaccsPatternSpec] = &[
         bit: 158,
         smarts: "[#6]-[#7]",
     },
-    MaccsPatternSpec {
-        bit: 162,
-        smarts: "a",
-    },
+    MaccsPatternSpec { bit: 162, smarts: "a" },
     MaccsPatternSpec {
         bit: 165,
         smarts: "[R]",
@@ -7586,9 +7343,7 @@ pub(crate) const RDKIT_MACCS_PATTERNS: &[MaccsPatternSpec] = &[
 
 #[allow(dead_code)]
 pub(crate) fn rdkit_maccs_pattern(bit: usize) -> Option<&'static MaccsPatternSpec> {
-    RDKIT_MACCS_PATTERNS
-        .iter()
-        .find(|pattern| pattern.bit == bit)
+    RDKIT_MACCS_PATTERNS.iter().find(|pattern| pattern.bit == bit)
 }
 
 #[allow(dead_code)]
@@ -7596,9 +7351,7 @@ pub(crate) fn rdkit_maccs_public_index(bit: usize) -> Option<usize> {
     (1..RDKIT_MACCS_RAW_BITS).contains(&bit).then(|| bit - 1)
 }
 
-fn rdkit_maccs_generate_fp_raw_bits_001_166(
-    molecule: &Molecule,
-) -> Result<BTreeSet<usize>, FingerprintError> {
+fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> Result<BTreeSet<usize>, FingerprintError> {
     let mut bits = BTreeSet::new();
     let pattern_matchers = cached_rdkit_maccs_pattern_matchers()?;
 
@@ -7803,9 +7556,7 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(
     // RDKit✔️✔️:     fp.setBit(120);
     // RDKit✔️✔️:   }
     for bit in [118usize, 120] {
-        if let Some(pattern) = pattern_matchers
-            .iter()
-            .find(|&&(pattern_bit, _)| pattern_bit == bit)
+        if let Some(pattern) = pattern_matchers.iter().find(|&&(pattern_bit, _)| pattern_bit == bit)
             && crate::get_substruct_matches(molecule, pattern.1.getMatcher()).len() > 1
         {
             bits.insert(bit);
@@ -7837,8 +7588,8 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(
     // RDKit✔️✔️:     fp.setBit(165);
     // RDKit✔️✔️:   }
     for bit in [
-        121usize, 122, 123, 126, 128, 129, 132, 133, 135, 137, 139, 144, 147, 148, 150, 151, 152,
-        154, 155, 156, 157, 158, 162, 165,
+        121usize, 122, 123, 126, 128, 129, 132, 133, 135, 137, 139, 144, 147, 148, 150, 151, 152, 154, 155, 156, 157,
+        158, 162, 165,
     ] {
         if has_maccs_match(bit) {
             bits.insert(bit);
@@ -8016,20 +7767,14 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(
         .is_none()
         .then(|| crate::symmetrize_sssr(molecule).ok())
         .flatten();
-    let ring_info = molecule
-        .derived_cache()
-        .rings
-        .as_ref()
-        .or(owned_rings.as_ref());
+    let ring_info = molecule.derived_cache().rings.as_ref().or(owned_rings.as_ref());
     if let Some(ring_info) = ring_info {
         let mut aromatic_ring_count = 0usize;
         for bond_ring in ring_info.bond_rings() {
-            if bond_ring.iter().all(|bond| {
-                molecule
-                    .bonds()
-                    .get(bond.index())
-                    .is_some_and(crate::Bond::is_aromatic)
-            }) {
+            if bond_ring
+                .iter()
+                .all(|bond| molecule.bonds().get(bond.index()).is_some_and(crate::Bond::is_aromatic))
+            {
                 if aromatic_ring_count > 0 {
                     bits.insert(125);
                     break;
@@ -8082,9 +7827,7 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(
 // The raw implementation can compute SSSR ring info when the molecule has no
 // cached ring cache, so performance is marked worse than RDKit's direct
 // initialized RingInfo access for that branch.
-pub fn maccs_get_fingerprint_as_bit_vect(
-    molecule: &Molecule,
-) -> Result<Fingerprint, FingerprintError> {
+pub fn maccs_get_fingerprint_as_bit_vect(molecule: &Molecule) -> Result<Fingerprint, FingerprintError> {
     Ok(Fingerprint::from_on_bits(
         RDKIT_MACCS_RAW_BITS,
         rdkit_maccs_generate_fp_raw_bits_001_166(molecule)?,
@@ -8139,10 +7882,7 @@ mod topological_torsion_public_api_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        AtomQueryPredicate, AtomSpec, BondQueryPredicate, BondSpec, BondStereo, Element, Molecule,
-        QueryNode,
-    };
+    use crate::{AtomQueryPredicate, AtomSpec, BondQueryPredicate, BondSpec, BondStereo, Element, Molecule, QueryNode};
     use serde::Deserialize;
 
     fn default_morgan_params(radius: u32, n_bits: usize) -> MorganFingerprintParams {
@@ -8155,9 +7895,8 @@ mod tests {
 
     #[test]
     fn topological_fingerprint_empty_molecule_matches_source() {
-        let fingerprint =
-            topological_fingerprint(&Molecule::new(), &TopologicalFingerprintParams::default())
-                .expect("empty molecule fingerprint");
+        let fingerprint = topological_fingerprint(&Molecule::new(), &TopologicalFingerprintParams::default())
+            .expect("empty molecule fingerprint");
         assert_eq!(fingerprint.n_bits(), 2048);
         assert!(fingerprint.on_bits().is_empty());
     }
@@ -8184,9 +7923,7 @@ mod tests {
         params.min_path = 0;
         assert!(matches!(
             params.validate(),
-            Err(FingerprintError::InvalidArguments {
-                reason: "minPath==0"
-            })
+            Err(FingerprintError::InvalidArguments { reason: "minPath==0" })
         ));
         params = TopologicalFingerprintParams::default();
         params.max_path = 0;
@@ -8200,9 +7937,7 @@ mod tests {
         params.fp_size = 0;
         assert!(matches!(
             params.validate(),
-            Err(FingerprintError::InvalidArguments {
-                reason: "fpSize==0"
-            })
+            Err(FingerprintError::InvalidArguments { reason: "fpSize==0" })
         ));
         params = TopologicalFingerprintParams::default();
         params.num_bits_per_feature = 0;
@@ -8220,12 +7955,9 @@ mod tests {
             atom_bits: true,
             bit_info: true,
         };
-        let result = topological_fingerprint_with_output(
-            &Molecule::new(),
-            &TopologicalFingerprintParams::default(),
-            request,
-        )
-        .expect("source provenance output");
+        let result =
+            topological_fingerprint_with_output(&Molecule::new(), &TopologicalFingerprintParams::default(), request)
+                .expect("source provenance output");
         assert_eq!(result.output.atom_bits, Some(Vec::new()));
         assert_eq!(result.output.bit_info, Some(BTreeMap::new()));
     }
@@ -8246,10 +7978,7 @@ mod tests {
         assert_eq!(hash_range(&[1, 2]), 0xcd94_bf13);
         assert_eq!(hash_range(&[2, 1]), 0xcd94_bf53);
         assert_eq!(hash_range(&[u32::MAX; 4]), 0x4841_0b19);
-        assert_eq!(
-            hash_range(&[u32::MAX, 0, 0x8000_0000, 0x7fff_ffff]),
-            0x6841_6bc8
-        );
+        assert_eq!(hash_range(&[u32::MAX, 0, 0x8000_0000, 0x7fff_ffff]), 0x6841_6bc8);
     }
 
     #[test]
@@ -8267,35 +7996,30 @@ mod tests {
     fn rdkit_fp_bond_hash_inputs_match_boost_hash_combine_order() {
         let molecule = Molecule::from_smiles("CCO").expect("fixture");
         let invariants = rdkit_fp_atom_invariants(&molecule);
-        let first = rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], true, &invariants)
-            .expect("first bond hash");
+        let first = rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], true, &invariants).expect("first bond hash");
         assert_eq!(first.atoms_in_path, vec![true, true, false]);
         assert_eq!(first.bond_hashes, vec![4_275_705_116]);
-        let second = rdkit_fp_generate_bond_hash_inputs(&molecule, &[1], true, &invariants)
-            .expect("second bond hash");
+        let second = rdkit_fp_generate_bond_hash_inputs(&molecule, &[1], true, &invariants).expect("second bond hash");
         assert_eq!(second.bond_hashes, vec![4_274_652_475]);
-        let without_order = rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], false, &invariants)
-            .expect("order-free bond hash");
+        let without_order =
+            rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], false, &invariants).expect("order-free bond hash");
         assert_eq!(first.bond_hashes, without_order.bond_hashes);
         let double_bond = Molecule::from_smiles("C=C").expect("double-bond fixture");
         let double_invariants = rdkit_fp_atom_invariants(&double_bond);
         let with_order =
-            rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], true, &double_invariants)
-                .expect("double bond hash");
-        let without_order =
-            rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], false, &double_invariants)
-                .expect("double bond order-free hash");
+            rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], true, &double_invariants).expect("double bond hash");
+        let without_order = rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], false, &double_invariants)
+            .expect("double bond order-free hash");
         assert_ne!(with_order.bond_hashes, without_order.bond_hashes);
     }
 
     #[test]
     fn rdkit_fp_query_bond_path_is_rejected_at_hash_input_boundary() {
-        let query =
-            crate::search::smarts_parse::compile_query_fixture("[#6]~[#6]").expect("query fixture");
+        let query = crate::search::smarts_parse::compile_query_fixture("[#6]~[#6]").expect("query fixture");
         let query_molecule = query.to_molecule().expect("query molecule fixture");
         let invariants = rdkit_fp_atom_invariants(&query_molecule);
-        let inputs = rdkit_fp_generate_bond_hash_inputs(&query_molecule, &[0], true, &invariants)
-            .expect("query path result");
+        let inputs =
+            rdkit_fp_generate_bond_hash_inputs(&query_molecule, &[0], true, &invariants).expect("query path result");
         assert!(inputs.bond_hashes.is_empty());
         assert_eq!(inputs.atoms_in_path, vec![true, true]);
     }
@@ -8308,15 +8032,8 @@ mod tests {
         branched_paths: bool,
         from_atoms: Option<&[u32]>,
     ) -> BTreeMap<usize, Vec<Vec<usize>>> {
-        enumerate_fingerprint_paths(
-            molecule,
-            min_path,
-            max_path,
-            use_hs,
-            branched_paths,
-            from_atoms,
-        )
-        .expect("valid source path arguments")
+        enumerate_fingerprint_paths(molecule, min_path, max_path, use_hs, branched_paths, from_atoms)
+            .expect("valid source path arguments")
     }
 
     #[test]
@@ -8362,9 +8079,7 @@ mod tests {
 
     #[test]
     fn layered_shared_path_enumeration_preserves_root_duplicates_and_prepend_order() {
-        fn prepend_groups(
-            groups: &[&BTreeMap<usize, Vec<Vec<usize>>>],
-        ) -> BTreeMap<usize, Vec<Vec<usize>>> {
+        fn prepend_groups(groups: &[&BTreeMap<usize, Vec<Vec<usize>>>]) -> BTreeMap<usize, Vec<Vec<usize>>> {
             let mut result = BTreeMap::new();
             for group in groups {
                 for (&length, paths) in *group {
@@ -8400,24 +8115,19 @@ mod tests {
     #[test]
     fn layered_preparation_rejects_each_source_precondition() {
         let molecule = Molecule::from_smiles("CCO").expect("precondition fixture");
-        let error =
-            |result: Result<LayeredFingerprintPreparation<'_>, FingerprintError>| match result
-                .expect_err("source precondition must fail")
-            {
-                FingerprintError::InvalidArguments { reason } => reason,
-                other => panic!("unexpected error: {other}"),
-            };
+        let error = |result: Result<LayeredFingerprintPreparation<'_>, FingerprintError>| match result
+            .expect_err("source precondition must fail")
+        {
+            FingerprintError::InvalidArguments { reason } => reason,
+            other => panic!("unexpected error: {other}"),
+        };
 
         assert_eq!(
-            error(prepare_layered_fingerprint(
-                &molecule, 0, 7, 2048, None, None
-            )),
+            error(prepare_layered_fingerprint(&molecule, 0, 7, 2048, None, None)),
             "minPath==0"
         );
         assert_eq!(
-            error(prepare_layered_fingerprint(
-                &molecule, 2, 1, 2048, None, None
-            )),
+            error(prepare_layered_fingerprint(&molecule, 2, 1, 2048, None, None)),
             "maxPath<minPath"
         );
         assert_eq!(
@@ -8425,14 +8135,7 @@ mod tests {
             "fpSize==0"
         );
         assert_eq!(
-            error(prepare_layered_fingerprint(
-                &molecule,
-                1,
-                7,
-                2048,
-                Some(&[0, 0]),
-                None,
-            )),
+            error(prepare_layered_fingerprint(&molecule, 1, 7, 2048, Some(&[0, 0]), None,)),
             "bad atomCounts size"
         );
         let wrong_width = Fingerprint::from_on_bits(1024, []);
@@ -8452,8 +8155,8 @@ mod tests {
     #[test]
     fn layered_preparation_reuses_initialized_rings_or_computes_exact_sssr() {
         let uncached = Molecule::new();
-        let prepared = prepare_layered_fingerprint(&uncached, 1, 7, 2048, None, None)
-            .expect("uncached exact SSSR preparation");
+        let prepared =
+            prepare_layered_fingerprint(&uncached, 1, 7, 2048, None, None).expect("uncached exact SSSR preparation");
         assert!(matches!(prepared.ring_info, Cow::Owned(_)));
         assert!(prepared.ring_info.is_initialized());
 
@@ -8461,8 +8164,7 @@ mod tests {
             .expect("cached-ring fixture")
             .with_assigned_rings()
             .expect("materialize initialized ring cache");
-        let prepared = prepare_layered_fingerprint(&cached, 1, 7, 2048, None, None)
-            .expect("cached ring preparation");
+        let prepared = prepare_layered_fingerprint(&cached, 1, 7, 2048, None, None).expect("cached ring preparation");
         assert!(matches!(prepared.ring_info, Cow::Borrowed(_)));
         assert_eq!(prepared.ring_info.num_rings(), 1);
     }
@@ -8470,8 +8172,7 @@ mod tests {
     #[test]
     fn layered_preparation_builds_source_ordered_atom_bond_and_query_caches() {
         let molecule = Molecule::from_smiles("CCO").expect("cache fixture");
-        let prepared = prepare_layered_fingerprint(&molecule, 1, 7, 2048, None, None)
-            .expect("cache preparation");
+        let prepared = prepare_layered_fingerprint(&molecule, 1, 7, 2048, None, None).expect("cache preparation");
         assert_eq!(
             prepared
                 .bond_cache
@@ -8485,29 +8186,23 @@ mod tests {
         assert_eq!(prepared.aromatic_atoms, vec![false, false, false]);
 
         let aromatic = Molecule::from_smiles("c1ccccc1").expect("aromatic cache fixture");
-        let prepared = prepare_layered_fingerprint(&aromatic, 1, 7, 2048, None, None)
-            .expect("aromatic cache preparation");
+        let prepared =
+            prepare_layered_fingerprint(&aromatic, 1, 7, 2048, None, None).expect("aromatic cache preparation");
         assert_eq!(prepared.atomic_numbers, vec![6; 6]);
         assert_eq!(prepared.aromatic_atoms, vec![true; 6]);
 
         let mut builder = Molecule::builder();
-        let begin = builder.add_atom(
-            AtomSpec::new(Element::C)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))),
-        );
-        let end = builder.add_atom(
-            AtomSpec::new(Element::C)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))),
-        );
+        let begin = builder
+            .add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))));
+        let end = builder
+            .add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))));
         builder
             .add_bond(
-                BondSpec::new(begin, end, BondOrder::Single)
-                    .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
+                BondSpec::new(begin, end, BondOrder::Single).with_query(QueryNode::predicate(BondQueryPredicate::Any)),
             )
             .expect("query-mask bond");
         let query = builder.build().expect("query-mask molecule");
-        let prepared = prepare_layered_fingerprint(&query, 1, 7, 2048, None, None)
-            .expect("query-mask preparation");
+        let prepared = prepare_layered_fingerprint(&query, 1, 7, 2048, None, None).expect("query-mask preparation");
         assert_eq!(prepared.query_masks, vec![0x7]);
     }
 
@@ -8589,20 +8284,12 @@ mod tests {
 
         let assert_case = |case: &LayeredQueryCase| {
             let molecule = match case.notation.as_str() {
-                "smiles" => Molecule::from_smiles(&case.input).unwrap_or_else(|error| {
-                    panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)
-                }),
+                "smiles" => Molecule::from_smiles(&case.input)
+                    .unwrap_or_else(|error| panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)),
                 "smarts" => mol_from_smarts(&case.input, &SmartsParseParams::default())
-                    .unwrap_or_else(|error| {
-                        panic!("{} ({}) failed to parse: {error}", case.case_id, case.input)
-                    })
+                    .unwrap_or_else(|error| panic!("{} ({}) failed to parse: {error}", case.case_id, case.input))
                     .to_molecule()
-                    .unwrap_or_else(|error| {
-                        panic!(
-                            "{} ({}) failed to materialize: {error}",
-                            case.case_id, case.input
-                        )
-                    }),
+                    .unwrap_or_else(|error| panic!("{} ({}) failed to materialize: {error}", case.case_id, case.input)),
                 notation => panic!("{}: unsupported notation {notation}", case.case_id),
             };
             let prepared = prepare_layered_fingerprint(
@@ -8655,11 +8342,7 @@ mod tests {
         // branches without widening the private query API just for tests.
         let query_aromaticity = |query, aromatic| {
             let mut builder = Molecule::builder();
-            let atom_id = builder.add_atom(
-                AtomSpec::new(Element::C)
-                    .with_aromatic(aromatic)
-                    .with_query(query),
-            );
+            let atom_id = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(aromatic).with_query(query));
             let molecule = builder.build().expect("typed aromaticity query fixture");
             crate::search::query::is_atom_aromatic(&molecule.atoms()[atom_id.index()], &molecule)
         };
@@ -8669,14 +8352,8 @@ mod tests {
 
         assert!(query_aromaticity(number(), true));
         assert!(!query_aromaticity(QueryNode::or(vec![aromatic()]), true));
-        assert!(!query_aromaticity(
-            QueryNode::xor(vec![aromatic(), number()]),
-            true,
-        ));
-        assert!(!query_aromaticity(
-            QueryNode::and(vec![aromatic(), number()]),
-            true,
-        ));
+        assert!(!query_aromaticity(QueryNode::xor(vec![aromatic(), number()]), true,));
+        assert!(!query_aromaticity(QueryNode::and(vec![aromatic(), number()]), true,));
         assert!(!query_aromaticity(
             QueryNode::and(vec![number(), formal_charge()]),
             true,
@@ -8685,10 +8362,7 @@ mod tests {
             QueryNode::not(QueryNode::and(vec![number(), aromatic()])),
             true,
         ));
-        assert!(!query_aromaticity(
-            QueryNode::not(QueryNode::not(aromatic())),
-            true,
-        ));
+        assert!(!query_aromaticity(QueryNode::not(QueryNode::not(aromatic())), true,));
         assert!(!query_aromaticity(formal_charge(), true));
     }
 
@@ -8709,24 +8383,15 @@ mod tests {
         assert_eq!(layered_topology_hash(u32::MAX, u32::MAX, u32::MAX), 511);
 
         let double = one_bond(BondOrder::Double, false);
-        assert_eq!(
-            layered_bond_order_hash(&double.bonds()[0], 9, 2, 5, 0),
-            Some(1_354)
-        );
-        assert_eq!(
-            layered_bond_order_hash(&double.bonds()[0], 9, 5, 2, 0),
-            Some(1_354)
-        );
+        assert_eq!(layered_bond_order_hash(&double.bonds()[0], 9, 2, 5, 0), Some(1_354));
+        assert_eq!(layered_bond_order_hash(&double.bonds()[0], 9, 5, 2, 0), Some(1_354));
         assert_eq!(
             layered_bond_order_hash(&double.bonds()[0], u32::MAX, u32::MAX, u32::MAX, 0,),
             Some(4_090)
         );
 
         let quadruple = one_bond(BondOrder::Quadruple, false);
-        assert_eq!(
-            layered_bond_order_hash(&quadruple.bonds()[0], 9, 2, 5, 0),
-            Some(1_356)
-        );
+        assert_eq!(layered_bond_order_hash(&quadruple.bonds()[0], 9, 2, 5, 0), Some(1_356));
         let aromatic_flag = one_bond(BondOrder::Double, true);
         assert_eq!(
             layered_bond_order_hash(&aromatic_flag.bonds()[0], 9, 2, 5, 0),
@@ -8770,18 +8435,18 @@ mod tests {
         assert_eq!(layered_aromaticity_hash(true, false, 0, 0x1), Some(1));
 
         let mut builder = Molecule::builder();
-        let aromatic = builder.add_atom(AtomSpec::new(Element::C).with_query(
-            QueryNode::predicate(AtomQueryPredicate::AtomType {
+        let aromatic = builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(
+            AtomQueryPredicate::AtomType {
                 atomic_number: 6,
                 aromatic: true,
-            }),
-        ));
-        let aliphatic = builder.add_atom(AtomSpec::new(Element::C).with_query(
-            QueryNode::predicate(AtomQueryPredicate::AtomType {
+            },
+        )));
+        let aliphatic = builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(
+            AtomQueryPredicate::AtomType {
                 atomic_number: 6,
                 aromatic: false,
-            }),
-        ));
+            },
+        )));
         builder
             .add_bond(BondSpec::new(aromatic, aliphatic, BondOrder::Single))
             .expect("query-aware aromaticity bond");
@@ -8806,14 +8471,8 @@ mod tests {
         let chain = Molecule::from_smiles("CC").expect("acyclic ring fixture");
         let chain_rings = crate::rings::find_sssr(&chain).expect("acyclic exact SSSR");
         let chain_bond = &chain.bonds()[0];
-        assert_eq!(
-            layered_ring_presence_hash(chain_bond, &chain_rings, 0),
-            None
-        );
-        assert_eq!(
-            layered_min_ring_size_hash(chain_bond, &chain_rings, 0),
-            Some(0)
-        );
+        assert_eq!(layered_ring_presence_hash(chain_bond, &chain_rings, 0), None);
+        assert_eq!(layered_min_ring_size_hash(chain_bond, &chain_rings, 0), Some(0));
 
         let triangle = Molecule::from_smiles("C1CC1").expect("ring fixture");
         let triangle_rings = crate::rings::find_sssr(&triangle).expect("ring exact SSSR");
@@ -8844,26 +8503,11 @@ mod tests {
             .find(|bond| ring_info.num_bond_rings(bond.id()) > 1)
             .expect("fused exact SSSR shared bond");
         assert_eq!(ring_info.min_bond_ring_size(shared_bond.id()), 6);
-        assert_eq!(
-            layered_ring_presence_hash(shared_bond, &ring_info, 0),
-            Some(1)
-        );
-        assert_eq!(
-            layered_min_ring_size_hash(shared_bond, &ring_info, 0),
-            Some(6)
-        );
-        assert_eq!(
-            layered_ring_presence_hash(shared_bond, &ring_info, 0x1),
-            Some(1)
-        );
-        assert_eq!(
-            layered_ring_presence_hash(shared_bond, &ring_info, 0x2),
-            None
-        );
-        assert_eq!(
-            layered_min_ring_size_hash(shared_bond, &ring_info, 0x4),
-            None
-        );
+        assert_eq!(layered_ring_presence_hash(shared_bond, &ring_info, 0), Some(1));
+        assert_eq!(layered_min_ring_size_hash(shared_bond, &ring_info, 0), Some(6));
+        assert_eq!(layered_ring_presence_hash(shared_bond, &ring_info, 0x1), Some(1));
+        assert_eq!(layered_ring_presence_hash(shared_bond, &ring_info, 0x2), None);
+        assert_eq!(layered_min_ring_size_hash(shared_bond, &ring_info, 0x4), None);
     }
 
     #[test]
@@ -8957,8 +8601,7 @@ mod tests {
             atom_counts: Some(vec![0; 3]),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &params)
-            .expect("default Layered fingerprint");
+        let result = layered_fingerprint_with_output(&molecule, &params).expect("default Layered fingerprint");
         assert_eq!(result.fingerprint.n_bits(), 2048);
         assert_eq!(
             result.fingerprint.on_bits(),
@@ -8976,9 +8619,7 @@ mod tests {
             result.fingerprint
         );
         assert_eq!(
-            molecule
-                .layered_fingerprint(&params)
-                .expect("Molecule Layered method"),
+            molecule.layered_fingerprint(&params).expect("Molecule Layered method"),
             result.fingerprint
         );
     }
@@ -8991,8 +8632,7 @@ mod tests {
             atom_counts: Some(vec![0; 3]),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &topology)
-            .expect("topology-only Layered fingerprint");
+        let result = layered_fingerprint_with_output(&molecule, &topology).expect("topology-only Layered fingerprint");
         assert_eq!(result.fingerprint.on_bits(), vec![674, 867]);
         assert_eq!(result.atom_counts, Some(vec![2, 3, 2]));
 
@@ -9001,8 +8641,7 @@ mod tests {
             set_only_bits: Some(Fingerprint::from_on_bits(2048, [674])),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &masked)
-            .expect("masked Layered fingerprint");
+        let result = layered_fingerprint_with_output(&molecule, &masked).expect("masked Layered fingerprint");
         assert_eq!(result.fingerprint.on_bits(), vec![674]);
         assert_eq!(result.atom_counts, Some(vec![11, 22, 31]));
 
@@ -9011,8 +8650,7 @@ mod tests {
             from_atoms: Some(Vec::new()),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &empty_roots)
-            .expect("present-empty root selection");
+        let result = layered_fingerprint_with_output(&molecule, &empty_roots).expect("present-empty root selection");
         assert!(result.fingerprint.on_bits().is_empty());
         assert_eq!(result.atom_counts, Some(vec![0, 0, 0]));
 
@@ -9022,8 +8660,8 @@ mod tests {
             from_atoms: Some(vec![0]),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &rooted_linear)
-            .expect("rooted linear Layered fingerprint");
+        let result =
+            layered_fingerprint_with_output(&molecule, &rooted_linear).expect("rooted linear Layered fingerprint");
         assert_eq!(
             result.fingerprint.on_bits(),
             vec![360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
@@ -9049,8 +8687,7 @@ mod tests {
             atom_counts: Some(vec![5, 6, 7]),
             ..LayeredFingerprintParams::default()
         };
-        let result = layered_fingerprint_with_output(&molecule, &high_only)
-            .expect("source-accepted high flags");
+        let result = layered_fingerprint_with_output(&molecule, &high_only).expect("source-accepted high flags");
         assert!(result.fingerprint.on_bits().is_empty());
         assert_eq!(result.atom_counts, Some(vec![5, 6, 7]));
 
@@ -9081,20 +8718,10 @@ mod tests {
         assert_eq!(
             expected_paths(&ring, 1, 3, true, false, None),
             BTreeMap::from([
-                (
-                    1,
-                    vec![vec![0], vec![5], vec![1], vec![2], vec![3], vec![4]]
-                ),
+                (1, vec![vec![0], vec![5], vec![1], vec![2], vec![3], vec![4]]),
                 (
                     2,
-                    vec![
-                        vec![0, 1],
-                        vec![5, 4],
-                        vec![0, 5],
-                        vec![1, 2],
-                        vec![2, 3],
-                        vec![3, 4]
-                    ]
+                    vec![vec![0, 1], vec![5, 4], vec![0, 5], vec![1, 2], vec![2, 3], vec![3, 4]]
                 ),
                 (
                     3,
@@ -9163,21 +8790,10 @@ mod tests {
             .with_hydrogens()
             .expect("materialize explicit hydrogens");
         assert_eq!(molecule.num_atoms(), 8);
-        assert_eq!(
-            expected_paths(&molecule, 1, 1, false, false, None)[&1],
-            vec![vec![0]]
-        );
+        assert_eq!(expected_paths(&molecule, 1, 1, false, false, None)[&1], vec![vec![0]]);
         assert_eq!(
             expected_paths(&molecule, 1, 1, true, false, None)[&1],
-            vec![
-                vec![0],
-                vec![1],
-                vec![2],
-                vec![3],
-                vec![4],
-                vec![5],
-                vec![6]
-            ]
+            vec![vec![0], vec![1], vec![2], vec![3], vec![4], vec![5], vec![6]]
         );
     }
 
@@ -9191,13 +8807,10 @@ mod tests {
             ..TopologicalFingerprintParams::default()
         };
         let invariants = rdkit_fp_atom_invariants(&molecule);
-        let environments = generate_rdkit_fp_environments(&molecule, &params, &invariants)
-            .expect("environment generation");
+        let environments =
+            generate_rdkit_fp_environments(&molecule, &params, &invariants).expect("environment generation");
         assert_eq!(
-            environments
-                .iter()
-                .map(RdkitFpEnvironment::bit_id)
-                .collect::<Vec<_>>(),
+            environments.iter().map(RdkitFpEnvironment::bit_id).collect::<Vec<_>>(),
             vec![4_275_705_116, 4_274_652_475, 1_524_090_560]
         );
         assert_eq!(
@@ -9247,8 +8860,7 @@ mod tests {
 
     #[test]
     fn fingerprint_smarts_parse_errors_are_returned() {
-        let err = SsMatcher::from_pattern("[#6")
-            .expect_err("invalid SMARTS must return an error instead of panicking");
+        let err = SsMatcher::from_pattern("[#6").expect_err("invalid SMARTS must return an error instead of panicking");
         assert!(matches!(err, FingerprintError::InvalidSmartsPattern { .. }));
     }
 
@@ -9323,10 +8935,7 @@ mod tests {
             (40usize, "[#16]-[#8]"),
             (41usize, "[#6]#[#7]"),
             (43usize, "[!#6!#1!H0]~*~[!#6!#1!H0]"),
-            (
-                44usize,
-                "[!#1;!#6;!#7;!#8;!#9;!#14;!#15;!#16;!#17;!#35;!#53]",
-            ),
+            (44usize, "[!#1;!#6;!#7;!#8;!#9;!#14;!#15;!#16;!#17;!#35;!#53]"),
             (45usize, "[#6]=[#6]~[#7]"),
             (47usize, "[#16]~*~[#7]"),
             (48usize, "[#8]~[!#6!#1](~[#8])~[#8]"),
@@ -9465,22 +9074,17 @@ mod tests {
         assert_eq!(RDKIT_MACCS_PATTERNS.len(), expected.len());
         assert_eq!(expected.len(), 136);
 
-        for (actual, &(expected_bit, expected_smarts)) in
-            RDKIT_MACCS_PATTERNS.iter().zip(expected.iter())
-        {
+        for (actual, &(expected_bit, expected_smarts)) in RDKIT_MACCS_PATTERNS.iter().zip(expected.iter()) {
             assert_eq!(actual.bit, expected_bit);
             assert_eq!(actual.smarts, expected_smarts);
 
-            let looked_up =
-                rdkit_maccs_pattern(expected_bit).expect("RDKit MACCS pattern bit is present");
+            let looked_up = rdkit_maccs_pattern(expected_bit).expect("RDKit MACCS pattern bit is present");
             assert_eq!(looked_up.bit, expected_bit);
             assert_eq!(looked_up.smarts, expected_smarts);
         }
 
         for bit in 0..=RDKIT_MACCS_RAW_BITS {
-            let expected_entry = expected
-                .iter()
-                .find(|&&(expected_bit, _)| expected_bit == bit);
+            let expected_entry = expected.iter().find(|&&(expected_bit, _)| expected_bit == bit);
             assert_eq!(
                 rdkit_maccs_pattern(bit).map(|pattern| (pattern.bit, pattern.smarts)),
                 expected_entry.copied(),
@@ -9497,17 +9101,12 @@ mod tests {
     }
 
     fn assert_maccs_keys_001_040(smiles: &str, expected_public_bits: &[usize]) {
-        let mol = Molecule::from_smiles(smiles).unwrap_or_else(|err| {
-            panic!("MACCS keys 001-040 fixture {smiles} should parse: {err}")
-        });
+        let mol = Molecule::from_smiles(smiles)
+            .unwrap_or_else(|err| panic!("MACCS keys 001-040 fixture {smiles} should parse: {err}"));
         assert_maccs_keys_001_040_for_mol(smiles, &mol, expected_public_bits);
     }
 
-    fn assert_maccs_keys_001_040_for_mol(
-        label: &str,
-        mol: &Molecule,
-        expected_public_bits: &[usize],
-    ) {
+    fn assert_maccs_keys_001_040_for_mol(label: &str, mol: &Molecule, expected_public_bits: &[usize]) {
         let params = MaccsFingerprintParams::default();
         let actual: Vec<usize> = maccs_fingerprint(mol, &params)
             .expect("MACCS fingerprint")
@@ -9522,9 +9121,8 @@ mod tests {
     }
 
     fn assert_maccs_keys_041_080(smiles: &str, expected_public_bits: &[usize]) {
-        let mol = Molecule::from_smiles(smiles).unwrap_or_else(|err| {
-            panic!("MACCS keys 041-080 fixture {smiles} should parse: {err}")
-        });
+        let mol = Molecule::from_smiles(smiles)
+            .unwrap_or_else(|err| panic!("MACCS keys 041-080 fixture {smiles} should parse: {err}"));
         let params = MaccsFingerprintParams::default();
         let actual: Vec<usize> = maccs_fingerprint(&mol, &params)
             .expect("MACCS fingerprint")
@@ -9539,9 +9137,8 @@ mod tests {
     }
 
     fn assert_maccs_keys_081_120(smiles: &str, expected_public_bits: &[usize]) {
-        let mol = Molecule::from_smiles(smiles).unwrap_or_else(|err| {
-            panic!("MACCS keys 081-120 fixture {smiles} should parse: {err}")
-        });
+        let mol = Molecule::from_smiles(smiles)
+            .unwrap_or_else(|err| panic!("MACCS keys 081-120 fixture {smiles} should parse: {err}"));
         let params = MaccsFingerprintParams::default();
         let actual: Vec<usize> = maccs_fingerprint(&mol, &params)
             .expect("MACCS fingerprint")
@@ -9556,9 +9153,8 @@ mod tests {
     }
 
     fn assert_maccs_keys_121_166(smiles: &str, expected_public_bits: &[usize]) {
-        let mol = Molecule::from_smiles(smiles).unwrap_or_else(|err| {
-            panic!("MACCS keys 121-166 fixture {smiles} should parse: {err}")
-        });
+        let mol = Molecule::from_smiles(smiles)
+            .unwrap_or_else(|err| panic!("MACCS keys 121-166 fixture {smiles} should parse: {err}"));
         let params = MaccsFingerprintParams::default();
         let actual: Vec<usize> = maccs_fingerprint(&mol, &params)
             .expect("MACCS fingerprint")
@@ -9599,11 +9195,7 @@ mod tests {
             "COSMolKit MACCS public 166-bit projection mismatch for {label}"
         );
 
-        let projected_from_raw: Vec<usize> = raw
-            .on_bits()
-            .into_iter()
-            .filter_map(rdkit_maccs_public_index)
-            .collect();
+        let projected_from_raw: Vec<usize> = raw.on_bits().into_iter().filter_map(rdkit_maccs_public_index).collect();
         assert_eq!(
             projected_from_raw, expected_public_bits,
             "RDKit raw-to-public MACCS projection mismatch for {label}"
@@ -9660,12 +9252,8 @@ mod tests {
             (
                 "salt_fragments",
                 "CCO.Cl",
-                &[
-                    82, 103, 109, 114, 131, 134, 139, 153, 155, 157, 160, 164, 166,
-                ],
-                &[
-                    81, 102, 108, 113, 130, 133, 138, 152, 154, 156, 159, 163, 165,
-                ],
+                &[82, 103, 109, 114, 131, 134, 139, 153, 155, 157, 160, 164, 166],
+                &[81, 102, 108, 113, 130, 133, 138, 152, 154, 156, 159, 163, 165],
             ),
             ("benzene", "c1ccccc1", &[162, 163, 165], &[161, 162, 164]),
             (
@@ -9684,12 +9272,12 @@ mod tests {
                 "morpholine",
                 "O1CCNCC1",
                 &[
-                    57, 82, 86, 91, 95, 98, 100, 104, 109, 111, 118, 120, 121, 128, 129, 132, 137,
-                    138, 147, 151, 153, 157, 158, 161, 163, 164, 165,
+                    57, 82, 86, 91, 95, 98, 100, 104, 109, 111, 118, 120, 121, 128, 129, 132, 137, 138, 147, 151, 153,
+                    157, 158, 161, 163, 164, 165,
                 ],
                 &[
-                    56, 81, 85, 90, 94, 97, 99, 103, 108, 110, 117, 119, 120, 127, 128, 131, 136,
-                    137, 146, 150, 152, 156, 157, 160, 162, 163, 164,
+                    56, 81, 85, 90, 94, 97, 99, 103, 108, 110, 117, 119, 120, 127, 128, 131, 136, 137, 146, 150, 152,
+                    156, 157, 160, 162, 163, 164,
                 ],
             ),
             ("ammonium", "[NH4+]", &[49, 151, 161], &[48, 150, 160]),
@@ -9712,34 +9300,25 @@ mod tests {
                 &[22, 90, 104, 127, 132, 139, 143, 147, 152, 157, 164, 165],
                 &[21, 89, 103, 126, 131, 138, 142, 146, 151, 156, 163, 164],
             ),
-            (
-                "fragment_methanes",
-                "C.C",
-                &[149, 160, 166],
-                &[148, 159, 165],
-            ),
+            ("fragment_methanes", "C.C", &[149, 160, 166], &[148, 159, 165]),
             (
                 "all_key_low_mix",
                 "NCCO",
                 &[
-                    54, 82, 84, 95, 100, 104, 109, 111, 118, 131, 132, 138, 139, 147, 151, 153,
-                    155, 157, 158, 161, 164,
+                    54, 82, 84, 95, 100, 104, 109, 111, 118, 131, 132, 138, 139, 147, 151, 153, 155, 157, 158, 161, 164,
                 ],
                 &[
-                    53, 81, 83, 94, 99, 103, 108, 110, 117, 130, 131, 137, 138, 146, 150, 152, 154,
-                    156, 157, 160, 163,
+                    53, 81, 83, 94, 99, 103, 108, 110, 117, 130, 131, 137, 138, 146, 150, 152, 154, 156, 157, 160, 163,
                 ],
             ),
             (
                 "all_key_high_mix",
                 "OCOCOCO",
                 &[
-                    28, 82, 86, 89, 90, 109, 123, 126, 128, 131, 138, 139, 140, 146, 153, 155, 157,
-                    159, 164,
+                    28, 82, 86, 89, 90, 109, 123, 126, 128, 131, 138, 139, 140, 146, 153, 155, 157, 159, 164,
                 ],
                 &[
-                    27, 81, 85, 88, 89, 108, 122, 125, 127, 130, 137, 138, 139, 145, 152, 154, 156,
-                    158, 163,
+                    27, 81, 85, 88, 89, 108, 122, 125, 127, 130, 137, 138, 139, 145, 152, 154, 156, 158, 163,
                 ],
             ),
         ];
@@ -9821,11 +9400,7 @@ mod tests {
             ("key_052_n_n", "NNO", &[42, 51, 67, 68, 69, 70]),
             ("key_053_hetero_bridge_3", "NCCCO", &[52]),
             ("key_054_hetero_bridge_2", "NCCN", &[53, 78]),
-            (
-                "key_055_o_s_o",
-                "CS(=O)(=O)C",
-                &[50, 54, 57, 59, 60, 66, 72, 73],
-            ),
+            ("key_055_o_s_o", "CS(=O)(=O)C", &[50, 54, 57, 59, 60, 66, 72, 73]),
             ("key_056_o_n_o_c", "ON(O)C", &[42, 55, 68, 69, 70]),
             ("key_057_o_ring", "O1CC1", &[56]),
             (
@@ -9842,11 +9417,7 @@ mod tests {
             ("key_065_aromatic_c_n", "c1ncccc1", &[64]),
             ("key_066_quaternary_carbon", "CC(C)(C)C", &[65, 73]),
             ("key_067_hetero_s", "CSSC", &[66]),
-            (
-                "key_068_hetero_h_hetero_h",
-                "NNO",
-                &[42, 51, 67, 68, 69, 70],
-            ),
+            ("key_068_hetero_h_hetero_h", "NNO", &[42, 51, 67, 68, 69, 70]),
             ("key_069_hetero_hetero_h", "CSN", &[66, 68]),
             ("key_070_hetero_n_hetero", "NNO", &[42, 51, 67, 68, 69, 70]),
             ("key_071_n_o", "N=O", &[62, 68, 70]),
@@ -9863,9 +9434,7 @@ mod tests {
         for &(label, smiles, expected_public_bits) in fixtures {
             assert_maccs_keys_041_080(smiles, expected_public_bits);
             assert!(
-                expected_public_bits
-                    .iter()
-                    .any(|&bit| (40..80).contains(&bit)),
+                expected_public_bits.iter().any(|&bit| (40..80).contains(&bit)),
                 "{label} should exercise at least one RDKit raw key in 41..=80"
             );
         }
@@ -9874,17 +9443,9 @@ mod tests {
     #[test]
     fn maccs_keys_081_120_match_rdkit() {
         let fixtures: &[(&str, &str, &[usize])] = &[
-            (
-                "key_081_s_three_neighbors",
-                "C[S](C)(C)C",
-                &[85, 87, 92, 111],
-            ),
+            ("key_081_s_three_neighbors", "C[S](C)(C)C", &[85, 87, 92, 111]),
             ("key_082_ch2_hetero_h", "CCN", &[81, 83, 99, 113]),
-            (
-                "key_083_hetero_five_ring",
-                "O1CCCC1",
-                &[82, 85, 95, 108, 117],
-            ),
+            ("key_083_hetero_five_ring", "O1CCCC1", &[82, 85, 95, 108, 117]),
             ("key_084_nh2", "N", &[]),
             ("key_085_c_n_c_c", "CN(C)C", &[84, 85, 92]),
             ("key_086_c_h2_h3_hetero_c", "CN(C)C", &[84, 85, 92]),
@@ -9904,11 +9465,7 @@ mod tests {
             ("key_092_o_c_n_c", "OC(N)C", &[83, 91, 109, 116]),
             ("key_093_hetero_methyl", "CN", &[83, 92]),
             ("key_094_hetero_n", "CN", &[83, 92]),
-            (
-                "key_095_n_bridge_o",
-                "NCCO",
-                &[81, 83, 94, 99, 103, 108, 110, 117],
-            ),
+            ("key_095_n_bridge_o", "NCCO", &[81, 83, 94, 99, 103, 108, 110, 117]),
             ("key_096_five_ring", "C1CCCC1", &[95, 117]),
             (
                 "key_097_n_bridge3_o",
@@ -9923,16 +9480,8 @@ mod tests {
             ("key_103_chlorine", "Cl", &[102]),
             ("key_104_hetero_ch2_chain", "NCC", &[81, 83, 99, 113]),
             ("key_105_ring_branch_ring", "C1CC(C1)C1CC1", &[117]),
-            (
-                "key_106_hetero_three_neighbors",
-                "N(O)(O)O",
-                &[93, 101, 105],
-            ),
-            (
-                "key_107_halogen_three_neighbors",
-                "FC(F)(F)F",
-                &[105, 106, 111],
-            ),
+            ("key_106_hetero_three_neighbors", "N(O)(O)O", &[93, 101, 105]),
+            ("key_107_halogen_three_neighbors", "FC(F)(F)F", &[105, 106, 111]),
             ("key_108_methyl_chain_ch2", "CCCC", &[113, 114, 117]),
             ("key_109_ch2_o", "CCO", &[81, 108, 113]),
             ("key_110_n_c_o", "NCO", &[81, 83, 99, 108, 109, 116]),
@@ -9955,9 +9504,7 @@ mod tests {
             assert_maccs_keys_081_120(smiles, expected_public_bits);
             if !expected_public_bits.is_empty() {
                 assert!(
-                    expected_public_bits
-                        .iter()
-                        .any(|&bit| (80..120).contains(&bit)),
+                    expected_public_bits.iter().any(|&bit| (80..120).contains(&bit)),
                     "{label} should exercise at least one RDKit raw key in 81..=120"
                 );
             }
@@ -9990,32 +9537,16 @@ mod tests {
                 "C1CC1O",
                 &[126, 131, 138, 142, 146, 151, 156, 163, 164],
             ),
-            (
-                "key_128_ch2_bridge_5",
-                "CCCCCCC",
-                &[127, 128, 146, 148, 154, 159],
-            ),
+            ("key_128_ch2_bridge_5", "CCCCCCC", &[127, 128, 146, 148, 154, 159]),
             ("key_129_ch2_bridge_4", "CCCCCC", &[128, 146, 148, 154, 159]),
             (
                 "key_130_two_hetero_pairs",
                 "NOON",
                 &[123, 125, 129, 130, 141, 150, 158, 160, 163],
             ),
-            (
-                "key_131_two_hetero_h",
-                "NNO",
-                &[123, 129, 130, 138, 141, 150, 160, 163],
-            ),
-            (
-                "key_132_o_ch2_chain",
-                "OCCC",
-                &[131, 138, 146, 152, 154, 156, 159, 163],
-            ),
-            (
-                "key_133_ring_nonring_n",
-                "C1CC1N",
-                &[132, 146, 150, 155, 157, 160, 164],
-            ),
+            ("key_131_two_hetero_h", "NNO", &[123, 129, 130, 138, 141, 150, 160, 163]),
+            ("key_132_o_ch2_chain", "OCCC", &[131, 138, 146, 152, 154, 156, 159, 163]),
+            ("key_133_ring_nonring_n", "C1CC1N", &[132, 146, 150, 155, 157, 160, 164]),
             ("key_134_halogen", "F", &[133]),
             (
                 "key_135_n_aromatic_chain",
@@ -10023,11 +9554,7 @@ mod tests {
                 &[132, 134, 150, 155, 157, 160, 161, 162, 164],
             ),
             ("key_136_two_o_double", "O=CC=O", &[135, 153, 158, 163]),
-            (
-                "key_137_noncarbon_ring",
-                "O1CC1",
-                &[136, 146, 152, 156, 163, 164],
-            ),
+            ("key_137_noncarbon_ring", "O1CC1", &[136, 146, 152, 156, 163, 164]),
             (
                 "key_138_two_hetero_ch2",
                 "NCCO",
@@ -10037,9 +9564,7 @@ mod tests {
             (
                 "key_140_four_oxygens",
                 "OCOCOCO",
-                &[
-                    122, 125, 127, 130, 137, 138, 139, 145, 152, 154, 156, 158, 163,
-                ],
+                &[122, 125, 127, 130, 137, 138, 139, 145, 152, 154, 156, 158, 163],
             ),
             ("key_141_three_methyl", "CC(C)(C)C", &[140, 148, 159]),
             ("key_142_two_nitrogens", "NN", &[123, 130, 141, 150, 160]),
@@ -10066,22 +9591,10 @@ mod tests {
                 &[121, 140, 147, 148, 157, 159, 160],
             ),
             ("key_149_two_methyl", "CCC", &[148, 154, 159]),
-            (
-                "key_150_nonring_ring_path",
-                "C1CC1CC1CC1",
-                &[127, 128, 146, 154, 164],
-            ),
-            (
-                "key_151_n_no_h",
-                "CN(C)C",
-                &[121, 140, 147, 148, 157, 159, 160],
-            ),
+            ("key_150_nonring_ring_path", "C1CC1CC1CC1", &[127, 128, 146, 154, 164]),
+            ("key_151_n_no_h", "CN(C)C", &[121, 140, 147, 148, 157, 159, 160]),
             ("key_152_o_c_c_c", "OC(C)C", &[138, 148, 151, 156, 159, 163]),
-            (
-                "key_153_hetero_ch2_once",
-                "CCN",
-                &[150, 152, 154, 157, 159, 160],
-            ),
+            ("key_153_hetero_ch2_once", "CCN", &[150, 152, 154, 157, 159, 160]),
             ("key_154_carbonyl", "C=O", &[153, 163]),
             ("key_155_ch2_nonring", "CCC", &[148, 154, 159]),
             (
@@ -10091,19 +9604,11 @@ mod tests {
             ),
             ("key_157_c_o_single", "CO", &[138, 156, 159, 163]),
             ("key_158_c_n_single", "CN", &[150, 157, 159, 160]),
-            (
-                "key_159_two_oxygens",
-                "OCO",
-                &[122, 130, 138, 152, 154, 156, 158, 163],
-            ),
+            ("key_159_two_oxygens", "OCO", &[122, 130, 138, 152, 154, 156, 158, 163]),
             ("key_160_methyl_once", "CC", &[148, 159]),
             ("key_161_n_once", "CN", &[150, 157, 159, 160]),
             ("key_162_aromatic", "c1ccccc1", &[161, 162, 164]),
-            (
-                "key_163_six_ring_once",
-                "C1CCCCC1",
-                &[127, 128, 146, 162, 164],
-            ),
+            ("key_163_six_ring_once", "C1CCCCC1", &[127, 128, 146, 162, 164]),
             ("key_164_o_once", "CO", &[138, 156, 159, 163]),
             ("key_165_ring", "C1CC1", &[146, 164]),
             ("key_166_fragments", "C.C", &[148, 159, 165]),
@@ -10111,9 +9616,7 @@ mod tests {
         for &(label, smiles, expected_public_bits) in fixtures {
             assert_maccs_keys_121_166(smiles, expected_public_bits);
             assert!(
-                expected_public_bits
-                    .iter()
-                    .any(|&bit| (120..166).contains(&bit)),
+                expected_public_bits.iter().any(|&bit| (120..166).contains(&bit)),
                 "{label} should exercise at least one RDKit raw key in 121..=166"
             );
         }
@@ -10126,8 +9629,7 @@ mod tests {
         ignore_atoms: Option<&[usize]>,
     ) -> Result<MorganAdditionalOutput, FingerprintError> {
         let atom_invariants = MorganAtomInvGenerator::new(true).getAtomInvariants(mol);
-        let bond_invariants = MorganBondInvGenerator::new(arguments.df_use_bond_types, false)
-            .getBondInvariants(mol)?;
+        let bond_invariants = MorganBondInvGenerator::new(arguments.df_use_bond_types, false).getBondInvariants(mol)?;
         let envs = MorganEnvGenerator::new().getEnvironments(
             mol,
             arguments,
@@ -10145,10 +9647,7 @@ mod tests {
     }
 
     fn bimap(entries: &[(usize, &[(usize, u32)])]) -> BTreeMap<usize, Vec<(usize, u32)>> {
-        entries
-            .iter()
-            .map(|(bit, values)| (*bit, values.to_vec()))
-            .collect()
+        entries.iter().map(|(bit, values)| (*bit, values.to_vec())).collect()
     }
 
     fn atoms_per_bit(entries: &[(usize, &[&[usize]])]) -> BTreeMap<usize, Vec<Vec<usize>>> {
@@ -10265,10 +9764,7 @@ mod tests {
         let e = ethane();
         let fp_m = morgan_fingerprint(&m, &default_morgan_params(0, 2048)).unwrap();
         let fp_e = morgan_fingerprint(&e, &default_morgan_params(0, 2048)).unwrap();
-        assert_ne!(
-            fp_m, fp_e,
-            "methane and ethane should have different fingerprints"
-        );
+        assert_ne!(fp_m, fp_e, "methane and ethane should have different fingerprints");
     }
 
     #[test]
@@ -10277,10 +9773,7 @@ mod tests {
         let e = ethane();
         let fp_b = morgan_fingerprint(&b, &default_morgan_params(2, 2048)).unwrap();
         let fp_e = morgan_fingerprint(&e, &default_morgan_params(2, 2048)).unwrap();
-        assert_ne!(
-            fp_b, fp_e,
-            "benzene and ethane should have different fingerprints"
-        );
+        assert_ne!(fp_b, fp_e, "benzene and ethane should have different fingerprints");
     }
 
     #[test]
@@ -10329,10 +9822,7 @@ mod tests {
             ..Default::default()
         };
         let fp_empty = morgan_fingerprint(&mol, &params_empty).unwrap();
-        assert!(
-            fp_empty.on_bits().is_empty(),
-            "no from_atoms → empty fingerprint"
-        );
+        assert!(fp_empty.on_bits().is_empty(), "no from_atoms → empty fingerprint");
     }
 
     #[test]
@@ -10367,10 +9857,7 @@ mod tests {
         let fp_a = morgan_fingerprint(&mol, &params).unwrap();
         let fp_b = morgan_fingerprint(&mol, &params).unwrap();
         assert_eq!(fp_a, fp_b, "feature invariants should be deterministic");
-        assert!(
-            !fp_a.on_bits().is_empty(),
-            "expected on-bits from feature invariants"
-        );
+        assert!(!fp_a.on_bits().is_empty(), "expected on-bits from feature invariants");
     }
 
     #[test]
@@ -10458,9 +9945,7 @@ mod tests {
             atom.clear_prop("_CIPRank");
         }
         let mut unprepared_no_label = no_label.clone();
-        unprepared_no_label
-            .properties_mut()
-            .clear_prop("_StereochemDone");
+        unprepared_no_label.properties_mut().clear_prop("_StereochemDone");
         let source_snapshot = unprepared_no_label.clone();
 
         let arguments = AtomPairArguments::new(false, true, true, 1, 30, Vec::new(), 2048)
@@ -10528,10 +10013,7 @@ mod tests {
         };
         let fp_r = morgan_fingerprint(&r_mol, &params).unwrap();
         let fp_s = morgan_fingerprint(&s_mol, &params).unwrap();
-        assert_eq!(
-            fp_r, fp_s,
-            "R and S should have same fingerprint without chirality"
-        );
+        assert_eq!(fp_r, fp_s, "R and S should have same fingerprint without chirality");
     }
 
     #[test]
@@ -10600,10 +10082,7 @@ mod tests {
         assert_eq!(ao.bit_info_map, Some(BTreeMap::new()));
         assert_eq!(ao.bit_paths, Some(BTreeMap::new()));
         assert_eq!(ao.atom_counts, Some(vec![0, 0, 0, 0]));
-        assert_eq!(
-            ao.atoms_per_bit,
-            Some(BTreeMap::from([(13, vec![vec![2, 5]])]))
-        );
+        assert_eq!(ao.atoms_per_bit, Some(BTreeMap::from([(13, vec![vec![2, 5]])])));
     }
 
     #[test]
@@ -10655,10 +10134,7 @@ mod tests {
             output.atoms_per_bit,
             Some(BTreeMap::from([(123, vec![vec![1, 0, 2, 3]])]))
         );
-        assert_eq!(
-            output.bit_info_map,
-            Some(BTreeMap::from([(123, vec![(1, 1)])]))
-        );
+        assert_eq!(output.bit_info_map, Some(BTreeMap::from([(123, vec![(1, 1)])])));
         assert_eq!(output.atom_counts, Some(vec![0, 1, 0, 0]));
         assert_eq!(
             output.atom_to_bits,
@@ -10675,9 +10151,7 @@ mod tests {
         assert_eq!(generator.getResultSize(), u64::from(u32::MAX));
 
         generator.fromJSON("").unwrap();
-        generator
-            .fromJSON(r#"{"type":"MorganEnvGenerator"}"#)
-            .unwrap();
+        generator.fromJSON(r#"{"type":"MorganEnvGenerator"}"#).unwrap();
         generator.fromJSON(r#"{"type":"OtherGenerator"}"#).unwrap();
         assert_eq!(generator.infoString(), "MorganEnvironmentGenerator");
         assert_eq!(generator.toJSON(), r#"{"type":"MorganEnvGenerator"}"#);
@@ -10693,8 +10167,7 @@ mod tests {
 
     #[test]
     fn get_morgan_generator_defaults_allocate_owned_invariant_generators() {
-        let args =
-            MorganArguments::new(2, false, true, true, vec![1, 2, 4], 1024, false, false).unwrap();
+        let args = MorganArguments::new(2, false, true, true, vec![1, 2, 4], 1024, false, false).unwrap();
 
         let generator = getMorganGenerator(&args, None, None, false, false);
 
@@ -10824,15 +10297,10 @@ mod tests {
         .unwrap();
         let mut args = FingerprintFuncArguments::default();
 
-        let result = generator
-            .getFingerprintHelper(&mol, &mut args, 2048)
-            .unwrap();
+        let result = generator.getFingerprintHelper(&mol, &mut args, 2048).unwrap();
 
         assert_eq!(result.size(), 2048);
-        assert_eq!(
-            result.nonzero_elements(),
-            &BTreeMap::from([(1057, 2), (1275, 1)])
-        );
+        assert_eq!(result.nonzero_elements(), &BTreeMap::from([(1057, 2), (1275, 1)]));
     }
 
     #[test]
@@ -10859,9 +10327,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = generator
-            .getFingerprintHelper(&mol, &mut args, 2048)
-            .unwrap();
+        let result = generator.getFingerprintHelper(&mol, &mut args, 2048).unwrap();
 
         assert_eq!(
             result.nonzero_elements(),
@@ -10894,14 +10360,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = generator
-            .getFingerprintHelper(&mol, &mut args, 2048)
-            .unwrap();
+        let result = generator.getFingerprintHelper(&mol, &mut args, 2048).unwrap();
 
-        assert_eq!(
-            result.nonzero_elements(),
-            &BTreeMap::from([(20, 1), (1170, 1)])
-        );
+        assert_eq!(result.nonzero_elements(), &BTreeMap::from([(20, 1), (1170, 1)]));
     }
 
     #[test]
@@ -10929,9 +10390,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = generator
-            .getFingerprintHelper(&mol, &mut args, 2048)
-            .unwrap();
+        let result = generator.getFingerprintHelper(&mol, &mut args, 2048).unwrap();
 
         assert_eq!(
             result.nonzero_elements(),
@@ -10968,9 +10427,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = generator
-            .getFingerprintHelper(&mol, &mut args, 2048)
-            .unwrap();
+        let result = generator.getFingerprintHelper(&mol, &mut args, 2048).unwrap();
 
         assert_eq!(
             result.nonzero_elements(),
@@ -10982,21 +10439,11 @@ mod tests {
         assert_eq!(output.atom_to_bits, vec![vec![10, 805], vec![20, 1170]]);
         assert_eq!(
             output.bit_info_map,
-            bimap(&[
-                (10, &[(0, 0)]),
-                (20, &[(1, 0)]),
-                (805, &[(0, 1)]),
-                (1170, &[(1, 1)])
-            ])
+            bimap(&[(10, &[(0, 0)]), (20, &[(1, 0)]), (805, &[(0, 1)]), (1170, &[(1, 1)])])
         );
         assert_eq!(
             output.atoms_per_bit,
-            atoms_per_bit(&[
-                (10, &[&[0]]),
-                (20, &[&[1]]),
-                (805, &[&[0, 1]]),
-                (1170, &[&[1, 0]])
-            ])
+            atoms_per_bit(&[(10, &[&[0]]), (20, &[&[1]]), (805, &[&[0, 1]]), (1170, &[&[1, 0]])])
         );
     }
 
@@ -11019,18 +10466,12 @@ mod tests {
 
         duplicate_additional_output_bit(&old_output, &mut new_output, 8, 23).unwrap();
 
-        assert_eq!(
-            new_output.atom_to_bits,
-            Some(vec![vec![23], vec![23], Vec::new()])
-        );
+        assert_eq!(new_output.atom_to_bits, Some(vec![vec![23], vec![23], Vec::new()]));
         assert_eq!(
             new_output.bit_info_map,
             Some(BTreeMap::from([(23, vec![(0, 1), (1, 1)])]))
         );
-        assert_eq!(
-            new_output.bit_paths,
-            Some(BTreeMap::from([(23, vec![vec![0, 1]])]))
-        );
+        assert_eq!(new_output.bit_paths, Some(BTreeMap::from([(23, vec![vec![0, 1]])])));
         assert_eq!(new_output.atom_counts, Some(vec![99]));
         assert_eq!(
             new_output.atoms_per_bit,
@@ -11126,15 +10567,9 @@ mod tests {
             &BTreeMap::from([(2246728737, 2), (3545175291, 1)])
         );
         assert_eq!(sparse_bit.size(), u64::from(u32::MAX));
-        assert_eq!(
-            sparse_bit.on_bits(),
-            &BTreeSet::from([2246728737, 3545175291])
-        );
+        assert_eq!(sparse_bit.on_bits(), &BTreeSet::from([2246728737, 3545175291]));
         assert_eq!(hashed_count.size(), 2048);
-        assert_eq!(
-            hashed_count.nonzero_elements(),
-            &BTreeMap::from([(1057, 2), (1275, 1)])
-        );
+        assert_eq!(hashed_count.nonzero_elements(), &BTreeMap::from([(1057, 2), (1275, 1)]));
         assert_eq!(explicit_bit.n_bits(), 2048);
         assert_eq!(explicit_bit.on_bits(), vec![1057, 1275]);
     }
@@ -11149,9 +10584,7 @@ mod tests {
         let generator_source = include_str!("fingerprint/generator.rs");
 
         assert_eq!(
-            generator_source
-                .matches("for environment in environments")
-                .count(),
+            generator_source.matches("for environment in environments").count(),
             1,
             "the common core must own the only environment projection loop"
         );
@@ -11168,33 +10601,14 @@ mod tests {
             1
         );
         assert_eq!(
-            generator_source
-                .matches("pub(crate) fn get_count_fingerprint(")
-                .count(),
+            generator_source.matches("pub(crate) fn get_count_fingerprint(").count(),
             1
         );
-        assert_eq!(
-            generator_source
-                .matches("pub(crate) fn get_fingerprint(")
-                .count(),
-            1
-        );
-        assert!(
-            family_source.contains(
-                "generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint"
-            )
-        );
-        assert!(
-            family_source
-                .contains("generator::FingerprintGenerator::new(self).get_sparse_fingerprint")
-        );
-        assert!(
-            family_source
-                .contains("generator::FingerprintGenerator::new(self).get_count_fingerprint")
-        );
-        assert!(
-            family_source.contains("generator::FingerprintGenerator::new(self).get_fingerprint")
-        );
+        assert_eq!(generator_source.matches("pub(crate) fn get_fingerprint(").count(), 1);
+        assert!(family_source.contains("generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint"));
+        assert!(family_source.contains("generator::FingerprintGenerator::new(self).get_sparse_fingerprint"));
+        assert!(family_source.contains("generator::FingerprintGenerator::new(self).get_count_fingerprint"));
+        assert!(family_source.contains("generator::FingerprintGenerator::new(self).get_fingerprint"));
         assert!(!production_family_source.contains("fn build_fingerprint("));
         assert!(!production_family_source.contains("fn compute_initial_invariants("));
         assert!(!production_family_source.contains("fn fold_invariant("));
@@ -11205,11 +10619,8 @@ mod tests {
     fn shared_generator_preserves_morgan_json_outputs_and_all_provenance_fields() {
         let molecule = rdkit_morgan_oracle_mol("CCO");
         let mut original_arguments =
-            MorganArguments::new(2, true, false, false, vec![1, 2, 4, 8], 256, false, true)
-                .unwrap();
-        original_arguments
-            .fingerprint_arguments
-            .d_num_bits_per_feature = 2;
+            MorganArguments::new(2, true, false, false, vec![1, 2, 4, 8], 256, false, true).unwrap();
+        original_arguments.fingerprint_arguments.d_num_bits_per_feature = 2;
         let json = original_arguments.toJSON();
         let mut restored_arguments = MorganArguments::default();
         restored_arguments.fromJSON(&json).unwrap();
@@ -11237,10 +10648,7 @@ mod tests {
                 .getSparseCountFingerprint(&molecule, &mut restored_args)
                 .unwrap()
         );
-        assert_eq!(
-            original_args.additional_output,
-            restored_args.additional_output
-        );
+        assert_eq!(original_args.additional_output, restored_args.additional_output);
 
         let mut original_args = FingerprintFuncArguments {
             additional_output: Some(all_outputs(molecule.num_atoms())),
@@ -11248,17 +10656,10 @@ mod tests {
         };
         let mut restored_args = original_args.clone();
         assert_eq!(
-            original
-                .getSparseFingerprint(&molecule, &mut original_args)
-                .unwrap(),
-            restored
-                .getSparseFingerprint(&molecule, &mut restored_args)
-                .unwrap()
+            original.getSparseFingerprint(&molecule, &mut original_args).unwrap(),
+            restored.getSparseFingerprint(&molecule, &mut restored_args).unwrap()
         );
-        assert_eq!(
-            original_args.additional_output,
-            restored_args.additional_output
-        );
+        assert_eq!(original_args.additional_output, restored_args.additional_output);
 
         let mut original_args = FingerprintFuncArguments {
             additional_output: Some(all_outputs(molecule.num_atoms())),
@@ -11266,17 +10667,10 @@ mod tests {
         };
         let mut restored_args = original_args.clone();
         assert_eq!(
-            original
-                .getCountFingerprint(&molecule, &mut original_args)
-                .unwrap(),
-            restored
-                .getCountFingerprint(&molecule, &mut restored_args)
-                .unwrap()
+            original.getCountFingerprint(&molecule, &mut original_args).unwrap(),
+            restored.getCountFingerprint(&molecule, &mut restored_args).unwrap()
         );
-        assert_eq!(
-            original_args.additional_output,
-            restored_args.additional_output
-        );
+        assert_eq!(original_args.additional_output, restored_args.additional_output);
 
         let mut original_args = FingerprintFuncArguments {
             additional_output: Some(all_outputs(molecule.num_atoms())),
@@ -11284,17 +10678,10 @@ mod tests {
         };
         let mut restored_args = original_args.clone();
         assert_eq!(
-            original
-                .getFingerprint(&molecule, &mut original_args)
-                .unwrap(),
-            restored
-                .getFingerprint(&molecule, &mut restored_args)
-                .unwrap()
+            original.getFingerprint(&molecule, &mut original_args).unwrap(),
+            restored.getFingerprint(&molecule, &mut restored_args).unwrap()
         );
-        assert_eq!(
-            original_args.additional_output,
-            restored_args.additional_output
-        );
+        assert_eq!(original_args.additional_output, restored_args.additional_output);
     }
 
     #[test]
@@ -11331,12 +10718,7 @@ mod tests {
 
         assert_eq!(
             sparse_count.nonzero_elements(),
-            &BTreeMap::from([
-                (2068133184, 1),
-                (2245384272, 1),
-                (2246728737, 2),
-                (3542456614, 2),
-            ])
+            &BTreeMap::from([(2068133184, 1), (2245384272, 1), (2246728737, 2), (3542456614, 2),])
         );
         assert_eq!(
             sparse_bit.on_bits(),
@@ -11379,25 +10761,14 @@ mod tests {
         assert_eq!(explicit_bit.on_bits(), vec![132, 133, 1004]);
         let output = morgan_additional_output_from_rdkit_output(args.additional_output.unwrap());
         assert_eq!(output.atom_counts, vec![2, 1]);
-        assert_eq!(
-            output.atom_to_bits,
-            vec![vec![132, 133, 1004], vec![132, 133]]
-        );
+        assert_eq!(output.atom_to_bits, vec![vec![132, 133, 1004], vec![132, 133]]);
         assert_eq!(
             output.bit_info_map,
-            bimap(&[
-                (132, &[(0, 0), (1, 0)]),
-                (133, &[(0, 0), (1, 0)]),
-                (1004, &[(0, 1)])
-            ])
+            bimap(&[(132, &[(0, 0), (1, 0)]), (133, &[(0, 0), (1, 0)]), (1004, &[(0, 1)])])
         );
         assert_eq!(
             output.atoms_per_bit,
-            atoms_per_bit(&[
-                (132, &[&[0], &[1]]),
-                (133, &[&[0], &[1]]),
-                (1004, &[&[0, 1]])
-            ])
+            atoms_per_bit(&[(132, &[&[0], &[1]]), (133, &[&[0], &[1]]), (1004, &[&[0, 1]])])
         );
     }
 
@@ -11434,10 +10805,7 @@ mod tests {
         assert_eq!(output.atom_counts, vec![2, 1]);
         assert_eq!(
             output.atom_to_bits,
-            vec![
-                vec![396980364, 396980365, 1295799288],
-                vec![396980364, 396980365]
-            ]
+            vec![vec![396980364, 396980365, 1295799288], vec![396980364, 396980365]]
         );
         assert_eq!(
             output.bit_info_map,
@@ -11567,22 +10935,18 @@ mod tests {
         let explicit_bit_missing = generator
             .getFingerprint(&missing_cip, &mut explicit_missing_args)
             .unwrap();
-        let explicit_missing_output = morgan_additional_output_from_rdkit_output(
-            explicit_missing_args.additional_output.unwrap(),
-        );
+        let explicit_missing_output =
+            morgan_additional_output_from_rdkit_output(explicit_missing_args.additional_output.unwrap());
 
         let mut explicit_precomputed_args = FingerprintFuncArguments {
-            additional_output: Some(allocated_morgan_additional_output(
-                precomputed_cip.num_atoms(),
-            )),
+            additional_output: Some(allocated_morgan_additional_output(precomputed_cip.num_atoms())),
             ..Default::default()
         };
         let explicit_bit_precomputed = generator
             .getFingerprint(&precomputed_cip, &mut explicit_precomputed_args)
             .unwrap();
-        let explicit_precomputed_output = morgan_additional_output_from_rdkit_output(
-            explicit_precomputed_args.additional_output.unwrap(),
-        );
+        let explicit_precomputed_output =
+            morgan_additional_output_from_rdkit_output(explicit_precomputed_args.additional_output.unwrap());
 
         assert_ne!(explicit_bit_missing, explicit_bit_precomputed);
         assert_ne!(explicit_missing_output, explicit_precomputed_output);
@@ -11597,9 +10961,7 @@ mod tests {
     fn morgan_fingerprints_get_fingerprint_sparse_counts_and_atoms_setting_bits_match_rdkit() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let output =
-            morgan_get_fingerprint(&mol, 1, None, None, false, true, true, false, true, false)
-                .unwrap();
+        let output = morgan_get_fingerprint(&mol, 1, None, None, false, true, true, false, true, false).unwrap();
 
         assert_eq!(output.fingerprint.size(), u64::from(u32::MAX));
         assert_eq!(
@@ -11608,10 +10970,7 @@ mod tests {
         );
         assert_eq!(
             output.atoms_setting_bits,
-            Some(bimap(&[
-                (2246728737, &[(0, 0), (1, 0)]),
-                (3545175291, &[(0, 1)])
-            ]))
+            Some(bimap(&[(2246728737, &[(0, 0), (1, 0)]), (3545175291, &[(0, 1)])]))
         );
     }
 
@@ -11619,9 +10978,7 @@ mod tests {
     fn morgan_fingerprints_get_fingerprint_sparse_bits_are_returned_as_sparse_int_values() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let output =
-            morgan_get_fingerprint(&mol, 1, None, None, false, true, false, false, true, false)
-                .unwrap();
+        let output = morgan_get_fingerprint(&mol, 1, None, None, false, true, false, false, true, false).unwrap();
 
         assert_eq!(output.fingerprint.size(), u64::from(u32::MAX));
         assert_eq!(
@@ -11630,10 +10987,7 @@ mod tests {
         );
         assert_eq!(
             output.atoms_setting_bits,
-            Some(bimap(&[
-                (2246728737, &[(0, 0), (1, 0)]),
-                (3545175291, &[(0, 1)])
-            ]))
+            Some(bimap(&[(2246728737, &[(0, 0), (1, 0)]), (3545175291, &[(0, 1)])]))
         );
     }
 
@@ -11669,10 +11023,7 @@ mod tests {
     fn morgan_fingerprints_get_hashed_fingerprint_matches_rdkit_counts_and_atoms_setting_bits() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let output = morgan_get_hashed_fingerprint(
-            &mol, 1, 2048, None, None, false, true, false, true, false,
-        )
-        .unwrap();
+        let output = morgan_get_hashed_fingerprint(&mol, 1, 2048, None, None, false, true, false, true, false).unwrap();
 
         assert_eq!(output.fingerprint.size(), 2048);
         assert_eq!(
@@ -11718,8 +11069,7 @@ mod tests {
         let mol = rdkit_morgan_oracle_mol("CC");
 
         let error =
-            morgan_get_hashed_fingerprint(&mol, 1, 0, None, None, false, true, false, false, false)
-                .unwrap_err();
+            morgan_get_hashed_fingerprint(&mol, 1, 0, None, None, false, true, false, false, false).unwrap_err();
 
         assert_eq!(
             error,
@@ -11733,10 +11083,8 @@ mod tests {
     fn morgan_fingerprints_get_fingerprint_as_bit_vect_matches_rdkit_bits_and_atoms_setting_bits() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let output = morgan_get_fingerprint_as_bit_vect(
-            &mol, 1, 2048, None, None, false, true, false, true, false,
-        )
-        .unwrap();
+        let output =
+            morgan_get_fingerprint_as_bit_vect(&mol, 1, 2048, None, None, false, true, false, true, false).unwrap();
 
         assert_eq!(output.fingerprint.n_bits(), 2048);
         assert_eq!(output.fingerprint.on_bits(), vec![1057, 1275]);
@@ -11747,8 +11095,7 @@ mod tests {
     }
 
     #[test]
-    fn morgan_fingerprints_get_fingerprint_as_bit_vect_custom_invariants_and_from_atoms_match_rdkit()
-     {
+    fn morgan_fingerprints_get_fingerprint_as_bit_vect_custom_invariants_and_from_atoms_match_rdkit() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
         let output = morgan_get_fingerprint_as_bit_vect(
@@ -11776,10 +11123,8 @@ mod tests {
     fn morgan_fingerprints_get_fingerprint_as_bit_vect_rejects_zero_n_bits() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let error = morgan_get_fingerprint_as_bit_vect(
-            &mol, 1, 0, None, None, false, true, false, false, false,
-        )
-        .unwrap_err();
+        let error =
+            morgan_get_fingerprint_as_bit_vect(&mol, 1, 0, None, None, false, true, false, false, false).unwrap_err();
 
         assert_eq!(
             error,
@@ -11797,31 +11142,17 @@ mod tests {
         let output = rdkit_morgan_env_output(&mol, &args, None, None).unwrap();
 
         assert_eq!(output.atom_counts, vec![1, 1]);
-        assert_eq!(
-            output.atom_to_bits,
-            vec![vec![2246728737], vec![2246728737]]
-        );
-        assert_eq!(
-            output.bit_info_map,
-            bimap(&[(2246728737, &[(0, 0), (1, 0)])])
-        );
-        assert_eq!(
-            output.atoms_per_bit,
-            atoms_per_bit(&[(2246728737, &[&[0], &[1]])])
-        );
+        assert_eq!(output.atom_to_bits, vec![vec![2246728737], vec![2246728737]]);
+        assert_eq!(output.bit_info_map, bimap(&[(2246728737, &[(0, 0), (1, 0)])]));
+        assert_eq!(output.atoms_per_bit, atoms_per_bit(&[(2246728737, &[&[0], &[1]])]));
     }
 
     #[test]
     fn morgan_env_generator_duplicate_environments_follow_redundant_flag() {
         let mol = rdkit_morgan_oracle_mol("CC");
 
-        let nonredundant = rdkit_morgan_env_output(
-            &mol,
-            &morgan_arguments_for_env(1, false, false, true),
-            None,
-            None,
-        )
-        .unwrap();
+        let nonredundant =
+            rdkit_morgan_env_output(&mol, &morgan_arguments_for_env(1, false, false, true), None, None).unwrap();
         assert_eq!(nonredundant.atom_counts, vec![2, 1]);
         assert_eq!(
             nonredundant.bit_info_map,
@@ -11832,27 +11163,16 @@ mod tests {
             atoms_per_bit(&[(2246728737, &[&[0], &[1]]), (3545175291, &[&[0, 1]]),])
         );
 
-        let redundant = rdkit_morgan_env_output(
-            &mol,
-            &morgan_arguments_for_env(1, true, false, true),
-            None,
-            None,
-        )
-        .unwrap();
+        let redundant =
+            rdkit_morgan_env_output(&mol, &morgan_arguments_for_env(1, true, false, true), None, None).unwrap();
         assert_eq!(redundant.atom_counts, vec![2, 2]);
         assert_eq!(
             redundant.bit_info_map,
-            bimap(&[
-                (2246728737, &[(0, 0), (1, 0)]),
-                (3545175291, &[(0, 1), (1, 1)]),
-            ])
+            bimap(&[(2246728737, &[(0, 0), (1, 0)]), (3545175291, &[(0, 1), (1, 1)]),])
         );
         assert_eq!(
             redundant.atoms_per_bit,
-            atoms_per_bit(&[
-                (2246728737, &[&[0], &[1]]),
-                (3545175291, &[&[0, 1], &[1, 0]]),
-            ])
+            atoms_per_bit(&[(2246728737, &[&[0], &[1]]), (3545175291, &[&[0, 1], &[1, 0]]),])
         );
     }
 
@@ -11894,10 +11214,7 @@ mod tests {
         assert_eq!(output.atom_counts, vec![1]);
         assert_eq!(output.atom_to_bits, vec![vec![2312954353]]);
         assert_eq!(output.bit_info_map, bimap(&[(2312954353, &[(0, 0)])]));
-        assert_eq!(
-            output.atoms_per_bit,
-            atoms_per_bit(&[(2312954353, &[&[0]])])
-        );
+        assert_eq!(output.atoms_per_bit, atoms_per_bit(&[(2312954353, &[&[0]])]));
     }
 
     #[test]
@@ -11958,34 +11275,18 @@ mod tests {
     fn morgan_env_generator_bond_type_branch_changes_double_bond_environment() {
         let mol = rdkit_morgan_oracle_mol("C=C");
 
-        let with_bond_types = rdkit_morgan_env_output(
-            &mol,
-            &morgan_arguments_for_env(1, true, false, true),
-            None,
-            None,
-        )
-        .unwrap();
-        let without_bond_types = rdkit_morgan_env_output(
-            &mol,
-            &morgan_arguments_for_env(1, true, false, false),
-            None,
-            None,
-        )
-        .unwrap();
+        let with_bond_types =
+            rdkit_morgan_env_output(&mol, &morgan_arguments_for_env(1, true, false, true), None, None).unwrap();
+        let without_bond_types =
+            rdkit_morgan_env_output(&mol, &morgan_arguments_for_env(1, true, false, false), None, None).unwrap();
 
         assert_eq!(
             with_bond_types.bit_info_map,
-            bimap(&[
-                (2246997334, &[(0, 0), (1, 0)]),
-                (3695448525, &[(0, 1), (1, 1)]),
-            ])
+            bimap(&[(2246997334, &[(0, 0), (1, 0)]), (3695448525, &[(0, 1), (1, 1)]),])
         );
         assert_eq!(
             without_bond_types.bit_info_map,
-            bimap(&[
-                (2246997334, &[(0, 0), (1, 0)]),
-                (3695449228, &[(0, 1), (1, 1)]),
-            ])
+            bimap(&[(2246997334, &[(0, 0), (1, 0)]), (3695449228, &[(0, 1), (1, 1)]),])
         );
     }
 
@@ -12076,16 +11377,12 @@ mod tests {
         assert_eq!(args.fingerprint_arguments.d_count_bounds, vec![1, 2, 4, 8]);
         assert_eq!(args.fingerprint_arguments.d_fp_size, 2048);
         assert_eq!(args.fingerprint_arguments.d_num_bits_per_feature, 1);
-        assert_eq!(
-            args.infoString(),
-            "MorganArguments onlyNonzeroInvariants=0 radius=3"
-        );
+        assert_eq!(args.infoString(), "MorganArguments onlyNonzeroInvariants=0 radius=3");
     }
 
     #[test]
     fn morgan_arguments_to_json_matches_rdkit_field_shape() {
-        let args =
-            MorganArguments::new(2, true, true, true, vec![1, 2, 4, 8], 1024, true, false).unwrap();
+        let args = MorganArguments::new(2, true, true, true, vec![1, 2, 4, 8], 1024, true, false).unwrap();
         assert_eq!(
             args.toJSON(),
             r#"{"type":"MorganArguments","onlyNonzeroInvariants":true,"radius":2,"countSimulation":"true","fpSize":"1024","numBitsPerFeature":"1","includeChirality":"true","countBounds":["1","2","4","8"]}"#
@@ -12094,9 +11391,7 @@ mod tests {
 
     #[test]
     fn morgan_arguments_constructor_sets_redundant_environments_and_bond_types() {
-        let args =
-            MorganArguments::new(4, false, false, false, vec![1, 2, 4, 8], 2048, true, false)
-                .unwrap();
+        let args = MorganArguments::new(4, false, false, false, vec![1, 2, 4, 8], 2048, true, false).unwrap();
         assert_eq!(args.d_radius, 4);
         assert!(args.df_include_redundant_environments);
         assert!(!args.df_use_bond_types);
@@ -12136,9 +11431,7 @@ mod tests {
         let clone = generator.clone();
         assert_eq!(clone, generator);
 
-        generator
-            .fromJSON(r#"{"includeRingMembership":false}"#)
-            .unwrap();
+        generator.fromJSON(r#"{"includeRingMembership":false}"#).unwrap();
         assert_eq!(
             generator.toJSON(),
             r#"{"type":"MorganAtomInvGenerator","includeRingMembership":false}"#
@@ -12177,27 +11470,19 @@ mod tests {
             (
                 "c1ccccc1",
                 true,
-                vec![
-                    3218693969, 3218693969, 3218693969, 3218693969, 3218693969, 3218693969,
-                ],
+                vec![3218693969, 3218693969, 3218693969, 3218693969, 3218693969, 3218693969],
             ),
             (
                 "c1ccccc1",
                 false,
-                vec![
-                    2246703798, 2246703798, 2246703798, 2246703798, 2246703798, 2246703798,
-                ],
+                vec![2246703798, 2246703798, 2246703798, 2246703798, 2246703798, 2246703798],
             ),
         ];
 
         for (smiles, include_ring_membership, expected) in cases {
             let mol = Molecule::from_smiles(smiles).unwrap();
-            let invariants =
-                MorganAtomInvGenerator::new(include_ring_membership).getAtomInvariants(&mol);
-            assert_eq!(
-                invariants, expected,
-                "{smiles} include_ring={include_ring_membership}"
-            );
+            let invariants = MorganAtomInvGenerator::new(include_ring_membership).getAtomInvariants(&mol);
+            assert_eq!(invariants, expected, "{smiles} include_ring={include_ring_membership}");
         }
     }
 
@@ -12245,10 +11530,7 @@ mod tests {
             let mut expected = expected_atoms.clone();
             expected.sort_unstable();
             expected.dedup();
-            assert_eq!(
-                atom_indices, expected,
-                "feature {feature_idx} mismatch for {smiles}"
-            );
+            assert_eq!(atom_indices, expected, "feature {feature_idx} mismatch for {smiles}");
         }
     }
 
@@ -12267,9 +11549,7 @@ mod tests {
         for (smiles, expected) in cases {
             let mol = Molecule::from_smiles_with_sanitize(smiles, false).unwrap();
             assert_eq!(
-                generator
-                    .getAtomInvariants(&mol)
-                    .expect("feature invariants"),
+                generator.getAtomInvariants(&mol).expect("feature invariants"),
                 expected,
                 "default feature invariant mismatch for {smiles}"
             );
@@ -12280,10 +11560,7 @@ mod tests {
     fn morgan_feature_invariants_generator_metadata_json_and_clone_match_rdkit_shape() {
         let generator = MorganFeatureAtomInvGenerator::new();
         assert_eq!(generator.infoString(), "MorganFeatureInvariantGenerator");
-        assert_eq!(
-            generator.toJSON(),
-            r#"{"type":"MorganFeatureAtomInvGenerator"}"#
-        );
+        assert_eq!(generator.toJSON(), r#"{"type":"MorganFeatureAtomInvGenerator"}"#);
         assert_eq!(generator.clone(), generator);
 
         let mut round_trip = MorganFeatureAtomInvGenerator::new();
@@ -12304,9 +11581,7 @@ mod tests {
         ));
 
         let mut generator = MorganFeatureAtomInvGenerator::new();
-        let err = generator
-            .fromJSON(r#"{"patternSMARTS":["[#6]"]}"#)
-            .unwrap_err();
+        let err = generator.fromJSON(r#"{"patternSMARTS":["[#6]"]}"#).unwrap_err();
         assert!(matches!(
             err,
             FingerprintError::UnsupportedOption {
@@ -12423,14 +11698,10 @@ mod tests {
     fn morgan_bond_invariants_generator_chirality_ignored_for_non_double_bonds() {
         let generator = MorganBondInvGenerator::new(true, true);
         let mol = two_atom_molecule_with_bond_spec(
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-                .with_stereo(BondStereo::E),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single).with_stereo(BondStereo::E),
         );
 
-        assert_eq!(
-            generator.getBondInvariants(&mol).expect("bond invariants"),
-            vec![1]
-        );
+        assert_eq!(generator.getBondInvariants(&mol).expect("bond invariants"), vec![1]);
     }
 
     #[test]
@@ -12454,9 +11725,6 @@ mod tests {
         assert_eq!(topological_torsion_correct_atom_invariant(0), u32::MAX - 1);
         assert_eq!(topological_torsion_correct_atom_invariant(1), u32::MAX);
         assert_eq!(topological_torsion_correct_atom_invariant(2), 0);
-        assert_eq!(
-            topological_torsion_correct_atom_invariant(u32::MAX),
-            u32::MAX - 2
-        );
+        assert_eq!(topological_torsion_correct_atom_invariant(u32::MAX), u32::MAX - 2);
     }
 }

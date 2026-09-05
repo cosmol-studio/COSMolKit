@@ -53,8 +53,7 @@ fn from_atoms_match_only_path_endpoints() {
     let invariants = default_invariants(&molecule);
 
     let internal_only = environments(&molecule, &arguments, Some(&[2]), None, &invariants, false);
-    let endpoint_and_internal =
-        environments(&molecule, &arguments, Some(&[3]), None, &invariants, false);
+    let endpoint_and_internal = environments(&molecule, &arguments, Some(&[3]), None, &invariants, false);
 
     assert!(internal_only.is_empty());
     assert_eq!(endpoint_and_internal.len(), 1);
@@ -81,10 +80,7 @@ fn custom_invariants_receive_endpoint_and_internal_source_corrections() {
     let generated = environments(&molecule, &arguments, None, None, &invariants, false);
 
     assert_eq!(
-        generated
-            .iter()
-            .map(|env| env.getBitId())
-            .collect::<Vec<_>>(),
+        generated.iter().map(|env| env.getBitId()).collect::<Vec<_>>(),
         vec![
             get_topological_torsion_code(&[11, 20, 30, 41], false).unwrap(),
             get_topological_torsion_code(&[21, 30, 40, 51], false).unwrap(),
@@ -147,16 +143,8 @@ fn hashed_and_unhashed_ids_preserve_source_collisions() {
     let hashed = environments(&molecule, &arguments, None, None, &invariants, true);
     assert_eq!(packed.len(), 3);
     assert_eq!(hashed.len(), 3);
-    assert!(
-        packed
-            .iter()
-            .all(|env| env.getBitId() == packed[0].getBitId())
-    );
-    assert!(
-        hashed
-            .iter()
-            .all(|env| env.getBitId() == hashed[0].getBitId())
-    );
+    assert!(packed.iter().all(|env| env.getBitId() == packed[0].getBitId()));
+    assert!(hashed.iter().all(|env| env.getBitId() == hashed[0].getBitId()));
     assert_eq!(
         packed[0].getBitId(),
         get_topological_torsion_code(&[8, 7, 8], false).unwrap()
@@ -184,10 +172,7 @@ fn atom_environment_updates_every_supported_provenance_allocation() {
         Some(vec![vec![7], vec![], vec![7], vec![], vec![7]])
     );
     assert_eq!(output.atom_counts, Some(vec![1, 0, 1, 0, 1]));
-    assert_eq!(
-        output.bit_paths.as_ref().unwrap().get(&7),
-        Some(&vec![vec![0, 2, 4]])
-    );
+    assert_eq!(output.bit_paths.as_ref().unwrap().get(&7), Some(&vec![vec![0, 2, 4]]));
     assert_eq!(
         output.atoms_per_bit.as_ref().unwrap().get(&7),
         Some(&vec![vec![0, 2, 4]])
@@ -206,10 +191,7 @@ fn provenance_keeps_duplicate_colliding_paths_and_repeated_atoms() {
     TopologicalTorsionAtomEnv::new(4, vec![0, 1, 0]).updateAdditionalOutput(&mut output, 5);
     TopologicalTorsionAtomEnv::new(4, vec![1, 2]).updateAdditionalOutput(&mut output, 5);
 
-    assert_eq!(
-        output.atom_to_bits,
-        Some(vec![vec![5, 5], vec![5, 5], vec![5]])
-    );
+    assert_eq!(output.atom_to_bits, Some(vec![vec![5, 5], vec![5, 5], vec![5]]));
     assert_eq!(output.atom_counts, Some(vec![2, 2, 1]));
     assert_eq!(
         output.bit_paths.as_ref().unwrap().get(&5),

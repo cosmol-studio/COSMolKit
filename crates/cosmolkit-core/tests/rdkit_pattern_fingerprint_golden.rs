@@ -48,26 +48,15 @@ struct GoldenParameters {
 
 fn read_records(profile: &str) -> Vec<GoldenRecord> {
     let path = parity_data::expected_path_for_profile("fingerprint", "rdkit", profile, OUTPUT_NAME);
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line, content)| {
-            let content = content.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    line + 1
-                )
-            });
-            serde_json::from_str(&content).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    line + 1
-                )
-            })
+            let content =
+                content.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line + 1));
+            serde_json::from_str(&content)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line + 1))
         })
         .collect()
 }
@@ -75,8 +64,7 @@ fn read_records(profile: &str) -> Vec<GoldenRecord> {
 fn parse_record(record: &GoldenRecord) -> Result<Molecule, String> {
     match record.input_kind.as_str() {
         "smiles" => Molecule::from_smiles(&record.smiles).map_err(|error| error.to_string()),
-        "smarts" => mol_from_smarts(&record.smiles, &SmartsParseParams::default())
-            .map_err(|error| error.to_string()),
+        "smarts" => mol_from_smarts(&record.smiles, &SmartsParseParams::default()).map_err(|error| error.to_string()),
         other => Err(format!("unknown Pattern input kind {other:?}")),
     }
 }
@@ -127,10 +115,7 @@ fn assert_profile(profile: &str, expected_records: usize, permits_query_inputs: 
         );
 
         for (branch_name, branch) in &record.branches {
-            let context = format!(
-                "{profile} row {row} ({}) branch {branch_name}",
-                record.smiles
-            );
+            let context = format!("{profile} row {row} ({}) branch {branch_name}", record.smiles);
             assert_eq!(branch.parameters.name, *branch_name, "{context}");
             if branch.parameters.atom_counts == "none" {
                 assert!(branch.atom_counts_before.is_none(), "{context}");

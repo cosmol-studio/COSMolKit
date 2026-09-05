@@ -36,8 +36,7 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
                     molecule.bonds()[bond.index()].direction(),
                     BondDirection::EndDownRight | BondDirection::EndUpRight
                 ) {
-                    molecule.topology_block_mut().bonds[bond.index()]
-                        .set_direction(BondDirection::None);
+                    molecule.topology_block_mut().bonds[bond.index()].set_direction(BondDirection::None);
                 }
             }
             MolStackElem::Ring { .. } => {}
@@ -63,12 +62,7 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
         &mut atom_dir_counts,
         &bond_visit_orders,
     );
-    remove_redundant_bond_dir_specs_for_writer(
-        molecule,
-        stack,
-        &mut bond_dir_counts,
-        &mut atom_dir_counts,
-    );
+    remove_redundant_bond_dir_specs_for_writer(molecule, stack, &mut bond_dir_counts, &mut atom_dir_counts);
     molecule
         .derived_cache_mut()
         .invalidate(crate::DerivedState::STEREO | crate::DerivedState::DRAWING);
@@ -115,11 +109,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
         let mut stereo_nbrs = neighboring_stereo_double_bonds_for_writer(molecule, bond);
         stereo_nbrs.sort_by_key(|neighbor| bond_visit_orders[neighbor.index()]);
         stereo_bond_neighbors.insert(bond, stereo_nbrs.clone());
-        candidates.push((
-            usize::MAX - stereo_nbrs.len(),
-            bond_visit_orders[bond.index()],
-            bond,
-        ));
+        candidates.push((usize::MAX - stereo_nbrs.len(), bond_visit_orders[bond.index()], bond));
     }
     candidates.sort_by_key(|(stereo_rank, visit_order, _)| (*stereo_rank, *visit_order));
 
@@ -221,58 +211,26 @@ pub(super) fn canonicalize_double_bond_for_writer(
         std::mem::swap(&mut atom1, &mut atom2);
     }
 
-    let (first1, second1, dir1_set) = find_double_bond_neighbor_bonds_for_writer(
-        molecule,
-        dbl_bond,
-        atom1,
-        bond_visit_orders,
-        bond_dir_counts,
-    );
-    let (first2, second2, dir2_set) = find_double_bond_neighbor_bonds_for_writer(
-        molecule,
-        dbl_bond,
-        atom2,
-        bond_visit_orders,
-        bond_dir_counts,
-    );
+    let (first1, second1, dir1_set) =
+        find_double_bond_neighbor_bonds_for_writer(molecule, dbl_bond, atom1, bond_visit_orders, bond_dir_counts);
+    let (first2, second2, dir2_set) =
+        find_double_bond_neighbor_bonds_for_writer(molecule, dbl_bond, atom2, bond_visit_orders, bond_dir_counts);
     let (Some(first1), Some(first2)) = (first1, first2) else {
         return;
     };
 
-    let first1_flipped = writer_bond_is_flipped_from_atom1(
-        molecule,
-        atom1,
-        first1,
-        atom_visit_orders,
-        traversal_ring_closure_bonds,
-    );
+    let first1_flipped =
+        writer_bond_is_flipped_from_atom1(molecule, atom1, first1, atom_visit_orders, traversal_ring_closure_bonds);
     let second1_flipped = second1
         .map(|bond| {
-            writer_bond_is_flipped_from_atom1(
-                molecule,
-                atom1,
-                bond,
-                atom_visit_orders,
-                traversal_ring_closure_bonds,
-            )
+            writer_bond_is_flipped_from_atom1(molecule, atom1, bond, atom_visit_orders, traversal_ring_closure_bonds)
         })
         .unwrap_or(false);
-    let first2_flipped = writer_bond_is_flipped_from_atom2(
-        molecule,
-        atom2,
-        first2,
-        atom_visit_orders,
-        traversal_ring_closure_bonds,
-    );
+    let first2_flipped =
+        writer_bond_is_flipped_from_atom2(molecule, atom2, first2, atom_visit_orders, traversal_ring_closure_bonds);
     let second2_flipped = second2
         .map(|bond| {
-            writer_bond_is_flipped_from_atom2(
-                molecule,
-                atom2,
-                bond,
-                atom_visit_orders,
-                traversal_ring_closure_bonds,
-            )
+            writer_bond_is_flipped_from_atom2(molecule, atom2, bond, atom_visit_orders, traversal_ring_closure_bonds)
         })
         .unwrap_or(false);
 
@@ -336,13 +294,7 @@ pub(super) fn canonicalize_double_bond_for_writer(
                 atom_dir_counts[atom1.index()] += 1;
             }
         } else if let Some(second1) = second1 {
-            set_direction_from_neighboring_bond_for_writer(
-                molecule,
-                second1,
-                second1_flipped,
-                first1,
-                first1_flipped,
-            );
+            set_direction_from_neighboring_bond_for_writer(molecule, second1, second1_flipped, first1, first1_flipped);
             bond_dir_counts[second1.index()] += 1;
             bond_dir_counts[first1.index()] += 1;
             atom_dir_counts[atom1.index()] += 2;
@@ -360,13 +312,7 @@ pub(super) fn canonicalize_double_bond_for_writer(
                 atom_dir_counts[atom2.index()] += 1;
             }
         } else if let Some(second2) = second2 {
-            set_direction_from_neighboring_bond_for_writer(
-                molecule,
-                second2,
-                second2_flipped,
-                first2,
-                first2_flipped,
-            );
+            set_direction_from_neighboring_bond_for_writer(molecule, second2, second2_flipped, first2, first2_flipped);
             bond_dir_counts[second2.index()] += 1;
             bond_dir_counts[first2.index()] += 1;
             atom_dir_counts[atom2.index()] += 2;
@@ -418,13 +364,7 @@ pub(super) fn canonicalize_double_bond_for_writer(
         && let Some(second1) = second1
         && bond_dir_counts[second1.index()] == 0
     {
-        set_direction_from_neighboring_bond_for_writer(
-            molecule,
-            first1,
-            first1_flipped,
-            second1,
-            second1_flipped,
-        );
+        set_direction_from_neighboring_bond_for_writer(molecule, first1, first1_flipped, second1, second1_flipped);
         bond_dir_counts[second1.index()] += 1;
         atom_dir_counts[atom1.index()] += 1;
     }
@@ -432,13 +372,7 @@ pub(super) fn canonicalize_double_bond_for_writer(
         && let Some(second2) = second2
         && bond_dir_counts[second2.index()] == 0
     {
-        set_direction_from_neighboring_bond_for_writer(
-            molecule,
-            first2,
-            first2_flipped,
-            second2,
-            second2_flipped,
-        );
+        set_direction_from_neighboring_bond_for_writer(molecule, first2, first2_flipped, second2, second2_flipped);
         bond_dir_counts[second2.index()] += 1;
         atom_dir_counts[atom2.index()] += 1;
     }
@@ -456,9 +390,7 @@ pub(super) fn find_double_bond_neighbor_bonds_for_writer(
     let mut first_visit = usize::MAX;
     let mut dir_set = false;
     for bond in incident_bonds(molecule, atom) {
-        if bond == dbl_bond
-            || !can_set_double_bond_stereo_for_writer(molecule.bonds()[bond.index()].order())
-        {
+        if bond == dbl_bond || !can_set_double_bond_stereo_for_writer(molecule.bonds()[bond.index()].order()) {
             continue;
         }
         if bond_dir_counts[bond.index()] > 0 {
@@ -490,29 +422,12 @@ pub(super) fn account_same_side_dirs_for_writer(
     let mut consistent = true;
     if let Some(second) = second {
         if bond_dir_counts[first.index()] == 0 {
-            set_direction_from_neighboring_bond_for_writer(
-                molecule,
-                second,
-                second_flipped,
-                first,
-                first_flipped,
-            );
+            set_direction_from_neighboring_bond_for_writer(molecule, second, second_flipped, first, first_flipped);
         } else if bond_dir_counts[second.index()] == 0 {
-            set_direction_from_neighboring_bond_for_writer(
-                molecule,
-                first,
-                first_flipped,
-                second,
-                second_flipped,
-            );
+            set_direction_from_neighboring_bond_for_writer(molecule, first, first_flipped, second, second_flipped);
         } else {
-            consistent = same_side_dirs_are_compatible_for_writer(
-                molecule,
-                first,
-                first_flipped,
-                second,
-                second_flipped,
-            );
+            consistent =
+                same_side_dirs_are_compatible_for_writer(molecule, first, first_flipped, second, second_flipped);
         }
         bond_dir_counts[second.index()] += 1;
         atom_dir_counts[atom.index()] += 1;
@@ -602,14 +517,12 @@ pub(super) fn handle_dir_conflicts_across_double_bond_for_writer(
     let (Some(second1), Some(second2)) = (second1, second2) else {
         return false;
     };
-    for (atom1_bond, atom1_flipped, atom1_other) in [
-        (first1, first1_flipped, second1),
-        (second1, second1_flipped, first1),
-    ] {
-        for (atom2_bond, atom2_flipped, atom2_other) in [
-            (first2, first2_flipped, second2),
-            (second2, second2_flipped, first2),
-        ] {
+    for (atom1_bond, atom1_flipped, atom1_other) in
+        [(first1, first1_flipped, second1), (second1, second1_flipped, first1)]
+    {
+        for (atom2_bond, atom2_flipped, atom2_other) in
+            [(first2, first2_flipped, second2), (second2, second2_flipped, first2)]
+        {
             let expected = get_reference_direction_for_writer(
                 molecule,
                 dbl_bond,
@@ -623,14 +536,10 @@ pub(super) fn handle_dir_conflicts_across_double_bond_for_writer(
             if expected != molecule.bonds()[atom2_bond.index()].direction() {
                 continue;
             }
-            let Some(atom1_other_idx) =
-                bond_other_atom(&molecule.bonds()[atom1_other.index()], atom1)
-            else {
+            let Some(atom1_other_idx) = bond_other_atom(&molecule.bonds()[atom1_other.index()], atom1) else {
                 continue;
             };
-            let Some(atom2_other_idx) =
-                bond_other_atom(&molecule.bonds()[atom2_other.index()], atom2)
-            else {
+            let Some(atom2_other_idx) = bond_other_atom(&molecule.bonds()[atom2_other.index()], atom2) else {
                 continue;
             };
             if atom1_other_idx == atom2_other_idx
@@ -666,10 +575,7 @@ pub(super) fn fix_conflict_across_double_bond_for_writer(
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
 ) -> bool {
-    for (bond, flipped, other_bond) in [
-        (first, first_flipped, second),
-        (second, second_flipped, first),
-    ] {
+    for (bond, flipped, other_bond) in [(first, first_flipped, second), (second, second_flipped, first)] {
         let Some(other_idx) = bond_other_atom(&molecule.bonds()[other_bond.index()], atom) else {
             continue;
         };
@@ -726,8 +632,7 @@ pub(super) fn remove_unwanted_bond_dir_specs_for_writer(
         }
         let first = bond.begin();
         let second = bond.end();
-        if incident_bonds(molecule, first).len() == 1 || incident_bonds(molecule, second).len() == 1
-        {
+        if incident_bonds(molecule, first).len() == 1 || incident_bonds(molecule, second).len() == 1 {
             continue;
         }
         let mut candidates = Vec::new();
@@ -764,8 +669,7 @@ pub(super) fn remove_unwanted_bond_dir_specs_for_writer(
             };
             if atom_dir_counts[other.index()] == 2 {
                 bond_dir_counts[candidate.index()] = 0;
-                molecule.topology_block_mut().bonds[candidate.index()]
-                    .set_direction(BondDirection::None);
+                molecule.topology_block_mut().bonds[candidate.index()].set_direction(BondDirection::None);
                 atom_dir_counts[other.index()] -= 1;
                 break;
             }
@@ -805,8 +709,7 @@ pub(super) fn remove_redundant_bond_dir_specs_for_writer(
             continue;
         };
         let t_bond_ref = &molecule.bonds()[t_bond.index()];
-        if can_have_direction_for_writer(t_bond_ref.order()) && bond_dir_counts[t_bond.index()] > 0
-        {
+        if can_have_direction_for_writer(t_bond_ref.order()) && bond_dir_counts[t_bond.index()] > 0 {
             let canon_begin_atom = atom_to_left;
             let Some(canon_end_atom) = bond_other_atom(t_bond_ref, atom_to_left) else {
                 continue;
@@ -855,13 +758,7 @@ pub(super) fn clear_redundant_bond_dirs_from_atom_for_writer(
                     | BondStereo::AtropCcw
             )
         {
-            clear_bond_dirs_from_atom_for_writer(
-                molecule,
-                ref_bond,
-                atom,
-                bond_dir_counts,
-                atom_dir_counts,
-            );
+            clear_bond_dirs_from_atom_for_writer(molecule, ref_bond, atom, bond_dir_counts, atom_dir_counts);
             return;
         }
     }
@@ -910,9 +807,7 @@ pub(super) fn clear_bond_dirs_from_atom_for_writer(
         return;
     }
     for other_bond in incident_bonds(molecule, atom) {
-        if other_bond == ref_bond
-            || !can_have_direction_for_writer(molecule.bonds()[other_bond.index()].order())
-        {
+        if other_bond == ref_bond || !can_have_direction_for_writer(molecule.bonds()[other_bond.index()].order()) {
             continue;
         }
         let ref_count = bond_dir_counts[ref_bond.index()];
@@ -923,24 +818,12 @@ pub(super) fn clear_bond_dirs_from_atom_for_writer(
             && atom_dir_counts[other_begin.index()] != 1
             && atom_dir_counts[other_end.index()] != 1
         {
-            clear_direction_counted_for_writer(
-                molecule,
-                other_bond,
-                atom,
-                bond_dir_counts,
-                atom_dir_counts,
-            );
+            clear_direction_counted_for_writer(molecule, other_bond, atom, bond_dir_counts, atom_dir_counts);
         } else {
             let ref_begin = molecule.bonds()[ref_bond.index()].begin();
             let ref_end = molecule.bonds()[ref_bond.index()].end();
             if atom_dir_counts[ref_begin.index()] != 1 && atom_dir_counts[ref_end.index()] != 1 {
-                clear_direction_counted_for_writer(
-                    molecule,
-                    ref_bond,
-                    atom,
-                    bond_dir_counts,
-                    atom_dir_counts,
-                );
+                clear_direction_counted_for_writer(molecule, ref_bond, atom, bond_dir_counts, atom_dir_counts);
             }
         }
         break;
@@ -966,10 +849,7 @@ pub(super) fn clear_direction_counted_for_writer(
     }
 }
 
-pub(super) fn neighboring_stereo_double_bonds_for_writer(
-    molecule: &Molecule,
-    dbl_bond: BondId,
-) -> Vec<BondId> {
+pub(super) fn neighboring_stereo_double_bonds_for_writer(molecule: &Molecule, dbl_bond: BondId) -> Vec<BondId> {
     let mut out = Vec::new();
     let bond = &molecule.bonds()[dbl_bond.index()];
     for atom in [bond.begin(), bond.end()] {
@@ -977,8 +857,7 @@ pub(super) fn neighboring_stereo_double_bonds_for_writer(
             if !can_have_direction_for_writer(molecule.bonds()[nbr_bond.index()].order()) {
                 continue;
             }
-            let Some(other_atom) = bond_other_atom(&molecule.bonds()[nbr_bond.index()], atom)
-            else {
+            let Some(other_atom) = bond_other_atom(&molecule.bonds()[nbr_bond.index()], atom) else {
                 continue;
             };
             for other_bond in incident_bonds(molecule, other_atom) {
@@ -1019,28 +898,23 @@ pub(super) fn get_reference_direction_for_writer(
     // END RDKIT CPP FUNCTION getReferenceDirection
     let dbl = &molecule.bonds()[dbl_bond.index()];
     let mut dir = match dbl.stereo() {
-        BondStereo::E | BondStereo::Trans => {
-            molecule.bonds()[ref_controlling_bond.index()].direction()
+        BondStereo::E | BondStereo::Trans => molecule.bonds()[ref_controlling_bond.index()].direction(),
+        BondStereo::Z | BondStereo::Cis => {
+            flip_stereo_bond_dir_for_writer(molecule.bonds()[ref_controlling_bond.index()].direction())
         }
-        BondStereo::Z | BondStereo::Cis => flip_stereo_bond_dir_for_writer(
-            molecule.bonds()[ref_controlling_bond.index()].direction(),
-        ),
         _ => BondDirection::None,
     };
     if let Some(stereo_atoms) = dbl.stereo_atoms() {
         if incident_bonds(molecule, ref_atom).len() == 3
             && !stereo_atoms.contains(
-                &bond_other_atom(&molecule.bonds()[ref_controlling_bond.index()], ref_atom)
-                    .unwrap_or(ref_atom),
+                &bond_other_atom(&molecule.bonds()[ref_controlling_bond.index()], ref_atom).unwrap_or(ref_atom),
             )
         {
             dir = flip_stereo_bond_dir_for_writer(dir);
         }
         if incident_bonds(molecule, target_atom).len() == 3
-            && !stereo_atoms.contains(
-                &bond_other_atom(&molecule.bonds()[target_bond.index()], target_atom)
-                    .unwrap_or(target_atom),
-            )
+            && !stereo_atoms
+                .contains(&bond_other_atom(&molecule.bonds()[target_bond.index()], target_atom).unwrap_or(target_atom))
         {
             dir = flip_stereo_bond_dir_for_writer(dir);
         }
@@ -1085,8 +959,7 @@ pub(super) fn same_side_dirs_are_compatible_for_writer(
     // RDKit❗✔️: return dirsMatch == dirsShouldMatch;
     // END RDKIT CPP FUNCTION sameSideDirsAreCompatible
     let dirs_should_match = first_flipped != second_flipped;
-    let dirs_match =
-        molecule.bonds()[first.index()].direction() == molecule.bonds()[second.index()].direction();
+    let dirs_match = molecule.bonds()[first.index()].direction() == molecule.bonds()[second.index()].direction();
     dirs_match == dirs_should_match
 }
 
@@ -1098,8 +971,7 @@ pub(super) fn writer_bond_is_flipped_from_atom1(
     traversal_ring_closure_bonds: &[bool],
 ) -> bool {
     let anchor = bond_other_atom(&molecule.bonds()[bond.index()], atom).unwrap_or(atom);
-    (atom_visit_orders[atom.index()] < atom_visit_orders[anchor.index()])
-        != traversal_ring_closure_bonds[bond.index()]
+    (atom_visit_orders[atom.index()] < atom_visit_orders[anchor.index()]) != traversal_ring_closure_bonds[bond.index()]
 }
 
 pub(super) fn writer_bond_is_flipped_from_atom2(
@@ -1110,8 +982,7 @@ pub(super) fn writer_bond_is_flipped_from_atom2(
     traversal_ring_closure_bonds: &[bool],
 ) -> bool {
     let anchor = bond_other_atom(&molecule.bonds()[bond.index()], atom).unwrap_or(atom);
-    (atom_visit_orders[anchor.index()] < atom_visit_orders[atom.index()])
-        != traversal_ring_closure_bonds[bond.index()]
+    (atom_visit_orders[anchor.index()] < atom_visit_orders[atom.index()]) != traversal_ring_closure_bonds[bond.index()]
 }
 
 pub(super) fn flip_stereo_bond_dir_for_writer(direction: BondDirection) -> BondDirection {

@@ -148,10 +148,7 @@ fn build_dna_fragment_map() -> HashMap<char, &'static str> {
     );
     // RDKit✔️✔️: case 'C' -> " DC" (line 1049)
     // Cytosine nucleotide fragment
-    m.insert(
-        'C',
-        "OP(=O)([O-])OC[C@H]1O[C@@H](n2ccc(N)nc2=O)[C@@H](O[C@@H]1O)C(=O)",
-    );
+    m.insert('C', "OP(=O)([O-])OC[C@H]1O[C@@H](n2ccc(N)nc2=O)[C@@H](O[C@@H]1O)C(=O)");
     // RDKit✔️✔️: case 'G' -> " DG" (line 1053)
     // Guanine nucleotide fragment
     m.insert(
@@ -218,10 +215,7 @@ fn build_rna_fragment_map() -> HashMap<char, &'static str> {
 ///            (line 785-788).
 ///
 /// RDKit source: SequenceParsers.cpp lines 608-790
-fn build_peptide_smiles(
-    sequence: &str,
-    fragment_map: &HashMap<char, &'static str>,
-) -> Result<String, SequenceError> {
+fn build_peptide_smiles(sequence: &str, fragment_map: &HashMap<char, &'static str>) -> Result<String, SequenceError> {
     if sequence.is_empty() {
         return Err(SequenceError::EmptySequence);
     }
@@ -310,10 +304,7 @@ pub fn mol_from_sequence(sequence: &str) -> Result<Molecule, SequenceError> {
 ///
 /// RDKit source: SequenceParsers.cpp lines 1076-1126 (SequenceToMol)
 ///               rdmolfiles.cpp lines 341-350 (MolFromSequence wrapper)
-pub fn mol_from_sequence_with_type(
-    sequence: &str,
-    is_protein: bool,
-) -> Result<Molecule, SequenceError> {
+pub fn mol_from_sequence_with_type(sequence: &str, is_protein: bool) -> Result<Molecule, SequenceError> {
     // RDKit✔️✔️: if (!seq) { return (RWMol *)nullptr; }  (line 1077-1079)
     if sequence.is_empty() {
         return Err(SequenceError::EmptySequence);
@@ -394,8 +385,7 @@ fn build_from_smiles_fallback(_smiles: &str) -> Result<Molecule, SequenceError> 
 
     // Return an error indicating the SMILES parser is not yet available.
     Err(SequenceError::SmilesParseError(
-        "SMILES parser is not yet implemented; use the future `crate::smiles::parse_smiles`"
-            .to_string(),
+        "SMILES parser is not yet implemented; use the future `crate::smiles::parse_smiles`".to_string(),
     ))
 }
 
@@ -416,8 +406,7 @@ mod tests {
         //            (lines 658-718)
         let map = build_protein_fragment_map();
         for ch in &[
-            'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
-            'V', 'W', 'Y',
+            'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y',
         ] {
             assert!(map.contains_key(ch), "missing fragment for {}", ch);
         }

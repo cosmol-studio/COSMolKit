@@ -1,9 +1,7 @@
 //! Source-backed RDKit UFF torsion angle contribution.
 
 use crate::Hybridization;
-use crate::chemistry::forcefield::core::{
-    ForceField, ForceFieldContrib, ForceFieldVec3, compute_dihedral_from_flat,
-};
+use crate::chemistry::forcefield::core::{ForceField, ForceFieldContrib, ForceFieldVec3, compute_dihedral_from_flat};
 
 use super::params::{AtomicParams, clip_to_one, is_double_zero};
 
@@ -49,14 +47,7 @@ impl TorsionAngleContrib {
         // RDKit✔️✔️:   PRECONDITION((idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 &&
         // RDKit✔️✔️:                 idx2 != idx4 && idx3 != idx4),
         // RDKit✔️✔️:                "degenerate points");
-        assert!(
-            idx1 != idx2
-                && idx1 != idx3
-                && idx1 != idx4
-                && idx2 != idx3
-                && idx2 != idx4
-                && idx3 != idx4
-        );
+        assert!(idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 && idx2 != idx4 && idx3 != idx4);
         // RDKit✔️✔️:   URANGE_CHECK(idx1, owner->positions().size());
         // RDKit✔️✔️:   URANGE_CHECK(idx2, owner->positions().size());
         // RDKit✔️✔️:   URANGE_CHECK(idx3, owner->positions().size());
@@ -237,14 +228,8 @@ impl TorsionAngleContrib {
         // RDKit✔️✔️:   double cosPhi;
         // RDKit✔️✔️:   RDKit::ForceFieldsHelper::computeDihedral(
         // RDKit✔️✔️:       pos, d_at1Idx, d_at2Idx, d_at3Idx, d_at4Idx, nullptr, &cosPhi, r, t, d);
-        let dihedral_output = compute_dihedral_from_flat(
-            pos,
-            self.at1_idx,
-            self.at2_idx,
-            self.at3_idx,
-            self.at4_idx,
-            false,
-        );
+        let dihedral_output =
+            compute_dihedral_from_flat(pos, self.at1_idx, self.at2_idx, self.at3_idx, self.at4_idx, false);
         let r = dihedral_output.r;
         let t = dihedral_output.t;
         let d = dihedral_output.d;
@@ -253,11 +238,7 @@ impl TorsionAngleContrib {
         // RDKit✔️✔️:   double sinPhiSq = 1.0 - cosPhi * cosPhi;
         let sin_phi_sq = 1.0 - cos_phi * cos_phi;
         // RDKit✔️✔️:   double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
-        let sin_phi = if sin_phi_sq > 0.0 {
-            sin_phi_sq.sqrt()
-        } else {
-            0.0
-        };
+        let sin_phi = if sin_phi_sq > 0.0 { sin_phi_sq.sqrt() } else { 0.0 };
 
         // RDKit✔️✔️:   // dE/dPhi is independent of cartesians:
         // RDKit✔️✔️:   double dE_dPhi = getThetaDeriv(cosPhi, sinPhi);
@@ -448,12 +429,7 @@ pub(crate) fn is_in_group6(num: i32) -> bool {
     matches!(num, 8 | 16 | 34 | 52 | 84)
 }
 
-fn calculate_cos_torsion(
-    p1: ForceFieldVec3,
-    p2: ForceFieldVec3,
-    p3: ForceFieldVec3,
-    p4: ForceFieldVec3,
-) -> f64 {
+fn calculate_cos_torsion(p1: ForceFieldVec3, p2: ForceFieldVec3, p3: ForceFieldVec3, p4: ForceFieldVec3) -> f64 {
     // RDKit✔️✔️: double calculateCosTorsion(const RDGeom::Point3D &p1, const RDGeom::Point3D &p2,
     // RDKit✔️✔️:                            const RDGeom::Point3D &p3,
     // RDKit✔️✔️:                            const RDGeom::Point3D &p4) {
@@ -485,11 +461,7 @@ fn calculate_cos_torsion(
     cos_phi
 }
 
-pub(crate) fn equation17(
-    bond_order23: f64,
-    at2_params: &AtomicParams,
-    at3_params: &AtomicParams,
-) -> f64 {
+pub(crate) fn equation17(bond_order23: f64, at2_params: &AtomicParams, at3_params: &AtomicParams) -> f64 {
     // RDKit✔️✔️: double equation17(double bondOrder23, const AtomicParams *at2Params,
     // RDKit✔️✔️:                   const AtomicParams *at3Params) {
     // RDKit✔️✔️:   return 5. * sqrt(at2Params->U1 * at3Params->U1) *
@@ -1083,10 +1055,7 @@ mod tests {
             ForceFieldVec3::new(7.0, 8.0, 9.0),
             ForceFieldVec3::new(10.0, 11.0, 12.0),
         ];
-        let t = [
-            ForceFieldVec3::new(1.0, 0.0, 0.0),
-            ForceFieldVec3::new(0.0, 1.0, 0.0),
-        ];
+        let t = [ForceFieldVec3::new(1.0, 0.0, 0.0), ForceFieldVec3::new(0.0, 1.0, 0.0)];
         let d = [2.0, 4.0];
         let mut grad = [1.0; 12];
 

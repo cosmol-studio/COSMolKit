@@ -75,26 +75,14 @@ const DETECT_CHEMISTRY_PROBLEM_STAGES: &[(SanitizeStep, SanitizeOps)] = &[
     (SanitizeStep::FindRadicals, SanitizeOps::FIND_RADICALS),
     (SanitizeStep::SetAromaticity, SanitizeOps::SET_AROMATICITY),
     (SanitizeStep::SetConjugation, SanitizeOps::SET_CONJUGATION),
-    (
-        SanitizeStep::SetHybridization,
-        SanitizeOps::SET_HYBRIDIZATION,
-    ),
-    (
-        SanitizeStep::CleanupAtropisomers,
-        SanitizeOps::CLEANUP_ATROPISOMERS,
-    ),
-    (
-        SanitizeStep::CleanupChirality,
-        SanitizeOps::CLEANUP_CHIRALITY,
-    ),
+    (SanitizeStep::SetHybridization, SanitizeOps::SET_HYBRIDIZATION),
+    (SanitizeStep::CleanupAtropisomers, SanitizeOps::CLEANUP_ATROPISOMERS),
+    (SanitizeStep::CleanupChirality, SanitizeOps::CLEANUP_CHIRALITY),
     (SanitizeStep::AdjustHydrogens, SanitizeOps::ADJUST_HYDROGENS),
 ];
 
 #[must_use]
-pub fn detect_chemistry_problems(
-    molecule: &crate::Molecule,
-    ops: SanitizeOps,
-) -> Vec<SanitizeError> {
+pub fn detect_chemistry_problems(molecule: &crate::Molecule, ops: SanitizeOps) -> Vec<SanitizeError> {
     let mut working = molecule.clone();
     let mut problems = Vec::new();
 
@@ -146,8 +134,7 @@ mod tests {
     fn detect_chemistry_problems_accumulates_property_cache_and_kekulize_failures() {
         let molecule = aromatic_hypervalent_carbon();
 
-        let problems =
-            detect_chemistry_problems(&molecule, SanitizeOps::PROPERTIES | SanitizeOps::KEKULIZE);
+        let problems = detect_chemistry_problems(&molecule, SanitizeOps::PROPERTIES | SanitizeOps::KEKULIZE);
 
         assert_eq!(problems.len(), 2);
         assert_eq!(problems[0].step, SanitizeStep::Properties);
@@ -161,8 +148,7 @@ mod tests {
         let molecule = aromatic_hypervalent_carbon();
         let original = molecule.clone();
 
-        let _ =
-            detect_chemistry_problems(&molecule, SanitizeOps::PROPERTIES | SanitizeOps::KEKULIZE);
+        let _ = detect_chemistry_problems(&molecule, SanitizeOps::PROPERTIES | SanitizeOps::KEKULIZE);
 
         assert_eq!(molecule, original);
     }

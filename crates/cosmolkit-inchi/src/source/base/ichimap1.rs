@@ -1,17 +1,14 @@
 use crate::source_types::{
-    AB_MAX_KNOWN_PARITY, AB_MIN_KNOWN_PARITY, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, AT_RANK,
-    AT_STEREO_CARB, AT_STEREO_DBLE, BEST_PARITY, BITS_PARITY, CT_STEREOCOUNT_ERR, CUR_TREE,
-    MAX_NUM_STEREO_BONDS, SB_PARITY_MASK, SB_PARITY_SHFT, STEREO_AT_MARK, SourceConstPointer,
-    SourceHeap, SourceHeapError, SourceMutPointer, WORSE_PARITY, ppAT_RANK, sp_ATOM,
+    AB_MAX_KNOWN_PARITY, AB_MIN_KNOWN_PARITY, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, AT_RANK, AT_STEREO_CARB,
+    AT_STEREO_DBLE, BEST_PARITY, BITS_PARITY, CT_STEREOCOUNT_ERR, CUR_TREE, MAX_NUM_STEREO_BONDS, SB_PARITY_MASK,
+    SB_PARITY_SHFT, STEREO_AT_MARK, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, WORSE_PARITY,
+    ppAT_RANK, sp_ATOM,
 };
 
 use super::util::{inchi_calloc, inchi_free};
 
 #[allow(non_snake_case)]
-pub(crate) fn CurTreeReAlloc(
-    heap: &mut SourceHeap,
-    cur_tree: Option<&mut CUR_TREE>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn CurTreeReAlloc(heap: &mut SourceHeap, cur_tree: Option<&mut CUR_TREE>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap1.c:850 CurTreeReAlloc
     // INCHI✔️❌: complete source frame follows verbatim.
     /*
@@ -56,13 +53,10 @@ pub(crate) fn CurTreeReAlloc(
         Err(error) => return Err(error),
     };
     cur_tree.tree = replacement;
-    let cur_len =
-        usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let cur_len = usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.with_slice_mut_and_heap(replacement, |new_values, heap| {
         let old_values = heap.slice(old.as_const())?;
-        let source = old_values
-            .get(..cur_len)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let source = old_values.get(..cur_len).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let target = new_values
             .get_mut(..cur_len)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -107,20 +101,16 @@ pub(crate) fn CurTreeAddRank(
     let Some(cur_tree) = cur_tree else {
         return Ok(-1);
     };
-    if cur_tree.cur_len.wrapping_add(2) > cur_tree.max_len
-        && CurTreeReAlloc(heap, Some(cur_tree))? != 0
-    {
+    if cur_tree.cur_len.wrapping_add(2) > cur_tree.max_len && CurTreeReAlloc(heap, Some(cur_tree))? != 0 {
         return Ok(-1);
     }
-    let first =
-        usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first = usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(cur_tree.tree)?
         .get_mut(first)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = rank;
     cur_tree.cur_len = cur_tree.cur_len.wrapping_add(1);
-    let second =
-        usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let second = usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(cur_tree.tree)?
         .get_mut(second)
@@ -162,20 +152,16 @@ pub(crate) fn CurTreeIsLastRank(
     if cur_tree.cur_len <= 0 {
         return Ok(0);
     }
-    let end =
-        usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end = usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let tree = heap.slice(cur_tree.tree.as_const())?;
-    let rank_pos = (cur_tree.cur_len - 1).wrapping_sub(i32::from(
-        *tree.get(end).ok_or(SourceHeapError::PointerOutOfBounds)?,
-    ));
+    let rank_pos =
+        (cur_tree.cur_len - 1).wrapping_sub(i32::from(*tree.get(end).ok_or(SourceHeapError::PointerOutOfBounds)?));
     if rank_pos < 0 {
         return Ok(0);
     }
     let rank_pos = usize::try_from(rank_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     Ok(i32::from(
-        rank == *tree
-            .get(rank_pos)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        rank == *tree.get(rank_pos).ok_or(SourceHeapError::PointerOutOfBounds)?,
     ))
 }
 
@@ -208,8 +194,7 @@ pub(crate) fn CurTreeRemoveLastRankIfNoAtoms(
     if cur_tree.tree.is_null() || cur_tree.cur_len < 2 {
         return Ok(-1);
     }
-    let end =
-        usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end = usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if *heap
         .slice(cur_tree.tree.as_const())?
         .get(end)
@@ -259,17 +244,14 @@ pub(crate) fn CurTreeAddAtom(
     let Some(cur_tree) = cur_tree else {
         return Ok(-1);
     };
-    if cur_tree.cur_len.wrapping_add(1) > cur_tree.max_len
-        && CurTreeReAlloc(heap, Some(cur_tree))? != 0
-    {
+    if cur_tree.cur_len.wrapping_add(1) > cur_tree.max_len && CurTreeReAlloc(heap, Some(cur_tree))? != 0 {
         return Ok(-1);
     }
     if cur_tree.cur_len <= 0 {
         return Ok(-1);
     }
     cur_tree.cur_len = cur_tree.cur_len.wrapping_sub(1);
-    let marker_index =
-        usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let marker_index = usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let new_len = heap
         .slice(cur_tree.tree.as_const())?
         .get(marker_index)
@@ -281,8 +263,7 @@ pub(crate) fn CurTreeAddAtom(
         .get_mut(marker_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = at_no as AT_NUMB;
     cur_tree.cur_len = cur_tree.cur_len.wrapping_add(1);
-    let new_marker_index =
-        usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let new_marker_index = usize::try_from(cur_tree.cur_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(cur_tree.tree)?
         .get_mut(new_marker_index)
@@ -344,29 +325,21 @@ pub(crate) fn CurTreeKeepLastAtomsOnly(
     if cur_length_pos <= tpos {
         return Ok(());
     }
-    let position =
-        usize::try_from(cur_length_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let position = usize::try_from(cur_length_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let segment_length = *heap
         .slice(cur_tree.tree.as_const())?
         .get(position)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let next_shift;
     if segment_length > 2 {
-        cur_tree.cur_len = cur_tree
-            .cur_len
-            .wrapping_sub(i32::from(segment_length).wrapping_sub(2));
-        let destination = cur_length_pos
-            .wrapping_sub(i32::from(segment_length))
-            .wrapping_add(1);
+        cur_tree.cur_len = cur_tree.cur_len.wrapping_sub(i32::from(segment_length).wrapping_sub(2));
+        let destination = cur_length_pos.wrapping_sub(i32::from(segment_length)).wrapping_add(1);
         let source = cur_length_pos.wrapping_sub(1);
         let count = i64::from(shift) + 1;
-        let destination =
-            usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let destination = usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let source = usize::try_from(source).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let count = usize::try_from(count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let source_end = source
-            .checked_add(count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let source_end = source.checked_add(count).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let destination_end = destination
             .checked_add(count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -375,16 +348,12 @@ pub(crate) fn CurTreeKeepLastAtomsOnly(
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         tree.copy_within(source..source_end, destination);
-        let marker = usize::try_from(cur_tree.cur_len.wrapping_sub(shift))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        *tree
-            .get_mut(marker)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = 2;
+        let marker =
+            usize::try_from(cur_tree.cur_len.wrapping_sub(shift)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        *tree.get_mut(marker).ok_or(SourceHeapError::PointerOutOfBounds)? = 2;
         next_shift = shift.wrapping_add(3);
     } else {
-        next_shift = shift
-            .wrapping_add(i32::from(segment_length))
-            .wrapping_add(1);
+        next_shift = shift.wrapping_add(i32::from(segment_length)).wrapping_add(1);
     }
     CurTreeKeepLastAtomsOnly(heap, Some(cur_tree), tpos, next_shift)
 }
@@ -422,19 +391,15 @@ pub(crate) fn CurTreeRemoveIfLastAtom(
     if cur_tree.tree.is_null() || cur_tree.cur_len <= 2 {
         return Ok(-1);
     }
-    let end =
-        usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom_position =
-        usize::try_from(cur_tree.cur_len - 2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end = usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_position = usize::try_from(cur_tree.cur_len - 2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let tree = heap.slice(cur_tree.tree.as_const())?;
     let len = *tree.get(end).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let atom = *tree
-        .get(atom_position)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = *tree.get(atom_position).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if len >= 2 && i32::from(atom) == at_no {
         cur_tree.cur_len = cur_tree.cur_len.wrapping_sub(1);
-        let marker_position = usize::try_from(cur_tree.cur_len.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let marker_position =
+            usize::try_from(cur_tree.cur_len.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(cur_tree.tree)?
             .get_mut(marker_position)
@@ -476,20 +441,14 @@ pub(crate) fn SetUseAtomForStereo(
 
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.with_slice_mut_and_heap(bAtomUsedForStereo, |used, heap| {
-        let used = used
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let used = used.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let atoms = heap.slice(at)?;
-        let atoms = atoms
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atoms = atoms.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
         used.fill(0);
         for (index, atom) in atoms.iter().enumerate() {
             if atom.parity != 0 {
                 let mut stereo_count = 0_usize;
-                while stereo_count < MAX_NUM_STEREO_BONDS as usize
-                    && atom.stereo_bond_neighbor[stereo_count] != 0
-                {
+                while stereo_count < MAX_NUM_STEREO_BONDS as usize && atom.stereo_bond_neighbor[stereo_count] != 0 {
                     stereo_count += 1;
                 }
                 used[index] = if stereo_count != 0 {
@@ -663,18 +622,14 @@ pub(crate) fn bUniqueAtNbrFromMappingRank(
     let order = heap.slice(order.as_const())?;
     let r = i32::from(nAtRank).wrapping_sub(1);
     let r_index = usize::try_from(r).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = *order
-        .get(r_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = *order.get(r_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let atom_rank = *ranks
         .get(usize::from(atom))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let unique_from_previous = if r == 0 {
         true
     } else {
-        let previous_atom = *order
-            .get(r_index - 1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let previous_atom = *order.get(r_index - 1).ok_or(SourceHeapError::PointerOutOfBounds)?;
         nAtRank
             != *ranks
                 .get(usize::from(previous_atom))
@@ -871,9 +826,7 @@ pub(crate) fn All_SC_Same(
     let stack1 = heap.slice(pRankStack1.as_const())?;
     let rank1_pointer = *stack1.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let rank1 = heap.slice(rank1_pointer.as_const())?;
-    let r1 = *rank1
-        .get(usize::from(n1))
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let r1 = *rank1.get(usize::from(n1)).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let stack2 = heap.slice(pRankStack2.as_const())?;
     let rank2_pointer = *stack2.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let order2_pointer = *stack2.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -890,24 +843,16 @@ pub(crate) fn All_SC_Same(
         let s1 = *order2
             .get(usize::try_from(order_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if r1
-            != *rank2
-                .get(usize::from(s1))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        {
+        if r1 != *rank2.get(usize::from(s1)).ok_or(SourceHeapError::PointerOutOfBounds)? {
             break;
         }
-        let atom = atoms
-            .get(usize::from(s1))
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms.get(usize::from(s1)).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom.stereo_bond_neighbor[0] != 0 {
             bFound = 0;
             break;
         } else if i1 == 1 {
             stereo_atom_parity = i32::from(atom.stereo_atom_parity) & BITS_PARITY as i32;
-            if !(AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32)
-                .contains(&stereo_atom_parity)
-            {
+            if !(AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&stereo_atom_parity) {
                 bFound = 0;
                 break;
             }
@@ -1041,36 +986,20 @@ pub(crate) fn Next_SC_At_CanonRank2(
         while i32::from(cr1) <= num_atoms {
             let canon_index = i32::from(cr1).wrapping_sub(1);
             let n1 = *canon_order
-                .get(
-                    usize::try_from(canon_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get(usize::try_from(canon_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let r1 = *rank1
-                .get(usize::from(n1))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let r1 = *rank1.get(usize::from(n1)).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let iMax1 = i32::from(r1);
             let mut i1 = 1_i32;
             while i1 <= iMax1 {
                 let order_index = iMax1.wrapping_sub(i1);
                 let s1 = *order2
-                    .get(
-                        usize::try_from(order_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(order_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if r1
-                    != *rank2
-                        .get(usize::from(s1))
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                {
+                if r1 != *rank2.get(usize::from(s1)).ok_or(SourceHeapError::PointerOutOfBounds)? {
                     break;
                 }
-                if *used
-                    .get(usize::from(s1))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    == STEREO_AT_MARK as i8
-                {
+                if *used.get(usize::from(s1)).ok_or(SourceHeapError::PointerOutOfBounds)? == STEREO_AT_MARK as i8 {
                     bFound = 1;
                     break;
                 }
@@ -1436,8 +1365,7 @@ pub(crate) fn Next_SB_At_CanonRanks2(
 
     let mut canon_rank1_inp = *canon_rank1;
     let mut canon_rank2_inp = *canon_rank2;
-    if canon_rank1_inp < *canon_rank1_min
-        || (canon_rank1_inp == *canon_rank1_min && canon_rank2_inp < *canon_rank2_min)
+    if canon_rank1_inp < *canon_rank1_min || (canon_rank1_inp == *canon_rank1_min && canon_rank2_inp < *canon_rank2_min)
     {
         canon_rank1_inp = *canon_rank1_min;
         canon_rank2_inp = *canon_rank2_min;
@@ -1448,30 +1376,10 @@ pub(crate) fn Next_SB_At_CanonRanks2(
 
     let stack1 = heap.slice(pRankStack1.as_const())?;
     let stack2 = heap.slice(pRankStack2.as_const())?;
-    let rank1 = heap.slice(
-        stack1
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let order1 = heap.slice(
-        stack1
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let rank2 = heap.slice(
-        stack2
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let order2 = heap.slice(
-        stack2
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
+    let rank1 = heap.slice(stack1.first().ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
+    let order1 = heap.slice(stack1.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
+    let rank2 = heap.slice(stack2.first().ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
+    let order2 = heap.slice(stack2.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
     let canon_from = heap.slice(nCanonRankFrom)?;
     let atom_from_canon = heap.slice(nAtomNumberCanonFrom)?;
     let atoms = heap.slice(at)?;
@@ -1524,9 +1432,7 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                         .stereo_bond_parity[k],
                 );
                 let cumulene_len = (parity & 0x38) / (1_i32 << SB_PARITY_SHFT);
-                if (cumulene_len % 2 != 0 && bAllene == 0)
-                    || (cumulene_len % 2 == 0 && bAllene != 0)
-                {
+                if (cumulene_len % 2 != 0 && bAllene == 0) || (cumulene_len % 2 == 0 && bAllene != 0) {
                     continue;
                 }
                 let r2 = *rank2.get(s2).ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1549,16 +1455,12 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                             let mut next = usize::from(
                                 *atom1
                                     .neighbor
-                                    .get(
-                                        usize::try_from(m)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(m).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
                             let mut len = 0_i32;
                             while len < cumulene_len {
-                                let next_atom =
-                                    atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                let next_atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if next_atom.valence == 2 && next_atom.num_H == 0 {
                                     let j = usize::from(usize::from(next_atom.neighbor[0]) == prev);
                                     prev = next;
@@ -1579,10 +1481,7 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                                 == usize::from(
                                     *atom1
                                         .neighbor
-                                        .get(
-                                            usize::try_from(m)
-                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                        )
+                                        .get(usize::try_from(m).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                 )
                             {
@@ -1592,9 +1491,7 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                         }
                     }
                     if m < valence {
-                        let candidate = *canon_from
-                            .get(n2)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let candidate = *canon_from.get(n2).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if candidate < cr2 && candidate > canon_rank2_inp {
                             cr2 = candidate;
                         }
@@ -1761,24 +1658,9 @@ pub(crate) fn All_SB_Same(
 
     let stack1 = heap.slice(pRankStack1.as_const())?;
     let stack2 = heap.slice(pRankStack2.as_const())?;
-    let rank1 = heap.slice(
-        stack1
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let rank2 = heap.slice(
-        stack2
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let order2 = heap.slice(
-        stack2
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
+    let rank1 = heap.slice(stack1.first().ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
+    let rank2 = heap.slice(stack2.first().ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
+    let order2 = heap.slice(stack2.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?.as_const())?;
     let canon_from = heap.slice(nAtomNumberCanonFrom)?;
     let atoms = heap.slice(at)?;
 
@@ -1788,16 +1670,8 @@ pub(crate) fn All_SB_Same(
     let canon2 = usize::from(canon_rank2)
         .checked_sub(1)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut n1 = usize::from(
-        *canon_from
-            .get(canon1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
-    let n2 = usize::from(
-        *canon_from
-            .get(canon2)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
+    let mut n1 = usize::from(*canon_from.get(canon1).ok_or(SourceHeapError::PointerOutOfBounds)?);
+    let n2 = usize::from(*canon_from.get(canon2).ok_or(SourceHeapError::PointerOutOfBounds)?);
     let r1 = *rank1.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let r2 = *rank1.get(n2).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let i_max1 = usize::from(r1);
@@ -1807,16 +1681,8 @@ pub(crate) fn All_SB_Same(
     let mut mapped_k1 = 0_usize;
     let mut not_found = true;
     for i1 in 1..=i_max1 {
-        let candidate = usize::from(
-            *order2
-                .get(i_max1 - i1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        if *rank2
-            .get(candidate)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            != r1
-        {
+        let candidate = usize::from(*order2.get(i_max1 - i1).ok_or(SourceHeapError::PointerOutOfBounds)?);
+        if *rank2.get(candidate).ok_or(SourceHeapError::PointerOutOfBounds)? != r1 {
             break;
         }
         mapped_s1 = candidate;
@@ -1832,10 +1698,7 @@ pub(crate) fn All_SB_Same(
                 break;
             }
             mapped_s2 = usize::from(neighbor - 1);
-            not_found = *rank2
-                .get(mapped_s2)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != r2;
+            not_found = *rank2.get(mapped_s2).ok_or(SourceHeapError::PointerOutOfBounds)? != r2;
             if !not_found {
                 break;
             }
@@ -1878,11 +1741,9 @@ pub(crate) fn All_SB_Same(
         return Ok(0);
     }
     let cumulene_len = (stereo_bond_parity & 0x38) / (1_i32 << SB_PARITY_SHFT);
-    let first_atom = atoms
-        .get(mapped_s1)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let first_order = usize::try_from(first_atom.stereo_bond_ord[mapped_k1])
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first_atom = atoms.get(mapped_s1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first_order =
+        usize::try_from(first_atom.stereo_bond_ord[mapped_k1]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let r_neigh1 = *rank2
         .get(usize::from(
             *first_atom
@@ -1891,11 +1752,9 @@ pub(crate) fn All_SB_Same(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second_atom = atoms
-        .get(mapped_s2)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second_order = usize::try_from(second_atom.stereo_bond_ord[k2])
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let second_atom = atoms.get(mapped_s2).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second_order =
+        usize::try_from(second_atom.stereo_bond_ord[k2]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let r_neigh2 = *rank2
         .get(usize::from(
             *second_atom
@@ -1916,15 +1775,9 @@ pub(crate) fn All_SB_Same(
             break;
         }
         let atom1 = atoms.get(i1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let valence =
-            usize::try_from(atom1.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = usize::try_from(atom1.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for k in 0..valence {
-            n1 = usize::from(
-                *atom1
-                    .neighbor
-                    .get(k)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+            n1 = usize::from(*atom1.neighbor.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?);
             if *rank2.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)? != r_neigh1 {
                 continue;
             }
@@ -2042,15 +1895,12 @@ pub(crate) fn CurTreeRemoveLastRank(
     if cur_tree.cur_len <= 0 {
         return Ok(-1);
     }
-    let end =
-        usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end = usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let count = *heap
         .slice(cur_tree.tree.as_const())?
         .get(end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    cur_tree.cur_len = cur_tree
-        .cur_len
-        .wrapping_sub(i32::from(count).wrapping_add(1));
+    cur_tree.cur_len = cur_tree.cur_len.wrapping_sub(i32::from(count).wrapping_add(1));
     Ok(if cur_tree.cur_len >= 0 { 0 } else { -1 })
 }
 
@@ -2090,8 +1940,7 @@ pub(crate) fn CurTreeIsLastAtomEqu(
     if cur_tree.tree.is_null() || nSymmStereo.is_null() || cur_tree.cur_len <= 1 {
         return Ok(-1);
     }
-    let end =
-        usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end = usize::try_from(cur_tree.cur_len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let tree = heap.slice(cur_tree.tree.as_const())?;
     let len = i32::from(*tree.get(end).ok_or(SourceHeapError::PointerOutOfBounds)?) - 1;
     let at_no = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -2101,11 +1950,7 @@ pub(crate) fn CurTreeIsLastAtomEqu(
         let atom_index = end
             .checked_sub(usize::try_from(offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atom = usize::from(
-            *tree
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        let atom = usize::from(*tree.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?);
         if *symm.get(atom).ok_or(SourceHeapError::PointerOutOfBounds)? == n_eq {
             return Ok(1);
         }
@@ -2160,12 +2005,9 @@ pub(crate) fn CurTreeAlloc(
         if cur_tree.max_len % num_atoms == 0 {
             cur_tree.cur_len = 0;
             cur_tree.incr_len = num_atoms;
-            let max_len = usize::try_from(cur_tree.max_len)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let max_len = usize::try_from(cur_tree.max_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let tree = heap.slice_mut(cur_tree.tree)?;
-            let tree = tree
-                .get_mut(..max_len)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let tree = tree.get_mut(..max_len).ok_or(SourceHeapError::PointerOutOfBounds)?;
             tree.fill(0);
             return Ok(0);
         }
@@ -2188,10 +2030,7 @@ pub(crate) fn CurTreeAlloc(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CurTreeFree(
-    heap: &mut SourceHeap,
-    cur_tree: Option<&mut CUR_TREE>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn CurTreeFree(heap: &mut SourceHeap, cur_tree: Option<&mut CUR_TREE>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap1.c:871 CurTreeFree
     // INCHI✔️❌: complete source frame follows verbatim.
     /*
@@ -2475,10 +2314,7 @@ mod tests {
 
     #[test]
     fn source_port__ichimap1__curtreeremoveiflastatom__line_993() {
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut SourceHeap::default(), None, 2),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut SourceHeap::default(), None, 2), Ok(-1));
         let mut heap = SourceHeap::default();
         let pointer = heap.allocate_model_storage(vec![7_u16, 1, 2, 3]).unwrap();
         let mut tree = CUR_TREE {
@@ -2487,27 +2323,15 @@ mod tests {
             cur_len: 4,
             incr_len: 4,
         };
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 1),
-            Ok(1)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 1), Ok(1));
         assert_eq!(tree.cur_len, 4);
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 2),
-            Ok(0)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 2), Ok(0));
         assert_eq!(tree.cur_len, 3);
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[7, 1, 2, 3]);
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 1),
-            Ok(0)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 1), Ok(0));
         assert_eq!(tree.cur_len, 2);
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[7, 1, 2, 3]);
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 7),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut tree), 7), Ok(-1));
 
         let short_len = heap.allocate_model_storage(vec![9_u16, 4, 1]).unwrap();
         let mut short_tree = CUR_TREE {
@@ -2516,20 +2340,14 @@ mod tests {
             cur_len: 3,
             incr_len: 3,
         };
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut short_tree), 4),
-            Ok(1)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut short_tree), 4), Ok(1));
         assert_eq!(short_tree.cur_len, 3);
 
         let mut null_tree = CUR_TREE {
             cur_len: 3,
             ..CUR_TREE::default()
         };
-        assert_eq!(
-            CurTreeRemoveIfLastAtom(&mut heap, Some(&mut null_tree), 0),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveIfLastAtom(&mut heap, Some(&mut null_tree), 0), Ok(-1));
         let mut too_long = CUR_TREE {
             tree: pointer,
             max_len: 4,
@@ -2551,38 +2369,25 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let single_pointer = heap
-            .allocate_model_storage(vec![10_u16, 1, 2, 3, 4])
-            .unwrap();
+        let single_pointer = heap.allocate_model_storage(vec![10_u16, 1, 2, 3, 4]).unwrap();
         let mut single = CUR_TREE {
             tree: single_pointer,
             max_len: 5,
             cur_len: 5,
             incr_len: 5,
         };
-        assert_eq!(
-            CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut single), -1, 1),
-            Ok(())
-        );
+        assert_eq!(CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut single), -1, 1), Ok(()));
         assert_eq!(single.cur_len, 3);
-        assert_eq!(
-            heap.slice(single.tree.as_const()).unwrap(),
-            &[10, 3, 2, 3, 4]
-        );
+        assert_eq!(heap.slice(single.tree.as_const()).unwrap(), &[10, 3, 2, 3, 4]);
 
-        let multiple_pointer = heap
-            .allocate_model_storage(vec![10_u16, 1, 2, 3, 4, 20, 8, 2])
-            .unwrap();
+        let multiple_pointer = heap.allocate_model_storage(vec![10_u16, 1, 2, 3, 4, 20, 8, 2]).unwrap();
         let mut multiple = CUR_TREE {
             tree: multiple_pointer,
             max_len: 8,
             cur_len: 8,
             incr_len: 8,
         };
-        assert_eq!(
-            CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut multiple), -1, 1),
-            Ok(())
-        );
+        assert_eq!(CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut multiple), -1, 1), Ok(()));
         assert_eq!(multiple.cur_len, 6);
         assert_eq!(
             heap.slice(multiple.tree.as_const()).unwrap(),
@@ -2596,16 +2401,10 @@ mod tests {
             cur_len: 3,
             incr_len: 3,
         };
-        assert_eq!(
-            CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut short), -1, 1),
-            Ok(())
-        );
+        assert_eq!(CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut short), -1, 1), Ok(()));
         assert_eq!(short.cur_len, 3);
         assert_eq!(heap.slice(short.tree.as_const()).unwrap(), &[10, 1, 2]);
-        assert_eq!(
-            CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut short), 2, 1),
-            Ok(())
-        );
+        assert_eq!(CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut short), 2, 1), Ok(()));
 
         let malformed_pointer = heap.allocate_model_storage(vec![7_u16, 9]).unwrap();
         let mut malformed = CUR_TREE {
@@ -2624,10 +2423,7 @@ mod tests {
             cur_len: i32::MAX,
             ..CUR_TREE::default()
         };
-        assert_eq!(
-            CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut null_tree), -1, 1),
-            Ok(())
-        );
+        assert_eq!(CurTreeKeepLastAtomsOnly(&mut heap, Some(&mut null_tree), -1, 1), Ok(()));
         assert_eq!(null_tree.cur_len, i32::MAX);
     }
 
@@ -2644,16 +2440,10 @@ mod tests {
         };
         assert_eq!(CurTreeAddAtom(&mut heap, Some(&mut tree), -1), Ok(0));
         assert_eq!(tree.cur_len, 3);
-        assert_eq!(
-            heap.slice(tree.tree.as_const()).unwrap(),
-            &[7, u16::MAX, 2, 0]
-        );
+        assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[7, u16::MAX, 2, 0]);
         assert_eq!(CurTreeAddAtom(&mut heap, Some(&mut tree), 65_536), Ok(0));
         assert_eq!(tree.cur_len, 4);
-        assert_eq!(
-            heap.slice(tree.tree.as_const()).unwrap(),
-            &[7, u16::MAX, 0, 3]
-        );
+        assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[7, u16::MAX, 0, 3]);
 
         let old = tree.tree;
         assert_eq!(CurTreeAddAtom(&mut heap, Some(&mut tree), i32::MAX), Ok(0));
@@ -2673,23 +2463,15 @@ mod tests {
         assert_eq!(CurTreeAddAtom(&mut heap, Some(&mut empty), 1), Ok(-1));
         assert_eq!(empty.cur_len, 0);
 
-        let overflow_marker = heap
-            .allocate_model_storage(vec![9_u16, u16::MAX, 0])
-            .unwrap();
+        let overflow_marker = heap.allocate_model_storage(vec![9_u16, u16::MAX, 0]).unwrap();
         let mut overflow_tree = CUR_TREE {
             tree: overflow_marker,
             max_len: 3,
             cur_len: 2,
             incr_len: 3,
         };
-        assert_eq!(
-            CurTreeAddAtom(&mut heap, Some(&mut overflow_tree), 4),
-            Ok(0)
-        );
-        assert_eq!(
-            heap.slice(overflow_tree.tree.as_const()).unwrap(),
-            &[9, 4, 0]
-        );
+        assert_eq!(CurTreeAddAtom(&mut heap, Some(&mut overflow_tree), 4), Ok(0));
+        assert_eq!(heap.slice(overflow_tree.tree.as_const()).unwrap(), &[9, 4, 0]);
 
         let mut failure_heap = SourceHeap::default();
         let leaked = failure_heap.allocate_model_storage(vec![5_u16, 1]).unwrap();
@@ -2700,10 +2482,7 @@ mod tests {
             incr_len: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            CurTreeAddAtom(&mut failure_heap, Some(&mut failure), 3),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeAddAtom(&mut failure_heap, Some(&mut failure), 3), Ok(-1));
         assert!(failure.tree.is_null());
         assert_eq!(failure.cur_len, 2);
         assert_eq!(failure_heap.slice(leaked.as_const()).unwrap(), &[5, 1]);
@@ -2711,10 +2490,7 @@ mod tests {
 
     #[test]
     fn source_port__ichimap1__curtreeremovelastrankifnoatoms__line_920() {
-        assert_eq!(
-            CurTreeRemoveLastRankIfNoAtoms(&SourceHeap::default(), None),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveLastRankIfNoAtoms(&SourceHeap::default(), None), Ok(-1));
         let mut heap = SourceHeap::default();
         let pointer = heap.allocate_model_storage(vec![7_u16, 1, 8, 2]).unwrap();
         let mut tree = CUR_TREE {
@@ -2723,33 +2499,21 @@ mod tests {
             cur_len: 2,
             incr_len: 4,
         };
-        assert_eq!(
-            CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)),
-            Ok(0)
-        );
+        assert_eq!(CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)), Ok(0));
         assert_eq!(tree.cur_len, 0);
 
         tree.cur_len = 4;
-        assert_eq!(
-            CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)),
-            Ok(1)
-        );
+        assert_eq!(CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)), Ok(1));
         assert_eq!(tree.cur_len, 4);
         tree.cur_len = 1;
-        assert_eq!(
-            CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut tree)), Ok(-1));
         assert_eq!(tree.cur_len, 1);
 
         let mut null_tree = CUR_TREE {
             cur_len: 2,
             ..CUR_TREE::default()
         };
-        assert_eq!(
-            CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut null_tree)),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut null_tree)), Ok(-1));
         let mut too_long = CUR_TREE { cur_len: 5, ..tree };
         assert_eq!(
             CurTreeRemoveLastRankIfNoAtoms(&heap, Some(&mut too_long)),
@@ -2817,16 +2581,10 @@ mod tests {
         };
         assert_eq!(CurTreeAddRank(&mut heap, Some(&mut tree), u16::MAX), Ok(0));
         assert_eq!(tree.cur_len, 2);
-        assert_eq!(
-            heap.slice(tree.tree.as_const()).unwrap(),
-            &[u16::MAX, 1, 0, 0]
-        );
+        assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[u16::MAX, 1, 0, 0]);
         assert_eq!(CurTreeAddRank(&mut heap, Some(&mut tree), 42), Ok(0));
         assert_eq!(tree.cur_len, 4);
-        assert_eq!(
-            heap.slice(tree.tree.as_const()).unwrap(),
-            &[u16::MAX, 1, 42, 1]
-        );
+        assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[u16::MAX, 1, 42, 1]);
 
         let old = tree.tree;
         assert_eq!(CurTreeAddRank(&mut heap, Some(&mut tree), 77), Ok(0));
@@ -2836,10 +2594,7 @@ mod tests {
             heap.slice(tree.tree.as_const()).unwrap(),
             &[u16::MAX, 1, 42, 1, 77, 1, 0, 0]
         );
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let mut failure_heap = SourceHeap::default();
         let leaked = failure_heap.allocate_model_storage(vec![5_u16, 1]).unwrap();
@@ -2850,15 +2605,9 @@ mod tests {
             incr_len: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            CurTreeAddRank(&mut failure_heap, Some(&mut failure), 9),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeAddRank(&mut failure_heap, Some(&mut failure), 9), Ok(-1));
         assert!(failure.tree.is_null());
-        assert_eq!(
-            (failure.max_len, failure.cur_len, failure.incr_len),
-            (2, 2, 2)
-        );
+        assert_eq!((failure.max_len, failure.cur_len, failure.incr_len), (2, 2, 2));
         assert_eq!(failure_heap.slice(leaked.as_const()).unwrap(), &[5, 1]);
 
         let mut malformed = CUR_TREE {
@@ -2890,10 +2639,7 @@ mod tests {
         assert_ne!(tree.tree, old);
         assert_eq!((tree.max_len, tree.cur_len, tree.incr_len), (5, 2, 2));
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[4, 5, 0, 0, 0]);
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
         for invalid in [
             CUR_TREE::default(),
@@ -2925,15 +2671,9 @@ mod tests {
             incr_len: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            CurTreeReAlloc(&mut failure_heap, Some(&mut failure)),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeReAlloc(&mut failure_heap, Some(&mut failure)), Ok(-1));
         assert!(failure.tree.is_null());
-        assert_eq!(
-            (failure.max_len, failure.cur_len, failure.incr_len),
-            (2, 1, 2)
-        );
+        assert_eq!((failure.max_len, failure.cur_len, failure.incr_len), (2, 1, 2));
         assert_eq!(failure_heap.slice(leaked.as_const()).unwrap(), &[9, 8]);
 
         let mut malformed_heap = SourceHeap::default();
@@ -2949,14 +2689,8 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_ne!(malformed.tree, malformed_old);
-        assert_eq!(
-            malformed_heap.slice(malformed_old.as_const()).unwrap(),
-            &[1]
-        );
-        assert_eq!(
-            malformed_heap.slice(malformed.tree.as_const()).unwrap(),
-            &[0, 0]
-        );
+        assert_eq!(malformed_heap.slice(malformed_old.as_const()).unwrap(), &[1]);
+        assert_eq!(malformed_heap.slice(malformed.tree.as_const()).unwrap(), &[0, 0]);
         assert_eq!(malformed.max_len, 1);
     }
 
@@ -2978,19 +2712,13 @@ mod tests {
             .allocate_model_storage(vec![no_parity, atom_mark, two_bonds, three_bonds])
             .unwrap();
         let used = heap.allocate_model_storage(vec![99_i8; 6]).unwrap();
-        assert_eq!(
-            SetUseAtomForStereo(&mut heap, used, atoms.as_const(), 4),
-            Ok(())
-        );
+        assert_eq!(SetUseAtomForStereo(&mut heap, used, atoms.as_const(), 4), Ok(()));
         assert_eq!(
             heap.slice(used.as_const()).unwrap(),
             &[0, STEREO_AT_MARK as i8, 2, 3, 99, 99]
         );
 
-        assert_eq!(
-            SetUseAtomForStereo(&mut heap, used, atoms.as_const(), 0),
-            Ok(())
-        );
+        assert_eq!(SetUseAtomForStereo(&mut heap, used, atoms.as_const(), 0), Ok(()));
         assert_eq!(
             heap.slice(used.as_const()).unwrap(),
             &[0, STEREO_AT_MARK as i8, 2, 3, 99, 99]
@@ -3019,9 +2747,7 @@ mod tests {
     #[test]
     fn source_port__ichimap1__comparelinctstereodoubletovalues__line_764() {
         let mut heap = SourceHeap::default();
-        let value = heap
-            .allocate_model_storage(vec![stereo_dble(10, 20, 3)])
-            .unwrap();
+        let value = heap.allocate_model_storage(vec![stereo_dble(10, 20, 3)]).unwrap();
         assert_eq!(
             CompareLinCtStereoDoubleToValues(&heap, value.as_const(), 10, 20, 3),
             Ok(0)
@@ -3055,22 +2781,14 @@ mod tests {
             .allocate_model_storage(vec![stereo_dble(u16::MAX, u16::MAX, u8::MAX)])
             .unwrap();
         assert_eq!(
-            CompareLinCtStereoDoubleToValues(
-                &heap,
-                extrema.as_const(),
-                u16::MAX,
-                u16::MAX,
-                u8::MAX
-            ),
+            CompareLinCtStereoDoubleToValues(&heap, extrema.as_const(), u16::MAX, u16::MAX, u8::MAX),
             Ok(0)
         );
         assert_eq!(
             CompareLinCtStereoDoubleToValues(&heap, SourceConstPointer::null(), 0, 0, 0),
             Err(SourceHeapError::NullPointer)
         );
-        let empty = heap
-            .allocate_model_storage(Vec::<AT_STEREO_DBLE>::new())
-            .unwrap();
+        let empty = heap.allocate_model_storage(Vec::<AT_STEREO_DBLE>::new()).unwrap();
         assert_eq!(
             CompareLinCtStereoDoubleToValues(&heap, empty.as_const(), 0, 0, 0),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -3080,29 +2798,15 @@ mod tests {
     #[test]
     fn source_port__ichimap1__comparelinctstereoatomtovalues__line_287() {
         let mut heap = SourceHeap::default();
-        let value = heap
-            .allocate_model_storage(vec![stereo_carb(10, 3)])
-            .unwrap();
-        assert_eq!(
-            CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 3),
-            Ok(0)
-        );
+        let value = heap.allocate_model_storage(vec![stereo_carb(10, 3)]).unwrap();
+        assert_eq!(CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 3), Ok(0));
         assert_eq!(
             CompareLinCtStereoAtomToValues(&heap, value.as_const(), 9, u8::MAX),
             Ok(1)
         );
-        assert_eq!(
-            CompareLinCtStereoAtomToValues(&heap, value.as_const(), 11, 0),
-            Ok(-1)
-        );
-        assert_eq!(
-            CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 2),
-            Ok(1)
-        );
-        assert_eq!(
-            CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 4),
-            Ok(-1)
-        );
+        assert_eq!(CompareLinCtStereoAtomToValues(&heap, value.as_const(), 11, 0), Ok(-1));
+        assert_eq!(CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 2), Ok(1));
+        assert_eq!(CompareLinCtStereoAtomToValues(&heap, value.as_const(), 10, 4), Ok(-1));
 
         let extrema = heap
             .allocate_model_storage(vec![stereo_carb(u16::MAX, u8::MAX)])
@@ -3115,9 +2819,7 @@ mod tests {
             CompareLinCtStereoAtomToValues(&heap, SourceConstPointer::null(), 0, 0),
             Err(SourceHeapError::NullPointer)
         );
-        let empty = heap
-            .allocate_model_storage(Vec::<AT_STEREO_CARB>::new())
-            .unwrap();
+        let empty = heap.allocate_model_storage(Vec::<AT_STEREO_CARB>::new()).unwrap();
         assert_eq!(
             CompareLinCtStereoAtomToValues(&heap, empty.as_const(), 0, 0),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -3131,26 +2833,14 @@ mod tests {
         let order = heap.allocate_model_storage(vec![0_u16, 1, 2, 3]).unwrap();
         let stack = heap.allocate_model_storage(vec![ranks, order]).unwrap();
         let mut atom = 99_u16;
-        assert_eq!(
-            bUniqueAtNbrFromMappingRank(&heap, stack, 1, &mut atom),
-            Ok(1)
-        );
+        assert_eq!(bUniqueAtNbrFromMappingRank(&heap, stack, 1, &mut atom), Ok(1));
         assert_eq!(atom, 0);
         atom = 99;
-        assert_eq!(
-            bUniqueAtNbrFromMappingRank(&heap, stack, 2, &mut atom),
-            Ok(0)
-        );
+        assert_eq!(bUniqueAtNbrFromMappingRank(&heap, stack, 2, &mut atom), Ok(0));
         assert_eq!(atom, 99);
-        assert_eq!(
-            bUniqueAtNbrFromMappingRank(&heap, stack, 3, &mut atom),
-            Ok(0)
-        );
+        assert_eq!(bUniqueAtNbrFromMappingRank(&heap, stack, 3, &mut atom), Ok(0));
         assert_eq!(atom, 99);
-        assert_eq!(
-            bUniqueAtNbrFromMappingRank(&heap, stack, 4, &mut atom),
-            Ok(1)
-        );
+        assert_eq!(bUniqueAtNbrFromMappingRank(&heap, stack, 4, &mut atom), Ok(1));
         assert_eq!(atom, 3);
 
         atom = 77;
@@ -3181,19 +2871,14 @@ mod tests {
     #[test]
     fn source_port__ichimap1__ngetmcr__line_336() {
         let mut heap = SourceHeap::default();
-        let classes = heap
-            .allocate_model_storage(vec![0_u16, 0, 1, 2, 4, 4])
-            .unwrap();
+        let classes = heap.allocate_model_storage(vec![0_u16, 0, 1, 2, 4, 4]).unwrap();
         assert_eq!(nGetMcr(&mut heap, classes, 0), Ok(0));
         assert_eq!(heap.slice(classes.as_const()).unwrap(), &[0, 0, 1, 2, 4, 4]);
         assert_eq!(nGetMcr(&mut heap, classes, 3), Ok(0));
         assert_eq!(heap.slice(classes.as_const()).unwrap(), &[0, 0, 0, 0, 4, 4]);
         assert_eq!(nGetMcr(&mut heap, classes, 5), Ok(4));
         assert_eq!(heap.slice(classes.as_const()).unwrap(), &[0, 0, 0, 0, 4, 4]);
-        assert_eq!(
-            nGetMcr(&mut heap, classes, 6),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(nGetMcr(&mut heap, classes, 6), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(
             nGetMcr(&mut heap, SourceMutPointer::null(), 0),
             Err(SourceHeapError::NullPointer)
@@ -3241,18 +2926,9 @@ mod tests {
             let stack_from = heap.allocate_model_storage(vec![ranks_from]).unwrap();
             let ranks_to = heap.allocate_model_storage(ranks_to).unwrap();
             let order_to = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
-            let stack_to = heap
-                .allocate_model_storage(vec![ranks_to, order_to])
-                .unwrap();
+            let stack_to = heap.allocate_model_storage(vec![ranks_to, order_to]).unwrap();
             let canon_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
-            All_SC_Same(
-                &heap,
-                1,
-                stack_from,
-                stack_to,
-                canon_order.as_const(),
-                atoms.as_const(),
-            )
+            All_SC_Same(&heap, 1, stack_from, stack_to, canon_order.as_const(), atoms.as_const())
         }
 
         let mut atoms = vec![sp_ATOM::default(); 3];
@@ -3284,13 +2960,9 @@ mod tests {
         let ranks = invalid_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let from_stack = invalid_heap.allocate_model_storage(vec![ranks]).unwrap();
         let order = invalid_heap.allocate_model_storage(vec![0_u16]).unwrap();
-        let to_stack = invalid_heap
-            .allocate_model_storage(vec![ranks, order])
-            .unwrap();
+        let to_stack = invalid_heap.allocate_model_storage(vec![ranks, order]).unwrap();
         let canon = invalid_heap.allocate_model_storage(vec![0_u16]).unwrap();
-        let atom = invalid_heap
-            .allocate_model_storage(vec![sp_ATOM::default()])
-            .unwrap();
+        let atom = invalid_heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
         assert_eq!(
             All_SC_Same(
                 &invalid_heap,
@@ -3322,9 +2994,7 @@ mod tests {
         let stack_from = heap.allocate_model_storage(vec![ranks_from]).unwrap();
         let ranks_to = heap.allocate_model_storage(vec![1_u16, 2, 3, 4]).unwrap();
         let order_to = heap.allocate_model_storage(vec![0_u16, 1, 2, 3]).unwrap();
-        let stack_to = heap
-            .allocate_model_storage(vec![ranks_to, order_to])
-            .unwrap();
+        let stack_to = heap.allocate_model_storage(vec![ranks_to, order_to]).unwrap();
         let canon_order = heap.allocate_model_storage(vec![0_u16, 1, 2, 3]).unwrap();
         let used = heap
             .allocate_model_storage(vec![0_i8, 0, STEREO_AT_MARK as i8, 0])
@@ -3386,13 +3056,9 @@ mod tests {
         let tie_from_stack = heap.allocate_model_storage(vec![tie_from_rank]).unwrap();
         let tie_to_rank = heap.allocate_model_storage(vec![2_u16, 2]).unwrap();
         let tie_to_order = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let tie_to_stack = heap
-            .allocate_model_storage(vec![tie_to_rank, tie_to_order])
-            .unwrap();
+        let tie_to_stack = heap.allocate_model_storage(vec![tie_to_rank, tie_to_order]).unwrap();
         let tie_canon = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let tie_used = heap
-            .allocate_model_storage(vec![STEREO_AT_MARK as i8, 0])
-            .unwrap();
+        let tie_used = heap.allocate_model_storage(vec![STEREO_AT_MARK as i8, 0]).unwrap();
         canon_rank = 0;
         canon_min = 0;
         first = 1;
@@ -3449,12 +3115,7 @@ mod tests {
         assert_eq!(canon_rank, u16::MAX);
     }
 
-    fn next_parity(
-        mut parity: i32,
-        mut calc: i32,
-        counts: [i32; 5],
-        unknown: i32,
-    ) -> (i32, i32, i32) {
+    fn next_parity(mut parity: i32, mut calc: i32, counts: [i32; 5], unknown: i32) -> (i32, i32, i32) {
         let status = NextStereoParity2Test(
             &mut parity,
             &mut calc,
@@ -3493,10 +3154,7 @@ mod tests {
             next_parity(unknown, best, [1; 5], unknown),
             (CT_STEREOCOUNT_ERR, unknown, best)
         );
-        assert_eq!(
-            next_parity(undefined, 0, [1; 5], unknown),
-            (1, undefined, 0)
-        );
+        assert_eq!(next_parity(undefined, 0, [1; 5], unknown), (1, undefined, 0));
         assert_eq!(
             next_parity(undefined, worse, [1; 5], unknown),
             (CT_STEREOCOUNT_ERR, undefined, worse)
@@ -3504,18 +3162,9 @@ mod tests {
         assert_eq!(next_parity(99, 88, [0; 5], unknown), (0, 99, 88));
 
         assert_eq!(next_parity(best, best, [0; 5], unknown), (1, undefined, 0));
-        assert_eq!(
-            next_parity(best, 0, [1, 0, 0, 0, 1], unknown),
-            (1, undefined, 0)
-        );
-        assert_eq!(
-            next_parity(best, worse, [1, 0, 1, 1, 0], unknown),
-            (0, unknown, 0)
-        );
-        assert_eq!(
-            next_parity(unknown, 0, [1, 1, 1, 0, 1], unknown),
-            (1, undefined, 0)
-        );
+        assert_eq!(next_parity(best, 0, [1, 0, 0, 0, 1], unknown), (1, undefined, 0));
+        assert_eq!(next_parity(best, worse, [1, 0, 1, 1, 0], unknown), (0, unknown, 0));
+        assert_eq!(next_parity(unknown, 0, [1, 1, 1, 0, 1], unknown), (1, undefined, 0));
         assert_eq!(next_parity(worse, 0, [0; 5], 77), (0, 77, 0));
     }
 
@@ -3701,9 +3350,7 @@ mod tests {
         let ranks2 = heap.allocate_model_storage(ranks2).unwrap();
         let order2 = heap.allocate_model_storage(order2).unwrap();
         let unused_order1 = heap.allocate_model_storage(Vec::<AT_RANK>::new()).unwrap();
-        let stack1 = heap
-            .allocate_model_storage(vec![ranks1, unused_order1])
-            .unwrap();
+        let stack1 = heap.allocate_model_storage(vec![ranks1, unused_order1]).unwrap();
         let stack2 = heap.allocate_model_storage(vec![ranks2, order2]).unwrap();
         let canon_from = heap.allocate_model_storage(canon_from).unwrap();
         let atoms = heap.allocate_model_storage(atoms).unwrap();
@@ -3753,30 +3400,14 @@ mod tests {
         let mut no_mapping = direct_stereo_pair(1, 1);
         no_mapping[0].stereo_bond_neighbor[0] = 0;
         assert_eq!(
-            run_all_sb_same(
-                no_mapping,
-                vec![1, 2],
-                vec![1, 2],
-                vec![0, 1],
-                vec![0, 1],
-                1,
-                2,
-            ),
+            run_all_sb_same(no_mapping, vec![1, 2], vec![1, 2], vec![0, 1], vec![0, 1], 1, 2,),
             Ok(-1)
         );
 
         let mut no_reverse = direct_stereo_pair(1, 1);
         no_reverse[1].stereo_bond_neighbor[0] = 0;
         assert_eq!(
-            run_all_sb_same(
-                no_reverse,
-                vec![1, 2],
-                vec![1, 2],
-                vec![0, 1],
-                vec![0, 1],
-                1,
-                2,
-            ),
+            run_all_sb_same(no_reverse, vec![1, 2], vec![1, 2], vec![0, 1], vec![0, 1], 1, 2,),
             Ok(-1)
         );
 
@@ -3942,43 +3573,24 @@ mod tests {
     #[test]
     fn source_port__ichimap1__curtreeislastatomequ__line_1054() {
         let mut heap = SourceHeap::default();
-        let tree_pointer = heap
-            .allocate_model_storage(vec![99_u16, 0, 1, 2, 3])
-            .unwrap();
-        let symm = heap
-            .allocate_model_storage(vec![5_u16, 7, 8, 7, 9])
-            .unwrap();
+        let tree_pointer = heap.allocate_model_storage(vec![99_u16, 0, 1, 2, 3]).unwrap();
+        let symm = heap.allocate_model_storage(vec![5_u16, 7, 8, 7, 9]).unwrap();
         let tree = CUR_TREE {
             tree: tree_pointer,
             max_len: 5,
             cur_len: 5,
             incr_len: 5,
         };
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, Some(&tree), 3, symm.as_const()),
-            Ok(1)
-        );
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, Some(&tree), 2, symm.as_const()),
-            Ok(1)
-        );
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, Some(&tree), 4, symm.as_const()),
-            Ok(0)
-        );
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, Some(&tree), 3, symm.as_const()), Ok(1));
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, Some(&tree), 2, symm.as_const()), Ok(1));
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, Some(&tree), 4, symm.as_const()), Ok(0));
 
         let no_tree = CUR_TREE {
             cur_len: 2,
             ..CUR_TREE::default()
         };
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, Some(&no_tree), 0, symm.as_const()),
-            Ok(-1)
-        );
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, None, 0, symm.as_const()),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, Some(&no_tree), 0, symm.as_const()), Ok(-1));
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, None, 0, symm.as_const()), Ok(-1));
         assert_eq!(
             CurTreeIsLastAtomEqu(&heap, Some(&tree), 0, SourceConstPointer::null()),
             Ok(-1)
@@ -3989,10 +3601,7 @@ mod tests {
             cur_len: 1,
             ..tree.clone()
         };
-        assert_eq!(
-            CurTreeIsLastAtomEqu(&heap, Some(&short), 0, symm.as_const()),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeIsLastAtomEqu(&heap, Some(&short), 0, symm.as_const()), Ok(-1));
 
         let malformed = heap.allocate_model_storage(vec![0_u16, 0, 0]).unwrap();
         let malformed_tree = CUR_TREE {
@@ -4028,9 +3637,7 @@ mod tests {
         assert_eq!((tree.max_len, tree.cur_len, tree.incr_len), (4, 0, 4));
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[0, 0, 0, 0]);
 
-        heap.slice_mut(tree.tree)
-            .unwrap()
-            .copy_from_slice(&[1, 2, 3, 4]);
+        heap.slice_mut(tree.tree).unwrap().copy_from_slice(&[1, 2, 3, 4]);
         tree.cur_len = 3;
         let reused = tree.tree;
         assert_eq!(CurTreeAlloc(&mut heap, Some(&mut tree), 2), Ok(0));
@@ -4038,9 +3645,7 @@ mod tests {
         assert_eq!((tree.max_len, tree.cur_len, tree.incr_len), (4, 0, 2));
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[0, 0, 0, 0]);
 
-        heap.slice_mut(tree.tree)
-            .unwrap()
-            .copy_from_slice(&[5, 6, 7, 8]);
+        heap.slice_mut(tree.tree).unwrap().copy_from_slice(&[5, 6, 7, 8]);
         tree.cur_len = 2;
         assert_eq!(CurTreeAlloc(&mut heap, Some(&mut tree), -2), Ok(0));
         assert_eq!(tree.tree, reused);
@@ -4051,10 +3656,7 @@ mod tests {
         assert_ne!(tree.tree, reused);
         assert_eq!((tree.max_len, tree.cur_len, tree.incr_len), (3, 0, 3));
         assert_eq!(heap.slice(tree.tree.as_const()).unwrap(), &[0, 0, 0]);
-        assert_eq!(
-            heap.slice(reused.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(reused.as_const()), Err(SourceHeapError::MissingAllocation));
 
         assert_eq!(
             CurTreeAlloc(&mut heap, Some(&mut tree), 0),
@@ -4066,14 +3668,8 @@ mod tests {
         let mut zero_tree = CUR_TREE::default();
         assert_eq!(CurTreeAlloc(&mut zero_heap, Some(&mut zero_tree), 0), Ok(0));
         assert!(!zero_tree.tree.is_null());
-        assert_eq!(
-            (zero_tree.max_len, zero_tree.cur_len, zero_tree.incr_len),
-            (0, 0, 0)
-        );
-        assert_eq!(
-            zero_heap.slice(zero_tree.tree.as_const()).unwrap(),
-            &[] as &[u16]
-        );
+        assert_eq!((zero_tree.max_len, zero_tree.cur_len, zero_tree.incr_len), (0, 0, 0));
+        assert_eq!(zero_heap.slice(zero_tree.tree.as_const()).unwrap(), &[] as &[u16]);
 
         let mut failure_heap = SourceHeap::default();
         let old = failure_heap.allocate_model_storage(vec![9_u16, 8]).unwrap();
@@ -4084,10 +3680,7 @@ mod tests {
             incr_len: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            CurTreeAlloc(&mut failure_heap, Some(&mut failure_tree), 3),
-            Ok(-1)
-        );
+        assert_eq!(CurTreeAlloc(&mut failure_heap, Some(&mut failure_tree), 3), Ok(-1));
         assert_eq!(failure_tree, CUR_TREE::default());
         assert_eq!(
             failure_heap.slice(old.as_const()),
@@ -4155,15 +3748,9 @@ mod tests {
         let parity = heap
             .allocate_model_storage(vec![stereo_carb(1, 2), stereo_carb(3, 9)])
             .unwrap();
-        let precedence = heap
-            .allocate_model_storage(vec![stereo_carb(0, u8::MAX)])
-            .unwrap();
+        let precedence = heap.allocate_model_storage(vec![stereo_carb(0, u8::MAX)]).unwrap();
         let longer = heap
-            .allocate_model_storage(vec![
-                stereo_carb(1, 2),
-                stereo_carb(3, 4),
-                stereo_carb(5, 6),
-            ])
+            .allocate_model_storage(vec![stereo_carb(1, 2), stereo_carb(3, 4), stereo_carb(5, 6)])
             .unwrap();
 
         assert_eq!(
@@ -4199,50 +3786,24 @@ mod tests {
             Ok(1)
         );
         assert_eq!(
-            CompareLinCtStereoCarb(
-                &heap,
-                first.as_const(),
-                i32::MIN,
-                equal.as_const(),
-                i32::MAX
-            ),
+            CompareLinCtStereoCarb(&heap, first.as_const(), i32::MIN, equal.as_const(), i32::MAX),
             Ok(1)
         );
         assert_eq!(
-            CompareLinCtStereoCarb(
-                &heap,
-                first.as_const(),
-                i32::MAX,
-                equal.as_const(),
-                i32::MIN
-            ),
+            CompareLinCtStereoCarb(&heap, first.as_const(), i32::MAX, equal.as_const(), i32::MIN),
             Ok(-1)
         );
 
         let null = SourceConstPointer::null();
         assert_eq!(CompareLinCtStereoCarb(&heap, null, 1, null, 1), Ok(0));
         for length in [0, -1, i32::MIN] {
-            assert_eq!(
-                CompareLinCtStereoCarb(&heap, first.as_const(), length, null, 1),
-                Ok(0)
-            );
-            assert_eq!(
-                CompareLinCtStereoCarb(&heap, null, 1, first.as_const(), length),
-                Ok(0)
-            );
+            assert_eq!(CompareLinCtStereoCarb(&heap, first.as_const(), length, null, 1), Ok(0));
+            assert_eq!(CompareLinCtStereoCarb(&heap, null, 1, first.as_const(), length), Ok(0));
         }
-        assert_eq!(
-            CompareLinCtStereoCarb(&heap, first.as_const(), 1, null, 0),
-            Ok(1)
-        );
-        assert_eq!(
-            CompareLinCtStereoCarb(&heap, null, 0, first.as_const(), 1),
-            Ok(-1)
-        );
+        assert_eq!(CompareLinCtStereoCarb(&heap, first.as_const(), 1, null, 0), Ok(1));
+        assert_eq!(CompareLinCtStereoCarb(&heap, null, 0, first.as_const(), 1), Ok(-1));
 
-        let empty = heap
-            .allocate_model_storage(Vec::<AT_STEREO_CARB>::new())
-            .unwrap();
+        let empty = heap.allocate_model_storage(Vec::<AT_STEREO_CARB>::new()).unwrap();
         assert_eq!(
             CompareLinCtStereoCarb(&heap, empty.as_const(), 0, empty.as_const(), 0),
             Ok(0)
@@ -4256,24 +3817,12 @@ mod tests {
     #[test]
     fn source_port__ichimap1__comparelinctstereo__line_262() {
         let mut heap = SourceHeap::default();
-        let dble_low = heap
-            .allocate_model_storage(vec![stereo_dble(1, 2, 3)])
-            .unwrap();
-        let dble_high = heap
-            .allocate_model_storage(vec![stereo_dble(2, 2, 3)])
-            .unwrap();
-        let dble_equal = heap
-            .allocate_model_storage(vec![stereo_dble(1, 2, 3)])
-            .unwrap();
-        let carb_low = heap
-            .allocate_model_storage(vec![stereo_carb(4, 5)])
-            .unwrap();
-        let carb_high = heap
-            .allocate_model_storage(vec![stereo_carb(4, 7)])
-            .unwrap();
-        let empty_carb = heap
-            .allocate_model_storage(Vec::<AT_STEREO_CARB>::new())
-            .unwrap();
+        let dble_low = heap.allocate_model_storage(vec![stereo_dble(1, 2, 3)]).unwrap();
+        let dble_high = heap.allocate_model_storage(vec![stereo_dble(2, 2, 3)]).unwrap();
+        let dble_equal = heap.allocate_model_storage(vec![stereo_dble(1, 2, 3)]).unwrap();
+        let carb_low = heap.allocate_model_storage(vec![stereo_carb(4, 5)]).unwrap();
+        let carb_high = heap.allocate_model_storage(vec![stereo_carb(4, 7)]).unwrap();
+        let empty_carb = heap.allocate_model_storage(Vec::<AT_STEREO_CARB>::new()).unwrap();
 
         assert_eq!(
             CompareLinCtStereo(
@@ -4369,11 +3918,7 @@ mod tests {
             .allocate_model_storage(vec![stereo_dble(0, u16::MAX, u8::MAX)])
             .unwrap();
         let longer = heap
-            .allocate_model_storage(vec![
-                stereo_dble(1, 2, 3),
-                stereo_dble(4, 5, 6),
-                stereo_dble(7, 8, 9),
-            ])
+            .allocate_model_storage(vec![stereo_dble(1, 2, 3), stereo_dble(4, 5, 6), stereo_dble(7, 8, 9)])
             .unwrap();
 
         assert_eq!(
@@ -4422,46 +3967,22 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            CompareLinCtStereoDble(
-                &heap,
-                first.as_const(),
-                i32::MIN,
-                equal.as_const(),
-                i32::MAX
-            ),
+            CompareLinCtStereoDble(&heap, first.as_const(), i32::MIN, equal.as_const(), i32::MAX),
             Ok(1)
         );
         assert_eq!(
-            CompareLinCtStereoDble(
-                &heap,
-                first.as_const(),
-                i32::MAX,
-                equal.as_const(),
-                i32::MIN
-            ),
+            CompareLinCtStereoDble(&heap, first.as_const(), i32::MAX, equal.as_const(), i32::MIN),
             Ok(-1)
         );
 
         let null = SourceConstPointer::null();
         assert_eq!(CompareLinCtStereoDble(&heap, null, 1, null, 1), Ok(0));
         for length in [0, -1, i32::MIN] {
-            assert_eq!(
-                CompareLinCtStereoDble(&heap, first.as_const(), length, null, 1),
-                Ok(0)
-            );
-            assert_eq!(
-                CompareLinCtStereoDble(&heap, null, 1, first.as_const(), length),
-                Ok(0)
-            );
+            assert_eq!(CompareLinCtStereoDble(&heap, first.as_const(), length, null, 1), Ok(0));
+            assert_eq!(CompareLinCtStereoDble(&heap, null, 1, first.as_const(), length), Ok(0));
         }
-        assert_eq!(
-            CompareLinCtStereoDble(&heap, first.as_const(), 1, null, 0),
-            Ok(1)
-        );
-        assert_eq!(
-            CompareLinCtStereoDble(&heap, null, 0, first.as_const(), 1),
-            Ok(-1)
-        );
+        assert_eq!(CompareLinCtStereoDble(&heap, first.as_const(), 1, null, 0), Ok(1));
+        assert_eq!(CompareLinCtStereoDble(&heap, null, 0, first.as_const(), 1), Ok(-1));
         assert_eq!(
             CompareLinCtStereoDble(&heap, first.as_const(), i32::MAX, null, 0),
             Ok(1)
@@ -4471,9 +3992,7 @@ mod tests {
             Ok(-1)
         );
 
-        let empty = heap
-            .allocate_model_storage(Vec::<AT_STEREO_DBLE>::new())
-            .unwrap();
+        let empty = heap.allocate_model_storage(Vec::<AT_STEREO_DBLE>::new()).unwrap();
         assert_eq!(
             CompareLinCtStereoDble(&heap, empty.as_const(), 0, empty.as_const(), 0),
             Ok(0)

@@ -9,9 +9,8 @@ use crate::chemistry::{coordinates, distgeom, mol_transforms, rings};
 use crate::io::molblock::{MolBlockWriteParams, SdfFormat, mol_to_sdf_record_with_params};
 use crate::smiles_write::{SmilesWriteParams, mol_to_smiles, mol_to_smiles_with_atom_output_order};
 use crate::{
-    AdjacencyList, AtomId, Bond, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer3D,
-    EmbedParameters, Hybridization, Molecule, get_uff_angle_bend_params,
-    get_uff_bond_stretch_params, uff_optimize_molecule,
+    AdjacencyList, AtomId, Bond, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer3D, EmbedParameters,
+    Hybridization, Molecule, get_uff_angle_bend_params, get_uff_bond_stretch_params, uff_optimize_molecule,
 };
 
 pub mod diagnostics;
@@ -101,17 +100,11 @@ pub enum ConfSeqDecodeError {
     InvalidThreadCount,
     #[error("ConfSeq token stream contains unsupported token '{token}'")]
     UnsupportedToken { token: String },
-    #[error(
-        "ConfSeq contains {observed} dihedral tokens but molecule has {expected} eligible single bonds"
-    )]
+    #[error("ConfSeq contains {observed} dihedral tokens but molecule has {expected} eligible single bonds")]
     DihedralTokenCountMismatch { observed: usize, expected: usize },
-    #[error(
-        "ConfSeq contains {observed} angle tokens but molecule has {expected} eligible angle centers"
-    )]
+    #[error("ConfSeq contains {observed} angle tokens but molecule has {expected} eligible angle centers")]
     AngleTokenCountMismatch { observed: usize, expected: usize },
-    #[error(
-        "ConfSeq token at explicit-bond position {position} is missing in completed token stream"
-    )]
+    #[error("ConfSeq token at explicit-bond position {position} is missing in completed token stream")]
     TokenPositionOutOfRange { position: usize },
     #[error("ConfSeq explicit-bond SMILES mapping failed: {0}")]
     BondTokenMapping(String),
@@ -139,13 +132,8 @@ pub enum ConfSeqFastGeometryError {
     UnsupportedRingSystem,
     #[error("ConfSeq fast geometry does not support {ring_size}-member rings")]
     UnsupportedRingSize { ring_size: usize },
-    #[error(
-        "ConfSeq fast geometry does not support ring atom element {atomic_number} in atom ring {ring_index}"
-    )]
-    UnsupportedRingElement {
-        ring_index: usize,
-        atomic_number: u8,
-    },
+    #[error("ConfSeq fast geometry does not support ring atom element {atomic_number} in atom ring {ring_index}")]
+    UnsupportedRingElement { ring_index: usize, atomic_number: u8 },
     #[error("ConfSeq fast geometry does not support aromatic {ring_size}-member ring")]
     UnsupportedAromaticRingSize { ring_size: usize },
     #[error(
@@ -159,9 +147,7 @@ pub enum ConfSeqFastGeometryError {
     },
     #[error("ConfSeq fast geometry does not support closed fused/spiro ring constraint components")]
     UnsupportedClosedRingFusion,
-    #[error(
-        "ConfSeq fast geometry could not satisfy tetrahedral stereo at atom {center}: {reason}"
-    )]
+    #[error("ConfSeq fast geometry could not satisfy tetrahedral stereo at atom {center}: {reason}")]
     UnsupportedTetrahedralStereo { center: usize, reason: String },
     #[error("ConfSeq fast geometry ring geometry is invalid: {0}")]
     InvalidRingGeometry(String),
@@ -169,22 +155,14 @@ pub enum ConfSeqFastGeometryError {
     RigidFragmentEmbedding(String),
     #[error("ConfSeq fast geometry traversal left atoms unplaced")]
     PlacementLeftAtomsUnplaced,
-    #[error(
-        "ConfSeq fast geometry fragment assembly has no usable anchor for component {component}"
-    )]
+    #[error("ConfSeq fast geometry fragment assembly has no usable anchor for component {component}")]
     AssemblyMissingAnchor { component: usize },
-    #[error(
-        "ConfSeq fast geometry fragment assembly has conflicting anchors for component {component}: {reason}"
-    )]
+    #[error("ConfSeq fast geometry fragment assembly has conflicting anchors for component {component}: {reason}")]
     AssemblyAnchorConflict { component: usize, reason: String },
     #[error(
         "ConfSeq fast geometry fragment assembly boundary bond mismatch for bond {bond}: observed={observed:.3}, target={target:.3}"
     )]
-    AssemblyBoundaryMismatch {
-        bond: usize,
-        observed: f64,
-        target: f64,
-    },
+    AssemblyBoundaryMismatch { bond: usize, observed: f64, target: f64 },
     #[error("ConfSeq fast geometry failed: {0}")]
     Build(String),
 }
@@ -363,11 +341,7 @@ pub fn decode_confseq_with_options(
     options: &ConfSeqDecodeOptions,
 ) -> Result<Molecule, ConfSeqDecodeError> {
     let parsed = parse_confseq(in_smiles, confseq)?;
-    let template = build_template(
-        &parsed.stripped_smiles,
-        &parsed.chiral_tags_by_atom,
-        options,
-    )?;
+    let template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, options)?;
     decode_from_template(&template, &parsed, options)
 }
 
@@ -376,12 +350,7 @@ pub fn decode_confseq_batch(
     confseq: &[String],
     keep_errors: bool,
 ) -> Result<ConfSeqBatchDecodeResult, ConfSeqDecodeError> {
-    decode_confseq_batch_with_options(
-        in_smiles,
-        confseq,
-        &ConfSeqDecodeOptions::default(),
-        keep_errors,
-    )
+    decode_confseq_batch_with_options(in_smiles, confseq, &ConfSeqDecodeOptions::default(), keep_errors)
 }
 
 pub fn decode_confseq_record_batch(
@@ -469,11 +438,7 @@ pub fn decode_confseq_batch_with_options(
                 chiral_key.sort_unstable_by_key(|(atom, _)| *atom);
                 let cache_key = (parsed.stripped_smiles.clone(), chiral_key);
                 if !cache.contains_key(&cache_key) {
-                    let template = build_template(
-                        &parsed.stripped_smiles,
-                        &parsed.chiral_tags_by_atom,
-                        options,
-                    );
+                    let template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, options);
                     match template {
                         Ok(template) => {
                             cache.insert(cache_key.clone(), template);
@@ -485,10 +450,7 @@ pub fn decode_confseq_batch_with_options(
                         Err(error) => return Err(error),
                     }
                 }
-                templates.push(Ok(cache
-                    .get(&cache_key)
-                    .expect("template inserted above")
-                    .clone()));
+                templates.push(Ok(cache.get(&cache_key).expect("template inserted above").clone()));
             }
             Err(error) => templates.push(Err(error.clone())),
         }
@@ -584,10 +546,8 @@ fn parse_confseq(in_smiles: &str, confseq: &str) -> Result<ParsedConfSeq, ConfSe
     td_smiles = td_smiles.replace("> \\", ">\\");
 
     let stripped_smiles = strip_confseq_topology_markers(&in_smiles);
-    let (td_smiles, chiral_tags_by_atom) =
-        extract_pseudo_chiral_tags(&stripped_smiles, &td_smiles)?;
-    let raw_dihedral_literals_by_pair =
-        parse_atom_pair_dihedral_literals(&stripped_smiles, &td_smiles)?;
+    let (td_smiles, chiral_tags_by_atom) = extract_pseudo_chiral_tags(&stripped_smiles, &td_smiles)?;
+    let raw_dihedral_literals_by_pair = parse_atom_pair_dihedral_literals(&stripped_smiles, &td_smiles)?;
     let dihedral_angles_by_pair = parse_atom_pair_dihedrals(&stripped_smiles, &td_smiles)?;
 
     Ok(ParsedConfSeq {
@@ -713,9 +673,7 @@ fn parse_atom_pair_dihedrals(
             let inner = raw
                 .strip_prefix('<')
                 .and_then(|value| value.strip_suffix('>'))
-                .ok_or_else(|| ConfSeqDecodeError::UnsupportedToken {
-                    token: raw.to_string(),
-                })?;
+                .ok_or_else(|| ConfSeqDecodeError::UnsupportedToken { token: raw.to_string() })?;
             Ok((pair, parse_angle_literal(inner, raw)?))
         })
         .collect()
@@ -735,17 +693,12 @@ fn parse_atom_pair_dihedral_literals(
     //           atom_pair_dihedrals_dic[atom_pair]=...
     let mapping = bond_token_mapping_for_smiles(stripped_smiles)?;
     let smiles_be_lis: Vec<String> = mapping.smiles_be.chars().map(|ch| ch.to_string()).collect();
-    let t_smiles_lis: Vec<String> = td_smiles
-        .split_whitespace()
-        .map(ToString::to_string)
-        .collect();
+    let t_smiles_lis: Vec<String> = td_smiles.split_whitespace().map(ToString::to_string).collect();
     let completed = complete_t_smiles(t_smiles_lis, &smiles_be_lis);
     let mut values = HashMap::new();
     for (token_idx, pair) in mapping.token_idx_to_atom_pair {
         let Some(token) = completed.get(token_idx) else {
-            return Err(ConfSeqDecodeError::TokenPositionOutOfRange {
-                position: token_idx,
-            });
+            return Err(ConfSeqDecodeError::TokenPositionOutOfRange { position: token_idx });
         };
         if token.contains('<') {
             values.insert(pair, token.clone());
@@ -781,9 +734,7 @@ fn build_template(
         ConfSeqTemplateBackend::DistanceGeometry => {
             build_distance_geometry_template(smiles, chiral_tags_by_atom, options)
         }
-        ConfSeqTemplateBackend::FastGeometry => {
-            build_confseq_base_template(smiles, chiral_tags_by_atom)
-        }
+        ConfSeqTemplateBackend::FastGeometry => build_confseq_base_template(smiles, chiral_tags_by_atom),
     }
 }
 
@@ -792,8 +743,7 @@ fn build_distance_geometry_template(
     chiral_tags_by_atom: &HashMap<usize, ChiralTag>,
     options: &ConfSeqDecodeOptions,
 ) -> Result<Template, ConfSeqDecodeError> {
-    let molecule = Molecule::from_smiles(smiles)
-        .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+    let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
     let molecule = prepare_p_chiral_embedding_molecule(molecule, chiral_tags_by_atom)?;
 
     // ConfSeq source anchor:
@@ -850,8 +800,7 @@ fn build_confseq_base_template(
     smiles: &str,
     chiral_tags_by_atom: &HashMap<usize, ChiralTag>,
 ) -> Result<Template, ConfSeqDecodeError> {
-    let molecule = Molecule::from_smiles(smiles)
-        .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+    let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
     let molecule = prepare_p_chiral_embedding_molecule(molecule, chiral_tags_by_atom)?;
     let embedded = try_build_confseq_fast_geometry(&molecule)?;
     let embedded = restore_embedding_molecule_state(embedded, &molecule)?;
@@ -881,16 +830,13 @@ fn build_confseq_base_template(
     })
 }
 
-fn try_build_confseq_fast_geometry(
-    molecule: &Molecule,
-) -> Result<Molecule, ConfSeqFastGeometryError> {
+fn try_build_confseq_fast_geometry(molecule: &Molecule) -> Result<Molecule, ConfSeqFastGeometryError> {
     if molecule.num_atoms() == 0 {
         return Err(ConfSeqFastGeometryError::Build(
             "empty molecule has no fast geometry".to_string(),
         ));
     }
-    let ring_info = rings::symmetrize_sssr(molecule)
-        .map_err(|err| ConfSeqFastGeometryError::Build(err.to_string()))?;
+    let ring_info = rings::symmetrize_sssr(molecule).map_err(|err| ConfSeqFastGeometryError::Build(err.to_string()))?;
     let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
     if !is_connected(molecule, &adjacency) {
         return Err(ConfSeqFastGeometryError::Disconnected);
@@ -923,8 +869,7 @@ fn build_confseq_base_constraint_model(
     let angle_targets = collect_confseq_base_angle_targets(molecule, &ring_membership);
     let (torsion_priors, path14_distance_priors) = collect_confseq_base_torsion_priors(molecule);
     let planar_bonds = collect_confseq_base_planar_bonds(molecule);
-    let rigid_components =
-        collect_confseq_base_rigid_components(molecule, ring_info, &ring_components);
+    let rigid_components = collect_confseq_base_rigid_components(molecule, ring_info, &ring_components);
     Ok(ConfSeqBaseConstraintModel {
         bond_targets,
         angle_targets,
@@ -1030,8 +975,7 @@ fn confseq_base_ring_atom_has_exocyclic_pi_bond(
         } else {
             return false;
         };
-        !ring_atoms.contains(&other)
-            && matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic)
+        !ring_atoms.contains(&other) && matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic)
     })
 }
 
@@ -1066,12 +1010,7 @@ fn confseq_base_ring_atom_is_conjugated_to_ring_pi_system(
             has_ring_single = true;
         }
     }
-    has_pi_neighbor
-        && has_ring_single
-        && matches!(
-            molecule.atoms()[atom_idx].atomic_number(),
-            6 | 7 | 8 | 15 | 16
-        )
+    has_pi_neighbor && has_ring_single && matches!(molecule.atoms()[atom_idx].atomic_number(), 6 | 7 | 8 | 15 | 16)
 }
 
 fn confseq_base_ring_membership(
@@ -1106,25 +1045,15 @@ fn collect_confseq_base_angle_targets(
             .iter()
             .map(|neighbor| neighbor.atom_index)
             .collect();
-        let ring_size = ring_membership[center]
-            .map(|(_, ring_size)| ring_size)
-            .unwrap_or(0);
+        let ring_size = ring_membership[center].map(|(_, ring_size)| ring_size).unwrap_or(0);
         for left_pos in 0..neighbors.len() {
             for right_pos in left_pos + 1..neighbors.len() {
                 let angle = if ring_size > 0 {
                     confseq_base_ring_angle_rad(molecule, center, ring_size)
                 } else {
-                    confseq_base_source_backed_angle_rad(
-                        molecule,
-                        neighbors[left_pos],
-                        center,
-                        neighbors[right_pos],
-                    )
+                    confseq_base_source_backed_angle_rad(molecule, neighbors[left_pos], center, neighbors[right_pos])
                 };
-                targets.insert(
-                    sorted_angle(neighbors[left_pos], center, neighbors[right_pos]),
-                    angle,
-                );
+                targets.insert(sorted_angle(neighbors[left_pos], center, neighbors[right_pos]), angle);
             }
         }
     }
@@ -1270,10 +1199,7 @@ fn collect_confseq_base_rigid_components(
     components
 }
 
-fn confseq_base_fragment_cut_bonds(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-) -> HashSet<(usize, usize)> {
+fn confseq_base_fragment_cut_bonds(molecule: &Molecule, ring_info: &rings::RingInfo) -> HashSet<(usize, usize)> {
     collect_single_bond_dihedrals(molecule)
         .into_iter()
         .filter_map(|(_, j, k, _)| {
@@ -1347,8 +1273,7 @@ fn classify_confseq_base_rigid_component(
 pub fn confseq_base_structural_risk_precheck(
     molecule: &Molecule,
 ) -> Result<ConfSeqBaseStructuralRiskPrecheck, ConfSeqDecodeError> {
-    let rings = rings::symmetrize_sssr(molecule)
-        .map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
+    let rings = rings::symmetrize_sssr(molecule).map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
     let model = build_confseq_base_constraint_model(molecule, &rings)?;
     Ok(confseq_base_structural_risk_precheck_with_model(
         molecule, &rings, &model,
@@ -1364,10 +1289,7 @@ fn confseq_base_structural_risk_precheck_with_model(
     let mut classes = BTreeSet::new();
 
     for ring_atoms in ring_info.atom_rings() {
-        let atoms = ring_atoms
-            .iter()
-            .map(|atom| atom.index())
-            .collect::<Vec<_>>();
+        let atoms = ring_atoms.iter().map(|atom| atom.index()).collect::<Vec<_>>();
         if atoms.len() < 5 || atoms.len() > 6 {
             continue;
         }
@@ -1426,10 +1348,7 @@ fn confseq_base_structural_risk_precheck_with_model(
             let ring_count = ring_info
                 .atom_rings()
                 .iter()
-                .filter(|ring| {
-                    ring.iter()
-                        .any(|atom| component.atoms.contains(&atom.index()))
-                })
+                .filter(|ring| ring.iter().any(|atom| component.atoms.contains(&atom.index())))
                 .count();
             if ring_count >= 2 {
                 classes.insert(ConfSeqBaseStructuralRiskClass::NonplanarMultiringRigidComponent);
@@ -1444,11 +1363,7 @@ fn confseq_base_structural_risk_precheck_with_model(
     }
 }
 
-fn heavy_degree_within_atom_set(
-    molecule: &Molecule,
-    atom_idx: usize,
-    atom_set: &HashSet<usize>,
-) -> usize {
+fn heavy_degree_within_atom_set(molecule: &Molecule, atom_idx: usize, atom_set: &HashSet<usize>) -> usize {
     molecule
         .bonds()
         .iter()
@@ -1490,15 +1405,14 @@ fn construct_confseq_base_coords_from_rigid_fragments(
     let mut placed_components = vec![false; model.rigid_components.len()];
     let mut connector_targets = HashMap::<(usize, usize), [f64; 3]>::new();
     let mut component_by_atom = vec![None; molecule.num_atoms()];
-    let scaffold_shape =
-        coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds())
-            .ok()
-            .map(|points| {
-                points
-                    .into_iter()
-                    .map(|point| [point[0], point[1], 0.0])
-                    .collect::<Vec<_>>()
-            });
+    let scaffold_shape = coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds())
+        .ok()
+        .map(|points| {
+            points
+                .into_iter()
+                .map(|point| [point[0], point[1], 0.0])
+                .collect::<Vec<_>>()
+        });
     let mut local_components = Vec::with_capacity(model.rigid_components.len());
     let mut fragment_template_cache = HashMap::<String, ConfSeqBaseRigidFragmentTemplate>::new();
     let full_bounds = distgeom::dg_bounds_matrix(molecule).map_err(|err| {
@@ -1510,12 +1424,8 @@ fn construct_confseq_base_coords_from_rigid_fragments(
         for &atom in &component.atoms {
             component_by_atom[atom] = Some(component_idx);
         }
-        let template = confseq_base_cached_rigid_fragment_template(
-            molecule,
-            model,
-            component,
-            &mut fragment_template_cache,
-        )?;
+        let template =
+            confseq_base_cached_rigid_fragment_template(molecule, model, component, &mut fragment_template_cache)?;
         let local = confseq_base_realize_rigid_fragment_template(
             molecule,
             model,
@@ -1596,9 +1506,7 @@ fn confseq_base_select_root_component(
     for bond in molecule.bonds() {
         let begin = bond.begin().index();
         let end = bond.end().index();
-        let (Some(begin_component), Some(end_component)) =
-            (component_by_atom[begin], component_by_atom[end])
-        else {
+        let (Some(begin_component), Some(end_component)) = (component_by_atom[begin], component_by_atom[end]) else {
             continue;
         };
         if begin_component != end_component {
@@ -1610,13 +1518,7 @@ fn confseq_base_select_root_component(
         .rigid_components
         .iter()
         .enumerate()
-        .max_by_key(|(idx, component)| {
-            (
-                component.atoms.len(),
-                external_degree[*idx],
-                component.connectors.len(),
-            )
-        })
+        .max_by_key(|(idx, component)| (component.atoms.len(), external_degree[*idx], component.connectors.len()))
         .map(|(idx, _)| idx)
         .unwrap_or(0)
 }
@@ -1639,12 +1541,7 @@ fn confseq_base_select_next_assembly_component(
         if placed_components[component_idx] {
             continue;
         }
-        let anchors = confseq_base_component_assembly_anchors(
-            molecule,
-            component_by_atom,
-            placed,
-            component_idx,
-        );
+        let anchors = confseq_base_component_assembly_anchors(molecule, component_by_atom, placed, component_idx);
         if anchors.is_empty() {
             continue;
         }
@@ -1657,9 +1554,8 @@ fn confseq_base_select_next_assembly_component(
                     && local.contains_key(&anchor.unplaced_atom)
             })
             .count();
-        let consistent_anchor_pairs = confseq_base_count_consistent_two_anchor_pairs(
-            molecule, adjacency, model, local, coords, placed, &anchors,
-        );
+        let consistent_anchor_pairs =
+            confseq_base_count_consistent_two_anchor_pairs(molecule, adjacency, model, local, coords, placed, &anchors);
         let unplaced_external_count = confseq_base_unplaced_external_component_edges(
             molecule,
             component_by_atom,
@@ -1709,8 +1605,7 @@ fn confseq_base_unplaced_external_component_edges(
         .filter(|bond| {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            let (Some(begin_component), Some(end_component)) =
-                (component_by_atom[begin], component_by_atom[end])
+            let (Some(begin_component), Some(end_component)) = (component_by_atom[begin], component_by_atom[end])
             else {
                 return false;
             };
@@ -1780,8 +1675,7 @@ fn confseq_base_two_anchor_pair_is_consistent(
         return false;
     }
     let left_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, left);
-    let right_target =
-        confseq_base_anchor_target(molecule, adjacency, model, coords, placed, right);
+    let right_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, right);
     let target_distance = vec_len(vec_sub(right_target, left_target));
     if target_distance <= 1.0e-8 {
         return false;
@@ -1804,12 +1698,7 @@ fn place_confseq_base_unplaced_component_by_anchors(
     connector_targets: &mut HashMap<(usize, usize), [f64; 3]>,
 ) -> Result<(), ConfSeqFastGeometryError> {
     let component = &model.rigid_components[unplaced_component];
-    let anchors = confseq_base_component_assembly_anchors(
-        molecule,
-        component_by_atom,
-        placed,
-        unplaced_component,
-    );
+    let anchors = confseq_base_component_assembly_anchors(molecule, component_by_atom, placed, unplaced_component);
     if anchors.is_empty() {
         return Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
             "component has no placed assembly anchor atoms={:?}",
@@ -1841,9 +1730,8 @@ fn place_confseq_base_unplaced_component_by_anchors(
         }
     }
     if anchors.len() >= 2
-        && let Some((first, second)) = confseq_base_select_two_anchor_frame(
-            molecule, adjacency, model, local, coords, placed, &anchors,
-        )
+        && let Some((first, second)) =
+            confseq_base_select_two_anchor_frame(molecule, adjacency, model, local, coords, placed, &anchors)
     {
         return place_confseq_base_rigid_component_two_anchor_frame(
             molecule,
@@ -1930,10 +1818,8 @@ fn confseq_base_select_two_anchor_frame(
             ) {
                 continue;
             }
-            let left_target =
-                confseq_base_anchor_target(molecule, adjacency, model, coords, placed, left);
-            let right_target =
-                confseq_base_anchor_target(molecule, adjacency, model, coords, placed, right);
+            let left_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, left);
+            let right_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, right);
             let target_distance = vec_len(vec_sub(right_target, left_target));
             let score = local_distance.min(target_distance);
             if score > best_score {
@@ -1967,10 +1853,7 @@ fn place_confseq_base_rigid_component_single_anchor(
         anchor.placed_atom,
         anchor.unplaced_atom,
     );
-    let target_anchor = vec_add(
-        coords[anchor.placed_atom],
-        vec_scale(attach_direction, length),
-    );
+    let target_anchor = vec_add(coords[anchor.placed_atom], vec_scale(attach_direction, length));
     let Some(local_anchor) = local.get(&anchor.unplaced_atom) else {
         return Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
             "realized fragment is missing anchor atom {} for component {:?}",
@@ -2055,10 +1938,8 @@ fn place_confseq_base_rigid_component_two_anchor_frame(
     placed: &mut [bool],
     connector_targets: &mut HashMap<(usize, usize), [f64; 3]>,
 ) -> Result<(), ConfSeqFastGeometryError> {
-    let first_target =
-        confseq_base_anchor_target(molecule, adjacency, model, coords, placed, first);
-    let second_target =
-        confseq_base_anchor_target(molecule, adjacency, model, coords, placed, second);
+    let first_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, first);
+    let second_target = confseq_base_anchor_target(molecule, adjacency, model, coords, placed, second);
     let Some(first_local) = local.get(&first.unplaced_atom).copied() else {
         return Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
             "realized fragment is missing anchor atom {} for component {:?}",
@@ -2117,10 +1998,7 @@ fn confseq_base_anchor_target(
         anchor.placed_atom,
         anchor.unplaced_atom,
     );
-    vec_add(
-        coords[anchor.placed_atom],
-        vec_scale(attach_direction, length),
-    )
+    vec_add(coords[anchor.placed_atom], vec_scale(attach_direction, length))
 }
 
 fn confseq_base_cached_rigid_fragment_template(
@@ -2136,8 +2014,7 @@ fn confseq_base_cached_rigid_fragment_template(
         }
     }
 
-    let template =
-        confseq_base_build_rigid_fragment_template(molecule, model, component, key.clone())?;
+    let template = confseq_base_build_rigid_fragment_template(molecule, model, component, key.clone())?;
     cache.insert(key, template.clone());
     Ok(template)
 }
@@ -2164,12 +2041,10 @@ fn confseq_base_build_rigid_fragment_template(
         .filter_map(|bond| {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            (atom_set.contains(&begin) && atom_set.contains(&end)).then(|| {
-                ConfSeqBaseTemplateBond {
-                    begin,
-                    end,
-                    length: confseq_base_bond_target_by_id(model, molecule, bond.id().index()),
-                }
+            (atom_set.contains(&begin) && atom_set.contains(&end)).then(|| ConfSeqBaseTemplateBond {
+                begin,
+                end,
+                length: confseq_base_bond_target_by_id(model, molecule, bond.id().index()),
             })
         })
         .collect::<Vec<_>>();
@@ -2177,13 +2052,14 @@ fn confseq_base_build_rigid_fragment_template(
         .angle_targets
         .iter()
         .filter_map(|(&(left, center, right), &angle_rad)| {
-            (atom_set.contains(&left) && atom_set.contains(&center) && atom_set.contains(&right))
-                .then_some(ConfSeqBaseTemplateAngle {
+            (atom_set.contains(&left) && atom_set.contains(&center) && atom_set.contains(&right)).then_some(
+                ConfSeqBaseTemplateAngle {
                     left,
                     center,
                     right,
                     angle_rad,
-                })
+                },
+            )
         })
         .collect::<Vec<_>>();
     let shape = confseq_base_rigid_fragment_shape(molecule, component, &realization_atoms)?;
@@ -2238,9 +2114,7 @@ fn confseq_base_component_stereo_context_atoms(
                 && adjacency
                     .neighbors_of(neighbor)
                     .iter()
-                    .any(|neighbor_of_neighbor| {
-                        neighbor_of_neighbor.atom_index == connector.external_atom
-                    })
+                    .any(|neighbor_of_neighbor| neighbor_of_neighbor.atom_index == connector.external_atom)
             {
                 centers.push(neighbor);
             }
@@ -2256,9 +2130,7 @@ fn confseq_base_component_stereo_context_atoms(
             context_atoms.push(center);
         }
         for neighbor in adjacency.neighbors_of(center) {
-            if !realization_set.contains(&neighbor.atom_index)
-                && !context_atoms.contains(&neighbor.atom_index)
-            {
+            if !realization_set.contains(&neighbor.atom_index) && !context_atoms.contains(&neighbor.atom_index) {
                 context_atoms.push(neighbor.atom_index);
             }
         }
@@ -2277,8 +2149,7 @@ fn confseq_base_atom_needs_tetrahedral_context(
     if matches!(tag, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
         return adjacency.neighbors_of(atom_idx).len() >= 3;
     }
-    (atom.atomic_number() == 6 || atom.atomic_number() == 7)
-        && adjacency.neighbors_of(atom_idx).len() == 4
+    (atom.atomic_number() == 6 || atom.atomic_number() == 7) && adjacency.neighbors_of(atom_idx).len() == 4
 }
 
 fn confseq_base_component_is_path_like(molecule: &Molecule, atoms: &[usize]) -> bool {
@@ -2301,9 +2172,7 @@ fn confseq_base_component_has_planar_bond(molecule: &Molecule, atoms: &[usize]) 
         let end = bond.end().index();
         atom_set.contains(&begin)
             && atom_set.contains(&end)
-            && (bond.order() == BondOrder::Double
-                || bond.order() == BondOrder::Aromatic
-                || bond.is_aromatic())
+            && (bond.order() == BondOrder::Double || bond.order() == BondOrder::Aromatic || bond.is_aromatic())
     })
 }
 
@@ -2316,9 +2185,7 @@ fn confseq_base_component_is_tree_like(molecule: &Molecule, atoms: &[usize]) -> 
     let internal_edges = molecule
         .bonds()
         .iter()
-        .filter(|bond| {
-            atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index())
-        })
+        .filter(|bond| atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index()))
         .count();
     if internal_edges + 1 != atoms.len() {
         return false;
@@ -2344,9 +2211,7 @@ fn confseq_base_component_contains_cycle(molecule: &Molecule, atoms: &[usize]) -
     let internal_edges = molecule
         .bonds()
         .iter()
-        .filter(|bond| {
-            atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index())
-        })
+        .filter(|bond| atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index()))
         .count();
     internal_edges >= atoms.len()
 }
@@ -2415,8 +2280,8 @@ fn confseq_base_ring_topology_from_ring_info(
         }
     }
     if max_shared_bonds > 0 {
-        let is_chain = shared_bond_pairs + 1 == component_rings.len()
-            && ring_graph.iter().all(|neighbors| neighbors.len() <= 2);
+        let is_chain =
+            shared_bond_pairs + 1 == component_rings.len() && ring_graph.iter().all(|neighbors| neighbors.len() <= 2);
         return if is_chain {
             ConfSeqBaseRingTopology::EdgeFusedChain
         } else {
@@ -2484,13 +2349,10 @@ fn confseq_base_rigid_fragment_shape(
     {
         return Ok(ConfSeqBaseRigidFragmentShape::RingPolycyclic);
     }
-    if realization_atoms.len() == 3
-        && confseq_base_three_atom_angle_center(molecule, realization_atoms).is_some()
-    {
+    if realization_atoms.len() == 3 && confseq_base_three_atom_angle_center(molecule, realization_atoms).is_some() {
         return Ok(ConfSeqBaseRigidFragmentShape::Angle);
     }
-    if let Some((center, ligands)) = confseq_base_single_center_ligands(molecule, realization_atoms)
-    {
+    if let Some((center, ligands)) = confseq_base_single_center_ligands(molecule, realization_atoms) {
         return Ok(
             if confseq_base_center_prefers_planar_frame(molecule, center, &ligands) {
                 ConfSeqBaseRigidFragmentShape::SingleCenterPlanar
@@ -2517,54 +2379,39 @@ fn confseq_base_realize_rigid_fragment_template(
         }
         ConfSeqBaseRigidFragmentShape::Bond => {
             let mut coords = HashMap::new();
-            let length = template
-                .bonds
-                .first()
-                .map(|bond| bond.length)
-                .unwrap_or(1.50);
+            let length = template.bonds.first().map(|bond| bond.length).unwrap_or(1.50);
             coords.insert(template.realization_atoms[0], [0.0, 0.0, 0.0]);
             coords.insert(template.realization_atoms[1], [length, 0.0, 0.0]);
             coords
         }
         ConfSeqBaseRigidFragmentShape::Angle => {
             let center =
-                confseq_base_three_atom_angle_center(molecule, &template.realization_atoms)
-                    .ok_or_else(|| {
-                        ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                            "angle template has no unique center atoms={:?}",
-                            template.realization_atoms
-                        ))
-                    })?;
+                confseq_base_three_atom_angle_center(molecule, &template.realization_atoms).ok_or_else(|| {
+                    ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+                        "angle template has no unique center atoms={:?}",
+                        template.realization_atoms
+                    ))
+                })?;
             let atom_set: HashSet<_> = template.realization_atoms.iter().copied().collect();
             let ligands = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds())
                 .neighbors_of(center)
                 .iter()
-                .filter_map(|neighbor| {
-                    atom_set
-                        .contains(&neighbor.atom_index)
-                        .then_some(neighbor.atom_index)
-                })
+                .filter_map(|neighbor| atom_set.contains(&neighbor.atom_index).then_some(neighbor.atom_index))
                 .collect::<Vec<_>>();
             confseq_base_center_template_from_template(molecule, model, template, center, &ligands)?
         }
-        ConfSeqBaseRigidFragmentShape::SingleCenterPlanar
-        | ConfSeqBaseRigidFragmentShape::SingleCenterNonplanar => {
-            let (center, ligands) =
-                confseq_base_single_center_ligands(molecule, &template.realization_atoms)
-                    .ok_or_else(|| {
-                        ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                            "single-center template has no unique center atoms={:?}",
-                            template.realization_atoms
-                        ))
-                    })?;
+        ConfSeqBaseRigidFragmentShape::SingleCenterPlanar | ConfSeqBaseRigidFragmentShape::SingleCenterNonplanar => {
+            let (center, ligands) = confseq_base_single_center_ligands(molecule, &template.realization_atoms)
+                .ok_or_else(|| {
+                    ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+                        "single-center template has no unique center atoms={:?}",
+                        template.realization_atoms
+                    ))
+                })?;
             confseq_base_center_template_from_template(molecule, model, template, center, &ligands)?
         }
-        ConfSeqBaseRigidFragmentShape::Chain => {
-            confseq_base_chain_fragment_template(molecule, model, template)?
-        }
-        ConfSeqBaseRigidFragmentShape::Tree => {
-            confseq_base_tree_fragment_template(molecule, model, template)?
-        }
+        ConfSeqBaseRigidFragmentShape::Chain => confseq_base_chain_fragment_template(molecule, model, template)?,
+        ConfSeqBaseRigidFragmentShape::Tree => confseq_base_tree_fragment_template(molecule, model, template)?,
         ConfSeqBaseRigidFragmentShape::Planar => {
             confseq_base_conditioned_fragment_template(molecule, model, template, 1, full_bounds)?
         }
@@ -2675,10 +2522,7 @@ fn confseq_base_validate_connector_stubs(
     Ok(())
 }
 
-fn confseq_base_fragment_template_key(
-    molecule: &Molecule,
-    component: &ConfSeqBaseRigidComponent,
-) -> String {
+fn confseq_base_fragment_template_key(molecule: &Molecule, component: &ConfSeqBaseRigidComponent) -> String {
     let realization_atoms = confseq_base_component_realization_atoms(component);
     let stereo_context_atoms = confseq_base_component_stereo_context_atoms(molecule, component);
     let atom_set: HashSet<_> = realization_atoms.iter().copied().collect();
@@ -2813,12 +2657,7 @@ fn confseq_base_conditioned_fragment_template(
 
     let mut fragment_to_old = vec![None; fragment.num_atoms()];
     for &old_atom in &conditioner_atoms {
-        let Some(new_atom) = old_to_fragment
-            .get(old_atom)
-            .copied()
-            .flatten()
-            .map(AtomId::index)
-        else {
+        let Some(new_atom) = old_to_fragment.get(old_atom).copied().flatten().map(AtomId::index) else {
             return Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
                 "fragment-local conditioner lost atom {old_atom} key={}",
                 template.cache_key
@@ -2827,13 +2666,12 @@ fn confseq_base_conditioned_fragment_template(
         fragment_to_old[new_atom] = Some(old_atom);
     }
 
-    let fragment_bounds = confseq_base_slice_bounds_matrix(&full_bounds, &fragment_to_old)
-        .map_err(|reason| {
-            ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                "failed to slice whole-molecule DG bounds for fragment key={}: {reason}",
-                template.cache_key
-            ))
-        })?;
+    let fragment_bounds = confseq_base_slice_bounds_matrix(&full_bounds, &fragment_to_old).map_err(|reason| {
+        ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+            "failed to slice whole-molecule DG bounds for fragment key={}: {reason}",
+            template.cache_key
+        ))
+    })?;
 
     let mut params = EmbedParameters::etkdg();
     params.random_seed = 0;
@@ -2854,14 +2692,12 @@ fn confseq_base_conditioned_fragment_template(
         num_confs.max(8)
     };
     let (embedded, conf_ids) =
-        distgeom::embed_multiple_confs(&fragment, conditioner_num_confs, &mut params).map_err(
-            |err| {
-                ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                    "fragment-local EmbedMolecule conditioner failed key={}: {err}",
-                    template.cache_key
-                ))
-            },
-        )?;
+        distgeom::embed_multiple_confs(&fragment, conditioner_num_confs, &mut params).map_err(|err| {
+            ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+                "fragment-local EmbedMolecule conditioner failed key={}: {err}",
+                template.cache_key
+            ))
+        })?;
     let valid_conf_ids = conf_ids
         .into_iter()
         .filter(|conf_id| *conf_id >= 0)
@@ -2890,9 +2726,7 @@ fn confseq_base_conditioned_fragment_template(
             };
             candidate.insert(old_atom, coord);
         }
-        let score = confseq_base_conditioned_fragment_candidate_score(
-            molecule, model, template, &candidate,
-        );
+        let score = confseq_base_conditioned_fragment_candidate_score(molecule, model, template, &candidate);
         if score < best_score {
             let realized = template
                 .realization_atoms
@@ -2935,8 +2769,7 @@ fn confseq_base_conditioned_fragment_candidate_score(
         return score;
     }
     let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
-    let Ok(constraints) = collect_confseq_base_tetrahedral_stereo_constraints(molecule, &adjacency)
-    else {
+    let Ok(constraints) = collect_confseq_base_tetrahedral_stereo_constraints(molecule, &adjacency) else {
         return score;
     };
     for constraint in constraints {
@@ -2996,8 +2829,7 @@ fn confseq_base_slice_bounds_matrix(
             ));
         }
         for (fragment_j, old_j) in fragment_to_old.iter().copied().enumerate() {
-            let old_j =
-                old_j.ok_or_else(|| format!("fragment atom {fragment_j} has no old atom"))?;
+            let old_j = old_j.ok_or_else(|| format!("fragment atom {fragment_j} has no old atom"))?;
             if old_j >= full_n {
                 return Err(format!(
                     "old atom {old_j} for fragment atom {fragment_j} is out of bounds {full_n}"
@@ -3032,28 +2864,15 @@ fn confseq_base_sanitize_fragment_stereo_for_conditioner(fragment: &mut Molecule
             clear_bond_stereo.push(bond.id().index());
             continue;
         };
-        if stereo_atoms
-            .iter()
-            .any(|atom| atom.index() >= fragment.num_atoms())
-        {
+        if stereo_atoms.iter().any(|atom| atom.index() >= fragment.num_atoms()) {
             clear_bond_stereo.push(bond.id().index());
             continue;
         }
-        if !adjacency
-            .neighbors_of(bond.begin().index())
-            .iter()
-            .any(|neighbor| {
-                neighbor.atom_index == stereo_atoms[0].index()
-                    || neighbor.atom_index == stereo_atoms[1].index()
-            })
-            || !adjacency
-                .neighbors_of(bond.end().index())
-                .iter()
-                .any(|neighbor| {
-                    neighbor.atom_index == stereo_atoms[0].index()
-                        || neighbor.atom_index == stereo_atoms[1].index()
-                })
-        {
+        if !adjacency.neighbors_of(bond.begin().index()).iter().any(|neighbor| {
+            neighbor.atom_index == stereo_atoms[0].index() || neighbor.atom_index == stereo_atoms[1].index()
+        }) || !adjacency.neighbors_of(bond.end().index()).iter().any(|neighbor| {
+            neighbor.atom_index == stereo_atoms[0].index() || neighbor.atom_index == stereo_atoms[1].index()
+        }) {
             clear_bond_stereo.push(bond.id().index());
         }
     }
@@ -3080,13 +2899,12 @@ fn confseq_base_chain_fragment_template(
     model: &ConfSeqBaseConstraintModel,
     template: &ConfSeqBaseRigidFragmentTemplate,
 ) -> Result<HashMap<usize, [f64; 3]>, ConfSeqFastGeometryError> {
-    let order = confseq_base_path_like_atom_order(molecule, &template.realization_atoms)
-        .ok_or_else(|| {
-            ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                "chain template requires a simple path key={}",
-                template.cache_key
-            ))
-        })?;
+    let order = confseq_base_path_like_atom_order(molecule, &template.realization_atoms).ok_or_else(|| {
+        ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+            "chain template requires a simple path key={}",
+            template.cache_key
+        ))
+    })?;
     if order.len() == 1 {
         return Ok(HashMap::from([(order[0], [0.0, 0.0, 0.0])]));
     }
@@ -3107,9 +2925,7 @@ fn confseq_base_chain_fragment_template(
             .angle_targets
             .get(&sorted_angle(grandparent, parent, atom))
             .copied()
-            .unwrap_or_else(|| {
-                confseq_base_source_backed_angle_rad(molecule, grandparent, parent, atom)
-            });
+            .unwrap_or_else(|| confseq_base_source_backed_angle_rad(molecule, grandparent, parent, atom));
         let phase_ord = idx.saturating_sub(2);
         let direction = child_direction(parent_axis, phase_ord, 2, angle);
         let length = confseq_base_bond_target_between(model, molecule, parent, atom)?;
@@ -3173,11 +2989,7 @@ fn confseq_base_bond_target_between(
             "missing bond target for {begin}-{end}"
         )));
     };
-    Ok(confseq_base_bond_target_by_id(
-        model,
-        molecule,
-        bond.id().index(),
-    ))
+    Ok(confseq_base_bond_target_by_id(model, molecule, bond.id().index()))
 }
 
 fn confseq_base_tree_fragment_template(
@@ -3241,9 +3053,7 @@ fn confseq_base_tree_fragment_template(
                 .angle_targets
                 .get(&sorted_angle(parent, atom, child))
                 .copied()
-                .unwrap_or_else(|| {
-                    confseq_base_source_backed_angle_rad(molecule, parent, atom, child)
-                });
+                .unwrap_or_else(|| confseq_base_source_backed_angle_rad(molecule, parent, atom, child));
             let direction = child_direction(parent_axis, child_ord, children.len(), angle);
             let length = confseq_base_bond_target_between(model, molecule, atom, child)?;
             coords.insert(child, vec_add(coords[&atom], vec_scale(direction, length)));
@@ -3334,11 +3144,7 @@ fn confseq_base_simple_ring_order(molecule: &Molecule, atoms: &[usize]) -> Optio
         let neighbors = adjacency
             .neighbors_of(atom)
             .iter()
-            .filter_map(|neighbor| {
-                atom_set
-                    .contains(&neighbor.atom_index)
-                    .then_some(neighbor.atom_index)
-            })
+            .filter_map(|neighbor| atom_set.contains(&neighbor.atom_index).then_some(neighbor.atom_index))
             .collect::<Vec<_>>();
         if neighbors.len() != 2 {
             return None;
@@ -3360,10 +3166,7 @@ fn confseq_base_simple_ring_order(molecule: &Molecule, atoms: &[usize]) -> Optio
         prev = current;
         current = next;
     }
-    ring_neighbors
-        .get(&current)?
-        .contains(&start)
-        .then_some(order)
+    ring_neighbors.get(&current)?.contains(&start).then_some(order)
 }
 
 fn confseq_base_three_atom_angle_center(molecule: &Molecule, atoms: &[usize]) -> Option<usize> {
@@ -3379,10 +3182,7 @@ fn confseq_base_three_atom_angle_center(molecule: &Molecule, atoms: &[usize]) ->
     })
 }
 
-fn confseq_base_single_center_ligands(
-    molecule: &Molecule,
-    atoms: &[usize],
-) -> Option<(usize, Vec<usize>)> {
+fn confseq_base_single_center_ligands(molecule: &Molecule, atoms: &[usize]) -> Option<(usize, Vec<usize>)> {
     let atom_set: HashSet<_> = atoms.iter().copied().collect();
     let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
     let mut centers = Vec::new();
@@ -3390,11 +3190,7 @@ fn confseq_base_single_center_ligands(
         let ligands = adjacency
             .neighbors_of(atom)
             .iter()
-            .filter_map(|neighbor| {
-                atom_set
-                    .contains(&neighbor.atom_index)
-                    .then_some(neighbor.atom_index)
-            })
+            .filter_map(|neighbor| atom_set.contains(&neighbor.atom_index).then_some(neighbor.atom_index))
             .collect::<Vec<_>>();
         if ligands.len() + 1 == atoms.len() && (2..=4).contains(&ligands.len()) {
             centers.push((atom, ligands));
@@ -3411,21 +3207,9 @@ fn confseq_base_center_template_from_template(
     ligands: &[usize],
 ) -> Result<HashMap<usize, [f64; 3]>, ConfSeqFastGeometryError> {
     let mut directions = confseq_base_center_frame_directions(molecule, model, center, ligands)?;
-    let mut base_coords = confseq_base_center_template_coords_for_ligands(
-        molecule,
-        model,
-        center,
-        ligands,
-        &directions,
-    )?;
-    confseq_base_fit_center_template_angles(
-        molecule,
-        model,
-        center,
-        ligands,
-        &mut directions,
-        &mut base_coords,
-    );
+    let mut base_coords =
+        confseq_base_center_template_coords_for_ligands(molecule, model, center, ligands, &directions)?;
+    confseq_base_fit_center_template_angles(molecule, model, center, ligands, &mut directions, &mut base_coords);
     if ligands.len() < 3 {
         return Ok(base_coords);
     }
@@ -3436,17 +3220,9 @@ fn confseq_base_center_template_from_template(
         if permutation.iter().copied().eq(0..ligands.len()) {
             continue;
         }
-        let permuted_ligands = permutation
-            .iter()
-            .map(|&idx| ligands[idx])
-            .collect::<Vec<_>>();
-        let mut coords = confseq_base_center_template_coords_for_ligands(
-            molecule,
-            model,
-            center,
-            &permuted_ligands,
-            &directions,
-        )?;
+        let permuted_ligands = permutation.iter().map(|&idx| ligands[idx]).collect::<Vec<_>>();
+        let mut coords =
+            confseq_base_center_template_coords_for_ligands(molecule, model, center, &permuted_ligands, &directions)?;
         confseq_base_fit_center_template_angles(
             molecule,
             model,
@@ -3523,12 +3299,8 @@ fn confseq_base_center_frame_directions(
 ) -> Result<Vec<[f64; 3]>, ConfSeqFastGeometryError> {
     match ligands.len() {
         2 => {
-            let angle =
-                confseq_base_source_backed_angle_rad(molecule, ligands[0], center, ligands[1]);
-            Ok(vec![
-                [1.0, 0.0, 0.0],
-                [angle.cos(), angle.sin().max(1.0e-8), 0.0],
-            ])
+            let angle = confseq_base_source_backed_angle_rad(molecule, ligands[0], center, ligands[1]);
+            Ok(vec![[1.0, 0.0, 0.0], [angle.cos(), angle.sin().max(1.0e-8), 0.0]])
         }
         3 => {
             if confseq_base_center_prefers_planar_frame(molecule, center, ligands) {
@@ -3539,35 +3311,30 @@ fn confseq_base_center_frame_directions(
                     })
                     .collect())
             } else {
-                Ok(confseq_base_center_directions_from_target_angles(
-                    molecule, model, center, ligands,
+                Ok(
+                    confseq_base_center_directions_from_target_angles(molecule, model, center, ligands).unwrap_or_else(
+                        || {
+                            vec![
+                                [1.0, 0.0, -1.0 / 3.0],
+                                [-0.5, 0.8660254037844386, -1.0 / 3.0],
+                                [-0.5, -0.8660254037844386, -1.0 / 3.0],
+                            ]
+                            .into_iter()
+                            .map(vec_normalize)
+                            .collect()
+                        },
+                    ),
                 )
-                .unwrap_or_else(|| {
-                    vec![
-                        [1.0, 0.0, -1.0 / 3.0],
-                        [-0.5, 0.8660254037844386, -1.0 / 3.0],
-                        [-0.5, -0.8660254037844386, -1.0 / 3.0],
-                    ]
+            }
+        }
+        4 => Ok(
+            confseq_base_center_directions_from_target_angles(molecule, model, center, ligands).unwrap_or_else(|| {
+                vec![[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
                     .into_iter()
                     .map(vec_normalize)
                     .collect()
-                }))
-            }
-        }
-        4 => Ok(confseq_base_center_directions_from_target_angles(
-            molecule, model, center, ligands,
-        )
-        .unwrap_or_else(|| {
-            vec![
-                [1.0, 1.0, 1.0],
-                [1.0, -1.0, -1.0],
-                [-1.0, 1.0, -1.0],
-                [-1.0, -1.0, 1.0],
-            ]
-            .into_iter()
-            .map(vec_normalize)
-            .collect()
-        })),
+            }),
+        ),
         _ => Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
             "center template supports 2-4 ligands, got {} at atom {center}",
             ligands.len()
@@ -3575,11 +3342,7 @@ fn confseq_base_center_frame_directions(
     }
 }
 
-fn confseq_base_center_prefers_planar_frame(
-    molecule: &Molecule,
-    center: usize,
-    ligands: &[usize],
-) -> bool {
+fn confseq_base_center_prefers_planar_frame(molecule: &Molecule, center: usize, ligands: &[usize]) -> bool {
     let atom = &molecule.atoms()[center];
     atom.hybridization() == Hybridization::Sp2
         || atom.is_aromatic()
@@ -3610,12 +3373,7 @@ fn confseq_base_center_directions_from_target_angles(
                 .get(&sorted_angle(ligands[left_idx], center, ligands[right_idx]))
                 .copied()
                 .unwrap_or_else(|| {
-                    confseq_base_source_backed_angle_rad(
-                        molecule,
-                        ligands[left_idx],
-                        center,
-                        ligands[right_idx],
-                    )
+                    confseq_base_source_backed_angle_rad(molecule, ligands[left_idx], center, ligands[right_idx])
                 });
             let cos_target = target.cos().clamp(-0.995, 0.995);
             gram[left_idx][right_idx] = cos_target;
@@ -3768,11 +3526,7 @@ fn place_confseq_base_rigid_component_aligned_to_segment(
         local,
         transformed,
         |point| {
-            let rotated = rotate_vector_between_unit_dirs(
-                vec_sub(point, local_origin),
-                local_axis,
-                target_axis,
-            )?;
+            let rotated = rotate_vector_between_unit_dirs(vec_sub(point, local_origin), local_axis, target_axis)?;
             Ok(vec_add(target_origin, rotated))
         },
         coords,
@@ -3793,8 +3547,7 @@ fn confseq_base_transformed_component_coords(
         return Ok(None);
     }
     let transform = |point: [f64; 3]| -> Result<[f64; 3], ConfSeqFastGeometryError> {
-        let rotated =
-            rotate_vector_between_unit_dirs(vec_sub(point, local_origin), local_axis, target_axis)?;
+        let rotated = rotate_vector_between_unit_dirs(vec_sub(point, local_origin), local_axis, target_axis)?;
         Ok(vec_add(target_origin, rotated))
     };
     let mut transformed = HashMap::new();
@@ -3933,11 +3686,7 @@ fn confseq_base_component_kind_is_planar_shape(kind: ConfSeqBaseRigidComponentKi
     )
 }
 
-fn confseq_base_bond_target_by_id(
-    model: &ConfSeqBaseConstraintModel,
-    molecule: &Molecule,
-    bond_idx: usize,
-) -> f64 {
+fn confseq_base_bond_target_by_id(model: &ConfSeqBaseConstraintModel, molecule: &Molecule, bond_idx: usize) -> f64 {
     model
         .bond_targets
         .get(bond_idx)
@@ -3956,10 +3705,7 @@ fn validate_confseq_base_constraint_coords(
             .get(bond.id().index())
             .copied()
             .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond));
-        let observed = vec_len(vec_sub(
-            coords[bond.begin().index()],
-            coords[bond.end().index()],
-        ));
+        let observed = vec_len(vec_sub(coords[bond.begin().index()], coords[bond.end().index()]));
         if (observed - target).abs() > 0.35 {
             return Err(ConfSeqFastGeometryError::AssemblyBoundaryMismatch {
                 bond: bond.id().index(),
@@ -4001,26 +3747,20 @@ fn sorted_angle(left: usize, center: usize, right: usize) -> (usize, usize, usiz
     }
 }
 
-fn apply_confseq_base_double_bond_stereo(
-    molecule: Molecule,
-) -> Result<Molecule, ConfSeqFastGeometryError> {
+fn apply_confseq_base_double_bond_stereo(molecule: Molecule) -> Result<Molecule, ConfSeqFastGeometryError> {
     let constraints = collect_confseq_base_double_bond_stereo_constraints(&molecule);
     let mut molecule = molecule;
     for (i, j, k, l, target_deg) in constraints {
-        molecule = mol_transforms::set_dihedral_deg(molecule, i, j, k, l, target_deg, 0).map_err(
-            |err| {
-                ConfSeqFastGeometryError::Build(format!(
-                    "failed to apply double-bond stereo constraint {i}-{j}-{k}-{l}: {err}"
-                ))
-            },
-        )?;
+        molecule = mol_transforms::set_dihedral_deg(molecule, i, j, k, l, target_deg, 0).map_err(|err| {
+            ConfSeqFastGeometryError::Build(format!(
+                "failed to apply double-bond stereo constraint {i}-{j}-{k}-{l}: {err}"
+            ))
+        })?;
     }
     Ok(molecule)
 }
 
-fn collect_confseq_base_double_bond_stereo_constraints(
-    molecule: &Molecule,
-) -> Vec<(usize, usize, usize, usize, f64)> {
+fn collect_confseq_base_double_bond_stereo_constraints(molecule: &Molecule) -> Vec<(usize, usize, usize, usize, f64)> {
     molecule
         .bonds()
         .iter()
@@ -4057,9 +3797,7 @@ fn apply_confseq_base_tetrahedral_stereo(
     let mut coords = molecule
         .conformers_3d()
         .first()
-        .ok_or_else(|| {
-            ConfSeqFastGeometryError::Build("fast geometry has no coordinates".to_string())
-        })?
+        .ok_or_else(|| ConfSeqFastGeometryError::Build("fast geometry has no coordinates".to_string()))?
         .coordinates()
         .to_vec();
     let initial_coords = coords.clone();
@@ -4073,19 +3811,12 @@ fn apply_confseq_base_tetrahedral_stereo(
             let mut candidates = Vec::new();
             for movable_pos in 0..constraint.ligands.len() {
                 let movable_ligand = constraint.ligands[movable_pos];
-                let Ok(movable) = confseq_base_chiral_movable_side(
-                    &molecule,
-                    adjacency,
-                    constraint,
-                    movable_ligand,
-                ) else {
+                let Ok(movable) = confseq_base_chiral_movable_side(&molecule, adjacency, constraint, movable_ligand)
+                else {
                     continue;
                 };
-                let contains_other_ligand = confseq_base_chiral_side_contains_other_ligand(
-                    &movable,
-                    constraint,
-                    movable_ligand,
-                );
+                let contains_other_ligand =
+                    confseq_base_chiral_side_contains_other_ligand(&movable, constraint, movable_ligand);
                 candidates.push((contains_other_ligand, movable.len(), movable_pos, movable));
             }
             candidates.sort_by_key(|(contains_other_ligand, len, movable_pos, _)| {
@@ -4107,12 +3838,9 @@ fn apply_confseq_base_tetrahedral_stereo(
                         constraint.tag,
                     )
                 {
-                    let unsatisfied =
-                        confseq_base_unsatisfied_chiral_constraints(&trial, &constraints);
-                    let rms_displacement =
-                        confseq_base_coord_displacement_rms(&initial_coords, &trial);
-                    let max_displacement =
-                        confseq_base_coord_max_displacement(&initial_coords, &trial);
+                    let unsatisfied = confseq_base_unsatisfied_chiral_constraints(&trial, &constraints);
+                    let rms_displacement = confseq_base_coord_displacement_rms(&initial_coords, &trial);
+                    let max_displacement = confseq_base_coord_max_displacement(&initial_coords, &trial);
                     let replace = best
                         .as_ref()
                         .map(|(best_unsatisfied, best_rms, best_max, _)| {
@@ -4168,10 +3896,7 @@ fn confseq_base_unsatisfied_chiral_constraints(
     constraints
         .iter()
         .filter(|constraint| {
-            !confseq_base_chiral_volume_satisfies_tag(
-                confseq_base_chiral_volume(coords, constraint),
-                constraint.tag,
-            )
+            !confseq_base_chiral_volume_satisfies_tag(confseq_base_chiral_volume(coords, constraint), constraint.tag)
         })
         .count()
 }
@@ -4239,19 +3964,12 @@ fn collect_confseq_base_tetrahedral_stereo_constraints(
                 });
             }
         };
-        constraints.push(ConfSeqBaseTetrahedralStereoConstraint {
-            center,
-            ligands,
-            tag,
-        });
+        constraints.push(ConfSeqBaseTetrahedralStereoConstraint { center, ligands, tag });
     }
     Ok(constraints)
 }
 
-fn confseq_base_chiral_volume(
-    coords: &[[f64; 3]],
-    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
-) -> f64 {
+fn confseq_base_chiral_volume(coords: &[[f64; 3]], constraint: &ConfSeqBaseTetrahedralStereoConstraint) -> f64 {
     let [a, b, c, d] = constraint.ligands;
     let anchor = if d == constraint.center {
         coords[constraint.center]
@@ -4280,21 +3998,17 @@ fn confseq_base_chiral_movable_side(
     movable_ligand: usize,
 ) -> Result<Vec<usize>, ConfSeqFastGeometryError> {
     let center = constraint.center;
-    if movable_ligand == center
-        || bond_between_pair(molecule, sorted_pair(center, movable_ligand)).is_none()
-    {
+    if movable_ligand == center || bond_between_pair(molecule, sorted_pair(center, movable_ligand)).is_none() {
         return Err(ConfSeqFastGeometryError::UnsupportedTetrahedralStereo {
             center,
             reason: "has no explicit movable ligand".to_string(),
         });
     }
-    let side =
-        connected_side_without_crossing(adjacency, molecule.num_atoms(), movable_ligand, center);
+    let side = connected_side_without_crossing(adjacency, molecule.num_atoms(), movable_ligand, center);
     if side.contains(&center) {
         return Err(ConfSeqFastGeometryError::UnsupportedTetrahedralStereo {
             center,
-            reason: "is inside a cyclic component unsupported by local mirror correction"
-                .to_string(),
+            reason: "is inside a cyclic component unsupported by local mirror correction".to_string(),
         });
     }
     // Cyclic centers often have multiple explicit ligands in the same graph
@@ -4312,9 +4026,11 @@ fn confseq_base_chiral_side_contains_other_ligand(
     constraint: &ConfSeqBaseTetrahedralStereoConstraint,
     movable_ligand: usize,
 ) -> bool {
-    constraint.ligands.iter().copied().any(|ligand| {
-        ligand != movable_ligand && ligand != constraint.center && side.contains(&ligand)
-    })
+    constraint
+        .ligands
+        .iter()
+        .copied()
+        .any(|ligand| ligand != movable_ligand && ligand != constraint.center && side.contains(&ligand))
 }
 
 fn connected_side_without_crossing(
@@ -4369,8 +4085,7 @@ fn rotate_movable_side_to_chiral_volume_sign(
         });
     }
 
-    let plane_origin =
-        confseq_base_chiral_volume_plane_origin_for_ligand(coords, constraint, movable_pos);
+    let plane_origin = confseq_base_chiral_volume_plane_origin_for_ligand(coords, constraint, movable_pos);
     let distance_to_volume_plane = vec_dot(vec_sub(coords[movable_ligand], plane_origin), normal);
     let reflected = vec_sub(
         coords[movable_ligand],
@@ -4442,10 +4157,7 @@ fn translate_movable_side_to_chiral_volume_sign(
     for &atom in atoms {
         coords[atom] = vec_add(coords[atom], delta);
     }
-    if confseq_base_chiral_volume_satisfies_tag(
-        confseq_base_chiral_volume(coords, constraint),
-        constraint.tag,
-    ) {
+    if confseq_base_chiral_volume_satisfies_tag(confseq_base_chiral_volume(coords, constraint), constraint.tag) {
         Ok(true)
     } else {
         Err(ConfSeqFastGeometryError::UnsupportedTetrahedralStereo {
@@ -4455,9 +4167,7 @@ fn translate_movable_side_to_chiral_volume_sign(
     }
 }
 
-fn confseq_base_min_signed_chiral_volume_for_constraint(
-    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
-) -> f64 {
+fn confseq_base_min_signed_chiral_volume_for_constraint(constraint: &ConfSeqBaseTetrahedralStereoConstraint) -> f64 {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findChiralSets (Embedder.cpp:1112-1122)
     // RDKit✔️✔️:         double volLowerBound = 5.0;
     // RDKit✔️✔️:         double volUpperBound = 100.0;
@@ -4490,11 +4200,7 @@ fn confseq_base_max_chiral_translation(
         .filter(|ligand| *ligand != constraint.center)
         .map(|ligand| vec_len(vec_sub(coords[ligand], center)))
         .fold(f64::INFINITY, f64::min);
-    if min_bond.is_finite() {
-        0.45 * min_bond
-    } else {
-        0.65
-    }
+    if min_bond.is_finite() { 0.45 * min_bond } else { 0.65 }
 }
 
 fn confseq_base_chiral_volume_gradient_for_ligand(
@@ -4585,10 +4291,7 @@ fn rotate_points_mapping_vector(
     let cos_theta = if sin_theta == 0.0 { -1.0 } else { cos_theta };
     for &atom in atoms {
         let offset = vec_sub(coords[atom], origin);
-        coords[atom] = vec_add(
-            origin,
-            rotate_vec_around_unit_axis(offset, axis, sin_theta, cos_theta),
-        );
+        coords[atom] = vec_add(origin, rotate_vec_around_unit_axis(offset, axis, sin_theta, cos_theta));
     }
     Ok(())
 }
@@ -4607,12 +4310,7 @@ fn rotate_vector_between_unit_dirs(
         if cos_theta > 0.0 {
             return Ok(vector);
         }
-        return Ok(rotate_vec_around_unit_axis(
-            vector,
-            perpendicular_unit(from),
-            0.0,
-            -1.0,
-        ));
+        return Ok(rotate_vec_around_unit_axis(vector, perpendicular_unit(from), 0.0, -1.0));
     }
     Ok(rotate_vec_around_unit_axis(
         vector,
@@ -4622,12 +4320,7 @@ fn rotate_vector_between_unit_dirs(
     ))
 }
 
-fn rotate_vec_around_unit_axis(
-    vector: [f64; 3],
-    axis: [f64; 3],
-    sin_theta: f64,
-    cos_theta: f64,
-) -> [f64; 3] {
+fn rotate_vec_around_unit_axis(vector: [f64; 3], axis: [f64; 3], sin_theta: f64, cos_theta: f64) -> [f64; 3] {
     vec_add(
         vec_add(
             vec_scale(vector, cos_theta),
@@ -4648,11 +4341,7 @@ fn angular_delta_rad(left: f64, right: f64) -> f64 {
     delta
 }
 
-fn shared_bond_ids_between_rings(
-    ring_info: &rings::RingInfo,
-    left: usize,
-    right: usize,
-) -> Vec<BondId> {
+fn shared_bond_ids_between_rings(ring_info: &rings::RingInfo, left: usize, right: usize) -> Vec<BondId> {
     ring_info.bond_rings()[left]
         .iter()
         .copied()
@@ -4706,12 +4395,7 @@ fn validate_supported_confseq_base_ring(
     Ok(())
 }
 
-fn child_direction(
-    parent_axis: [f64; 3],
-    child_ord: usize,
-    child_count: usize,
-    angle: f64,
-) -> [f64; 3] {
+fn child_direction(parent_axis: [f64; 3], child_ord: usize, child_count: usize, angle: f64) -> [f64; 3] {
     let axis_to_parent = vec_scale(parent_axis, -1.0);
     let normal = if parent_axis[2].abs() < 0.9 {
         vec_normalize(vec_cross(parent_axis, [0.0, 0.0, 1.0]))
@@ -4743,15 +4427,9 @@ fn child_azimuth(child_ord: usize, child_count: usize, angle: f64) -> f64 {
             let delta = if sin_sq <= 1.0e-12 {
                 PI
             } else {
-                ((cos_angle - cos_angle * cos_angle) / sin_sq)
-                    .clamp(-1.0, 1.0)
-                    .acos()
+                ((cos_angle - cos_angle * cos_angle) / sin_sq).clamp(-1.0, 1.0).acos()
             };
-            if child_ord == 0 {
-                -0.5 * delta
-            } else {
-                0.5 * delta
-            }
+            if child_ord == 0 { -0.5 * delta } else { 0.5 * delta }
         }
         _ => 2.0 * PI * child_ord as f64 / child_count as f64,
     }
@@ -4781,9 +4459,7 @@ fn confseq_base_local_angle_rad(molecule: &Molecule, center: usize) -> f64 {
         // Short-term local-angle subset for sulfides. Without this, acyclic
         // thioether branches are forced into the generic tetrahedral angle and
         // no longer match the UFF-relaxed template locally.
-        _ if atom.atomic_number() == 16 && !has_double_bond(molecule, center) => {
-            100.0_f64.to_radians()
-        }
+        _ if atom.atomic_number() == 16 && !has_double_bond(molecule, center) => 100.0_f64.to_radians(),
         Hybridization::Sp3 => 109.47122063449069_f64.to_radians(),
         _ if atom.is_aromatic() => 120.0_f64.to_radians(),
         _ => 109.47122063449069_f64.to_radians(),
@@ -4791,18 +4467,10 @@ fn confseq_base_local_angle_rad(molecule: &Molecule, center: usize) -> f64 {
 }
 
 fn confseq_base_ring_angle_rad(molecule: &Molecule, center: usize, ring_size: usize) -> f64 {
-    crate::source_port_helpers::rdkit_set_ring_angle(
-        molecule.atoms()[center].hybridization(),
-        ring_size,
-    )
+    crate::source_port_helpers::rdkit_set_ring_angle(molecule.atoms()[center].hybridization(), ring_size)
 }
 
-fn confseq_base_source_backed_angle_rad(
-    molecule: &Molecule,
-    left: usize,
-    center: usize,
-    right: usize,
-) -> f64 {
+fn confseq_base_source_backed_angle_rad(molecule: &Molecule, left: usize, center: usize, right: usize) -> f64 {
     // BEGIN RDKIT CPP FUNCTION RDKit::UFF::getUFFAngleBendParams (AtomTyper.cpp:559-589)
     // RDKit✔️❗: bool getUFFAngleBendParams(const ROMol &mol, unsigned int idx1,
     // RDKit✔️❗:                            unsigned int idx2, unsigned int idx3,
@@ -4929,11 +4597,7 @@ fn angle_rad_from_points(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> Option<f64> {
     if ba_len <= 1.0e-12 || bc_len <= 1.0e-12 {
         return None;
     }
-    Some(
-        (vec_dot(ba, bc) / (ba_len * bc_len))
-            .clamp(-1.0, 1.0)
-            .acos(),
-    )
+    Some((vec_dot(ba, bc) / (ba_len * bc_len)).clamp(-1.0, 1.0).acos())
 }
 
 fn vec_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -4988,12 +4652,10 @@ fn prepare_p_chiral_embedding_molecule(
     let mut builder = molecule.to_builder();
     for atom_idx in 0..builder.atoms().len() {
         let atom = &builder.atoms()[atom_idx];
-        let needs_n = atom.atomic_number() == 7
-            && atom.hybridization() == Hybridization::Sp3
-            && atom.formal_charge() == 0;
-        let needs_s = atom.atomic_number() == 16
-            && atom.hybridization() == Hybridization::Sp3
-            && atom.formal_charge() == 1;
+        let needs_n =
+            atom.atomic_number() == 7 && atom.hybridization() == Hybridization::Sp3 && atom.formal_charge() == 0;
+        let needs_s =
+            atom.atomic_number() == 16 && atom.hybridization() == Hybridization::Sp3 && atom.formal_charge() == 1;
         let atom_mut = builder
             .atom_mut(AtomId::new(atom_idx))
             .expect("atom index from builder length");
@@ -5014,10 +4676,7 @@ fn prepare_p_chiral_embedding_molecule(
         .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))
 }
 
-fn restore_embedding_molecule_state(
-    molecule: Molecule,
-    source: &Molecule,
-) -> Result<Molecule, ConfSeqDecodeError> {
+fn restore_embedding_molecule_state(molecule: Molecule, source: &Molecule) -> Result<Molecule, ConfSeqDecodeError> {
     // ConfSeq source anchor:
     //   for atom_idx,charge_H in charge_Hs.items():
     //       mol.GetAtomWithIdx(atom_idx).SetFormalCharge(charge_H[0])
@@ -5044,9 +4703,7 @@ fn decode_from_template(
     parsed: &ParsedConfSeq,
     options: &ConfSeqDecodeOptions,
 ) -> Result<Molecule, ConfSeqDecodeError> {
-    if options.apply_dihedrals
-        && parsed.dihedral_angles_by_pair.len() != template.dihedrals_by_pair.len()
-    {
+    if options.apply_dihedrals && parsed.dihedral_angles_by_pair.len() != template.dihedrals_by_pair.len() {
         return Err(ConfSeqDecodeError::DihedralTokenCountMismatch {
             observed: parsed.dihedral_angles_by_pair.len(),
             expected: template.dihedrals_by_pair.len(),
@@ -5073,12 +4730,14 @@ fn decode_from_template(
         for dihedral in &template.dihedrals {
             let (_, j, k, _) = *dihedral;
             let pair = sorted_pair(j, k);
-            let angle = parsed.dihedral_angles_by_pair.get(&pair).ok_or(
-                ConfSeqDecodeError::DihedralTokenCountMismatch {
-                    observed: parsed.dihedral_angles_by_pair.len(),
-                    expected: template.dihedrals_by_pair.len(),
-                },
-            )?;
+            let angle =
+                parsed
+                    .dihedral_angles_by_pair
+                    .get(&pair)
+                    .ok_or(ConfSeqDecodeError::DihedralTokenCountMismatch {
+                        observed: parsed.dihedral_angles_by_pair.len(),
+                        expected: template.dihedrals_by_pair.len(),
+                    })?;
             if template.ring_bond_pairs.contains(&pair) {
                 unapplied.push((*dihedral, *angle));
             } else {
@@ -5086,8 +4745,7 @@ fn decode_from_template(
             }
         }
         if !unapplied.is_empty() {
-            molecule =
-                apply_ring_deferred_dihedrals(molecule, &template.last_ring_bonds, unapplied)?;
+            molecule = apply_ring_deferred_dihedrals(molecule, &template.last_ring_bonds, unapplied)?;
         }
     }
 
@@ -5121,18 +4779,15 @@ fn apply_ring_deferred_dihedrals(
         .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
     let (mut molecule, old_to_new) = renumber_like_confseq_smiles_output(molecule_no_ring)?;
 
-    let mut deferred =
-        change_dihedral_for_removed_ring_bonds(&original_molecule, last_ring_bonds, unapplied)?;
+    let mut deferred = change_dihedral_for_removed_ring_bonds(&original_molecule, last_ring_bonds, unapplied)?;
     let last_ring_bonds = remap_last_ring_bonds(last_ring_bonds, &old_to_new)?;
     remap_deferred_dihedrals(&mut deferred, &old_to_new)?;
     for _ in 0..2 {
-        let ring_info = rings::symmetrize_sssr(&molecule)
-            .map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
+        let ring_info =
+            rings::symmetrize_sssr(&molecule).map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
         let mut still_deferred = Vec::new();
         for (dihedral, angle) in deferred {
-            if dihedral_bonds_exist(&molecule, dihedral)
-                && !dihedral_center_bond_is_in_ring(&ring_info, dihedral)
-            {
+            if dihedral_bonds_exist(&molecule, dihedral) && !dihedral_center_bond_is_in_ring(&ring_info, dihedral) {
                 molecule = set_dihedral_deg_checked(molecule, dihedral, angle)?;
             } else {
                 still_deferred.push((dihedral, angle));
@@ -5155,9 +4810,7 @@ fn apply_ring_deferred_dihedrals(
         .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))
 }
 
-fn renumber_like_confseq_smiles_output(
-    molecule: Molecule,
-) -> Result<(Molecule, Vec<usize>), ConfSeqDecodeError> {
+fn renumber_like_confseq_smiles_output(molecule: Molecule) -> Result<(Molecule, Vec<usize>), ConfSeqDecodeError> {
     let mut params = SmilesWriteParams::default();
     params.canonical = false;
     let (_, order) = mol_to_smiles_with_atom_output_order(&molecule, &params)
@@ -5171,9 +4824,9 @@ fn renumber_like_confseq_smiles_output(
         .old_to_new()
         .iter()
         .map(|mapped| {
-            mapped.map(AtomId::index).ok_or_else(|| {
-                ConfSeqDecodeError::MolTransform("atom renumbering dropped an atom".to_string())
-            })
+            mapped
+                .map(AtomId::index)
+                .ok_or_else(|| ConfSeqDecodeError::MolTransform("atom renumbering dropped an atom".to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let molecule = builder
@@ -5190,14 +4843,10 @@ fn remap_last_ring_bonds(
         .iter()
         .map(|(begin, end, spec)| {
             let begin = *old_to_new.get(*begin).ok_or_else(|| {
-                ConfSeqDecodeError::MolTransform(
-                    "last ring bond begin atom is out of renumbering range".to_string(),
-                )
+                ConfSeqDecodeError::MolTransform("last ring bond begin atom is out of renumbering range".to_string())
             })?;
             let end = *old_to_new.get(*end).ok_or_else(|| {
-                ConfSeqDecodeError::MolTransform(
-                    "last ring bond end atom is out of renumbering range".to_string(),
-                )
+                ConfSeqDecodeError::MolTransform("last ring bond end atom is out of renumbering range".to_string())
             })?;
             let stereo_atoms = spec
                 .stereo_atoms()
@@ -5205,14 +4854,12 @@ fn remap_last_ring_bonds(
                     Ok::<[AtomId; 2], ConfSeqDecodeError>([
                         AtomId::new(*old_to_new.get(left.index()).ok_or_else(|| {
                             ConfSeqDecodeError::MolTransform(
-                                "last ring bond stereo atom is out of renumbering range"
-                                    .to_string(),
+                                "last ring bond stereo atom is out of renumbering range".to_string(),
                             )
                         })?),
                         AtomId::new(*old_to_new.get(right.index()).ok_or_else(|| {
                             ConfSeqDecodeError::MolTransform(
-                                "last ring bond stereo atom is out of renumbering range"
-                                    .to_string(),
+                                "last ring bond stereo atom is out of renumbering range".to_string(),
                             )
                         })?),
                     ])
@@ -5229,26 +4876,18 @@ fn remap_deferred_dihedrals(
     old_to_new: &[usize],
 ) -> Result<(), ConfSeqDecodeError> {
     for ((i, j, k, l), _) in deferred {
-        *i = *old_to_new.get(*i).ok_or_else(|| {
-            ConfSeqDecodeError::MolTransform(
-                "dihedral atom is out of renumbering range".to_string(),
-            )
-        })?;
-        *j = *old_to_new.get(*j).ok_or_else(|| {
-            ConfSeqDecodeError::MolTransform(
-                "dihedral atom is out of renumbering range".to_string(),
-            )
-        })?;
-        *k = *old_to_new.get(*k).ok_or_else(|| {
-            ConfSeqDecodeError::MolTransform(
-                "dihedral atom is out of renumbering range".to_string(),
-            )
-        })?;
-        *l = *old_to_new.get(*l).ok_or_else(|| {
-            ConfSeqDecodeError::MolTransform(
-                "dihedral atom is out of renumbering range".to_string(),
-            )
-        })?;
+        *i = *old_to_new
+            .get(*i)
+            .ok_or_else(|| ConfSeqDecodeError::MolTransform("dihedral atom is out of renumbering range".to_string()))?;
+        *j = *old_to_new
+            .get(*j)
+            .ok_or_else(|| ConfSeqDecodeError::MolTransform("dihedral atom is out of renumbering range".to_string()))?;
+        *k = *old_to_new
+            .get(*k)
+            .ok_or_else(|| ConfSeqDecodeError::MolTransform("dihedral atom is out of renumbering range".to_string()))?;
+        *l = *old_to_new
+            .get(*l)
+            .ok_or_else(|| ConfSeqDecodeError::MolTransform("dihedral atom is out of renumbering range".to_string()))?;
     }
     Ok(())
 }
@@ -5346,21 +4985,21 @@ fn dihedral_center_bond_is_in_ring(
 }
 
 fn has_bond(molecule: &Molecule, left: usize, right: usize) -> bool {
-    molecule.bonds().iter().any(|bond| {
-        sorted_pair(bond.begin().index(), bond.end().index()) == sorted_pair(left, right)
-    })
+    molecule
+        .bonds()
+        .iter()
+        .any(|bond| sorted_pair(bond.begin().index(), bond.end().index()) == sorted_pair(left, right))
 }
 
 fn bond_token_mapping_for_smiles(smiles: &str) -> Result<BondTokenMapping, ConfSeqDecodeError> {
-    let molecule = Molecule::from_smiles(smiles)
-        .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+    let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
     let params = SmilesWriteParams {
         canonical: false,
         all_bonds_explicit: true,
         ..SmilesWriteParams::default()
     };
-    let smiles_be = mol_to_smiles(&molecule, &params)
-        .map_err(|err| ConfSeqDecodeError::SmilesWrite(err.to_string()))?;
+    let smiles_be =
+        mol_to_smiles(&molecule, &params).map_err(|err| ConfSeqDecodeError::SmilesWrite(err.to_string()))?;
     explicit_bond_smiles_mapping(&smiles_be)
 }
 
@@ -5390,16 +5029,17 @@ fn explicit_bond_smiles_mapping(smiles_be: &str) -> Result<BondTokenMapping, Con
     while idx < chars.len() {
         match chars[idx] {
             '(' => {
-                let current = current_atom.ok_or_else(|| {
-                    ConfSeqDecodeError::BondTokenMapping("branch before atom".to_string())
-                })?;
+                let current = current_atom
+                    .ok_or_else(|| ConfSeqDecodeError::BondTokenMapping("branch before atom".to_string()))?;
                 branch_stack.push(current);
                 idx += 1;
             }
             ')' => {
-                current_atom = Some(branch_stack.pop().ok_or_else(|| {
-                    ConfSeqDecodeError::BondTokenMapping("unbalanced branch".to_string())
-                })?);
+                current_atom = Some(
+                    branch_stack
+                        .pop()
+                        .ok_or_else(|| ConfSeqDecodeError::BondTokenMapping("unbalanced branch".to_string()))?,
+                );
                 idx += 1;
             }
             '-' | '=' | '#' | ':' | '/' | '\\' => {
@@ -5430,14 +5070,11 @@ fn explicit_bond_smiles_mapping(smiles_be: &str) -> Result<BondTokenMapping, Con
             }
             '%' | '0'..='9' => {
                 let (label, next_idx) = parse_ring_label(&chars, idx)?;
-                let current = current_atom.ok_or_else(|| {
-                    ConfSeqDecodeError::BondTokenMapping("ring closure before atom".to_string())
-                })?;
+                let current = current_atom
+                    .ok_or_else(|| ConfSeqDecodeError::BondTokenMapping("ring closure before atom".to_string()))?;
                 if let Some(open_atom) = ring_open.remove(&label) {
                     let token_idx = pending_bond_token.take().ok_or_else(|| {
-                        ConfSeqDecodeError::BondTokenMapping(format!(
-                            "ring closure {label} has no explicit bond token"
-                        ))
+                        ConfSeqDecodeError::BondTokenMapping(format!("ring closure {label} has no explicit bond token"))
                     })?;
                     let pair = sorted_pair(open_atom, current);
                     token_idx_to_atom_pair.insert(token_idx, pair);
@@ -5480,9 +5117,7 @@ fn explicit_bond_smiles_mapping(smiles_be: &str) -> Result<BondTokenMapping, Con
         }
     }
     if !ring_open.is_empty() {
-        return Err(ConfSeqDecodeError::BondTokenMapping(
-            "unclosed ring label".to_string(),
-        ));
+        return Err(ConfSeqDecodeError::BondTokenMapping("unclosed ring label".to_string()));
     }
     Ok(BondTokenMapping {
         smiles_be: smiles_be.to_string(),
@@ -5500,9 +5135,7 @@ fn connect_new_atom(
 ) -> Result<(), ConfSeqDecodeError> {
     if let Some(prev) = *current_atom {
         let token_idx = pending_bond_token.take().ok_or_else(|| {
-            ConfSeqDecodeError::BondTokenMapping(format!(
-                "atom at position {start} has no explicit bond token"
-            ))
+            ConfSeqDecodeError::BondTokenMapping(format!("atom at position {start} has no explicit bond token"))
         })?;
         token_idx_to_atom_pair.insert(token_idx, sorted_pair(prev, atom_idx));
     }
@@ -5514,9 +5147,7 @@ fn parse_ring_label(chars: &[char], idx: usize) -> Result<(String, usize), ConfS
     if chars[idx] == '%' {
         let first = chars.get(idx + 1).copied();
         let second = chars.get(idx + 2).copied();
-        if !matches!(first, Some(ch) if ch.is_ascii_digit())
-            || !matches!(second, Some(ch) if ch.is_ascii_digit())
-        {
+        if !matches!(first, Some(ch) if ch.is_ascii_digit()) || !matches!(second, Some(ch) if ch.is_ascii_digit()) {
             return Err(ConfSeqDecodeError::BondTokenMapping(
                 "invalid percent ring label".to_string(),
             ));
@@ -5554,28 +5185,17 @@ fn collect_single_bond_dihedrals(molecule: &Molecule) -> Vec<(usize, usize, usiz
         }
         let left = heavy_neighbors_except(molecule, j, k);
         let right = heavy_neighbors_except(molecule, k, j);
-        if left
-            .iter()
-            .chain(right.iter())
-            .collect::<HashSet<_>>()
-            .len()
-            != left.len() + right.len()
-        {
+        if left.iter().chain(right.iter()).collect::<HashSet<_>>().len() != left.len() + right.len() {
             continue;
         }
-        if let (Some(i), Some(l)) = (
-            pick_neighbor(molecule, &left),
-            pick_neighbor(molecule, &right),
-        ) {
+        if let (Some(i), Some(l)) = (pick_neighbor(molecule, &left), pick_neighbor(molecule, &right)) {
             dihedrals.push((i, j, k, l));
         }
     }
     dihedrals
 }
 
-fn collect_angle_centers(
-    molecule: &Molecule,
-) -> Result<Vec<(usize, usize, usize)>, ConfSeqDecodeError> {
+fn collect_angle_centers(molecule: &Molecule) -> Result<Vec<(usize, usize, usize)>, ConfSeqDecodeError> {
     // ConfSeq source anchor:
     //   if is_atom_in_ring(atom, mol):
     //       continue
@@ -5584,8 +5204,7 @@ fn collect_angle_centers(
     //   ):
     //       continue
     //   heavy_neighbors = [n for n in valid_neighbors if n.GetAtomicNum() > 1]
-    let ring_info = rings::fast_find_rings(molecule)
-        .map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
+    let ring_info = rings::fast_find_rings(molecule).map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
     let mut centers = Vec::new();
     for atom in molecule.atoms() {
         let center = atom.id().index();
@@ -5608,8 +5227,7 @@ fn collect_angle_centers(
                 if molecule.atoms()[other].atomic_number() <= 1 {
                     return None;
                 }
-                if molecule.atoms()[other].atomic_number() == 8 && has_double_bond(molecule, other)
-                {
+                if molecule.atoms()[other].atomic_number() == 8 && has_double_bond(molecule, other) {
                     return None;
                 }
                 Some(other)
@@ -5622,11 +5240,8 @@ fn collect_angle_centers(
     Ok(centers)
 }
 
-fn collect_ring_bond_pairs(
-    molecule: &Molecule,
-) -> Result<HashSet<(usize, usize)>, ConfSeqDecodeError> {
-    let ring_info = rings::fast_find_rings(molecule)
-        .map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
+fn collect_ring_bond_pairs(molecule: &Molecule) -> Result<HashSet<(usize, usize)>, ConfSeqDecodeError> {
+    let ring_info = rings::fast_find_rings(molecule).map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
     Ok(molecule
         .bonds()
         .iter()
@@ -5646,16 +5261,16 @@ fn collect_last_ring_bonds(
     //               bond_counts.append(bond_count)
     //   last_ring_bonds.append(atom_pairs[idx])
     //   shared_bond_list=get_fully_shared_ring_bonds(mol)
-    let smiles_molecule = Molecule::from_smiles(smiles)
-        .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+    let smiles_molecule =
+        Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
     let shared = collect_fully_shared_ring_bonds(&smiles_molecule)?;
     let params = SmilesWriteParams {
         canonical: false,
         all_bonds_explicit: true,
         ..SmilesWriteParams::default()
     };
-    let smiles_be = mol_to_smiles(&smiles_molecule, &params)
-        .map_err(|err| ConfSeqDecodeError::SmilesWrite(err.to_string()))?;
+    let smiles_be =
+        mol_to_smiles(&smiles_molecule, &params).map_err(|err| ConfSeqDecodeError::SmilesWrite(err.to_string()))?;
     let mapping = explicit_bond_smiles_mapping(&smiles_be)?;
     let ring_bond_indices = confseq_last_ring_bond_indices_from_smiles_be(&smiles_be);
     let atom_pairs = mapping.atom_pairs_in_token_order();
@@ -5742,17 +5357,11 @@ fn confseq_ring_label_token(token: &str) -> bool {
             .is_some_and(|label| label.chars().all(|ch| ch.is_ascii_digit()))
 }
 
-fn collect_fully_shared_ring_bonds(
-    molecule: &Molecule,
-) -> Result<HashSet<(usize, usize)>, ConfSeqDecodeError> {
-    let ring_info = rings::symmetrize_sssr(molecule)
-        .map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
+fn collect_fully_shared_ring_bonds(molecule: &Molecule) -> Result<HashSet<(usize, usize)>, ConfSeqDecodeError> {
+    let ring_info = rings::symmetrize_sssr(molecule).map_err(|err| ConfSeqDecodeError::RingFinding(err.to_string()))?;
     let mut shared = HashSet::new();
     for ring_bonds in ring_info.bond_rings() {
-        if ring_bonds
-            .iter()
-            .all(|bond| ring_info.num_bond_rings(*bond) >= 2)
-        {
+        if ring_bonds.iter().all(|bond| ring_info.num_bond_rings(*bond) >= 2) {
             for bond_id in ring_bonds {
                 let bond = &molecule.bonds()[bond_id.index()];
                 shared.insert(sorted_pair(bond.begin().index(), bond.end().index()));
@@ -5888,16 +5497,14 @@ mod tests {
         options: &ConfSeqDecodeOptions,
         stage: crate::chemistry::distgeom::EmbedderTestStage,
     ) -> Result<Template, ConfSeqDecodeError> {
-        let molecule = Molecule::from_smiles(smiles)
-            .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+        let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
         let molecule = prepare_p_chiral_embedding_molecule(molecule, chiral_tags_by_atom)?;
         let with_h = molecule
             .with_hydrogens()
             .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
         let mut params = options.embed_params.clone();
-        let embedded_with_h =
-            crate::distgeom::embedder_stage_coords_for_test(&with_h, &mut params, stage)
-                .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
+        let embedded_with_h = crate::distgeom::embedder_stage_coords_for_test(&with_h, &mut params, stage)
+            .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
         if embedded_with_h.conformers_3d().is_empty() {
             return Err(ConfSeqDecodeError::EmbedFailed);
         }
@@ -5936,9 +5543,7 @@ mod tests {
                 .atoms()
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, atom)| {
-                    (atom.element().atomic_number() != 1).then_some(points[idx])
-                })
+                .filter_map(|(idx, atom)| (atom.element().atomic_number() != 1).then_some(points[idx]))
                 .collect(),
         )
     }
@@ -5948,8 +5553,7 @@ mod tests {
         chiral_tags_by_atom: &HashMap<usize, ChiralTag>,
         options: &ConfSeqDecodeOptions,
     ) -> Result<crate::chemistry::distgeom::EmbedderTestTrace, ConfSeqDecodeError> {
-        let molecule = Molecule::from_smiles(smiles)
-            .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+        let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
         let molecule = prepare_p_chiral_embedding_molecule(molecule, chiral_tags_by_atom)?;
         let with_h = molecule
             .with_hydrogens()
@@ -5959,10 +5563,8 @@ mod tests {
             .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
         trace.initial_coords = heavy_atom_points_from_with_h_trace(&with_h, trace.initial_coords);
         trace.first_minimized = heavy_atom_points_from_with_h_trace(&with_h, trace.first_minimized);
-        trace.fourth_dimension_cleaned =
-            heavy_atom_points_from_with_h_trace(&with_h, trace.fourth_dimension_cleaned);
-        trace.exp_torsion_minimized =
-            heavy_atom_points_from_with_h_trace(&with_h, trace.exp_torsion_minimized);
+        trace.fourth_dimension_cleaned = heavy_atom_points_from_with_h_trace(&with_h, trace.fourth_dimension_cleaned);
+        trace.exp_torsion_minimized = heavy_atom_points_from_with_h_trace(&with_h, trace.exp_torsion_minimized);
         trace.final_checked = heavy_atom_points_from_with_h_trace(&with_h, trace.final_checked);
         Ok(trace)
     }
@@ -5997,9 +5599,7 @@ mod tests {
         let b1 = vec_normalize(b1);
         let v = vec_sub(b0, vec_scale(b1, vec_dot(b0, b1)));
         let w = vec_sub(b2, vec_scale(b1, vec_dot(b2, b1)));
-        vec_dot(vec_cross(b1, v), w)
-            .atan2(vec_dot(v, w))
-            .to_degrees()
+        vec_dot(vec_cross(b1, v), w).atan2(vec_dot(v, w)).to_degrees()
     }
 
     fn abs_dihedral_delta_deg(left: f64, right: f64) -> f64 {
@@ -6037,10 +5637,7 @@ mod tests {
         (count, rms, max_abs)
     }
 
-    fn heavy_bond_length_stats(
-        molecule: &Molecule,
-        heavy_points: &[[f64; 3]],
-    ) -> (usize, f64, f64) {
+    fn heavy_bond_length_stats(molecule: &Molecule, heavy_points: &[[f64; 3]]) -> (usize, f64, f64) {
         let heavy_index_by_atom = heavy_index_by_atom(molecule);
         let mut count = 0usize;
         let mut sum_sq = 0.0;
@@ -6048,9 +5645,7 @@ mod tests {
         for bond in molecule.bonds() {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            let (Some(begin_heavy), Some(end_heavy)) =
-                (heavy_index_by_atom[begin], heavy_index_by_atom[end])
-            else {
+            let (Some(begin_heavy), Some(end_heavy)) = (heavy_index_by_atom[begin], heavy_index_by_atom[end]) else {
                 continue;
             };
             let length = distance(heavy_points[begin_heavy], heavy_points[end_heavy]);
@@ -6084,10 +5679,7 @@ mod tests {
         let rings = rings::symmetrize_sssr(molecule).expect("ring perception should work");
         let mut max_deviation: f64 = 0.0;
         for ring in rings.atom_rings() {
-            if !ring
-                .iter()
-                .all(|atom| molecule.atoms()[atom.index()].is_aromatic())
-            {
+            if !ring.iter().all(|atom| molecule.atoms()[atom.index()].is_aromatic()) {
                 continue;
             }
             let origin = coords[ring[0].index()];
@@ -6123,8 +5715,7 @@ mod tests {
             template_backend: ConfSeqTemplateBackend::FastGeometry,
             ..ConfSeqDecodeOptions::default()
         };
-        build_template(smiles, &HashMap::new(), &options)
-            .expect("ConfSeq base template should build")
+        build_template(smiles, &HashMap::new(), &options).expect("ConfSeq base template should build")
     }
 
     fn heavy_atom_points_for_rmsd(mol: &Molecule) -> Vec<[f64; 3]> {
@@ -6176,10 +5767,7 @@ mod tests {
             if !usable {
                 continue;
             }
-            let rmsd = crate::distgeom::aligned_rmsd_for_test(
-                reference_heavy_points,
-                &permuted_base_points,
-            );
+            let rmsd = crate::distgeom::aligned_rmsd_for_test(reference_heavy_points, &permuted_base_points);
             best = best.min(rmsd);
         }
         best.is_finite().then_some(best)
@@ -6201,10 +5789,7 @@ mod tests {
         base: Molecule,
     }
 
-    fn molecule_with_test_conformer(
-        molecule: &Molecule,
-        points: Vec<[f64; 3]>,
-    ) -> Result<Molecule, String> {
+    fn molecule_with_test_conformer(molecule: &Molecule, points: Vec<[f64; 3]>) -> Result<Molecule, String> {
         let mut builder = molecule.to_builder();
         builder
             .add_conformer(Conformer3D::new(0, points, true))
@@ -6230,18 +5815,10 @@ mod tests {
         for record in records {
             let source_mol = Molecule::from_smiles(&record.stripped_smiles)
                 .map_err(|err| format!("failed to parse row {} SMILES: {err}", record.idx))?;
-            let reference =
-                molecule_with_test_conformer(&source_mol, record.reference_points.clone())
-                    .map_err(|err| {
-                        format!(
-                            "failed to build row {} reference molecule: {err}",
-                            record.idx
-                        )
-                    })?;
-            let reference_record =
-                mol_to_sdf_record_with_params(&reference, &params).map_err(|err| {
-                    format!("failed to write row {} reference SDF: {err}", record.idx)
-                })?;
+            let reference = molecule_with_test_conformer(&source_mol, record.reference_points.clone())
+                .map_err(|err| format!("failed to build row {} reference molecule: {err}", record.idx))?;
+            let reference_record = mol_to_sdf_record_with_params(&reference, &params)
+                .map_err(|err| format!("failed to write row {} reference SDF: {err}", record.idx))?;
             let base_record = mol_to_sdf_record_with_params(&record.base, &params)
                 .map_err(|err| format!("failed to write row {} base SDF: {err}", record.idx))?;
             reference_sdf.push_str(&reference_record);
@@ -6267,16 +5844,10 @@ mod tests {
             reference_sdf,
         )
         .map_err(|err| err.to_string())?;
-        std::fs::write(
-            std::path::Path::new(export_dir).join("base_fail_gt_0_1a.sdf"),
-            base_sdf,
-        )
-        .map_err(|err| err.to_string())?;
-        std::fs::write(
-            std::path::Path::new(export_dir).join("fail_gt_0_1a.jsonl"),
-            jsonl,
-        )
-        .map_err(|err| err.to_string())
+        std::fs::write(std::path::Path::new(export_dir).join("base_fail_gt_0_1a.sdf"), base_sdf)
+            .map_err(|err| err.to_string())?;
+        std::fs::write(std::path::Path::new(export_dir).join("fail_gt_0_1a.jsonl"), jsonl)
+            .map_err(|err| err.to_string())
     }
 
     fn quantile_sorted(values: &[f64], q: f64) -> f64 {
@@ -6316,8 +5887,7 @@ mod tests {
             self.reference_target_sum_sq += reference_target * reference_target;
             self.max_base_ref_abs = self.max_base_ref_abs.max(base_ref.abs());
             self.max_base_target_abs = self.max_base_target_abs.max(base_target.abs());
-            self.max_reference_target_abs =
-                self.max_reference_target_abs.max(reference_target.abs());
+            self.max_reference_target_abs = self.max_reference_target_abs.max(reference_target.abs());
         }
 
         fn base_ref_rms(self) -> f64 {
@@ -6367,15 +5937,11 @@ mod tests {
         for bond in molecule.bonds() {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            let (Some(begin_heavy), Some(end_heavy)) =
-                (heavy_index_by_atom[begin], heavy_index_by_atom[end])
-            else {
+            let (Some(begin_heavy), Some(end_heavy)) = (heavy_index_by_atom[begin], heavy_index_by_atom[end]) else {
                 continue;
             };
-            let delta = distance(
-                reference_heavy_points[begin_heavy],
-                reference_heavy_points[end_heavy],
-            ) - distance(base_heavy_points[begin_heavy], base_heavy_points[end_heavy]);
+            let delta = distance(reference_heavy_points[begin_heavy], reference_heavy_points[end_heavy])
+                - distance(base_heavy_points[begin_heavy], base_heavy_points[end_heavy]);
             bond_count += 1;
             bond_sum_sq += delta * delta;
             max_bond_abs_a = max_bond_abs_a.max(delta.abs());
@@ -6477,16 +6043,11 @@ mod tests {
         for bond in molecule.bonds() {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            let (Some(begin_heavy), Some(end_heavy)) =
-                (heavy_index_by_atom[begin], heavy_index_by_atom[end])
-            else {
+            let (Some(begin_heavy), Some(end_heavy)) = (heavy_index_by_atom[begin], heavy_index_by_atom[end]) else {
                 continue;
             };
             let base_len = distance(base_heavy_points[begin_heavy], base_heavy_points[end_heavy]);
-            let reference_len = distance(
-                reference_heavy_points[begin_heavy],
-                reference_heavy_points[end_heavy],
-            );
+            let reference_len = distance(reference_heavy_points[begin_heavy], reference_heavy_points[end_heavy]);
             let target = model
                 .bond_targets
                 .get(bond.id().index())
@@ -6496,11 +6057,7 @@ mod tests {
             let base_target = base_len - target;
             let reference_target = reference_len - target;
             let pair = sorted_pair(begin, end);
-            let scope = if cut_bonds.contains(&pair) {
-                "cut"
-            } else {
-                "internal"
-            };
+            let scope = if cut_bonds.contains(&pair) { "cut" } else { "internal" };
             let shape = match (component_by_atom[begin], component_by_atom[end]) {
                 (Some(left), Some(right)) if left == right => shape_by_component[left].as_str(),
                 (Some(_), Some(_)) => "cross_component",
@@ -6609,14 +6166,8 @@ mod tests {
             if heavy_indices.len() < 3 {
                 continue;
             }
-            let ref_points: Vec<_> = heavy_indices
-                .iter()
-                .map(|&idx| reference_heavy_points[idx])
-                .collect();
-            let base_points: Vec<_> = heavy_indices
-                .iter()
-                .map(|&idx| base_heavy_points[idx])
-                .collect();
+            let ref_points: Vec<_> = heavy_indices.iter().map(|&idx| reference_heavy_points[idx]).collect();
+            let base_points: Vec<_> = heavy_indices.iter().map(|&idx| base_heavy_points[idx]).collect();
             let rmsd = crate::distgeom::aligned_rmsd_for_test(&ref_points, &base_points);
             let shape_rmsd = mirror_invariant_aligned_rmsd_for_test(&ref_points, &base_points);
             let terminal_symmetry_rmsd = terminal_ligand_symmetry_aligned_rmsd_for_test(
@@ -6645,9 +6196,8 @@ mod tests {
             }
             fragment_terminal_symmetry_rmsds.push(terminal_symmetry_rmsd);
 
-            let connector_fragment = rigid_fragment_atoms_with_connector_stubs(
-                molecule, &adjacency, &cut_bonds, &fragment,
-            );
+            let connector_fragment =
+                rigid_fragment_atoms_with_connector_stubs(molecule, &adjacency, &cut_bonds, &fragment);
             let connector_heavy_indices: Vec<_> = connector_fragment
                 .iter()
                 .copied()
@@ -6670,14 +6220,8 @@ mod tests {
         }
         let max_rmsd = fragment_rmsds.iter().copied().max_by(f64::total_cmp);
         let max_shape_rmsd = fragment_shape_rmsds.iter().copied().max_by(f64::total_cmp);
-        let max_terminal_symmetry_rmsd = fragment_terminal_symmetry_rmsds
-            .iter()
-            .copied()
-            .max_by(f64::total_cmp);
-        let max_connector_rmsd = fragment_connector_rmsds
-            .iter()
-            .copied()
-            .max_by(f64::total_cmp);
+        let max_terminal_symmetry_rmsd = fragment_terminal_symmetry_rmsds.iter().copied().max_by(f64::total_cmp);
+        let max_connector_rmsd = fragment_connector_rmsds.iter().copied().max_by(f64::total_cmp);
         RigidFragmentRmsdSummary {
             fragment_rmsds,
             fragment_shape_rmsds,
@@ -6706,29 +6250,17 @@ mod tests {
             .copied()
             .filter_map(|atom_idx| heavy_index_by_atom[atom_idx])
             .collect();
-        let ref_points: Vec<_> = heavy_indices
-            .iter()
-            .map(|&idx| reference_heavy_points[idx])
-            .collect();
-        let base_points: Vec<_> = heavy_indices
-            .iter()
-            .map(|&idx| base_heavy_points[idx])
-            .collect();
+        let ref_points: Vec<_> = heavy_indices.iter().map(|&idx| reference_heavy_points[idx]).collect();
+        let base_points: Vec<_> = heavy_indices.iter().map(|&idx| base_heavy_points[idx]).collect();
         let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
         let proper_rmsd = crate::distgeom::aligned_rmsd_for_test(&ref_points, &base_points);
         let shape_rmsd = mirror_invariant_aligned_rmsd_for_test(&ref_points, &base_points);
-        let terminal_symmetry_rmsd = terminal_ligand_symmetry_aligned_rmsd_for_test(
-            molecule,
-            &adjacency,
-            fragment,
-            &ref_points,
-            &base_points,
-        );
+        let terminal_symmetry_rmsd =
+            terminal_ligand_symmetry_aligned_rmsd_for_test(molecule, &adjacency, fragment, &ref_points, &base_points);
         let cut_bonds = rings::symmetrize_sssr(molecule)
             .map(|ring_info| confseq_base_fragment_cut_bonds(molecule, &ring_info))
             .unwrap_or_default();
-        let connector_fragment =
-            rigid_fragment_atoms_with_connector_stubs(molecule, &adjacency, &cut_bonds, fragment);
+        let connector_fragment = rigid_fragment_atoms_with_connector_stubs(molecule, &adjacency, &cut_bonds, fragment);
         let connector_heavy_indices: Vec<_> = connector_fragment
             .iter()
             .copied()
@@ -6789,12 +6321,7 @@ mod tests {
         confseq_base_sanitize_fragment_stereo_for_conditioner(&mut fragment);
         let mut fragment_to_old = vec![None; fragment.num_atoms()];
         for &old_atom in &template.realization_atoms {
-            let Some(new_atom) = old_to_fragment
-                .get(old_atom)
-                .copied()
-                .flatten()
-                .map(AtomId::index)
-            else {
+            let Some(new_atom) = old_to_fragment.get(old_atom).copied().flatten().map(AtomId::index) else {
                 return Err(ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
                     "diagnostic fragment lost atom {old_atom} key={}",
                     template.cache_key
@@ -6802,13 +6329,12 @@ mod tests {
             };
             fragment_to_old[new_atom] = Some(old_atom);
         }
-        let fragment_bounds = confseq_base_slice_bounds_matrix(&full_bounds, &fragment_to_old)
-            .map_err(|reason| {
-                ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                    "failed to slice diagnostic bounds key={}: {reason}",
-                    template.cache_key
-                ))
-            })?;
+        let fragment_bounds = confseq_base_slice_bounds_matrix(&full_bounds, &fragment_to_old).map_err(|reason| {
+            ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+                "failed to slice diagnostic bounds key={}: {reason}",
+                template.cache_key
+            ))
+        })?;
         let mut params = EmbedParameters::etkdg();
         params.random_seed = 0;
         params.enable_sequential_random_seeds = true;
@@ -6822,13 +6348,12 @@ mod tests {
                 template.cache_key
             ))
         })?;
-        let staged = crate::distgeom::embedder_stage_coords_for_test(&fragment, &mut params, stage)
-            .map_err(|err| {
-                ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
-                    "diagnostic fragment stage embedding failed key={}: {err}",
-                    template.cache_key
-                ))
-            })?;
+        let staged = crate::distgeom::embedder_stage_coords_for_test(&fragment, &mut params, stage).map_err(|err| {
+            ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
+                "diagnostic fragment stage embedding failed key={}: {err}",
+                template.cache_key
+            ))
+        })?;
         let conformer = staged.conformers_3d().first().ok_or_else(|| {
             ConfSeqFastGeometryError::RigidFragmentEmbedding(format!(
                 "diagnostic fragment stage produced no conformer key={}",
@@ -6879,10 +6404,7 @@ mod tests {
         None
     }
 
-    fn align_points_by_local_frame_for_test(
-        reference: &[[f64; 3]],
-        probe: &[[f64; 3]],
-    ) -> Vec<[f64; 3]> {
+    fn align_points_by_local_frame_for_test(reference: &[[f64; 3]], probe: &[[f64; 3]]) -> Vec<[f64; 3]> {
         let Some((ref_origin, ref_frame)) = local_frame_for_test(reference) else {
             return probe.to_vec();
         };
@@ -6939,24 +6461,19 @@ mod tests {
             .map(|atom| atom.id().index())
             .filter(|atom| fragment_atoms.contains(atom))
             .collect::<Vec<_>>();
-        let whole_fragment_points = kept_atoms
-            .iter()
-            .map(|&atom| whole_points[atom])
-            .collect::<Vec<_>>();
+        let whole_fragment_points = kept_atoms.iter().map(|&atom| whole_points[atom]).collect::<Vec<_>>();
         let fragment_points = kept_atoms
             .iter()
             .map(|atom| {
-                fragment_coords_by_atom.get(atom).copied().ok_or_else(|| {
-                    format!("missing fragment realization coordinate for atom {atom}")
-                })
+                fragment_coords_by_atom
+                    .get(atom)
+                    .copied()
+                    .ok_or_else(|| format!("missing fragment realization coordinate for atom {atom}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let aligned_fragment_points =
-            align_points_by_local_frame_for_test(&whole_fragment_points, &fragment_points);
-        let whole_mol =
-            fragment_subset_molecule_for_test(source_mol, &kept_atoms, whole_fragment_points)?;
-        let fragment_mol =
-            fragment_subset_molecule_for_test(source_mol, &kept_atoms, aligned_fragment_points)?;
+        let aligned_fragment_points = align_points_by_local_frame_for_test(&whole_fragment_points, &fragment_points);
+        let whole_mol = fragment_subset_molecule_for_test(source_mol, &kept_atoms, whole_fragment_points)?;
+        let fragment_mol = fragment_subset_molecule_for_test(source_mol, &kept_atoms, aligned_fragment_points)?;
         let params = MolBlockWriteParams {
             format: SdfFormat::V2000,
             force_2d: false,
@@ -7034,18 +6551,13 @@ mod tests {
         }
     }
 
-    fn mirror_invariant_aligned_rmsd_for_test(
-        ref_points: &[[f64; 3]],
-        probe_points: &[[f64; 3]],
-    ) -> f64 {
+    fn mirror_invariant_aligned_rmsd_for_test(ref_points: &[[f64; 3]], probe_points: &[[f64; 3]]) -> f64 {
         let proper = crate::distgeom::aligned_rmsd_for_test(ref_points, probe_points);
         let mirrored = probe_points
             .iter()
             .map(|point| [-point[0], point[1], point[2]])
             .collect::<Vec<_>>();
-        proper.min(crate::distgeom::aligned_rmsd_for_test(
-            ref_points, &mirrored,
-        ))
+        proper.min(crate::distgeom::aligned_rmsd_for_test(ref_points, &mirrored))
     }
 
     fn rigid_fragment_atoms_with_connector_stubs(
@@ -7108,10 +6620,7 @@ mod tests {
             );
             groups.entry(key).or_default().push(position);
         }
-        let groups = groups
-            .into_values()
-            .filter(|group| group.len() > 1)
-            .collect::<Vec<_>>();
+        let groups = groups.into_values().filter(|group| group.len() > 1).collect::<Vec<_>>();
         let total_permutations = groups
             .iter()
             .map(|group| factorial_for_diagnostic(group.len()))
@@ -7122,14 +6631,7 @@ mod tests {
 
         let mut best = f64::INFINITY;
         let mut order = (0..probe_points.len()).collect::<Vec<_>>();
-        visit_terminal_ligand_symmetry_orders(
-            0,
-            &groups,
-            &mut order,
-            ref_points,
-            probe_points,
-            &mut best,
-        );
+        visit_terminal_ligand_symmetry_orders(0, &groups, &mut order, ref_points, probe_points, &mut best);
         best
     }
 
@@ -7142,13 +6644,8 @@ mod tests {
         best: &mut f64,
     ) {
         if group_idx == groups.len() {
-            let permuted = order
-                .iter()
-                .map(|&idx| probe_points[idx])
-                .collect::<Vec<_>>();
-            *best = best.min(crate::distgeom::aligned_rmsd_for_test(
-                ref_points, &permuted,
-            ));
+            let permuted = order.iter().map(|&idx| probe_points[idx]).collect::<Vec<_>>();
+            *best = best.min(crate::distgeom::aligned_rmsd_for_test(ref_points, &permuted));
             return;
         }
         let group = &groups[group_idx];
@@ -7158,25 +6655,14 @@ mod tests {
             for (&position, &value) in group.iter().zip(candidate) {
                 order[position] = value;
             }
-            visit_terminal_ligand_symmetry_orders(
-                group_idx + 1,
-                groups,
-                order,
-                ref_points,
-                probe_points,
-                best,
-            );
+            visit_terminal_ligand_symmetry_orders(group_idx + 1, groups, order, ref_points, probe_points, best);
         });
         for (&position, &value) in group.iter().zip(&original) {
             order[position] = value;
         }
     }
 
-    fn visit_terminal_ligand_permutations(
-        idx: usize,
-        values: &mut [usize],
-        visit: &mut impl FnMut(&[usize]),
-    ) {
+    fn visit_terminal_ligand_permutations(idx: usize, values: &mut [usize], visit: &mut impl FnMut(&[usize])) {
         if idx == values.len() {
             visit(values);
             return;
@@ -7245,10 +6731,7 @@ mod tests {
         heavy_index_by_atom
     }
 
-    fn rigid_fragment_type_for_diagnostic(
-        molecule: &Molecule,
-        fragment_atoms: &[usize],
-    ) -> &'static str {
+    fn rigid_fragment_type_for_diagnostic(molecule: &Molecule, fragment_atoms: &[usize]) -> &'static str {
         let key = rigid_fragment_framework_key_for_diagnostic(molecule, fragment_atoms);
         if key.starts_with("ring_planar") {
             "ring_planar"
@@ -7263,10 +6746,7 @@ mod tests {
         }
     }
 
-    fn rigid_fragment_framework_key_for_diagnostic(
-        molecule: &Molecule,
-        fragment_atoms: &[usize],
-    ) -> String {
+    fn rigid_fragment_framework_key_for_diagnostic(molecule: &Molecule, fragment_atoms: &[usize]) -> String {
         let fragment_set: HashSet<_> = fragment_atoms.iter().copied().collect();
         let ring_info = rings::symmetrize_sssr(molecule).ok();
         let ring_components = ring_info
@@ -7274,11 +6754,7 @@ mod tests {
             .and_then(|ring_info| classify_confseq_base_ring_components(molecule, ring_info).ok())
             .unwrap_or_default();
         for component in &ring_components {
-            if component
-                .atoms
-                .iter()
-                .all(|atom| fragment_set.contains(atom))
-            {
+            if component.atoms.iter().all(|atom| fragment_set.contains(atom)) {
                 return if let Some(ring_info) = ring_info.as_ref() {
                     format!(
                         "{}:{:?}",
@@ -7287,11 +6763,7 @@ mod tests {
                         } else {
                             "ring_nonplanar"
                         },
-                        confseq_base_ring_topology_from_ring_info(
-                            molecule,
-                            ring_info,
-                            &component.atoms
-                        )
+                        confseq_base_ring_topology_from_ring_info(molecule, ring_info, &component.atoms)
                     )
                 } else {
                     format!(
@@ -7311,11 +6783,10 @@ mod tests {
         });
         if all_planar_like {
             "planar_pi".to_string()
-        } else if fragment_atoms.iter().any(|atom| {
-            ring_components
-                .iter()
-                .any(|component| component.atoms.contains(atom))
-        }) {
+        } else if fragment_atoms
+            .iter()
+            .any(|atom| ring_components.iter().any(|component| component.atoms.contains(atom)))
+        {
             "ring_mixed".to_string()
         } else {
             "acyclic".to_string()
@@ -7332,14 +6803,8 @@ mod tests {
 
     impl RigidFragmentFrameworkRmsdBuckets {
         fn record(&mut self, key: String, details: &RigidFragmentMetricDetails) {
-            self.proper
-                .entry(key.clone())
-                .or_default()
-                .push(details.proper_rmsd);
-            self.shape
-                .entry(key.clone())
-                .or_default()
-                .push(details.shape_rmsd);
+            self.proper.entry(key.clone()).or_default().push(details.proper_rmsd);
+            self.shape.entry(key.clone()).or_default().push(details.shape_rmsd);
             self.terminal_symmetry
                 .entry(key.clone())
                 .or_default()
@@ -7363,14 +6828,8 @@ mod tests {
     }
 
     impl BaseGeometryStageDiagnostics {
-        fn record(
-            &mut self,
-            source_mol: &Molecule,
-            reference_points: &[[f64; 3]],
-            probe: &Molecule,
-        ) {
-            let local_summary =
-                local_constraint_summary_against_reference(source_mol, reference_points, probe);
+        fn record(&mut self, source_mol: &Molecule, reference_points: &[[f64; 3]], probe: &Molecule) {
+            let local_summary = local_constraint_summary_against_reference(source_mol, reference_points, probe);
             self.comparable += 1;
             if local_summary.bond_rms_a <= 0.05 && local_summary.non_token_angle_rms_deg <= 5.0 {
                 self.pass_005a_5deg += 1;
@@ -7398,8 +6857,7 @@ mod tests {
         }
 
         fn sort(&mut self) {
-            self.local_bond_rmsds
-                .sort_by(|left, right| left.total_cmp(right));
+            self.local_bond_rmsds.sort_by(|left, right| left.total_cmp(right));
             self.local_non_token_angle_rmsds
                 .sort_by(|left, right| left.total_cmp(right));
             self.rigid_fragment_shape_rmsds
@@ -7409,12 +6867,9 @@ mod tests {
         }
 
         fn print(&self, label: &str) {
-            let pass_rate_005a_5deg =
-                self.pass_005a_5deg as f64 / self.comparable.max(1) as f64 * 100.0;
-            let pass_rate_010a_10deg =
-                self.pass_010a_10deg as f64 / self.comparable.max(1) as f64 * 100.0;
-            let pass_rate_010a_15deg =
-                self.pass_010a_15deg as f64 / self.comparable.max(1) as f64 * 100.0;
+            let pass_rate_005a_5deg = self.pass_005a_5deg as f64 / self.comparable.max(1) as f64 * 100.0;
+            let pass_rate_010a_10deg = self.pass_010a_10deg as f64 / self.comparable.max(1) as f64 * 100.0;
+            let pass_rate_010a_15deg = self.pass_010a_15deg as f64 / self.comparable.max(1) as f64 * 100.0;
             eprintln!(
                 "confseq_base_corpus {label}_local_constraint_pass comparable={} pass_0_05a_5deg={} rate_0_05a_5deg={:.2}% pass_0_10a_10deg={} rate_0_10a_10deg={:.2}% pass_0_10a_15deg={} rate_0_10a_15deg={:.2}%",
                 self.comparable,
@@ -7456,11 +6911,7 @@ mod tests {
         }
     }
 
-    fn print_rigid_fragment_rmsd_buckets(
-        label: &str,
-        mut buckets: HashMap<String, Vec<f64>>,
-        limit: usize,
-    ) {
+    fn print_rigid_fragment_rmsd_buckets(label: &str, mut buckets: HashMap<String, Vec<f64>>, limit: usize) {
         let mut summaries = buckets
             .drain()
             .map(|(key, mut values)| {
@@ -7481,9 +6932,7 @@ mod tests {
                 .then_with(|| left.0.cmp(&right.0))
         });
         for (key, count, p50, p90, p95, p99) in summaries.into_iter().take(limit) {
-            eprintln!(
-                "{label} key={key} count={count} p50={p50:.6} p90={p90:.6} p95={p95:.6} p99={p99:.6}"
-            );
+            eprintln!("{label} key={key} count={count} p50={p50:.6} p90={p90:.6} p95={p95:.6} p99={p99:.6}");
         }
     }
 
@@ -7496,11 +6945,7 @@ mod tests {
     }
 
     impl ConfSeqBaseFrameworkDiagnostics {
-        fn collect(
-            molecule: &Molecule,
-            ring_info: &rings::RingInfo,
-            model: &ConfSeqBaseConstraintModel,
-        ) -> Self {
+        fn collect(molecule: &Molecule, ring_info: &rings::RingInfo, model: &ConfSeqBaseConstraintModel) -> Self {
             let mut diagnostics = Self::default();
             for component in &model.rigid_components {
                 let realization_atoms = confseq_base_component_realization_atoms(component);
@@ -7522,13 +6967,8 @@ mod tests {
             for path_class in confseq_base_assembly_path_classes_for_diagnostic(molecule, model) {
                 *diagnostics.assembly_paths.entry(path_class).or_default() += 1;
             }
-            for topology in
-                confseq_base_nonplanar_ring_topologies_for_diagnostic(molecule, ring_info)
-            {
-                *diagnostics
-                    .nonplanar_ring_topologies
-                    .entry(topology)
-                    .or_default() += 1;
+            for topology in confseq_base_nonplanar_ring_topologies_for_diagnostic(molecule, ring_info) {
+                *diagnostics.nonplanar_ring_topologies.entry(topology).or_default() += 1;
             }
             diagnostics
         }
@@ -7575,25 +7015,20 @@ mod tests {
                 component_by_atom[atom] = Some(component_idx);
             }
         }
-        let scaffold_shape =
-            coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds())
-                .ok()
-                .map(|points| {
-                    points
-                        .into_iter()
-                        .map(|point| [point[0], point[1], 0.0])
-                        .collect::<Vec<_>>()
-                });
+        let scaffold_shape = coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds())
+            .ok()
+            .map(|points| {
+                points
+                    .into_iter()
+                    .map(|point| [point[0], point[1], 0.0])
+                    .collect::<Vec<_>>()
+            });
         let mut local_components = Vec::with_capacity(model.rigid_components.len());
-        let mut fragment_template_cache =
-            HashMap::<String, ConfSeqBaseRigidFragmentTemplate>::new();
+        let mut fragment_template_cache = HashMap::<String, ConfSeqBaseRigidFragmentTemplate>::new();
         for component in &model.rigid_components {
-            let Ok(template) = confseq_base_cached_rigid_fragment_template(
-                molecule,
-                model,
-                component,
-                &mut fragment_template_cache,
-            ) else {
+            let Ok(template) =
+                confseq_base_cached_rigid_fragment_template(molecule, model, component, &mut fragment_template_cache)
+            else {
                 return Vec::new();
             };
             let Ok(local) = confseq_base_realize_rigid_fragment_template(
@@ -7611,8 +7046,7 @@ mod tests {
         let mut placed_atoms = vec![false; molecule.num_atoms()];
         let mut placed_components = vec![false; model.rigid_components.len()];
         let mut connector_targets = HashMap::<(usize, usize), [f64; 3]>::new();
-        let root_component =
-            confseq_base_select_root_component(molecule, model, &component_by_atom);
+        let root_component = confseq_base_select_root_component(molecule, model, &component_by_atom);
         if place_confseq_base_rigid_component_local(
             &model.rigid_components[root_component],
             &local_components[root_component],
@@ -7626,8 +7060,7 @@ mod tests {
             return Vec::new();
         }
         placed_components[root_component] = true;
-        let (cut_bonds, reciprocal_stubs) =
-            confseq_base_connector_stub_counts_for_diagnostic(model);
+        let (cut_bonds, reciprocal_stubs) = confseq_base_connector_stub_counts_for_diagnostic(model);
         let mut classes = Vec::new();
         classes.push(format!("cut_bonds={cut_bonds}"));
         classes.push(format!("reciprocal_connector_stubs={reciprocal_stubs}"));
@@ -7645,12 +7078,8 @@ mod tests {
             ) else {
                 break;
             };
-            let anchors = confseq_base_component_assembly_anchors(
-                molecule,
-                &component_by_atom,
-                &placed_atoms,
-                next_component,
-            );
+            let anchors =
+                confseq_base_component_assembly_anchors(molecule, &component_by_atom, &placed_atoms, next_component);
             let local = &local_components[next_component];
             let connector_count = anchors
                 .iter()
@@ -7691,9 +7120,7 @@ mod tests {
         classes
     }
 
-    fn confseq_base_connector_stub_counts_for_diagnostic(
-        model: &ConfSeqBaseConstraintModel,
-    ) -> (usize, usize) {
+    fn confseq_base_connector_stub_counts_for_diagnostic(model: &ConfSeqBaseConstraintModel) -> (usize, usize) {
         let mut directed = HashSet::<(usize, usize)>::new();
         for component in &model.rigid_components {
             for connector in &component.connectors {
@@ -7722,9 +7149,7 @@ mod tests {
         components
             .iter()
             .filter(|component| !component.planar)
-            .map(|component| {
-                confseq_base_ring_component_topology_for_diagnostic(molecule, ring_info, component)
-            })
+            .map(|component| confseq_base_ring_component_topology_for_diagnostic(molecule, ring_info, component))
             .collect()
     }
 
@@ -7842,11 +7267,7 @@ mod tests {
                 if !begin_in && !end_in {
                     return None;
                 }
-                let scope = if begin_in && end_in {
-                    "internal"
-                } else {
-                    "border"
-                };
+                let scope = if begin_in && end_in { "internal" } else { "border" };
                 let pair = sorted_pair(begin, end);
                 Some(format!(
                     "{begin}-{end}:{:?} arom={} conj={} ring={} rotor_cut={} {scope}",
@@ -7878,13 +7299,12 @@ mod tests {
                     cache_path.display()
                 )
             });
-            let mut cache: ConfSeqDgReferenceCache =
-                serde_json::from_str(&raw).unwrap_or_else(|err| {
-                    panic!(
-                        "failed to parse ConfSeq DG reference cache {}: {err}",
-                        cache_path.display()
-                    )
-                });
+            let mut cache: ConfSeqDgReferenceCache = serde_json::from_str(&raw).unwrap_or_else(|err| {
+                panic!(
+                    "failed to parse ConfSeq DG reference cache {}: {err}",
+                    cache_path.display()
+                )
+            });
             assert_eq!(
                 cache.entries.len(),
                 in_smiles_batch.len(),
@@ -7893,11 +7313,7 @@ mod tests {
                 cache.entries.len(),
                 in_smiles_batch.len()
             );
-            filter_invalid_confseq_dg_reference_cache_entries(
-                &mut cache,
-                in_smiles_batch,
-                td_smiles_batch,
-            );
+            filter_invalid_confseq_dg_reference_cache_entries(&mut cache, in_smiles_batch, td_smiles_batch);
             return cache;
         }
 
@@ -7917,24 +7333,20 @@ mod tests {
             ..ConfSeqDecodeOptions::default()
         };
         let mut entries = Vec::with_capacity(in_smiles_batch.len());
-        for (idx, (in_smiles, td_smiles)) in in_smiles_batch.iter().zip(td_smiles_batch).enumerate()
-        {
+        for (idx, (in_smiles, td_smiles)) in in_smiles_batch.iter().zip(td_smiles_batch).enumerate() {
             eprintln!(
                 "generating ConfSeq DG reference cache record {}/{}",
                 idx,
                 in_smiles_batch.len()
             );
-            let entry = match decode_confseq_with_options(in_smiles, td_smiles, &reference_options)
-            {
+            let entry = match decode_confseq_with_options(in_smiles, td_smiles, &reference_options) {
                 Ok(molecule) => {
                     let heavy_points = heavy_atom_points_for_rmsd(&molecule);
                     let (_, _, max_heavy_bond) = heavy_bond_length_stats(&molecule, &heavy_points);
                     if max_heavy_bond > CONFSEQ_DG_REFERENCE_MAX_REASONABLE_HEAVY_BOND_A {
                         ConfSeqDgReferenceCacheEntry {
                             heavy_atom_points: None,
-                            error: Some(format!(
-                                "InvalidFullDecodeGeometry(max_heavy_bond={max_heavy_bond:.6})"
-                            )),
+                            error: Some(format!("InvalidFullDecodeGeometry(max_heavy_bond={max_heavy_bond:.6})")),
                         }
                     } else {
                         ConfSeqDgReferenceCacheEntry {
@@ -7962,8 +7374,7 @@ mod tests {
                 )
             });
         }
-        let raw = serde_json::to_string_pretty(&cache)
-            .expect("ConfSeq DG reference cache should serialize");
+        let raw = serde_json::to_string_pretty(&cache).expect("ConfSeq DG reference cache should serialize");
         std::fs::write(&cache_path, raw).unwrap_or_else(|err| {
             panic!(
                 "failed to write ConfSeq DG reference cache {}: {err}",
@@ -7991,37 +7402,27 @@ mod tests {
             let (_, _, max_heavy_bond) = heavy_bond_length_stats(&source_mol, heavy_points);
             if max_heavy_bond > CONFSEQ_DG_REFERENCE_MAX_REASONABLE_HEAVY_BOND_A {
                 entry.heavy_atom_points = None;
-                entry.error = Some(format!(
-                    "InvalidFullDecodeGeometry(max_heavy_bond={max_heavy_bond:.6})"
-                ));
+                entry.error = Some(format!("InvalidFullDecodeGeometry(max_heavy_bond={max_heavy_bond:.6})"));
             }
         }
     }
 
     fn read_confseq_corpus_smiles(corpus_path: &str) -> (Vec<String>, Vec<String>) {
-        let input =
-            std::fs::read_to_string(corpus_path).expect("ConfSeq corpus should be readable");
+        let input = std::fs::read_to_string(corpus_path).expect("ConfSeq corpus should be readable");
         let mut in_smiles_batch = Vec::new();
         let mut td_smiles_batch = Vec::new();
         for (line_idx, line) in input.lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
-            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
-            });
-            let in_smiles = value["in_smiles"].as_str().unwrap_or_else(|| {
-                panic!(
-                    "corpus line {} is missing string field in_smiles",
-                    line_idx + 1
-                )
-            });
-            let td_smiles = value["td_smiles"].as_str().unwrap_or_else(|| {
-                panic!(
-                    "corpus line {} is missing string field td_smiles",
-                    line_idx + 1
-                )
-            });
+            let value: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1));
+            let in_smiles = value["in_smiles"]
+                .as_str()
+                .unwrap_or_else(|| panic!("corpus line {} is missing string field in_smiles", line_idx + 1));
+            let td_smiles = value["td_smiles"]
+                .as_str()
+                .unwrap_or_else(|| panic!("corpus line {} is missing string field td_smiles", line_idx + 1));
             in_smiles_batch.push(in_smiles.to_string());
             td_smiles_batch.push(td_smiles.to_string());
         }
@@ -8031,9 +7432,7 @@ mod tests {
     fn confseq_dg_reference_cache_path(corpus_path: &str) -> std::path::PathBuf {
         std::env::var("COSMOLKIT_CONFSEQ_DG_REFERENCE_CACHE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::PathBuf::from(format!("{corpus_path}.dg_reference_heavy_points.json"))
-            })
+            .unwrap_or_else(|_| std::path::PathBuf::from(format!("{corpus_path}.dg_reference_heavy_points.json")))
     }
 
     fn bond_length_rms_against_reference(reference: &Molecule, probe: &Molecule) -> f64 {
@@ -8081,11 +7480,7 @@ mod tests {
                 .collect();
             for left_ord in 0..heavy_neighbors.len() {
                 for right_ord in left_ord + 1..heavy_neighbors.len() {
-                    centers.push((
-                        heavy_neighbors[left_ord],
-                        center,
-                        heavy_neighbors[right_ord],
-                    ));
+                    centers.push((heavy_neighbors[left_ord], center, heavy_neighbors[right_ord]));
                 }
             }
         }
@@ -8134,10 +7529,7 @@ mod tests {
 
     #[test]
     fn confseq_fast_geometry_satisfies_tetrahedral_stereo_volume_sign() {
-        for (tag, should_be_positive) in [
-            (ChiralTag::TetrahedralCcw, true),
-            (ChiralTag::TetrahedralCw, false),
-        ] {
+        for (tag, should_be_positive) in [(ChiralTag::TetrahedralCcw, true), (ChiralTag::TetrahedralCw, false)] {
             let molecule = Molecule::from_smiles("FC(Cl)(Br)I").expect("test SMILES parses");
             let mut builder = molecule.to_builder();
             builder
@@ -8145,12 +7537,10 @@ mod tests {
                 .expect("center atom exists")
                 .set_chiral_tag(tag);
             let molecule = builder.build().expect("test molecule builds");
-            let embedded =
-                try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
+            let embedded = try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
             let adjacency = AdjacencyList::from_topology(embedded.num_atoms(), embedded.bonds());
-            let constraints =
-                collect_confseq_base_tetrahedral_stereo_constraints(&embedded, &adjacency)
-                    .expect("tetrahedral constraints should collect");
+            let constraints = collect_confseq_base_tetrahedral_stereo_constraints(&embedded, &adjacency)
+                .expect("tetrahedral constraints should collect");
             let constraint = constraints
                 .iter()
                 .find(|constraint| constraint.center == 1)
@@ -8171,8 +7561,7 @@ mod tests {
     fn confseq_base_constraint_model_extracts_rdkit_prior_classes() {
         let molecule = Molecule::from_smiles("C/C=C/C").expect("test SMILES parses");
         let ring_info = rings::symmetrize_sssr(&molecule).expect("ring perception should work");
-        let model = build_confseq_base_constraint_model(&molecule, &ring_info)
-            .expect("constraint model should build");
+        let model = build_confseq_base_constraint_model(&molecule, &ring_info).expect("constraint model should build");
 
         assert_eq!(model.bond_targets.len(), molecule.num_bonds());
         assert!(model.planar_bonds.contains(&sorted_pair(1, 2)));
@@ -8188,8 +7577,7 @@ mod tests {
     fn confseq_base_constraint_builder_places_acyclic_and_simple_ring_scaffolds() {
         for smiles in ["CCCC", "CC(C)CO", "c1ccccc1", "C1CCCCC1"] {
             let molecule = Molecule::from_smiles(smiles).expect("test SMILES parses");
-            let embedded =
-                try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
+            let embedded = try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
 
             assert_eq!(embedded.num_atoms(), molecule.num_atoms());
             assert_eq!(embedded.conformers_3d().len(), 1);
@@ -8224,16 +7612,11 @@ mod tests {
                 .expect("shared nonplanar ring fragments should use fragment-local conditioning");
             let points = conformer_points(&embedded);
             assert!(
-                points
-                    .iter()
-                    .all(|point| point.iter().all(|value| value.is_finite())),
+                points.iter().all(|point| point.iter().all(|value| value.is_finite())),
                 "conditioned shared-ring fixture should produce finite coordinates: {smiles}"
             );
             for bond in molecule.bonds() {
-                let length = vec_len(vec_sub(
-                    points[bond.begin().index()],
-                    points[bond.end().index()],
-                ));
+                let length = vec_len(vec_sub(points[bond.begin().index()], points[bond.end().index()]));
                 assert!(
                     (0.9..=1.8).contains(&length),
                     "conditioned shared-ring fixture has unreasonable bond length {length:.3}: {smiles}"
@@ -8245,8 +7628,7 @@ mod tests {
     #[test]
     fn confseq_base_ring_system_scaffold_uses_rdkit_initial_prior() {
         let molecule = Molecule::from_smiles("c1ccc2ccccc2c1").expect("naphthalene parses");
-        let embedded =
-            try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
+        let embedded = try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
         let coords = embedded.conformers_3d()[0].coordinates();
         let unique_xy: HashSet<_> = coords
             .iter()
@@ -8259,18 +7641,12 @@ mod tests {
     #[test]
     fn confseq_base_scaffold_initializes_connected_ring_systems_globally() {
         let molecule = Molecule::from_smiles("c1ccccc1CCc2ccccc2").expect("fixture parses");
-        let embedded =
-            try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
+        let embedded = try_build_confseq_fast_geometry(&molecule).expect("fast geometry should build");
         let coords = embedded.conformers_3d()[0].coordinates();
         let longest_bond = molecule
             .bonds()
             .iter()
-            .map(|bond| {
-                vec_len(vec_sub(
-                    coords[bond.begin().index()],
-                    coords[bond.end().index()],
-                ))
-            })
+            .map(|bond| vec_len(vec_sub(coords[bond.begin().index()], coords[bond.end().index()])))
             .fold(0.0, f64::max);
 
         assert!(
@@ -8287,9 +7663,8 @@ mod tests {
             ..ConfSeqDecodeOptions::default()
         };
 
-        let error =
-            decode_confseq_with_options("C 1 C C 2 C C C 1 C 2", "C 1 C C 2 C C C 1 C 2", &options)
-                .expect_err("fast-geometry decode failure must not fallback to DistGeom");
+        let error = decode_confseq_with_options("C 1 C C 2 C C C 1 C 2", "C 1 C C 2 C C C 1 C 2", &options)
+            .expect_err("fast-geometry decode failure must not fallback to DistGeom");
 
         assert!(matches!(
             error,
@@ -8305,16 +7680,10 @@ mod tests {
             optimize_with_uff: false,
             ..ConfSeqDecodeOptions::default()
         };
-        let diagnostic = diagnostics::diagnose_confseq_candidate(
-            "C 1 C C 2 C C C 1 C 2",
-            "C 1 C C 2 C C C 1 C 2",
-            &options,
-        );
+        let diagnostic =
+            diagnostics::diagnose_confseq_candidate("C 1 C C 2 C C C 1 C 2", "C 1 C C 2 C C C 1 C 2", &options);
 
-        assert_eq!(
-            diagnostic.phase,
-            Some(diagnostics::ConfSeqDiagnosticPhase::Decode)
-        );
+        assert_eq!(diagnostic.phase, Some(diagnostics::ConfSeqDiagnosticPhase::Decode));
         assert!(diagnostic.parsed);
         assert!(diagnostic.distance_geometry_template_built);
         assert!(diagnostic.base_template_built);
@@ -8333,19 +7702,13 @@ mod tests {
     fn parse_confseq_maps_dihedral_tokens_by_atom_pair_not_position_count() {
         let parsed = parse_confseq("C C C C", "C <60> C C").expect("ConfSeq should parse");
 
-        assert_eq!(
-            parsed.dihedral_angles_by_pair.get(&sorted_pair(0, 1)),
-            Some(&60.0)
-        );
+        assert_eq!(parsed.dihedral_angles_by_pair.get(&sorted_pair(0, 1)), Some(&60.0));
     }
 
     #[test]
     fn parse_confseq_preserves_bracketed_formal_charge_tokens() {
-        let parsed = parse_confseq(
-            "C - [ N + ] ( = O ) [ O - ]",
-            "C <90> [ N + ] ( = O ) [ O - ]",
-        )
-        .expect("charged bracket atoms should parse");
+        let parsed = parse_confseq("C - [ N + ] ( = O ) [ O - ]", "C <90> [ N + ] ( = O ) [ O - ]")
+            .expect("charged bracket atoms should parse");
 
         assert_eq!(parsed.stripped_smiles, "C[N+](=O)[O-]");
     }
@@ -8355,19 +7718,12 @@ mod tests {
         let forward = parse_confseq("C C C C", "C /<177> C C").expect("slash token parses");
         let backward = parse_confseq("C C C C", "C \\<-5> C C").expect("backslash token parses");
 
-        assert_eq!(
-            forward.dihedral_angles_by_pair.get(&sorted_pair(0, 1)),
-            Some(&177.0)
-        );
-        assert_eq!(
-            backward.dihedral_angles_by_pair.get(&sorted_pair(0, 1)),
-            Some(&-5.0)
-        );
+        assert_eq!(forward.dihedral_angles_by_pair.get(&sorted_pair(0, 1)), Some(&177.0));
+        assert_eq!(backward.dihedral_angles_by_pair.get(&sorted_pair(0, 1)), Some(&-5.0));
     }
 
     #[test]
-    fn decode_confseq_batch_preserves_order_and_reports_invalid_ring_candidate_without_unsupported()
-    {
+    fn decode_confseq_batch_preserves_order_and_reports_invalid_ring_candidate_without_unsupported() {
         let smiles = vec!["C C".to_string(), "C 1 C C C 1".to_string()];
         let confseq = vec!["C C".to_string(), "C 1 C C C 1".to_string()];
 
@@ -8400,26 +7756,20 @@ mod tests {
     fn pseudo_chirality_tokens_are_parsed_into_atom_tags() {
         let parsed = parse_confseq("C C C C", "C { <60> C C").expect("pseudo tag should parse");
 
-        assert_eq!(
-            parsed.chiral_tags_by_atom.get(&0),
-            Some(&ChiralTag::TetrahedralCw)
-        );
+        assert_eq!(parsed.chiral_tags_by_atom.get(&0), Some(&ChiralTag::TetrahedralCw));
     }
 
     #[test]
     fn initial_coords_path_differs_from_full_embed_path_on_real_confseq_sample() {
         let in_smiles = "C c 1 c c ( C ) n c ( - N ^ | - N 2 - C ( = O ) - C - S - C - 2 = S ) n 1";
-        let confseq = "C c 1 c c ( C ) n c ( <22> N <115> | <-87> N 2 <170> C ( = O ) <-3> C <1> S <3> C <-171> 2 = S ) n 1";
+        let confseq =
+            "C c 1 c c ( C ) n c ( <22> N <115> | <-87> N 2 <170> C ( = O ) <-3> C <1> S <3> C <-171> 2 = S ) n 1";
         let mut options = ConfSeqDecodeOptions::default();
         options.optimize_with_uff = false;
 
         let parsed = parse_confseq(in_smiles, confseq).expect("sample ConfSeq should parse");
-        let full_template = build_template(
-            &parsed.stripped_smiles,
-            &parsed.chiral_tags_by_atom,
-            &options,
-        )
-        .expect("full template should build");
+        let full_template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &options)
+            .expect("full template should build");
         let initial_template = build_template_initial_coords_for_test(
             &parsed.stripped_smiles,
             &parsed.chiral_tags_by_atom,
@@ -8442,24 +7792,20 @@ mod tests {
         )
         .expect("fourth-dimension template should build");
 
-        let full = decode_from_template(&full_template, &parsed, &options)
-            .expect("full path should decode");
+        let full = decode_from_template(&full_template, &parsed, &options).expect("full path should decode");
         let full_points = conformer_points(&full);
         let stages = [
             (
                 "initial",
-                decode_from_template(&initial_template, &parsed, &options)
-                    .expect("initial path should decode"),
+                decode_from_template(&initial_template, &parsed, &options).expect("initial path should decode"),
             ),
             (
                 "first_min",
-                decode_from_template(&first_min_template, &parsed, &options)
-                    .expect("first-min path should decode"),
+                decode_from_template(&first_min_template, &parsed, &options).expect("first-min path should decode"),
             ),
             (
                 "fourth_dim",
-                decode_from_template(&fourth_dim_template, &parsed, &options)
-                    .expect("fourth-dim path should decode"),
+                decode_from_template(&fourth_dim_template, &parsed, &options).expect("fourth-dim path should decode"),
             ),
         ];
 
@@ -8482,8 +7828,7 @@ mod tests {
                 .filter(|bond| !bond.is_aromatic())
                 .map(|bond| (bond.begin().index(), bond.end().index()));
             let (bond_count, bond_rms, bond_max) = distance_stats(all_bonds, &full_points, &points);
-            let (arom_count, arom_rms, arom_max) =
-                distance_stats(aromatic_bonds, &full_points, &points);
+            let (arom_count, arom_rms, arom_max) = distance_stats(aromatic_bonds, &full_points, &points);
             let (non_arom_count, non_arom_rms, non_arom_max) =
                 distance_stats(non_aromatic_bonds, &full_points, &points);
             let mut nonbond_pairs = Vec::new();
@@ -8513,9 +7858,8 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus pass-rate snapshot"]
     fn confseq_generate_dg_reference_cache_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let (mut in_smiles_batch, mut td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
         let range_start = std::env::var("COSMOLKIT_CONFSEQ_CACHE_START")
             .ok()
@@ -8540,25 +7884,19 @@ mod tests {
                 in_smiles_batch.len()
             );
             if std::env::var("COSMOLKIT_CONFSEQ_DG_REFERENCE_CACHE").is_err() {
-                let range_cache_path = format!(
-                    "{corpus_path}.dg_reference_heavy_points.{range_start}_{range_end}.json"
-                );
+                let range_cache_path =
+                    format!("{corpus_path}.dg_reference_heavy_points.{range_start}_{range_end}.json");
                 unsafe {
                     std::env::set_var("COSMOLKIT_CONFSEQ_DG_REFERENCE_CACHE", &range_cache_path);
                 }
             }
             in_smiles_batch = in_smiles_batch[range_start..range_end].to_vec();
             td_smiles_batch = td_smiles_batch[range_start..range_end].to_vec();
-            eprintln!(
-                "generating ConfSeq DG reference cache for corpus range {range_start}..{range_end}"
-            );
+            eprintln!("generating ConfSeq DG reference cache for corpus range {range_start}..{range_end}");
         }
 
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
 
         let success_count = reference_cache
             .entries
@@ -8609,15 +7947,12 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq DG embed-stage cache for source-parity diagnostics"]
     fn confseq_generate_dg_embed_stage_cache_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let (in_smiles_batch, td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
         let cache_path = std::env::var("COSMOLKIT_CONFSEQ_DG_EMBED_STAGE_CACHE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::PathBuf::from(format!("{corpus_path}.dg_embed_stage_heavy_points.json"))
-            });
+            .unwrap_or_else(|_| std::path::PathBuf::from(format!("{corpus_path}.dg_embed_stage_heavy_points.json")));
         let options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             apply_angles: false,
@@ -8626,9 +7961,7 @@ mod tests {
         };
         let mut entries = Vec::with_capacity(in_smiles_batch.len());
         let mut success_count = 0usize;
-        for (idx, (in_smiles, td_smiles)) in
-            in_smiles_batch.iter().zip(&td_smiles_batch).enumerate()
-        {
+        for (idx, (in_smiles, td_smiles)) in in_smiles_batch.iter().zip(&td_smiles_batch).enumerate() {
             eprintln!(
                 "generating ConfSeq DG embed-stage cache record {}/{}",
                 idx,
@@ -8712,20 +8045,15 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq DG bounds cache for source-parity diagnostics"]
     fn confseq_generate_dg_bounds_cache_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let (in_smiles_batch, td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
         let cache_path = std::env::var("COSMOLKIT_CONFSEQ_DG_BOUNDS_CACHE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::PathBuf::from(format!("{corpus_path}.dg_bounds_matrix.json"))
-            });
+            .unwrap_or_else(|_| std::path::PathBuf::from(format!("{corpus_path}.dg_bounds_matrix.json")));
         let mut entries = Vec::with_capacity(in_smiles_batch.len());
         let mut success_count = 0usize;
-        for (idx, (in_smiles, td_smiles)) in
-            in_smiles_batch.iter().zip(&td_smiles_batch).enumerate()
-        {
+        for (idx, (in_smiles, td_smiles)) in in_smiles_batch.iter().zip(&td_smiles_batch).enumerate() {
             eprintln!(
                 "generating ConfSeq DG bounds cache record {}/{}",
                 idx,
@@ -8735,8 +8063,7 @@ mod tests {
                 let parsed = parse_confseq(in_smiles, td_smiles)?;
                 let molecule = Molecule::from_smiles(&parsed.stripped_smiles)
                     .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
-                let molecule =
-                    prepare_p_chiral_embedding_molecule(molecule, &parsed.chiral_tags_by_atom)?;
+                let molecule = prepare_p_chiral_embedding_molecule(molecule, &parsed.chiral_tags_by_atom)?;
                 let with_h = molecule
                     .with_hydrogens()
                     .map_err(|err| ConfSeqDecodeError::MolTransform(err.to_string()))?;
@@ -8789,24 +8116,19 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus stage cache for source-parity diagnostics"]
     fn confseq_generate_dg_stage_cache_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let (in_smiles_batch, td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
         let cache_path = std::env::var("COSMOLKIT_CONFSEQ_DG_STAGE_CACHE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::PathBuf::from(format!("{corpus_path}.dg_stage_heavy_points.json"))
-            });
+            .unwrap_or_else(|_| std::path::PathBuf::from(format!("{corpus_path}.dg_stage_heavy_points.json")));
         let mut entries = Vec::with_capacity(in_smiles_batch.len());
         let options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             ..ConfSeqDecodeOptions::default()
         };
         let mut success_count = 0usize;
-        for (idx, (in_smiles, td_smiles)) in
-            in_smiles_batch.iter().zip(&td_smiles_batch).enumerate()
-        {
+        for (idx, (in_smiles, td_smiles)) in in_smiles_batch.iter().zip(&td_smiles_batch).enumerate() {
             eprintln!(
                 "generating ConfSeq DG stage cache record {}/{}",
                 idx,
@@ -8814,19 +8136,13 @@ mod tests {
             );
             let entry = (|| -> Result<ConfSeqDgStageCacheEntry, ConfSeqDecodeError> {
                 let parsed = parse_confseq(in_smiles, td_smiles)?;
-                let template = build_template(
-                    &parsed.stripped_smiles,
-                    &parsed.chiral_tags_by_atom,
-                    &options,
-                )?;
+                let template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &options)?;
                 let mut angle_only_options = options.clone();
                 angle_only_options.apply_dihedrals = false;
                 let angle_only = decode_from_template(&template, &parsed, &angle_only_options)?;
                 let full = decode_from_template(&template, &parsed, &options)?;
                 Ok(ConfSeqDgStageCacheEntry {
-                    template_heavy_atom_points: Some(heavy_atom_points_for_rmsd(
-                        &template.molecule,
-                    )),
+                    template_heavy_atom_points: Some(heavy_atom_points_for_rmsd(&template.molecule)),
                     angle_only_heavy_atom_points: Some(heavy_atom_points_for_rmsd(&angle_only)),
                     full_heavy_atom_points: Some(heavy_atom_points_for_rmsd(&full)),
                     error: None,
@@ -8858,12 +8174,8 @@ mod tests {
             });
         }
         let raw = serde_json::to_string_pretty(&cache).expect("stage cache should serialize");
-        std::fs::write(&cache_path, raw).unwrap_or_else(|err| {
-            panic!(
-                "failed to write ConfSeq DG stage cache {}: {err}",
-                cache_path.display()
-            )
-        });
+        std::fs::write(&cache_path, raw)
+            .unwrap_or_else(|err| panic!("failed to write ConfSeq DG stage cache {}: {err}", cache_path.display()));
         eprintln!(
             "generated ConfSeq DG stage cache entries={} success={} fail={} path={}",
             cache.entries.len(),
@@ -8877,8 +8189,7 @@ mod tests {
     #[ignore = "local ConfSeq ring-deferred dihedral trace"]
     fn confseq_trace_ring_deferred_dihedrals_for_row() {
         let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/code/COSMolKit/tmp/confseq_test_strings_100x10.current_mapping.jsonl"
-                .to_string()
+            "/home/wangjingtong/code/COSMolKit/tmp/confseq_test_strings_100x10.current_mapping.jsonl".to_string()
         });
         let row_idx = std::env::var("COSMOLKIT_CONFSEQ_TRACE_ROW")
             .ok()
@@ -8892,17 +8203,12 @@ mod tests {
             ..ConfSeqDecodeOptions::default()
         };
         let parsed = parse_confseq(in_smiles, td_smiles).expect("row should parse");
-        let template = build_template(
-            &parsed.stripped_smiles,
-            &parsed.chiral_tags_by_atom,
-            &options,
-        )
-        .expect("template should build");
+        let template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &options)
+            .expect("template should build");
 
         let mut molecule = template.molecule.clone();
         for ((i, j, k), angle) in template.angle_centers.iter().zip(&parsed.angle_values_deg) {
-            molecule = mol_transforms::set_bond_angle_deg(molecule, *i, *j, *k, *angle, 0)
-                .expect("angle should apply");
+            molecule = mol_transforms::set_bond_angle_deg(molecule, *i, *j, *k, *angle, 0).expect("angle should apply");
         }
 
         let mut unapplied = Vec::new();
@@ -8917,8 +8223,8 @@ mod tests {
             if template.ring_bond_pairs.contains(&pair) {
                 unapplied.push((*dihedral, angle));
             } else {
-                molecule = set_dihedral_deg_checked(molecule, *dihedral, angle)
-                    .expect("non-ring dihedral should apply");
+                molecule =
+                    set_dihedral_deg_checked(molecule, *dihedral, angle).expect("non-ring dihedral should apply");
                 applied_first.push((*dihedral, angle));
             }
         }
@@ -8931,17 +8237,12 @@ mod tests {
         let molecule_no_ring = builder.build().expect("removed-ring molecule should build");
         let (mut molecule, old_to_new) =
             renumber_like_confseq_smiles_output(molecule_no_ring).expect("renumber should work");
-        let mut deferred = change_dihedral_for_removed_ring_bonds(
-            &original_molecule,
-            &template.last_ring_bonds,
-            unapplied.clone(),
-        )
-        .expect("deferred dihedrals should rewrite");
+        let mut deferred =
+            change_dihedral_for_removed_ring_bonds(&original_molecule, &template.last_ring_bonds, unapplied.clone())
+                .expect("deferred dihedrals should rewrite");
         let remapped_last_ring_bonds =
-            remap_last_ring_bonds(&template.last_ring_bonds, &old_to_new)
-                .expect("last ring bonds should remap");
-        remap_deferred_dihedrals(&mut deferred, &old_to_new)
-            .expect("deferred dihedrals should remap");
+            remap_last_ring_bonds(&template.last_ring_bonds, &old_to_new).expect("last ring bonds should remap");
+        remap_deferred_dihedrals(&mut deferred, &old_to_new).expect("deferred dihedrals should remap");
 
         let mut rounds = Vec::new();
         for round in 0..2 {
@@ -8954,12 +8255,10 @@ mod tests {
             let mut applicable = Vec::new();
             let mut still_deferred = Vec::new();
             for (dihedral, angle) in deferred {
-                if dihedral_bonds_exist(&molecule, dihedral)
-                    && !dihedral_center_bond_is_in_ring(&ring_info, dihedral)
-                {
+                if dihedral_bonds_exist(&molecule, dihedral) && !dihedral_center_bond_is_in_ring(&ring_info, dihedral) {
                     applicable.push((dihedral, angle));
-                    molecule = set_dihedral_deg_checked(molecule, dihedral, angle)
-                        .expect("deferred dihedral should apply");
+                    molecule =
+                        set_dihedral_deg_checked(molecule, dihedral, angle).expect("deferred dihedral should apply");
                 } else {
                     still_deferred.push((dihedral, angle));
                 }
@@ -8973,17 +8272,15 @@ mod tests {
             deferred = still_deferred;
         }
 
-        let trace_smiles_molecule =
-            Molecule::from_smiles(&parsed.stripped_smiles).expect("trace smiles should parse");
+        let trace_smiles_molecule = Molecule::from_smiles(&parsed.stripped_smiles).expect("trace smiles should parse");
         let trace_smiles_params = SmilesWriteParams {
             canonical: false,
             all_bonds_explicit: true,
             ..SmilesWriteParams::default()
         };
-        let trace_smiles_be = mol_to_smiles(&trace_smiles_molecule, &trace_smiles_params)
-            .expect("trace smiles should write");
-        let trace_ring_bond_indices =
-            confseq_last_ring_bond_indices_from_smiles_be(&trace_smiles_be);
+        let trace_smiles_be =
+            mol_to_smiles(&trace_smiles_molecule, &trace_smiles_params).expect("trace smiles should write");
+        let trace_ring_bond_indices = confseq_last_ring_bond_indices_from_smiles_be(&trace_smiles_be);
         let trace_atom_pairs = trace_smiles_molecule
             .bonds()
             .iter()
@@ -9016,9 +8313,8 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq full-decode bonded-distance stage diagnostic"]
     fn confseq_trace_full_decode_bond_distance_stages_for_row() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let row_idx = std::env::var("COSMOLKIT_CONFSEQ_TRACE_ROW")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
@@ -9031,12 +8327,8 @@ mod tests {
             ..ConfSeqDecodeOptions::default()
         };
         let parsed = parse_confseq(in_smiles, td_smiles).expect("row should parse");
-        let template = build_template(
-            &parsed.stripped_smiles,
-            &parsed.chiral_tags_by_atom,
-            &options,
-        )
-        .expect("template should build");
+        let template = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &options)
+            .expect("template should build");
 
         let stage_stats = |label: &str, molecule: &Molecule| {
             let points = heavy_atom_points_for_rmsd(molecule);
@@ -9049,12 +8341,7 @@ mod tests {
         stage_stats("template", &template.molecule);
 
         let mut molecule = template.molecule.clone();
-        for (idx, ((i, j, k), angle)) in template
-            .angle_centers
-            .iter()
-            .zip(&parsed.angle_values_deg)
-            .enumerate()
-        {
+        for (idx, ((i, j, k), angle)) in template.angle_centers.iter().zip(&parsed.angle_values_deg).enumerate() {
             molecule = mol_transforms::set_bond_angle_deg(molecule, *i, *j, *k, *angle, 0)
                 .unwrap_or_else(|err| panic!("angle {idx} should apply: {err}"));
             if idx % 10 == 9 {
@@ -9104,22 +8391,15 @@ mod tests {
             renumber_like_confseq_smiles_output(molecule_no_ring).expect("renumber should work");
         stage_stats("after_renumber", &molecule);
 
-        let mut deferred = change_dihedral_for_removed_ring_bonds(
-            &original_molecule,
-            &template.last_ring_bonds,
-            unapplied,
-        )
-        .expect("deferred dihedrals should rewrite");
-        let last_ring_bonds = remap_last_ring_bonds(&template.last_ring_bonds, &old_to_new)
-            .expect("last ring bonds should remap");
-        remap_deferred_dihedrals(&mut deferred, &old_to_new)
-            .expect("deferred dihedrals should remap");
+        let mut deferred =
+            change_dihedral_for_removed_ring_bonds(&original_molecule, &template.last_ring_bonds, unapplied)
+                .expect("deferred dihedrals should rewrite");
+        let last_ring_bonds =
+            remap_last_ring_bonds(&template.last_ring_bonds, &old_to_new).expect("last ring bonds should remap");
+        remap_deferred_dihedrals(&mut deferred, &old_to_new).expect("deferred dihedrals should remap");
         eprintln!(
             "confseq_full_decode_stage row={row_idx} remapped_last_ring_bonds={:?} deferred_after_remap={}",
-            last_ring_bonds
-                .iter()
-                .map(|(i, j, _)| (*i, *j))
-                .collect::<Vec<_>>(),
+            last_ring_bonds.iter().map(|(i, j, _)| (*i, *j)).collect::<Vec<_>>(),
             deferred.len()
         );
 
@@ -9128,11 +8408,9 @@ mod tests {
             let mut still_deferred = Vec::new();
             let mut applied_this_round = 0usize;
             for (dihedral, angle) in deferred {
-                if dihedral_bonds_exist(&molecule, dihedral)
-                    && !dihedral_center_bond_is_in_ring(&ring_info, dihedral)
-                {
-                    molecule = set_dihedral_deg_checked(molecule, dihedral, angle)
-                        .expect("deferred dihedral should apply");
+                if dihedral_bonds_exist(&molecule, dihedral) && !dihedral_center_bond_is_in_ring(&ring_info, dihedral) {
+                    molecule =
+                        set_dihedral_deg_checked(molecule, dihedral, angle).expect("deferred dihedral should apply");
                     applied_this_round += 1;
                 } else {
                     still_deferred.push((dihedral, angle));
@@ -9148,9 +8426,7 @@ mod tests {
 
         let mut builder = molecule.to_builder();
         for (_, _, spec) in &last_ring_bonds {
-            builder
-                .add_bond(spec.clone())
-                .expect("ring bond should restore");
+            builder.add_bond(spec.clone()).expect("ring bond should restore");
         }
         let molecule = builder.build().expect("final molecule should build");
         stage_stats("after_restore_ring_bonds", &molecule);
@@ -9159,9 +8435,8 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus pass-rate snapshot"]
     fn confseq_base_corpus_pass_rate_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let fail_export_dir = std::env::var("COSMOLKIT_CONFSEQ_BASE_FAIL_EXPORT_DIR").ok();
         let base_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
@@ -9171,18 +8446,10 @@ mod tests {
 
         let (in_smiles_batch, td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
 
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
-        let base_batch = decode_confseq_batch_with_options(
-            &in_smiles_batch,
-            &td_smiles_batch,
-            &base_options,
-            true,
-        )
-        .expect("base batch should decode with per-record errors");
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
+        let base_batch = decode_confseq_batch_with_options(&in_smiles_batch, &td_smiles_batch, &base_options, true)
+            .expect("base batch should decode with per-record errors");
 
         let total = in_smiles_batch.len();
         let mut reference_success = 0usize;
@@ -9236,8 +8503,7 @@ mod tests {
         let mut framework_assembly_paths: HashMap<String, usize> = HashMap::new();
         let mut framework_fragment_template_failures: HashMap<String, usize> = HashMap::new();
         let mut framework_nonplanar_ring_topologies: HashMap<String, usize> = HashMap::new();
-        let mut rigid_fragment_framework_rmsd_buckets =
-            RigidFragmentFrameworkRmsdBuckets::default();
+        let mut rigid_fragment_framework_rmsd_buckets = RigidFragmentFrameworkRmsdBuckets::default();
         let mut pre_token_geometry = BaseGeometryStageDiagnostics::default();
         let mut post_token_geometry = BaseGeometryStageDiagnostics::default();
         let mut pre_token_template_errors: HashMap<String, usize> = HashMap::new();
@@ -9257,15 +8523,14 @@ mod tests {
         let mut strict_fail_structural_risk_classes_counts: HashMap<String, usize> = HashMap::new();
 
         for idx in 0..total {
-            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref()
-            else {
+            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref() else {
                 continue;
             };
             reference_success += 1;
-            let parsed = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
-                .expect("fixture ConfSeq should parse");
-            let source_mol = Molecule::from_smiles(&parsed.stripped_smiles)
-                .expect("fixture stripped SMILES should parse");
+            let parsed =
+                parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx]).expect("fixture ConfSeq should parse");
+            let source_mol =
+                Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture stripped SMILES should parse");
             let rings = rings::symmetrize_sssr(&source_mol).expect("ring perception should work");
             let mut structural_risk_precheck = ConfSeqBaseStructuralRiskPrecheck {
                 classes: Vec::new(),
@@ -9295,21 +8560,12 @@ mod tests {
 
             match base_batch.molecules[idx].as_ref() {
                 Some(base) => {
-                    match build_confseq_base_template(
-                        &parsed.stripped_smiles,
-                        &parsed.chiral_tags_by_atom,
-                    ) {
+                    match build_confseq_base_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom) {
                         Ok(base_template) => {
-                            pre_token_geometry.record(
-                                &source_mol,
-                                reference_points,
-                                &base_template.molecule,
-                            );
+                            pre_token_geometry.record(&source_mol, reference_points, &base_template.molecule);
                         }
                         Err(error) => {
-                            *pre_token_template_errors
-                                .entry(format!("{error:?}"))
-                                .or_default() += 1;
+                            *pre_token_template_errors.entry(format!("{error:?}")).or_default() += 1;
                         }
                     }
                     post_token_geometry.record(&source_mol, reference_points, base);
@@ -9327,15 +8583,11 @@ mod tests {
                         "line {} decoded molecules should have matching heavy atom counts",
                         idx + 1
                     );
-                    let rmsd = crate::distgeom::aligned_rmsd_for_test(
-                        reference_points.as_slice(),
-                        &base_points,
-                    );
+                    let rmsd = crate::distgeom::aligned_rmsd_for_test(reference_points.as_slice(), &base_points);
                     if rmsd <= 0.3 {
                         pass_03a += 1;
                     }
-                    let automorphism_rmsd =
-                        automorphism_aware_heavy_rmsd_for_test(&source_mol, reference_points, base);
+                    let automorphism_rmsd = automorphism_aware_heavy_rmsd_for_test(&source_mol, reference_points, base);
                     let automorphism_pass = automorphism_rmsd.is_some_and(|rmsd| rmsd <= 0.3);
                     if let Some(automorphism_rmsd) = automorphism_rmsd {
                         if automorphism_rmsd <= 0.3 {
@@ -9372,25 +8624,15 @@ mod tests {
                             strict_fail_initializer_decode_fallback_not_automorphism += 1;
                         }
                     }
-                    let local_summary = local_constraint_summary_against_reference(
-                        &source_mol,
-                        reference_points,
-                        base,
-                    );
+                    let local_summary = local_constraint_summary_against_reference(&source_mol, reference_points, base);
                     local_constraint_comparable += 1;
-                    if local_summary.bond_rms_a <= 0.05
-                        && local_summary.non_token_angle_rms_deg <= 5.0
-                    {
+                    if local_summary.bond_rms_a <= 0.05 && local_summary.non_token_angle_rms_deg <= 5.0 {
                         local_constraint_pass_005a_5deg += 1;
                     }
-                    if local_summary.bond_rms_a <= 0.10
-                        && local_summary.non_token_angle_rms_deg <= 10.0
-                    {
+                    if local_summary.bond_rms_a <= 0.10 && local_summary.non_token_angle_rms_deg <= 10.0 {
                         local_constraint_pass_010a_10deg += 1;
                     }
-                    if local_summary.bond_rms_a <= 0.10
-                        && local_summary.non_token_angle_rms_deg <= 15.0
-                    {
+                    if local_summary.bond_rms_a <= 0.10 && local_summary.non_token_angle_rms_deg <= 15.0 {
                         local_constraint_pass_010a_15deg += 1;
                     }
                     if local_summary.bond_count > 0 {
@@ -9399,8 +8641,7 @@ mod tests {
                     }
                     if local_summary.non_token_angle_count > 0 {
                         local_non_token_angle_rmsds.push(local_summary.non_token_angle_rms_deg);
-                        local_non_token_angle_max_abs
-                            .push(local_summary.max_non_token_angle_abs_deg);
+                        local_non_token_angle_max_abs.push(local_summary.max_non_token_angle_abs_deg);
                     }
                     collect_local_bond_deviation_buckets(
                         &source_mol,
@@ -9408,12 +8649,9 @@ mod tests {
                         base,
                         &mut local_bond_deviation_buckets,
                     );
-                    let rigid_summary =
-                        rigid_fragment_rmsd_summary(&source_mol, reference_points, base);
-                    mirror_branch_like_fragments_01a +=
-                        rigid_summary.mirror_branch_like_fragment_count_01a;
-                    mirror_branch_like_fragments_03a +=
-                        rigid_summary.mirror_branch_like_fragment_count_03a;
+                    let rigid_summary = rigid_fragment_rmsd_summary(&source_mol, reference_points, base);
+                    mirror_branch_like_fragments_01a += rigid_summary.mirror_branch_like_fragment_count_01a;
+                    mirror_branch_like_fragments_03a += rigid_summary.mirror_branch_like_fragment_count_03a;
                     if rigid_summary
                         .max_rmsd
                         .zip(rigid_summary.max_shape_rmsd)
@@ -9443,8 +8681,7 @@ mod tests {
                                 .into_iter()
                                 .map(str::to_string)
                                 .collect(),
-                            structural_risk_fallback_candidate: structural_risk_precheck
-                                .fallback_candidate,
+                            structural_risk_fallback_candidate: structural_risk_precheck.fallback_candidate,
                             reference_points: reference_points.clone(),
                             base: base.clone(),
                         });
@@ -9494,16 +8731,10 @@ mod tests {
                         }
                     }
                     rigid_fragment_rmsds.extend(rigid_summary.fragment_rmsds.iter().copied());
-                    rigid_fragment_shape_rmsds
-                        .extend(rigid_summary.fragment_shape_rmsds.iter().copied());
-                    rigid_fragment_terminal_symmetry_rmsds.extend(
-                        rigid_summary
-                            .fragment_terminal_symmetry_rmsds
-                            .iter()
-                            .copied(),
-                    );
-                    rigid_fragment_connector_rmsds
-                        .extend(rigid_summary.fragment_connector_rmsds.iter().copied());
+                    rigid_fragment_shape_rmsds.extend(rigid_summary.fragment_shape_rmsds.iter().copied());
+                    rigid_fragment_terminal_symmetry_rmsds
+                        .extend(rigid_summary.fragment_terminal_symmetry_rmsds.iter().copied());
+                    rigid_fragment_connector_rmsds.extend(rigid_summary.fragment_connector_rmsds.iter().copied());
                     if let Some(max_rmsd) = rigid_summary.max_rmsd {
                         rigid_fragment_max_rmsds.push(max_rmsd);
                         if max_rmsd <= 0.1 {
@@ -9547,14 +8778,8 @@ mod tests {
                         {
                             continue;
                         }
-                        let key =
-                            rigid_fragment_framework_key_for_diagnostic(&source_mol, &fragment);
-                        let details = rigid_fragment_metric_details(
-                            &source_mol,
-                            reference_points,
-                            base,
-                            &fragment,
-                        );
+                        let key = rigid_fragment_framework_key_for_diagnostic(&source_mol, &fragment);
+                        let details = rigid_fragment_metric_details(&source_mol, reference_points, base, &fragment);
                         rigid_fragment_framework_rmsd_buckets.record(key, &details);
                     }
                     rmsds.push(rmsd);
@@ -9585,29 +8810,21 @@ mod tests {
         pre_token_geometry.sort();
         post_token_geometry.sort();
         let total_pass_rate = pass_03a as f64 / total.max(1) as f64 * 100.0;
-        let comparable_pass_rate =
-            pass_03a as f64 / base_success_where_reference_success.max(1) as f64 * 100.0;
-        let automorphism_comparable_pass_rate = automorphism_pass_03a as f64
-            / base_success_where_reference_success.max(1) as f64
-            * 100.0;
-        let nonfallback_pass_rate =
-            nonfallback_pass_03a as f64 / nonfallback_comparable.max(1) as f64 * 100.0;
+        let comparable_pass_rate = pass_03a as f64 / base_success_where_reference_success.max(1) as f64 * 100.0;
+        let automorphism_comparable_pass_rate =
+            automorphism_pass_03a as f64 / base_success_where_reference_success.max(1) as f64 * 100.0;
+        let nonfallback_pass_rate = nonfallback_pass_03a as f64 / nonfallback_comparable.max(1) as f64 * 100.0;
         let nonfallback_automorphism_pass_rate =
             nonfallback_automorphism_pass_03a as f64 / nonfallback_comparable.max(1) as f64 * 100.0;
-        let initializer_decode_fallback_rate = initializer_decode_fallback_comparable as f64
-            / base_success_where_reference_success.max(1) as f64
-            * 100.0;
-        let base_coverage =
-            base_success_where_reference_success as f64 / reference_success.max(1) as f64 * 100.0;
-        let local_constraint_pass_rate_005a_5deg = local_constraint_pass_005a_5deg as f64
-            / local_constraint_comparable.max(1) as f64
-            * 100.0;
-        let local_constraint_pass_rate_010a_10deg = local_constraint_pass_010a_10deg as f64
-            / local_constraint_comparable.max(1) as f64
-            * 100.0;
-        let local_constraint_pass_rate_010a_15deg = local_constraint_pass_010a_15deg as f64
-            / local_constraint_comparable.max(1) as f64
-            * 100.0;
+        let initializer_decode_fallback_rate =
+            initializer_decode_fallback_comparable as f64 / base_success_where_reference_success.max(1) as f64 * 100.0;
+        let base_coverage = base_success_where_reference_success as f64 / reference_success.max(1) as f64 * 100.0;
+        let local_constraint_pass_rate_005a_5deg =
+            local_constraint_pass_005a_5deg as f64 / local_constraint_comparable.max(1) as f64 * 100.0;
+        let local_constraint_pass_rate_010a_10deg =
+            local_constraint_pass_010a_10deg as f64 / local_constraint_comparable.max(1) as f64 * 100.0;
+        let local_constraint_pass_rate_010a_15deg =
+            local_constraint_pass_010a_15deg as f64 / local_constraint_comparable.max(1) as f64 * 100.0;
 
         eprintln!("confseq_base_corpus path={corpus_path}");
         eprintln!(
@@ -9858,8 +9075,7 @@ mod tests {
         }
         worst_rigid_fragments.sort_by(|left, right| right.0.total_cmp(&left.0));
         for (max_rmsd, idx, atoms, stripped_smiles) in worst_rigid_fragments.into_iter().take(12) {
-            let mol = Molecule::from_smiles(&stripped_smiles)
-                .expect("fixture stripped SMILES should parse");
+            let mol = Molecule::from_smiles(&stripped_smiles).expect("fixture stripped SMILES should parse");
             let fragment_type = rigid_fragment_type_for_diagnostic(&mol, &atoms);
             let local = rigid_fragment_local_diagnostic(&mol, &atoms);
             let reference_points = reference_cache.entries[idx]
@@ -9891,15 +9107,11 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq DG reference atom-order sanity diagnostic"]
     fn confseq_dg_reference_atom_order_sanity_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let (in_smiles_batch, td_smiles_batch) = read_confseq_corpus_smiles(&corpus_path);
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
         let reference_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             ..ConfSeqDecodeOptions::default()
@@ -9914,23 +9126,19 @@ mod tests {
             })
             .unwrap_or_else(|| [309usize, 937, 865, 28].into_iter().collect());
         for idx in row_filter {
-            let parsed = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
-                .expect("fixture ConfSeq should parse");
-            let source_mol = Molecule::from_smiles(&parsed.stripped_smiles)
-                .expect("fixture stripped SMILES should parse");
-            let reference = decode_confseq_with_options(
-                &in_smiles_batch[idx],
-                &td_smiles_batch[idx],
-                &reference_options,
-            )
-            .expect("DG reference should decode");
+            let parsed =
+                parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx]).expect("fixture ConfSeq should parse");
+            let source_mol =
+                Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture stripped SMILES should parse");
+            let reference =
+                decode_confseq_with_options(&in_smiles_batch[idx], &td_smiles_batch[idx], &reference_options)
+                    .expect("DG reference should decode");
             let direct_points = heavy_atom_points_for_rmsd(&reference);
             let direct_on_reference = heavy_bond_length_stats(&reference, &direct_points);
             let direct_on_source = heavy_bond_length_stats(&source_mol, &direct_points);
             if let Some(cached_points) = reference_cache.entries[idx].heavy_atom_points.as_ref() {
                 let cached_on_source = heavy_bond_length_stats(&source_mol, cached_points);
-                let direct_cached_rmsd =
-                    crate::distgeom::aligned_rmsd_for_test(&direct_points, cached_points);
+                let direct_cached_rmsd = crate::distgeom::aligned_rmsd_for_test(&direct_points, cached_points);
                 eprintln!(
                     "confseq_dg_reference_atom_order idx={idx} cache_status=valid direct_cached_rmsd={direct_cached_rmsd:.6} reference_bonds count={} rms={:.6} max={:.6} source_direct count={} rms={:.6} max={:.6} source_cached count={} rms={:.6} max={:.6} stripped_smiles={}",
                     direct_on_reference.0,
@@ -9947,10 +9155,7 @@ mod tests {
             } else {
                 eprintln!(
                     "confseq_dg_reference_atom_order idx={idx} cache_status=invalid error={} reference_bonds count={} rms={:.6} max={:.6} source_direct count={} rms={:.6} max={:.6} stripped_smiles={}",
-                    reference_cache.entries[idx]
-                        .error
-                        .as_deref()
-                        .unwrap_or("unknown"),
+                    reference_cache.entries[idx].error.as_deref().unwrap_or("unknown"),
                     direct_on_reference.0,
                     direct_on_reference.1,
                     direct_on_reference.2,
@@ -9966,11 +9171,9 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus FastGeometry-only coverage snapshot"]
     fn confseq_base_corpus_base_only_snapshot() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
-        let input =
-            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
+        let input = std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
         let base_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             template_backend: ConfSeqTemplateBackend::FastGeometry,
@@ -9983,32 +9186,20 @@ mod tests {
             if line.trim().is_empty() {
                 continue;
             }
-            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
-            });
-            let in_smiles = value["in_smiles"].as_str().unwrap_or_else(|| {
-                panic!(
-                    "corpus line {} is missing string field in_smiles",
-                    line_idx + 1
-                )
-            });
-            let td_smiles = value["td_smiles"].as_str().unwrap_or_else(|| {
-                panic!(
-                    "corpus line {} is missing string field td_smiles",
-                    line_idx + 1
-                )
-            });
+            let value: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1));
+            let in_smiles = value["in_smiles"]
+                .as_str()
+                .unwrap_or_else(|| panic!("corpus line {} is missing string field in_smiles", line_idx + 1));
+            let td_smiles = value["td_smiles"]
+                .as_str()
+                .unwrap_or_else(|| panic!("corpus line {} is missing string field td_smiles", line_idx + 1));
             in_smiles_batch.push(in_smiles.to_string());
             td_smiles_batch.push(td_smiles.to_string());
         }
 
-        let base_batch = decode_confseq_batch_with_options(
-            &in_smiles_batch,
-            &td_smiles_batch,
-            &base_options,
-            true,
-        )
-        .expect("base batch should decode with per-record errors");
+        let base_batch = decode_confseq_batch_with_options(&in_smiles_batch, &td_smiles_batch, &base_options, true)
+            .expect("base batch should decode with per-record errors");
 
         let total = in_smiles_batch.len();
         let success = base_batch
@@ -10038,11 +9229,9 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus structural diagnostics"]
     fn confseq_base_corpus_structural_diagnostics() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
-        let input =
-            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
+        let input = std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
         let base_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             template_backend: ConfSeqTemplateBackend::FastGeometry,
@@ -10055,9 +9244,8 @@ mod tests {
             if line.trim().is_empty() {
                 continue;
             }
-            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
-            });
+            let value: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1));
             in_smiles_batch.push(
                 value["in_smiles"]
                     .as_str()
@@ -10072,18 +9260,10 @@ mod tests {
             );
         }
 
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
-        let base_batch = decode_confseq_batch_with_options(
-            &in_smiles_batch,
-            &td_smiles_batch,
-            &base_options,
-            true,
-        )
-        .expect("base batch should decode with per-record errors");
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
+        let base_batch = decode_confseq_batch_with_options(&in_smiles_batch, &td_smiles_batch, &base_options, true)
+            .expect("base batch should decode with per-record errors");
 
         let mut successes = Vec::<(f64, usize)>::new();
         let mut failures = Vec::<(usize, String)>::new();
@@ -10094,8 +9274,7 @@ mod tests {
             ) {
                 (Some(reference_points), Some(base)) => {
                     let base_points = heavy_atom_points_for_rmsd(base);
-                    let rmsd =
-                        crate::distgeom::aligned_rmsd_for_test(reference_points, &base_points);
+                    let rmsd = crate::distgeom::aligned_rmsd_for_test(reference_points, &base_points);
                     successes.push((rmsd, idx));
                 }
                 (_, None) => {
@@ -10125,10 +9304,7 @@ mod tests {
                 .expect("ring components should classify for diagnostic");
             let base = base_batch.molecules[idx].as_ref().expect("checked above");
             let coords = conformer_points(base);
-            let max_abs_z = coords
-                .iter()
-                .map(|point| point[2].abs())
-                .fold(0.0, f64::max);
+            let max_abs_z = coords.iter().map(|point| point[2].abs()).fold(0.0, f64::max);
             let planar_bonds = collect_confseq_base_planar_bonds(&mol).len();
             let rotatable_single_bonds = mol
                 .bonds()
@@ -10165,12 +9341,8 @@ mod tests {
                                 atom_idx,
                                 atom.hybridization(),
                                 atom.is_aromatic(),
-                                confseq_base_ring_atom_has_exocyclic_pi_bond(
-                                    &mol, atom_idx, &atom_set
-                                ),
-                                confseq_base_ring_atom_is_conjugated_to_ring_pi_system(
-                                    &mol, atom_idx, &atom_set
-                                )
+                                confseq_base_ring_atom_has_exocyclic_pi_bond(&mol, atom_idx, &atom_set),
+                                confseq_base_ring_atom_is_conjugated_to_ring_pi_system(&mol, atom_idx, &atom_set)
                             )
                         })
                         .collect();
@@ -10211,10 +9383,7 @@ mod tests {
                 let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
                 let ring_components = classify_confseq_base_ring_components(&mol, &rings)
                     .expect("ring components should classify for diagnostic");
-                let planar_components = ring_components
-                    .iter()
-                    .filter(|component| component.planar)
-                    .count();
+                let planar_components = ring_components.iter().filter(|component| component.planar).count();
                 let nonplanar_components = ring_components.len() - planar_components;
                 let rotatable_single_bonds = mol
                     .bonds()
@@ -10261,11 +9430,9 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq corpus stage RMSD diagnostics"]
     fn confseq_base_corpus_stage_rmsd_diagnostics() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
-        let input =
-            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
+        let input = std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
         let base_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             template_backend: ConfSeqTemplateBackend::FastGeometry,
@@ -10284,47 +9451,30 @@ mod tests {
             if line.trim().is_empty() {
                 continue;
             }
-            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
-            });
-            let in_smiles = value["in_smiles"]
-                .as_str()
-                .expect("in_smiles should be present");
-            let td_smiles = value["td_smiles"]
-                .as_str()
-                .expect("td_smiles should be present");
+            let value: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1));
+            let in_smiles = value["in_smiles"].as_str().expect("in_smiles should be present");
+            let td_smiles = value["td_smiles"].as_str().expect("td_smiles should be present");
             let parsed = parse_confseq(in_smiles, td_smiles).expect("fixture ConfSeq should parse");
             in_smiles_batch.push(in_smiles.to_string());
             td_smiles_batch.push(td_smiles.to_string());
             parsed_batch.push(parsed);
         }
 
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
-        let base_batch = decode_confseq_batch_with_options(
-            &in_smiles_batch,
-            &td_smiles_batch,
-            &base_options,
-            true,
-        )
-        .expect("base batch should decode with per-record errors");
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
+        let base_batch = decode_confseq_batch_with_options(&in_smiles_batch, &td_smiles_batch, &base_options, true)
+            .expect("base batch should decode with per-record errors");
 
         let mut worst = Vec::new();
         for idx in 0..in_smiles_batch.len() {
-            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref()
-            else {
+            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref() else {
                 continue;
             };
             let Some(base) = base_batch.molecules[idx].as_ref() else {
                 continue;
             };
-            let rmsd = crate::distgeom::aligned_rmsd_for_test(
-                reference_points,
-                &heavy_atom_points_for_rmsd(base),
-            );
+            let rmsd = crate::distgeom::aligned_rmsd_for_test(reference_points, &heavy_atom_points_for_rmsd(base));
             worst.push((rmsd, idx));
         }
         worst.sort_by(|left, right| right.0.total_cmp(&left.0));
@@ -10332,65 +9482,45 @@ mod tests {
         let mut rows = Vec::new();
         for (_, line_idx) in worst.into_iter().take(16) {
             let parsed = &parsed_batch[line_idx];
-            let Ok(reference) = build_template(
-                &parsed.stripped_smiles,
-                &parsed.chiral_tags_by_atom,
-                &dg_options,
-            )
-            .and_then(|template| decode_from_template(&template, &parsed, &dg_options)) else {
+            let Ok(reference) = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &dg_options)
+                .and_then(|template| decode_from_template(&template, &parsed, &dg_options))
+            else {
                 continue;
             };
             let reference_points = heavy_atom_points_for_rmsd(&reference);
-            let Ok(base_template) = build_template(
-                &parsed.stripped_smiles,
-                &parsed.chiral_tags_by_atom,
-                &base_options,
-            ) else {
+            let Ok(base_template) = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &base_options)
+            else {
                 continue;
             };
 
             let mut angle_only_options = base_options.clone();
             angle_only_options.apply_dihedrals = false;
-            let Ok(angle_only) = decode_from_template(&base_template, &parsed, &angle_only_options)
-            else {
+            let Ok(angle_only) = decode_from_template(&base_template, &parsed, &angle_only_options) else {
                 continue;
             };
             let Ok(full_base) = decode_from_template(&base_template, &parsed, &base_options) else {
                 continue;
             };
-            let source_mol =
-                Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
+            let source_mol = Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
 
             let template_rmsd = crate::distgeom::aligned_rmsd_for_test(
                 &reference_points,
                 &heavy_atom_points_for_rmsd(&base_template.molecule),
             );
-            let angle_rmsd = crate::distgeom::aligned_rmsd_for_test(
-                &reference_points,
-                &heavy_atom_points_for_rmsd(&angle_only),
-            );
-            let full_rmsd = crate::distgeom::aligned_rmsd_for_test(
-                &reference_points,
-                &heavy_atom_points_for_rmsd(&full_base),
-            );
-            let template_rigid = rigid_fragment_rmsd_summary(
-                &source_mol,
-                &reference_points,
-                &base_template.molecule,
-            );
-            let angle_rigid =
-                rigid_fragment_rmsd_summary(&source_mol, &reference_points, &angle_only);
-            let full_rigid =
-                rigid_fragment_rmsd_summary(&source_mol, &reference_points, &full_base);
+            let angle_rmsd =
+                crate::distgeom::aligned_rmsd_for_test(&reference_points, &heavy_atom_points_for_rmsd(&angle_only));
+            let full_rmsd =
+                crate::distgeom::aligned_rmsd_for_test(&reference_points, &heavy_atom_points_for_rmsd(&full_base));
+            let template_rigid = rigid_fragment_rmsd_summary(&source_mol, &reference_points, &base_template.molecule);
+            let angle_rigid = rigid_fragment_rmsd_summary(&source_mol, &reference_points, &angle_only);
+            let full_rigid = rigid_fragment_rmsd_summary(&source_mol, &reference_points, &full_base);
             let worst_atoms = full_rigid.worst_fragment_atoms.clone();
             let angle_centers_touching_worst = base_template
                 .angle_centers
                 .iter()
                 .copied()
                 .filter(|(left, center, right)| {
-                    worst_atoms.contains(left)
-                        || worst_atoms.contains(center)
-                        || worst_atoms.contains(right)
+                    worst_atoms.contains(left) || worst_atoms.contains(center) || worst_atoms.contains(right)
                 })
                 .collect::<Vec<_>>();
             rows.push((
@@ -10430,11 +9560,9 @@ mod tests {
     #[test]
     #[ignore = "local ConfSeq fragment sliced-bounds stage diagnostics"]
     fn confseq_base_fragment_sliced_bounds_stage_diagnostics() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
-        let input =
-            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
+        let input = std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
         let base_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
             template_backend: ConfSeqTemplateBackend::FastGeometry,
@@ -10456,23 +9584,15 @@ mod tests {
             if line.trim().is_empty() {
                 continue;
             }
-            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
-            });
-            let in_smiles = value["in_smiles"]
-                .as_str()
-                .expect("in_smiles should be present");
-            let td_smiles = value["td_smiles"]
-                .as_str()
-                .expect("td_smiles should be present");
+            let value: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1));
+            let in_smiles = value["in_smiles"].as_str().expect("in_smiles should be present");
+            let td_smiles = value["td_smiles"].as_str().expect("td_smiles should be present");
             in_smiles_batch.push(in_smiles.to_string());
             td_smiles_batch.push(td_smiles.to_string());
         }
-        let reference_cache = load_or_generate_confseq_dg_reference_cache(
-            &corpus_path,
-            &in_smiles_batch,
-            &td_smiles_batch,
-        );
+        let reference_cache =
+            load_or_generate_confseq_dg_reference_cache(&corpus_path, &in_smiles_batch, &td_smiles_batch);
 
         let mut rows = Vec::new();
         for (line_idx, (in_smiles, td_smiles)) in in_smiles_batch
@@ -10484,27 +9604,16 @@ mod tests {
             let Ok(parsed) = parse_confseq(in_smiles, td_smiles) else {
                 continue;
             };
-            let Some(reference_heavy_points) = reference_cache.entries[line_idx]
-                .heavy_atom_points
-                .as_ref()
-                .cloned()
+            let Some(reference_heavy_points) = reference_cache.entries[line_idx].heavy_atom_points.as_ref().cloned()
             else {
                 continue;
             };
-            let Ok(base_template) = build_template(
-                &parsed.stripped_smiles,
-                &parsed.chiral_tags_by_atom,
-                &base_options,
-            ) else {
+            let Ok(base_template) = build_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &base_options)
+            else {
                 continue;
             };
-            let source_mol =
-                Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
-            let summary = rigid_fragment_rmsd_summary(
-                &source_mol,
-                &reference_heavy_points,
-                &base_template.molecule,
-            );
+            let source_mol = Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
+            let summary = rigid_fragment_rmsd_summary(&source_mol, &reference_heavy_points, &base_template.molecule);
             let Some(max_rmsd) = summary.max_shape_rmsd else {
                 continue;
             };
@@ -10519,39 +9628,26 @@ mod tests {
         }
         rows.sort_by(|left, right| right.0.total_cmp(&left.0));
 
-        for (
-            base_fragment_rmsd,
-            line_idx,
-            parsed,
-            source_mol,
-            worst_atoms,
-            reference_heavy_points,
-        ) in rows.into_iter().take(8)
+        for (base_fragment_rmsd, line_idx, parsed, source_mol, worst_atoms, reference_heavy_points) in
+            rows.into_iter().take(8)
         {
             let rings = rings::symmetrize_sssr(&source_mol).expect("ring perception should work");
-            let model = build_confseq_base_constraint_model(&source_mol, &rings)
-                .expect("base constraint model should build");
-            let Some(component) = model.rigid_components.iter().find(|component| {
-                worst_atoms
-                    .iter()
-                    .all(|atom| component.atoms.contains(atom))
-            }) else {
+            let model =
+                build_confseq_base_constraint_model(&source_mol, &rings).expect("base constraint model should build");
+            let Some(component) = model
+                .rigid_components
+                .iter()
+                .find(|component| worst_atoms.iter().all(|atom| component.atoms.contains(atom)))
+            else {
                 continue;
             };
             let mut cache = HashMap::<String, ConfSeqBaseRigidFragmentTemplate>::new();
-            let Ok(template) = confseq_base_cached_rigid_fragment_template(
-                &source_mol,
-                &model,
-                component,
-                &mut cache,
-            ) else {
+            let Ok(template) = confseq_base_cached_rigid_fragment_template(&source_mol, &model, component, &mut cache)
+            else {
                 continue;
             };
             let stages = [
-                (
-                    "initial",
-                    crate::chemistry::distgeom::EmbedderTestStage::InitialCoords,
-                ),
+                ("initial", crate::chemistry::distgeom::EmbedderTestStage::InitialCoords),
                 (
                     "first_min",
                     crate::chemistry::distgeom::EmbedderTestStage::FirstMinimized,
@@ -10575,14 +9671,10 @@ mod tests {
                     continue;
                 };
                 let whole_points = conformer_points(&whole_template.molecule);
-                let Ok(fragment_coords) = fragment_stage_coords_from_sliced_bounds_for_test(
-                    &source_mol,
-                    &template,
-                    stage,
-                ) else {
-                    eprintln!(
-                        "confseq_base_fragment_stage idx={line_idx} stage={stage_name} fragment_error=true"
-                    );
+                let Ok(fragment_coords) =
+                    fragment_stage_coords_from_sliced_bounds_for_test(&source_mol, &template, stage)
+                else {
+                    eprintln!("confseq_base_fragment_stage idx={line_idx} stage={stage_name} fragment_error=true");
                     continue;
                 };
                 let fragment_points = worst_atoms
@@ -10602,18 +9694,12 @@ mod tests {
                 if reference_fragment_points.len() != worst_atoms.len() {
                     continue;
                 }
-                let whole_vs_ref = crate::distgeom::aligned_rmsd_for_test(
-                    &reference_fragment_points,
-                    &whole_fragment_points,
-                );
-                let fragment_vs_ref = crate::distgeom::aligned_rmsd_for_test(
-                    &reference_fragment_points,
-                    &fragment_points,
-                );
-                let fragment_vs_whole = crate::distgeom::aligned_rmsd_for_test(
-                    &whole_fragment_points,
-                    &fragment_points,
-                );
+                let whole_vs_ref =
+                    crate::distgeom::aligned_rmsd_for_test(&reference_fragment_points, &whole_fragment_points);
+                let fragment_vs_ref =
+                    crate::distgeom::aligned_rmsd_for_test(&reference_fragment_points, &fragment_points);
+                let fragment_vs_whole =
+                    crate::distgeom::aligned_rmsd_for_test(&whole_fragment_points, &fragment_points);
                 eprintln!(
                     "confseq_base_fragment_stage idx={line_idx} stage={stage_name} whole_vs_ref={whole_vs_ref:.6} fragment_vs_ref={fragment_vs_ref:.6} fragment_vs_whole={fragment_vs_whole:.6}"
                 );
@@ -10624,14 +9710,12 @@ mod tests {
     #[test]
     #[ignore = "export local SDF pairs comparing whole-DG fragment slices with sliced-fragment realization"]
     fn confseq_base_export_fragment_realization_pair_sdfs() {
-        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
-            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
-        });
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS")
+            .unwrap_or_else(|_| "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string());
         let export_dir = std::env::var("COSMOLKIT_CONFSEQ_FRAGMENT_PAIR_EXPORT_DIR")
             .unwrap_or_else(|_| "tmp/confseq_fragment_realization_pairs".to_string());
         std::fs::create_dir_all(&export_dir).expect("fragment pair export dir should be writable");
-        let input =
-            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let input = std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
         let rows = input.lines().collect::<Vec<_>>();
         let dg_options = ConfSeqDecodeOptions {
             optimize_with_uff: false,
@@ -10643,45 +9727,30 @@ mod tests {
             (
                 868usize,
                 vec![
-                    0, 1, 2, 10, 3, 9, 11, 4, 8, 21, 12, 13, 5, 7, 20, 22, 14, 6, 18, 15, 16, 17,
-                    19, 27, 23, 25, 28, 29, 24, 31, 26, 30,
+                    0, 1, 2, 10, 3, 9, 11, 4, 8, 21, 12, 13, 5, 7, 20, 22, 14, 6, 18, 15, 16, 17, 19, 27, 23, 25, 28,
+                    29, 24, 31, 26, 30,
                 ],
             ),
         ];
         let mut metadata = String::new();
         for (idx, worst_atoms) in examples {
-            let value: Value = serde_json::from_str(rows[idx]).unwrap_or_else(|err| {
-                panic!("failed to parse corpus JSON line {}: {err}", idx + 1)
-            });
-            let in_smiles = value["in_smiles"]
-                .as_str()
-                .expect("in_smiles should be present");
-            let td_smiles = value["td_smiles"]
-                .as_str()
-                .expect("td_smiles should be present");
+            let value: Value = serde_json::from_str(rows[idx])
+                .unwrap_or_else(|err| panic!("failed to parse corpus JSON line {}: {err}", idx + 1));
+            let in_smiles = value["in_smiles"].as_str().expect("in_smiles should be present");
+            let td_smiles = value["td_smiles"].as_str().expect("td_smiles should be present");
             let parsed = parse_confseq(in_smiles, td_smiles).expect("ConfSeq row should parse");
-            let source_mol =
-                Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
+            let source_mol = Molecule::from_smiles(&parsed.stripped_smiles).expect("fixture should parse");
             let rings = rings::symmetrize_sssr(&source_mol).expect("ring perception should work");
-            let model = build_confseq_base_constraint_model(&source_mol, &rings)
-                .expect("base constraint model should build");
+            let model =
+                build_confseq_base_constraint_model(&source_mol, &rings).expect("base constraint model should build");
             let component = model
                 .rigid_components
                 .iter()
-                .find(|component| {
-                    worst_atoms
-                        .iter()
-                        .all(|atom| component.atoms.contains(atom))
-                })
+                .find(|component| worst_atoms.iter().all(|atom| component.atoms.contains(atom)))
                 .expect("worst atoms should be contained in one rigid component");
             let mut cache = HashMap::<String, ConfSeqBaseRigidFragmentTemplate>::new();
-            let template = confseq_base_cached_rigid_fragment_template(
-                &source_mol,
-                &model,
-                component,
-                &mut cache,
-            )
-            .expect("fragment template should build");
+            let template = confseq_base_cached_rigid_fragment_template(&source_mol, &model, component, &mut cache)
+                .expect("fragment template should build");
             let stage = crate::chemistry::distgeom::EmbedderTestStage::FourthDimensionCleaned;
             let whole_template = build_template_initial_coords_for_test(
                 &parsed.stripped_smiles,
@@ -10691,11 +9760,9 @@ mod tests {
             )
             .expect("whole DG staged template should build");
             let whole_points = conformer_points(&whole_template.molecule);
-            let fragment_coords =
-                fragment_stage_coords_from_sliced_bounds_for_test(&source_mol, &template, stage)
-                    .expect("fragment sliced-bounds coordinates should build");
-            let path = std::path::Path::new(&export_dir)
-                .join(format!("idx{idx}_whole_dg_vs_fragment_realization.sdf"));
+            let fragment_coords = fragment_stage_coords_from_sliced_bounds_for_test(&source_mol, &template, stage)
+                .expect("fragment sliced-bounds coordinates should build");
+            let path = std::path::Path::new(&export_dir).join(format!("idx{idx}_whole_dg_vs_fragment_realization.sdf"));
             write_fragment_realization_pair_sdf_for_test(
                 &path,
                 &source_mol,
@@ -10720,16 +9787,10 @@ mod tests {
                 .expect("metadata should serialize"),
             );
             metadata.push('\n');
-            eprintln!(
-                "confseq_base_fragment_pair_sdf idx={idx} path={}",
-                path.display()
-            );
+            eprintln!("confseq_base_fragment_pair_sdf idx={idx} path={}", path.display());
         }
-        std::fs::write(
-            std::path::Path::new(&export_dir).join("metadata.jsonl"),
-            metadata,
-        )
-        .expect("metadata should write");
+        std::fs::write(std::path::Path::new(&export_dir).join("metadata.jsonl"), metadata)
+            .expect("metadata should write");
     }
 
     fn planar_bond_like_for_diagnostic(molecule: &Molecule, bond: &Bond) -> bool {

@@ -25,8 +25,7 @@
 //!
 
 use crate::{
-    AddHsParams, Atom, AtomId, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceModel,
-    assign_valence,
+    AddHsParams, Atom, AtomId, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceModel, assign_valence,
 };
 use glam::DVec2;
 use std::collections::HashSet;
@@ -721,11 +720,7 @@ fn draw_colour_to_svg(col: DrawColour) -> String {
     // END RDKIT CPP FUNCTION DrawColourToSVG
     let convert: &[u8] = b"0123456789ABCDEF";
     let has_alpha = (1.0 - col.a).abs() > 1e-3;
-    let mut res = if has_alpha {
-        vec![b'#'; 9]
-    } else {
-        vec![b'#'; 7]
-    };
+    let mut res = if has_alpha { vec![b'#'; 9] } else { vec![b'#'; 7] };
     let mut i = 1usize;
     let v = |c: f64| -> usize { (c * 255.0).clamp(0.0, 255.0) as usize };
     let ri = v(col.r);
@@ -1012,12 +1007,7 @@ fn are_bonds_parallel(at1: DVec2, at2: DVec2, at3: DVec2, at4: DVec2, tol: f64) 
 // RDKit✔️✔️:   return nullptr;
 // RDKit✔️✔️: };
 // END RDKIT CPP FUNCTION otherNeighbor
-fn other_neighbor(
-    mol: &Molecule,
-    first_atom_idx: usize,
-    second_atom_idx: usize,
-    nbor_num: usize,
-) -> Option<usize> {
+fn other_neighbor(mol: &Molecule, first_atom_idx: usize, second_atom_idx: usize, nbor_num: usize) -> Option<usize> {
     let mut nbour_count = 0usize;
     for nbr in atom_neighbors(mol, first_atom_idx) {
         if nbr != second_atom_idx {
@@ -1033,8 +1023,7 @@ fn other_neighbor(
 /// RDKit❗✔️: find bond between two atoms
 fn bond_between_atoms(mol: &Molecule, a1: usize, a2: usize) -> Option<&Bond> {
     mol.bonds().iter().find(|b| {
-        (b.begin().index() == a1 && b.end().index() == a2)
-            || (b.begin().index() == a2 && b.end().index() == a1)
+        (b.begin().index() == a1 && b.end().index() == a2) || (b.begin().index() == a2 && b.end().index() == a1)
     })
 }
 
@@ -1095,18 +1084,16 @@ fn get_wavy_line_segments(
 // BEGIN RDKIT CONSTANT MolDraw2D_detail::char_widths (MolDraw2DDetails.h)
 // RDKit✔️✔️: const int char_widths[] = { ... Helvetica widths ... };
 const RDKIT_CHAR_WIDTHS: [i32; 256] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    278, 278, 355, 556, 556, 889, 667, 222, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
-    556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667,
-    611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
-    667, 611, 278, 278, 278, 469, 556, 222, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500,
-    222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 333, 556, 556, 167, 556, 556, 556, 556, 191, 333, 556, 333, 333, 500, 500, 0, 556,
-    556, 556, 278, 0, 537, 350, 222, 333, 333, 556, 1000, 1000, 0, 611, 0, 333, 333, 333, 333, 333,
-    333, 333, 333, 0, 333, 333, 0, 333, 333, 333, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 1000, 0, 370, 0, 0, 0, 0, 556, 778, 1000, 365, 0, 0, 0, 0, 0, 889, 0, 0, 0, 278, 0, 0,
-    222, 611, 944, 611, 0, 0, 834,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 278, 278, 355, 556,
+    556, 889, 667, 222, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278,
+    278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778,
+    722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 222, 556, 556, 500, 556, 556, 278, 556, 556,
+    222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 333, 556, 556,
+    167, 556, 556, 556, 556, 191, 333, 556, 333, 333, 500, 500, 0, 556, 556, 556, 278, 0, 537, 350, 222, 333, 333, 556,
+    1000, 1000, 0, 611, 0, 333, 333, 333, 333, 333, 333, 333, 333, 0, 333, 333, 0, 333, 333, 333, 1000, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 0, 370, 0, 0, 0, 0, 556, 778, 1000, 365, 0, 0, 0, 0, 0, 889, 0, 0, 0, 278,
+    0, 0, 222, 611, 944, 611, 0, 0, 834,
 ];
 // END RDKIT CONSTANT MolDraw2D_detail::char_widths
 
@@ -1229,10 +1216,8 @@ fn adjust_string_rects_for_super_subscript(draw_modes: &[TextDrawType], rects: &
         }
     }
     for i in 1..rects.len() {
-        if (draw_modes[i] == TextDrawType::Subscript
-            && draw_modes[i - 1] == TextDrawType::Superscript)
-            || (draw_modes[i - 1] == TextDrawType::Subscript
-                && draw_modes[i] == TextDrawType::Superscript)
+        if (draw_modes[i] == TextDrawType::Subscript && draw_modes[i - 1] == TextDrawType::Superscript)
+            || (draw_modes[i - 1] == TextDrawType::Subscript && draw_modes[i] == TextDrawType::Superscript)
         {
             let move_back = rects[i].trans.x - rects[i - 1].trans.x;
             for rect in rects.iter_mut().skip(i) {
@@ -1374,13 +1359,7 @@ fn align_string(align: TextAlignType, draw_modes: &[TextDrawType], rects: &mut [
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawTextNotFT::alignString
     let mut talign = align;
-    if talign == TextAlignType::Middle
-        && draw_modes
-            .iter()
-            .filter(|mode| **mode == TextDrawType::Normal)
-            .count()
-            == 1
-    {
+    if talign == TextAlignType::Middle && draw_modes.iter().filter(|mode| **mode == TextDrawType::Normal).count() == 1 {
         talign = TextAlignType::Start;
     }
 
@@ -1459,9 +1438,8 @@ fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
             }
             break;
         }
-        let split_here = (i + 2 <= bytes.len() && &label[i..i + 2] == "<s")
-            || bytes[i] == b':'
-            || bytes[i].is_ascii_uppercase();
+        let split_here =
+            (i + 2 <= bytes.len() && &label[i..i + 2] == "<s") || bytes[i] == b':' || bytes[i].is_ascii_uppercase();
         if split_here && !next_piece.is_empty() {
             label_pieces.push(std::mem::take(&mut next_piece));
         }
@@ -1556,12 +1534,7 @@ fn get_string_rects(text: &str, orient: OrientType, font_size: f64) -> Vec<Strin
 // Clash detection helpers
 // ──────────────────────────────────────────────
 
-fn label_rects_intersect(
-    rects: &[StringRect],
-    cds: DVec2,
-    other: &StringRect,
-    padding: f64,
-) -> bool {
+fn label_rects_intersect(rects: &[StringRect], cds: DVec2, other: &StringRect, padding: f64) -> bool {
     for r in rects {
         // Shift the rect by the label's cds
         let shifted = StringRect {
@@ -1675,17 +1648,8 @@ fn point_in_triangle(pt: DVec2, t1: DVec2, t2: DVec2, t3: DVec2) -> bool {
 // RDKit✔️✔️:   return false;
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2D_detail::doesTriangleIntersect
-fn rect_clashes_with_triangle(
-    rect: &StringRect,
-    t1: DVec2,
-    t2: DVec2,
-    t3: DVec2,
-    padding: f64,
-) -> bool {
-    if rect.is_point_inside(t1, padding)
-        || rect.is_point_inside(t2, padding)
-        || rect.is_point_inside(t3, padding)
-    {
+fn rect_clashes_with_triangle(rect: &StringRect, t1: DVec2, t2: DVec2, t3: DVec2, padding: f64) -> bool {
+    if rect.is_point_inside(t1, padding) || rect.is_point_inside(t2, padding) || rect.is_point_inside(t3, padding) {
         return true;
     }
     let (tl, tr, br, bl) = rect.calc_corners(padding);
@@ -1696,13 +1660,11 @@ fn rect_clashes_with_triangle(
     {
         return true;
     }
-    [(tl, tr), (tr, br), (br, bl), (bl, tl)]
-        .into_iter()
-        .any(|(r1, r2)| {
-            line_intersection(r1, r2, t1, t2).is_some()
-                || line_intersection(r1, r2, t2, t3).is_some()
-                || line_intersection(r1, r2, t3, t1).is_some()
-        })
+    [(tl, tr), (tr, br), (br, bl), (bl, tl)].into_iter().any(|(r1, r2)| {
+        line_intersection(r1, r2, t1, t2).is_some()
+            || line_intersection(r1, r2, t2, t3).is_some()
+            || line_intersection(r1, r2, t3, t1).is_some()
+    })
 }
 
 fn label_rects_clash_with_line(label: &AtomLabel, begin: DVec2, end: DVec2, padding: f64) -> bool {
@@ -1738,13 +1700,7 @@ fn label_rects_clash_with_wedge(label: &AtomLabel, wedge: &DrawWedge, padding: f
             }
             WedgeKind::Dashed => {
                 if wedge.points.len() >= 3
-                    && rect_clashes_with_triangle(
-                        &shifted,
-                        wedge.points[0],
-                        wedge.points[1],
-                        wedge.points[2],
-                        padding,
-                    )
+                    && rect_clashes_with_triangle(&shifted, wedge.points[0], wedge.points[1], wedge.points[2], padding)
                 {
                     return true;
                 }
@@ -1832,10 +1788,7 @@ fn order_other_bond_vecs(points: &[DVec2], other_bond_vecs: &mut [DVec2]) {
     }
 }
 
-fn build_single_colour_wedge_triangles(
-    mut points: Vec<DVec2>,
-    other_bond_vecs: &[DVec2],
-) -> Vec<DVec2> {
+fn build_single_colour_wedge_triangles(mut points: Vec<DVec2>, other_bond_vecs: &[DVec2]) -> Vec<DVec2> {
     // BEGIN RDKIT CPP FUNCTION DrawShapeSolidWedge::buildSingleColorTriangles (DrawShape.cpp)
     // RDKit✔️✔️: auto point = points_[0]; auto end1 = points_[1]; auto end2 = points_[2];
     // RDKit✔️✔️: auto midEnd = (end1 + end2) / 2.0;
@@ -1905,10 +1858,7 @@ fn build_single_colour_wedge_triangles(
     points
 }
 
-fn build_two_colour_wedge_triangles(
-    mut points: Vec<DVec2>,
-    other_bond_vecs: &[DVec2],
-) -> Vec<DVec2> {
+fn build_two_colour_wedge_triangles(mut points: Vec<DVec2>, other_bond_vecs: &[DVec2]) -> Vec<DVec2> {
     // BEGIN RDKIT CPP FUNCTION DrawShapeSolidWedge::buildTwoColorTriangles (DrawShape.cpp)
     // RDKit✔️✔️: auto point = points_[0]; auto end1 = points_[1]; auto end2 = points_[2];
     // RDKit✔️✔️: auto midEnd = (end1 + end2) / 2.0;
@@ -2018,12 +1968,7 @@ fn build_two_colour_wedge_triangles(
 // RDKit✔️✔️:   return {p0, p1, p2, p3};
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION getBracketPoints
-fn get_bracket_points(
-    p1: DVec2,
-    p2: DVec2,
-    ref_pt: DVec2,
-    bond_segments: &[(DVec2, DVec2)],
-) -> Vec<DVec2> {
+fn get_bracket_points(p1: DVec2, p2: DVec2, ref_pt: DVec2, bond_segments: &[(DVec2, DVec2)]) -> Vec<DVec2> {
     let v = p2 - p1;
     let mut bracket_dir = DVec2::new(v.y, -v.x);
     let bracket_frac = 0.15; // RDKit default
@@ -2120,13 +2065,7 @@ struct DrawMol {
 }
 
 impl DrawMol {
-    fn include_extreme_point(
-        x_min: &mut f64,
-        x_max: &mut f64,
-        y_min: &mut f64,
-        y_max: &mut f64,
-        pt: DVec2,
-    ) {
+    fn include_extreme_point(x_min: &mut f64, x_max: &mut f64, y_min: &mut f64, y_max: &mut f64, pt: DVec2) {
         if pt.x < *x_min {
             *x_min = pt.x;
         }
@@ -2182,12 +2121,7 @@ impl DrawMol {
         )
     }
 
-    fn from_molecule(
-        mol: &Molecule,
-        width: u32,
-        height: u32,
-        options: DrawOptions,
-    ) -> Result<Self, SvgDrawError> {
+    fn from_molecule(mol: &Molecule, width: u32, height: u32, options: DrawOptions) -> Result<Self, SvgDrawError> {
         let prepared_mol = prepare_molecule_for_svg_drawing(mol)?;
 
         let at_cds: Vec<DVec2> = if let Some(coords) = prepared_mol.coordinates_2d() {
@@ -2250,52 +2184,51 @@ impl DrawMol {
             annotations: Vec::new(),
         };
 
-        let rebuild_draw_objects =
-            |draw: &mut Self, rel_font_scale: f64| -> Result<(), SvgDrawError> {
-                draw.scale = 1.0;
-                draw.font_scale = rel_font_scale;
-                draw.x_min = f64::MAX / 2.0;
-                draw.x_max = f64::MIN / 2.0;
-                draw.y_min = f64::MAX / 2.0;
-                draw.y_max = f64::MIN / 2.0;
-                draw.x_range = f64::MAX;
-                draw.y_range = f64::MAX;
-                draw.at_cds = base_at_cds.clone();
-                draw.atom_labels.clear();
-                draw.atom_orients.clear();
-                draw.bonds.clear();
-                draw.wedges.clear();
-                draw.arrows.clear();
-                draw.draw_items.clear();
-                draw.join_paths.clear();
-                draw.post_shapes.clear();
-                draw.radicals.clear();
-                draw.raw_double_bonds.clear();
-                draw.single_bond_lines.clear();
-                draw.bond_draw_order.clear();
-                draw.mean_bond_length = 0.0;
-                draw.annotations.clear();
+        let rebuild_draw_objects = |draw: &mut Self, rel_font_scale: f64| -> Result<(), SvgDrawError> {
+            draw.scale = 1.0;
+            draw.font_scale = rel_font_scale;
+            draw.x_min = f64::MAX / 2.0;
+            draw.x_max = f64::MIN / 2.0;
+            draw.y_min = f64::MAX / 2.0;
+            draw.y_max = f64::MIN / 2.0;
+            draw.x_range = f64::MAX;
+            draw.y_range = f64::MAX;
+            draw.at_cds = base_at_cds.clone();
+            draw.atom_labels.clear();
+            draw.atom_orients.clear();
+            draw.bonds.clear();
+            draw.wedges.clear();
+            draw.arrows.clear();
+            draw.draw_items.clear();
+            draw.join_paths.clear();
+            draw.post_shapes.clear();
+            draw.radicals.clear();
+            draw.raw_double_bonds.clear();
+            draw.single_bond_lines.clear();
+            draw.bond_draw_order.clear();
+            draw.mean_bond_length = 0.0;
+            draw.annotations.clear();
 
-                draw.extract_atom_symbols(&prepared_mol);
-                draw.extract_variable_bonds(&prepared_mol);
-                draw.extract_bonds(&prepared_mol)?;
-                draw.smooth_bond_joins(&prepared_mol);
-                draw.resolve_atom_symbol_clashes();
-                draw.extract_regions();
-                draw.extract_highlights(&prepared_mol);
-                draw.extract_attachments(&prepared_mol);
-                draw.extract_atom_notes(&prepared_mol);
-                if draw.options.add_stereo_annotation {
-                    draw.extract_cip_codes(&prepared_mol);
-                }
-                draw.extract_stereo_groups(&prepared_mol);
-                draw.extract_bond_notes(&prepared_mol);
-                draw.extract_radicals(&prepared_mol);
-                draw.extract_sgroup_data(&prepared_mol);
-                draw.extract_brackets(&prepared_mol);
-                draw.extract_link_nodes(&prepared_mol);
-                Ok(())
-            };
+            draw.extract_atom_symbols(&prepared_mol);
+            draw.extract_variable_bonds(&prepared_mol);
+            draw.extract_bonds(&prepared_mol)?;
+            draw.smooth_bond_joins(&prepared_mol);
+            draw.resolve_atom_symbol_clashes();
+            draw.extract_regions();
+            draw.extract_highlights(&prepared_mol);
+            draw.extract_attachments(&prepared_mol);
+            draw.extract_atom_notes(&prepared_mol);
+            if draw.options.add_stereo_annotation {
+                draw.extract_cip_codes(&prepared_mol);
+            }
+            draw.extract_stereo_groups(&prepared_mol);
+            draw.extract_bond_notes(&prepared_mol);
+            draw.extract_radicals(&prepared_mol);
+            draw.extract_sgroup_data(&prepared_mol);
+            draw.extract_brackets(&prepared_mol);
+            draw.extract_link_nodes(&prepared_mol);
+            Ok(())
+        };
 
         rebuild_draw_objects(&mut out, 1.0)?;
         out.calculate_scale();
@@ -2482,17 +2415,9 @@ impl DrawMol {
                 islope = nbr_sum.y / nbr_sum.x;
             }
             if islope.abs() <= VERT_SLOPE {
-                orient = if nbr_sum.x > 0.0 {
-                    OrientType::W
-                } else {
-                    OrientType::E
-                };
+                orient = if nbr_sum.x > 0.0 { OrientType::W } else { OrientType::E };
             } else {
-                orient = if nbr_sum.y > 0.0 {
-                    OrientType::S
-                } else {
-                    OrientType::N
-                };
+                orient = if nbr_sum.y > 0.0 { OrientType::S } else { OrientType::N };
             }
             if orient == OrientType::N || orient == OrientType::S {
                 if neighbours.len() == 1 {
@@ -2507,11 +2432,7 @@ impl DrawMol {
                     for &nbr in &neighbours {
                         let bond_vec = self.at_cds[nbr] - at1_cds;
                         if bond_vec.x.abs() < 1.0e-16 {
-                            orient = if bond_vec.y > 0.0 {
-                                OrientType::S
-                            } else {
-                                OrientType::N
-                            };
+                            orient = if bond_vec.y > 0.0 { OrientType::S } else { OrientType::N };
                             break;
                         }
                         let ang = (bond_vec.y / bond_vec.x).atan().to_degrees();
@@ -2549,12 +2470,7 @@ impl DrawMol {
         let num_h = if atomic_num == 6 && atom_degree(mol, atom.id().index()) > 0 {
             0
         } else {
-            atom.explicit_hydrogens() as usize
-                + self
-                    .implicit_hs
-                    .get(atom.id().index())
-                    .copied()
-                    .unwrap_or(0) as usize
+            atom.explicit_hydrogens() as usize + self.implicit_hs.get(atom.id().index()).copied().unwrap_or(0) as usize
         };
         let h = match num_h {
             0 => String::new(),
@@ -2640,46 +2556,35 @@ impl DrawMol {
             match bond.order() {
                 BondOrder::Double | BondOrder::Aromatic => {
                     if bond.order() == BondOrder::Double {
-                        self.raw_double_bonds
-                            .push((bond.begin().index(), bond.end().index()));
+                        self.raw_double_bonds.push((bond.begin().index(), bond.end().index()));
                     }
                     self.make_double_bond_lines(mol, bond, double_bond_offset);
                 }
                 BondOrder::Single => {
-                    if matches!(
-                        bond.direction(),
-                        BondDirection::BeginWedge | BondDirection::BeginDash
-                    ) {
+                    if matches!(bond.direction(), BondDirection::BeginWedge | BondDirection::BeginDash) {
                         self.make_wedged_bond(mol, bond)?;
                     } else {
-                        let (begin, end) = self
-                            .adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
+                        let (begin, end) = self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
                         self.new_bond_line(mol, begin, end, bond);
                     }
                 }
                 BondOrder::Triple => {
-                    let (begin, end) =
-                        self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
+                    let (begin, end) = self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
                     self.new_bond_line(mol, begin, end, bond);
                     self.make_triple_bond_lines(mol, bond, double_bond_offset);
                 }
                 BondOrder::Quadruple => {
-                    let (begin, end) =
-                        self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
+                    let (begin, end) = self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
                     self.new_bond_line(mol, begin, end, bond);
                 }
                 BondOrder::Null | BondOrder::Hydrogen | BondOrder::Unspecified => {
                     self.make_bond_null_query_line(bond);
                 }
-                BondOrder::Dative
-                | BondOrder::DativeOne
-                | BondOrder::DativeLeft
-                | BondOrder::DativeRight => {
+                BondOrder::Dative | BondOrder::DativeOne | BondOrder::DativeLeft | BondOrder::DativeRight => {
                     self.make_dative_bond(mol, bond, double_bond_offset);
                 }
                 _ => {
-                    let (begin, end) =
-                        self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
+                    let (begin, end) = self.adjust_bond_ends_for_labels(bond.begin().index(), bond.end().index());
                     self.new_bond_line(mol, begin, end, bond);
                 }
             }
@@ -2696,15 +2601,12 @@ impl DrawMol {
         for atom in mol.atoms() {
             let idx = atom.id().index();
             let chiral = atom.chiral_tag();
-            if chiral == crate::ChiralTag::TetrahedralCw
-                || chiral == crate::ChiralTag::TetrahedralCcw
-            {
+            if chiral == crate::ChiralTag::TetrahedralCw || chiral == crate::ChiralTag::TetrahedralCcw {
                 let neighbours = atom_neighbors(mol, idx);
                 // Pick the bond with the highest atom in the permutation to wedge
                 if let Some(perm) = atom.chiral_permutation() {
                     // The permutation encodes neighbour ordering: lowest 3 bits = #0 neighbor index
-                    let perms: Vec<usize> =
-                        (0..4).map(|i| ((perm >> (i * 2)) & 3) as usize).collect();
+                    let perms: Vec<usize> = (0..4).map(|i| ((perm >> (i * 2)) & 3) as usize).collect();
                     // Find the neighbour with highest priority (index 0 in perm = highest)
                     if let Some(&hi_neighbor_idx) = perms.first() {
                         if hi_neighbor_idx < neighbours.len() {
@@ -2722,12 +2624,7 @@ impl DrawMol {
         wedges
     }
 
-    fn determine_bond_wedge_state(
-        &self,
-        mol: &Molecule,
-        bond: &Bond,
-        wedge_bonds: &HashSet<usize>,
-    ) -> BondDirection {
+    fn determine_bond_wedge_state(&self, mol: &Molecule, bond: &Bond, wedge_bonds: &HashSet<usize>) -> BondDirection {
         let (chiral_atom, other_atom) = {
             let b_idx = bond.begin().index();
             let e_idx = bond.end().index();
@@ -2737,8 +2634,7 @@ impl DrawMol {
                 && wedge_bonds.contains(&bond.id().index())
             {
                 (b_idx, e_idx)
-            } else if (ea == crate::ChiralTag::TetrahedralCw
-                || ea == crate::ChiralTag::TetrahedralCcw)
+            } else if (ea == crate::ChiralTag::TetrahedralCw || ea == crate::ChiralTag::TetrahedralCcw)
                 && wedge_bonds.contains(&bond.id().index())
             {
                 (e_idx, b_idx)
@@ -2831,10 +2727,7 @@ impl DrawMol {
         self.new_bond_line_with_colours(l1s, l1f, cols.0, cols.1, bond);
         let l1 = (l1s - l1f).length_squared();
         let l2 = (l2s - l2f).length_squared();
-        if (atom_degree(mol, b) == 1 || atom_degree(mol, e) == 1)
-            && cols.0 != cols.1
-            && (l1 - l2).abs() > 0.01
-        {
+        if (atom_degree(mol, b) == 1 || atom_degree(mol, e) == 1) && cols.0 != cols.1 && (l1 - l2).abs() > 0.01 {
             let midlen = l1.sqrt() / 2.0;
             let not_mid = if atom_degree(mol, b) == 1 {
                 let line_dir = direction_vector(l2s, l2f);
@@ -2909,12 +2802,7 @@ impl DrawMol {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::calcDoubleBondLines
-    fn calc_double_bond_lines(
-        &mut self,
-        mol: &Molecule,
-        bond: &Bond,
-        offset: f64,
-    ) -> (DVec2, DVec2, DVec2, DVec2) {
+    fn calc_double_bond_lines(&mut self, mol: &Molecule, bond: &Bond, offset: f64) -> (DVec2, DVec2, DVec2, DVec2) {
         let at1 = bond.begin().index();
         let at2 = bond.end().index();
         if is_linear_atom(mol, &self.at_cds, at1)
@@ -2924,12 +2812,7 @@ impl DrawMol {
             let at1_cds = self.at_cds[at1];
             let at2_cds = self.at_cds[at2];
             let perp = calc_perpendicular(at1_cds, at2_cds) * offset * 0.5;
-            return (
-                at1_cds + perp,
-                at2_cds + perp,
-                at1_cds - perp,
-                at2_cds - perp,
-            );
+            return (at1_cds + perp, at2_cds + perp, at1_cds - perp, at2_cds - perp);
         }
         if atom_degree(mol, at1) == 1 || atom_degree(mol, at2) == 1 {
             return self.double_bond_terminal(mol, at1, at2, offset);
@@ -2957,9 +2840,7 @@ impl DrawMol {
         if !are_bonds_parallel(l1s, l1f, l2f, l2s, 1.0e-4) {
             std::mem::swap(&mut l1s, &mut l2s);
         }
-        if matches!(bond.direction(), BondDirection::EitherDouble)
-            || matches!(bond.stereo(), crate::BondStereo::Any)
-        {
+        if matches!(bond.direction(), BondDirection::EitherDouble) || matches!(bond.stereo(), crate::BondStereo::Any) {
             std::mem::swap(&mut l1s, &mut l2s);
         }
         (l1s, l1f, l2s, l2f)
@@ -3016,9 +2897,9 @@ impl DrawMol {
             for &ring_idx in &bond_in_rings {
                 let candidate = &rings.bond_rings()[ring_idx];
                 ring_to_use = Some(candidate.as_slice());
-                let ring_ok = candidate.iter().all(|bond_idx| {
-                    mol.bonds()[bond_idx.index()].is_aromatic() == bond.is_aromatic()
-                });
+                let ring_ok = candidate
+                    .iter()
+                    .all(|bond_idx| mol.bonds()[bond_idx.index()].is_aromatic() == bond.is_aromatic());
                 if ring_ok {
                     break;
                 }
@@ -3136,14 +3017,7 @@ impl DrawMol {
                 let Some(fourth_atom) = other_neighbor(mol, end_at, beg_at, 0) else {
                     return (self.at_cds[beg_at], self.at_cds[end_at]);
                 };
-                let l2s = self.double_bond_end(
-                    &self.at_cds,
-                    third_atom,
-                    beg_at,
-                    end_at,
-                    offset,
-                    beg_trunc,
-                );
+                let l2s = self.double_bond_end(&self.at_cds, third_atom, beg_at, end_at, offset, beg_trunc);
                 let is_trans = are_bonds_trans(
                     self.at_cds[third_atom],
                     self.at_cds[beg_at],
@@ -3151,21 +3025,11 @@ impl DrawMol {
                     self.at_cds[fourth_atom],
                 );
                 let l2f = if is_trans {
-                    let perp = calc_inner_perpendicular(
-                        self.at_cds[end_at],
-                        self.at_cds[beg_at],
-                        self.at_cds[third_atom],
-                    );
+                    let perp =
+                        calc_inner_perpendicular(self.at_cds[end_at], self.at_cds[beg_at], self.at_cds[third_atom]);
                     self.at_cds[end_at] + perp * offset
                 } else {
-                    self.double_bond_end(
-                        &self.at_cds,
-                        fourth_atom,
-                        end_at,
-                        beg_at,
-                        offset,
-                        end_trunc,
-                    )
+                    self.double_bond_end(&self.at_cds, fourth_atom, end_at, beg_at, offset, end_trunc)
                 };
                 (l2s, l2f)
             }
@@ -3176,14 +3040,7 @@ impl DrawMol {
                 let Some(mut fourth_atom) = other_neighbor(mol, end_at, beg_at, 0) else {
                     return (self.at_cds[beg_at], self.at_cds[end_at]);
                 };
-                let l2s = self.double_bond_end(
-                    &self.at_cds,
-                    third_atom,
-                    beg_at,
-                    end_at,
-                    offset,
-                    beg_trunc,
-                );
+                let l2s = self.double_bond_end(&self.at_cds, third_atom, beg_at, end_at, offset, beg_trunc);
                 let is_trans = are_bonds_trans(
                     self.at_cds[third_atom],
                     self.at_cds[beg_at],
@@ -3195,14 +3052,7 @@ impl DrawMol {
                         fourth_atom = nbr;
                     }
                 }
-                let l2f = self.double_bond_end(
-                    &self.at_cds,
-                    fourth_atom,
-                    end_at,
-                    beg_at,
-                    offset,
-                    end_trunc,
-                );
+                let l2f = self.double_bond_end(&self.at_cds, fourth_atom, end_at, beg_at, offset, end_trunc);
                 (l2s, l2f)
             }
             (d, 2) if d > 2 => {
@@ -3212,14 +3062,7 @@ impl DrawMol {
                 let Some(fourth_atom) = other_neighbor(mol, end_at, beg_at, 0) else {
                     return (self.at_cds[beg_at], self.at_cds[end_at]);
                 };
-                let mut l2s = self.double_bond_end(
-                    &self.at_cds,
-                    third_atom,
-                    beg_at,
-                    end_at,
-                    offset,
-                    beg_trunc,
-                );
+                let mut l2s = self.double_bond_end(&self.at_cds, third_atom, beg_at, end_at, offset, beg_trunc);
                 let is_trans = are_bonds_trans(
                     self.at_cds[third_atom],
                     self.at_cds[beg_at],
@@ -3229,38 +3072,17 @@ impl DrawMol {
                 if is_trans {
                     if let Some(nbr) = non_colinear_nbor(beg_at, end_at) {
                         third_atom = nbr;
-                        l2s = self.double_bond_end(
-                            &self.at_cds,
-                            third_atom,
-                            beg_at,
-                            end_at,
-                            offset,
-                            end_trunc,
-                        );
+                        l2s = self.double_bond_end(&self.at_cds, third_atom, beg_at, end_at, offset, end_trunc);
                     }
                 }
-                let l2f = self.double_bond_end(
-                    &self.at_cds,
-                    fourth_atom,
-                    end_at,
-                    beg_at,
-                    offset,
-                    end_trunc,
-                );
+                let l2f = self.double_bond_end(&self.at_cds, fourth_atom, end_at, beg_at, offset, end_trunc);
                 (l2s, l2f)
             }
             (d1, d2) if d1 > 2 && d2 > 2 => {
                 let Some(third_atom) = other_neighbor(mol, beg_at, end_at, 0) else {
                     return (self.at_cds[beg_at], self.at_cds[end_at]);
                 };
-                let mut l2s = self.double_bond_end(
-                    &self.at_cds,
-                    third_atom,
-                    beg_at,
-                    end_at,
-                    offset,
-                    beg_trunc,
-                );
+                let mut l2s = self.double_bond_end(&self.at_cds, third_atom, beg_at, end_at, offset, beg_trunc);
                 let Some(mut fourth_atom) = other_neighbor(mol, end_at, beg_at, 0) else {
                     return (self.at_cds[beg_at], self.at_cds[end_at]);
                 };
@@ -3275,14 +3097,7 @@ impl DrawMol {
                         fourth_atom = nbr;
                     }
                 }
-                let l2f = self.double_bond_end(
-                    &self.at_cds,
-                    fourth_atom,
-                    end_at,
-                    beg_at,
-                    offset,
-                    end_trunc,
-                );
+                let l2f = self.double_bond_end(&self.at_cds, fourth_atom, end_at, beg_at, offset, end_trunc);
                 (l2s, l2f)
             }
             _ => (self.at_cds[beg_at], self.at_cds[end_at]),
@@ -3350,11 +3165,7 @@ impl DrawMol {
             let perp = calc_inner_perpendicular(at1_cds, at2_cds, self.at_cds[third_atom]);
             l2s = at1_cds + perp * offset;
             l2f = self.double_bond_end(&self.at_cds, at1, at2, third_atom, offset, true);
-            if direction_vector(l1s, l1f)
-                .dot(direction_vector(l2s, l2f))
-                .abs()
-                < 0.9999
-            {
+            if direction_vector(l1s, l1f).dot(direction_vector(l2s, l2f)).abs() < 0.9999 {
                 l2f = self.double_bond_end(&self.at_cds, at1, at2, third_atom, -offset, true);
             }
             if self.atom_labels[at1].is_some() {
@@ -3362,15 +3173,7 @@ impl DrawMol {
                     if Self::debug_svg_row_active(142) && at1 == 59 {
                         eprintln!(
                             "COSMOL_ROW142_DBT_SHIFT_BEFORE orig=({},{}) used=({},{}) offset={:.17} perp=({:.17},{:.17}) cds=({:.17},{:.17})",
-                            orig_at1,
-                            orig_at2,
-                            at1,
-                            at2,
-                            offset,
-                            perp.x,
-                            perp.y,
-                            label.cds.x,
-                            label.cds.y
+                            orig_at1, orig_at2, at1, at2, offset, perp.x, perp.y, label.cds.x, label.cds.y
                         );
                     }
                     label.cds += perp * offset * 0.5;
@@ -3397,15 +3200,7 @@ impl DrawMol {
     // RDKit✔️✔️:   ...
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::doubleBondEnd
-    fn double_bond_end(
-        &self,
-        at_cds: &[DVec2],
-        at1: usize,
-        at2: usize,
-        at3: usize,
-        offset: f64,
-        trunc: bool,
-    ) -> DVec2 {
+    fn double_bond_end(&self, at_cds: &[DVec2], at1: usize, at2: usize, at3: usize, offset: f64, trunc: bool) -> DVec2 {
         let v21 = direction_vector(at_cds[at2], at_cds[at1]);
         let v23 = direction_vector(at_cds[at2], at_cds[at3]);
         let mut v23perp = normalize_point2d(DVec2::new(-v23.y, v23.x));
@@ -3574,12 +3369,7 @@ impl DrawMol {
         Ok(())
     }
 
-    fn find_other_bond_vecs(
-        &self,
-        mol: &Molecule,
-        atom_idx: usize,
-        other_atom_idx: usize,
-    ) -> Vec<DVec2> {
+    fn find_other_bond_vecs(&self, mol: &Molecule, atom_idx: usize, other_atom_idx: usize) -> Vec<DVec2> {
         // BEGIN RDKIT CPP FUNCTION DrawMol::findOtherBondVecs (DrawMol.cpp)
         // RDKit✔️✔️: if (atom->getDegree() == 1 || atomLabels_[atom->getIdx()]) { return; }
         // RDKit✔️✔️: for (unsigned int i = 1; i < atom->getDegree(); ++i) {
@@ -3614,16 +3404,11 @@ impl DrawMol {
             if bond.order() == BondOrder::Triple {
                 continue;
             }
-            if bond.order() == BondOrder::Double
-                && atom_degree(mol, atom_idx) > 2
-                && atom_degree(mol, third_atom) == 1
+            if bond.order() == BondOrder::Double && atom_degree(mol, atom_idx) > 2 && atom_degree(mol, third_atom) == 1
             {
                 continue;
             }
-            result.push(direction_vector(
-                self.at_cds[atom_idx],
-                self.at_cds[third_atom],
-            ));
+            result.push(direction_vector(self.at_cds[atom_idx], self.at_cds[third_atom]));
         }
         result
     }
@@ -3655,16 +3440,7 @@ impl DrawMol {
         let mid = (end1 + end2) * 0.5;
         let (col1, col2) = self.get_bond_colours(mol, bond);
         let atid2 = if self.options.split_bonds { b } else { e };
-        self.new_bond_line_with_metadata(
-            end1,
-            mid,
-            col1,
-            col1,
-            b,
-            atid2,
-            bond.id().index(),
-            DashPattern::new(),
-        );
+        self.new_bond_line_with_metadata(end1, mid, col1, col1, b, atid2, bond.id().index(), DashPattern::new());
 
         let len = (end2 - end1).length();
         if len <= 1.0e-12 {
@@ -3704,8 +3480,7 @@ impl DrawMol {
             atom2_idx: e,
             bond_idx: bond.id().index(),
         });
-        self.bond_draw_order
-            .push(DrawBondShapeRef::Line(self.bonds.len() - 1));
+        self.bond_draw_order.push(DrawBondShapeRef::Line(self.bonds.len() - 1));
     }
 
     fn new_bond_line(&mut self, mol: &Molecule, begin: DVec2, end: DVec2, bond: &Bond) {
@@ -3785,16 +3560,7 @@ impl DrawMol {
         if debug_svg_bond_enabled(bond_idx) {
             debug_svg_bond_log(format!(
                 "RUST new_bond_line_with_metadata bond={} begin=({:.15},{:.15}) end=({:.15},{:.15}) col1={:?} col2={:?} atom1_idx={} atom2_idx={} split_bonds={}",
-                bond_idx,
-                begin.x,
-                begin.y,
-                end.x,
-                end.y,
-                col1,
-                col2,
-                atom1_idx,
-                atom2_idx,
-                self.options.split_bonds
+                bond_idx, begin.x, begin.y, end.x, end.y, col1, col2, atom1_idx, atom2_idx, self.options.split_bonds
             ));
         }
         let line_width = self.options.bond_line_width;
@@ -3820,17 +3586,7 @@ impl DrawMol {
             if debug_svg_bond_enabled(bond_idx) {
                 debug_svg_bond_log(format!(
                     "RUST new_bond_line split bond={} mid=({:.15},{:.15}) first=({:.15},{:.15})->({:.15},{:.15}) second=({:.15},{:.15})->({:.15},{:.15})",
-                    bond_idx,
-                    mid.x,
-                    mid.y,
-                    begin.x,
-                    begin.y,
-                    mid.x,
-                    mid.y,
-                    mid.x,
-                    mid.y,
-                    end.x,
-                    end.y
+                    bond_idx, mid.x, mid.y, begin.x, begin.y, mid.x, mid.y, mid.x, mid.y, end.x, end.y
                 ));
             }
             let first_atom2_idx = if self.options.split_bonds {
@@ -3854,11 +3610,7 @@ impl DrawMol {
                 self.single_bond_lines.push(idx1);
             }
             self.bond_draw_order.push(DrawBondShapeRef::Line(idx1));
-            let second_atom1_idx = if self.options.split_bonds {
-                atom2_idx
-            } else {
-                atom1_idx
-            };
+            let second_atom1_idx = if self.options.split_bonds { atom2_idx } else { atom1_idx };
             let idx2 = self.bonds.len();
             self.bonds.push(DrawLine {
                 begin: mid,
@@ -3908,12 +3660,7 @@ impl DrawMol {
         // RDKit✔️✔️:   r->trans_ = origTrans;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION adjustBondEndForString
-        fn adjust_bond_end_for_string(
-            end2: DVec2,
-            padding: f64,
-            rects: &[StringRect],
-            move_end: &mut DVec2,
-        ) {
+        fn adjust_bond_end_for_string(end2: DVec2, padding: f64, rects: &[StringRect], move_end: &mut DVec2) {
             let label_pos = *move_end;
             for (rect_idx, rect) in rects.iter().enumerate() {
                 let shifted = StringRect {
@@ -3924,18 +3671,7 @@ impl DrawMol {
                 if debug_target_bond().is_some() {
                     debug_svg_bond_log(format!(
                         "RUST adjustBondEndForString rect={rect_idx} move_end_before=({:.15},{:.15}) end2=({:.15},{:.15}) tl=({:.15},{:.15}) tr=({:.15},{:.15}) br=({:.15},{:.15}) bl=({:.15},{:.15})",
-                        move_end.x,
-                        move_end.y,
-                        end2.x,
-                        end2.y,
-                        tl.x,
-                        tl.y,
-                        tr.x,
-                        tr.y,
-                        br.x,
-                        br.y,
-                        bl.x,
-                        bl.y
+                        move_end.x, move_end.y, end2.x, end2.y, tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y
                     ));
                 }
                 for (p1, p2) in [(tl, tr), (tr, br), (br, bl), (bl, tl)] {
@@ -3964,12 +3700,8 @@ impl DrawMol {
                 end_cds.x,
                 end_cds.y,
                 padding,
-                self.atom_labels
-                    .get(beg_at_idx)
-                    .is_some_and(|l| l.is_some()),
-                self.atom_labels
-                    .get(end_at_idx)
-                    .is_some_and(|l| l.is_some())
+                self.atom_labels.get(beg_at_idx).is_some_and(|l| l.is_some()),
+                self.atom_labels.get(end_at_idx).is_some_and(|l| l.is_some())
             ));
         }
         if let Some(Some(label)) = self.atom_labels.get(beg_at_idx) {
@@ -4018,10 +3750,7 @@ impl DrawMol {
                     };
                     if let Some(nbr) = nbr {
                         if (atom_degree(mol, nbr) == 1 && bond.order() == BondOrder::Double)
-                            || matches!(
-                                bond.direction(),
-                                BondDirection::BeginWedge | BondDirection::BeginDash
-                            )
+                            || matches!(bond.direction(), BondDirection::BeginWedge | BondDirection::BeginDash)
                         {
                             do_it = true;
                             break;
@@ -4062,11 +3791,7 @@ impl DrawMol {
                     if (line_point(line1, p1) - line_point(line2, p2)).length_squared() < 1.0e-6 {
                         let p12 = if p1 == 1 { 0 } else { 1 };
                         let p22 = if p2 == 1 { 0 } else { 1 };
-                        let len = if line1.colour == line2.colour {
-                            0.05
-                        } else {
-                            0.025
-                        };
+                        let len = if line1.colour == line2.colour { 0.05 } else { 0.025 };
                         let dv1 = (line_point(line1, p1) - line_point(line1, p12)) * len;
                         let dv2 = (line_point(line1, p1) - line_point(line2, p22)) * len;
                         let join = line_point(line1, p1);
@@ -4202,12 +3927,7 @@ impl DrawMol {
                 orig_label.rects.len()
             );
         }
-        if orig_label.rects.len() == 2
-            && orig_label
-                .rects
-                .get(1)
-                .is_some_and(|rect| rect.ch.is_ascii_lowercase())
-        {
+        if orig_label.rects.len() == 2 && orig_label.rects.get(1).is_some_and(|rect| rect.ch.is_ascii_lowercase()) {
             return false;
         }
 
@@ -4268,8 +3988,7 @@ impl DrawMol {
                             .is_some_and(|other_label| do_labels_clash(label, other_label))
                 });
             }
-            let clashes_bonds =
-                does_label_clash_with_bonds(label, &self.bonds, &self.wedges, &self.join_paths);
+            let clashes_bonds = does_label_clash_with_bonds(label, &self.bonds, &self.wedges, &self.join_paths);
             if Self::debug_svg_row_active(142) && at_idx == 59 {
                 eprintln!(
                     "COSMOL_ROW142_ORIENT_RESULT atom=59 orient={:?} clashes_labels={} clashes_bonds={}",
@@ -4333,8 +4052,7 @@ impl DrawMol {
                     if label1.rects.len() > label2.rects.len() {
                         idxs.swap(0, 1);
                     }
-                    if !(idxs[0] != -1 && self.orient_atom_label(idxs[0] as usize)) && idxs[1] != -1
-                    {
+                    if !(idxs[0] != -1 && self.orient_atom_label(idxs[0] as usize)) && idxs[1] != -1 {
                         let _ = self.orient_atom_label(idxs[1] as usize);
                     }
                 }
@@ -4612,9 +4330,8 @@ impl DrawMol {
             );
             // Position at top-center of drawing area
             // Approximate text width from rects
-            let text_width: f64 = annot.rects.iter().map(|r| r.width).sum::<f64>()
-                * self.font_size
-                * self.options.annotation_font_scale;
+            let text_width: f64 =
+                annot.rects.iter().map(|r| r.width).sum::<f64>() * self.font_size * self.options.annotation_font_scale;
             annot.pos = DVec2::new(
                 (self.draw_width - text_width) / 2.0,
                 self.draw_height * (1.0 - self.margin_padding),
@@ -4729,9 +4446,7 @@ impl DrawMol {
         // Highlight bonds (thicker coloured lines in join_paths)
         for bond in mol.bonds() {
             let idx = bond.id().index();
-            let is_highlighted = bond
-                .prop("_highlight")
-                .is_some_and(|v| v == "1" || v == "true");
+            let is_highlighted = bond.prop("_highlight").is_some_and(|v| v == "1" || v == "true");
             if !is_highlighted {
                 continue;
             }
@@ -4757,9 +4472,7 @@ impl DrawMol {
         // Highlight bonds as thick polylines in join_paths
         for bond in mol.bonds() {
             let idx = bond.id().index();
-            let is_highlighted = bond
-                .prop("_highlight")
-                .is_some_and(|v| v == "1" || v == "true");
+            let is_highlighted = bond.prop("_highlight").is_some_and(|v| v == "1" || v == "true");
             if !is_highlighted {
                 continue;
             }
@@ -4780,9 +4493,7 @@ impl DrawMol {
         let mut seen_atoms = std::collections::HashSet::new();
         for bond in mol.bonds() {
             let idx = bond.id().index();
-            let is_highlighted = bond
-                .prop("_highlight")
-                .is_some_and(|v| v == "1" || v == "true");
+            let is_highlighted = bond.prop("_highlight").is_some_and(|v| v == "1" || v == "true");
             if !is_highlighted {
                 continue;
             }
@@ -4794,10 +4505,7 @@ impl DrawMol {
                     let mut points = Vec::with_capacity(n_segments);
                     for i in 0..n_segments {
                         let ang = 2.0 * std::f64::consts::PI * i as f64 / n_segments as f64;
-                        points.push(DVec2::new(
-                            pos.x + radius * ang.cos(),
-                            pos.y + radius * ang.sin(),
-                        ));
+                        points.push(DVec2::new(pos.x + radius * ang.cos(), pos.y + radius * ang.sin()));
                     }
                     self.post_shapes.push(DrawPolyline {
                         points,
@@ -4819,9 +4527,7 @@ impl DrawMol {
     fn make_atom_circle_highlights(&mut self, mol: &Molecule, colour: DrawColour) {
         for atom in mol.atoms() {
             let idx = atom.id().index();
-            let is_highlighted = atom
-                .prop("_highlight")
-                .is_some_and(|v| v == "1" || v == "true");
+            let is_highlighted = atom.prop("_highlight").is_some_and(|v| v == "1" || v == "true");
             if !is_highlighted {
                 continue;
             }
@@ -4831,10 +4537,7 @@ impl DrawMol {
             let mut points = Vec::with_capacity(n_segments);
             for i in 0..n_segments {
                 let ang = 2.0 * std::f64::consts::PI * i as f64 / n_segments as f64;
-                points.push(DVec2::new(
-                    pos.x + radius * ang.cos(),
-                    pos.y + radius * ang.sin(),
-                ));
+                points.push(DVec2::new(pos.x + radius * ang.cos(), pos.y + radius * ang.sin()));
             }
             self.post_shapes.push(DrawPolyline {
                 points,
@@ -5128,10 +4831,7 @@ impl DrawMol {
                         let mut points = Vec::with_capacity(n_segments);
                         for i in 0..n_segments {
                             let ang = 2.0 * std::f64::consts::PI * i as f64 / n_segments as f64;
-                            points.push(DVec2::new(
-                                center.x + radius * ang.cos(),
-                                center.y + radius * ang.sin(),
-                            ));
+                            points.push(DVec2::new(center.x + radius * ang.cos(), center.y + radius * ang.sin()));
                         }
                         self.join_paths.push(DrawPolyline {
                             points,
@@ -5154,8 +4854,7 @@ impl DrawMol {
                         self.join_paths.push(DrawPolyline {
                             points: vec![self.at_cds[ba], self.at_cds[ea]],
                             colour: self.options.variable_attachment_colour,
-                            width: self.options.bond_line_width
-                                * self.options.variable_bond_width_multiplier,
+                            width: self.options.bond_line_width * self.options.variable_bond_width_multiplier,
                             scale_width: false,
                             fill_polys: false,
                             atom1_idx: Some(ba),
@@ -5238,8 +4937,7 @@ impl DrawMol {
                 let mut num_in = 0;
                 for aidx in sg.atoms() {
                     let a_cds = self.at_cds[aidx.index()];
-                    if a_cds.x >= x_min && a_cds.x <= x_max && a_cds.y >= y_min && a_cds.y <= y_max
-                    {
+                    if a_cds.x >= x_min && a_cds.x <= x_max && a_cds.y >= y_min && a_cds.y <= y_max {
                         ref_pt += a_cds;
                         num_in += 1;
                     }
@@ -5255,8 +4953,7 @@ impl DrawMol {
             }
 
             // Build bond segments for intersection testing
-            let sg_atom_indices: std::collections::HashSet<usize> =
-                sg.atoms().iter().map(|a| a.index()).collect();
+            let sg_atom_indices: std::collections::HashSet<usize> = sg.atoms().iter().map(|a| a.index()).collect();
             let mut sg_bond_segments: Vec<(DVec2, DVec2)> = Vec::new();
             for bnd_idx in sg.bonds() {
                 let bnd = &mol.bonds()[bnd_idx.index()];
@@ -5322,8 +5019,7 @@ impl DrawMol {
                     let brk_shp = &self.post_shapes[label_brk];
                     let mut bot_pt = brk_shp.points[2];
                     let mut brk_pt = brk_shp.points[3];
-                    if (!horizontal && brk_shp.points[1].y < bot_pt.y)
-                        || (horizontal && brk_shp.points[1].x > bot_pt.x)
+                    if (!horizontal && brk_shp.points[1].y < bot_pt.y) || (horizontal && brk_shp.points[1].x > bot_pt.x)
                     {
                         bot_pt = brk_shp.points[1];
                         brk_pt = brk_shp.points[0];
@@ -5344,11 +5040,7 @@ impl DrawMol {
                 }
 
                 // LABEL or TYPE annotation
-                let label = sg
-                    .props()
-                    .get("LABEL")
-                    .or_else(|| sg.props().get("TYPE"))
-                    .cloned();
+                let label = sg.props().get("LABEL").or_else(|| sg.props().get("TYPE")).cloned();
                 if let Some(mut label) = label {
                     if label == "GEN" {
                         // ChemDraw doesn't draw GEN label
@@ -5517,8 +5209,7 @@ impl DrawMol {
         if self.options.flag_close_contacts_dist < 0 {
             return;
         }
-        let tol = (self.options.flag_close_contacts_dist as f64)
-            * (self.options.flag_close_contacts_dist as f64);
+        let tol = (self.options.flag_close_contacts_dist as f64) * (self.options.flag_close_contacts_dist as f64);
         let mut flagged = vec![false; self.at_cds.len()];
         let trans = DVec2::new(-self.x_min, -self.y_min);
         let scale = DVec2::new(self.scale, self.scale);
@@ -5603,12 +5294,7 @@ impl DrawMol {
     // RDKit✔️✔️:   annot.pos_ = leastWorstPos;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::calcAnnotationPosition(const Atom *)
-    fn calc_annotation_position_for_atom(
-        &self,
-        mol: &Molecule,
-        atom_idx: usize,
-        annot: &mut DrawAnnotation,
-    ) {
+    fn calc_annotation_position_for_atom(&self, mol: &Molecule, atom_idx: usize, annot: &mut DrawAnnotation) {
         let start_ang = self.calc_note_start_angle(mol, atom_idx);
         let at_cds = self.at_cds[atom_idx];
         let rad_step = 0.25;
@@ -5617,21 +5303,12 @@ impl DrawMol {
 
         for j in 1..4 {
             let note_rad = j as f64 * rad_step;
-            if j == 1
-                && self
-                    .atom_labels
-                    .get(atom_idx)
-                    .and_then(|l| l.as_ref())
-                    .is_some()
-            {
+            if j == 1 && self.atom_labels.get(atom_idx).and_then(|l| l.as_ref()).is_some() {
                 continue;
             }
             for i in 0..12 {
                 let ang = start_ang + i as f64 * 30.0_f64.to_radians();
-                annot.pos = DVec2::new(
-                    at_cds.x + ang.cos() * note_rad,
-                    at_cds.y + ang.sin() * note_rad,
-                );
+                annot.pos = DVec2::new(at_cds.x + ang.cos() * note_rad, at_cds.y + ang.sin() * note_rad);
                 let clash_score = self.does_note_clash(annot);
                 if clash_score == 0 {
                     return;
@@ -5683,12 +5360,7 @@ impl DrawMol {
     // RDKit✔️✔️:   annot.pos_ = leastWorstPos;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::calcAnnotationPosition(const Bond *)
-    fn calc_annotation_position_for_bond(
-        &self,
-        mol: &Molecule,
-        bond: &Bond,
-        annot: &mut DrawAnnotation,
-    ) {
+    fn calc_annotation_position_for_bond(&self, mol: &Molecule, bond: &Bond, annot: &mut DrawAnnotation) {
         let b = bond.begin().index();
         let e = bond.end().index();
         let mut at1_cds = self.at_cds[b];
@@ -5811,12 +5483,7 @@ impl DrawMol {
         }
 
         let ret_vec = if bond_vecs.len() == 1 {
-            if self
-                .atom_labels
-                .get(atom_idx)
-                .and_then(|l| l.as_ref())
-                .is_none()
-            {
+            if self.atom_labels.get(atom_idx).and_then(|l| l.as_ref()).is_none() {
                 DVec2::new(bond_vecs[0].y, -bond_vecs[0].x)
             } else {
                 -bond_vecs[0]
@@ -6012,13 +5679,7 @@ impl DrawMol {
                 }
                 WedgeKind::Dashed => {
                     if wedge.points.len() >= 3
-                        && rect_clashes_with_triangle(
-                            rect,
-                            wedge.points[0],
-                            wedge.points[1],
-                            wedge.points[2],
-                            padding,
-                        )
+                        && rect_clashes_with_triangle(rect, wedge.points[0], wedge.points[1], wedge.points[2], padding)
                     {
                         return true;
                     }
@@ -6105,92 +5766,46 @@ impl DrawMol {
 
         for line in &self.bonds {
             for pt in [line.begin, line.end] {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for wedge in &self.wedges {
             for &pt in &wedge.points {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for poly in &self.join_paths {
             for &pt in &poly.points {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for arrow in &self.arrows {
             for pt in [arrow.begin, arrow.end] {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for shape in &self.post_shapes {
             for &pt in &shape.points {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for annot in &self.annotations {
-            annot.find_extremes(
-                &mut self.x_min,
-                &mut self.x_max,
-                &mut self.y_min,
-                &mut self.y_max,
-            );
+            annot.find_extremes(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max);
         }
 
         for shape in &self.draw_items {
             for &pt in &shape.points {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
         for label in self.atom_labels.iter().flatten() {
-            label.find_extremes(
-                &mut self.x_min,
-                &mut self.x_max,
-                &mut self.y_min,
-                &mut self.y_max,
-            );
+            label.find_extremes(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max);
             if Self::debug_svg_row_active(123) {
                 let mut lx_min = f64::MAX;
                 let mut lx_max = f64::MIN;
@@ -6220,13 +5835,7 @@ impl DrawMol {
                 );
             }
             for pt in [DVec2::new(cx - hw, cy - hh), DVec2::new(cx + hw, cy + hh)] {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
 
@@ -6237,13 +5846,7 @@ impl DrawMol {
             self.y_max = 1.0;
         } else if self.x_min == f64::MAX {
             for &pt in &self.at_cds {
-                Self::include_extreme_point(
-                    &mut self.x_min,
-                    &mut self.x_max,
-                    &mut self.y_min,
-                    &mut self.y_max,
-                    pt,
-                );
+                Self::include_extreme_point(&mut self.x_min, &mut self.x_max, &mut self.y_min, &mut self.y_max, pt);
             }
         }
     }
@@ -6603,36 +6206,11 @@ fn radical_rect_for_orientation(
 ) -> StringRect {
     let radial_span = rad_size * font_scale;
     let (tx, ty, width, height) = match orient {
-        OrientType::N => (
-            at_cds.x,
-            y_max + 0.5 * (spot_rad * 3.0),
-            radial_span,
-            spot_rad * 3.0,
-        ),
-        OrientType::S => (
-            at_cds.x,
-            y_min - 0.5 * (spot_rad * 3.0),
-            radial_span,
-            spot_rad * 3.0,
-        ),
-        OrientType::E => (
-            x_max + 3.0 * spot_rad,
-            at_cds.y,
-            spot_rad * 1.5,
-            radial_span,
-        ),
-        OrientType::W => (
-            x_min - 3.0 * spot_rad,
-            at_cds.y,
-            spot_rad * 1.5,
-            radial_span,
-        ),
-        OrientType::C => (
-            at_cds.x,
-            y_max + 0.5 * (spot_rad * 3.0),
-            radial_span,
-            spot_rad * 3.0,
-        ),
+        OrientType::N => (at_cds.x, y_max + 0.5 * (spot_rad * 3.0), radial_span, spot_rad * 3.0),
+        OrientType::S => (at_cds.x, y_min - 0.5 * (spot_rad * 3.0), radial_span, spot_rad * 3.0),
+        OrientType::E => (x_max + 3.0 * spot_rad, at_cds.y, spot_rad * 1.5, radial_span),
+        OrientType::W => (x_min - 3.0 * spot_rad, at_cds.y, spot_rad * 1.5, radial_span),
+        OrientType::C => (at_cds.x, y_max + 0.5 * (spot_rad * 3.0), radial_span, spot_rad * 3.0),
     };
     radical_rect_at(DVec2::new(tx, ty), width, height)
 }
@@ -6779,11 +6357,7 @@ fn draw_line_svg(out: &mut String, line: &DrawLine, scale: f64) {
     let dash_str = if line.dash_pattern.is_empty() {
         String::new()
     } else {
-        let parts: Vec<String> = line
-            .dash_pattern
-            .iter()
-            .map(|d| format!("{}", *d as i32))
-            .collect();
+        let parts: Vec<String> = line.dash_pattern.iter().map(|d| format!("{}", *d as i32)).collect();
         format!(";stroke-dasharray:{}", parts.join(","))
     };
 
@@ -6877,14 +6451,7 @@ fn draw_wavy_line_svg(out: &mut String, begin: DVec2, end: DVec2, col: DrawColou
 // RDKit✔️✔️:   d_os << " />\n";
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::drawEllipse
-fn draw_ellipse_svg(
-    out: &mut String,
-    centre: DVec2,
-    rx: f64,
-    ry: f64,
-    col: DrawColour,
-    width: f64,
-) {
+fn draw_ellipse_svg(out: &mut String, centre: DVec2, rx: f64, ry: f64, col: DrawColour, width: f64) {
     let col_str = draw_colour_to_svg(col);
     out.push_str(&format!(
         "<ellipse cx='{}' cy='{}' rx='{}' ry='{}' ",
@@ -6895,7 +6462,8 @@ fn draw_ellipse_svg(
     ));
     out.push_str(&format!(
         "style='fill:none;stroke:{};stroke-width:{}px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />\n",
-        col_str, format_double(width),
+        col_str,
+        format_double(width),
     ));
 }
 
@@ -6914,13 +6482,7 @@ fn draw_wedge_svg(out: &mut String, wedge: &DrawWedge) {
     }
 }
 
-fn draw_solid_wedge_path(
-    out: &mut String,
-    wedge: &DrawWedge,
-    points: &[DVec2],
-    fill: DrawColour,
-    stroke: DrawColour,
-) {
+fn draw_solid_wedge_path(out: &mut String, wedge: &DrawWedge, points: &[DVec2], fill: DrawColour, stroke: DrawColour) {
     let fill_col = draw_colour_to_svg(fill);
     let stroke_col = draw_colour_to_svg(stroke);
     out.push_str("<path ");
@@ -6934,11 +6496,7 @@ fn draw_solid_wedge_path(
         format_double(points[0].y),
     ));
     for pt in &points[1..] {
-        out.push_str(&format!(
-            " L {},{}",
-            format_double(pt.x),
-            format_double(pt.y)
-        ));
+        out.push_str(&format!(" L {},{}", format_double(pt.x), format_double(pt.y)));
     }
     out.push_str(" Z' ");
     out.push_str(&format!(
@@ -6964,20 +6522,10 @@ fn draw_solid_wedge_polygon(out: &mut String, wedge: &DrawWedge) {
         draw_solid_wedge_path(out, wedge, &wedge.points[0..3], wedge.col1, wedge.col1);
     }
     if wedge.points.len() == 6 {
-        let quad = [
-            wedge.points[0],
-            wedge.points[1],
-            wedge.points[2],
-            wedge.points[5],
-        ];
+        let quad = [wedge.points[0], wedge.points[1], wedge.points[2], wedge.points[5]];
         draw_solid_wedge_path(out, wedge, &quad, wedge.col1, wedge.col1);
     } else if wedge.points.len() == 9 {
-        let quad = [
-            wedge.points[4],
-            wedge.points[5],
-            wedge.points[6],
-            wedge.points[7],
-        ];
+        let quad = [wedge.points[4], wedge.points[5], wedge.points[6], wedge.points[7]];
         draw_solid_wedge_path(out, wedge, &quad, wedge.col2, wedge.col2);
     }
 }
@@ -7107,8 +6655,7 @@ fn draw_arrow_svg(out: &mut String, arrow: &DrawArrow, scale: f64) {
     } else {
         arrow.width
     };
-    let (arrow_end, arrow1, arrow2) =
-        calc_arrow_head(arrow.end, arrow.begin, arrow.frac, width, arrow.angle);
+    let (arrow_end, arrow1, arrow2) = calc_arrow_head(arrow.end, arrow.begin, arrow.frac, width, arrow.angle);
 
     out.push_str("<path ");
     out.push_str("class='");
@@ -7251,11 +6798,7 @@ fn draw_polyline_svg(out: &mut String, polyline: &DrawPolyline, scale: f64) {
         format_double(polyline.points[0].y),
     ));
     for pt in &polyline.points[1..] {
-        out.push_str(&format!(
-            " L {},{}",
-            format_double(pt.x),
-            format_double(pt.y)
-        ));
+        out.push_str(&format!(" L {},{}", format_double(pt.x), format_double(pt.y)));
     }
     if polyline.fill_polys {
         out.push_str(&format!(
@@ -7326,12 +6869,9 @@ fn draw_atom_label_svg(out: &mut String, label: &AtomLabel, base_font_size: f64)
     let col = draw_colour_to_svg(label.colour);
     for rect in &label.rects {
         let x = format_double(label.cds.x + rect.trans.x - rect.offset.x);
-        let y = format_double(
-            label.cds.y - rect.trans.y + rect.offset.y - rect.rect_corr - rect.y_shift,
-        );
+        let y = format_double(label.cds.y - rect.trans.y + rect.offset.y - rect.rect_corr - rect.y_shift);
         let ch_str = xml_escape(&rect.ch.to_string());
-        let font_size =
-            format_svg_font_size_px(base_font_size * select_scale_factor(rect.ch, rect.draw_mode));
+        let font_size = format_svg_font_size_px(base_font_size * select_scale_factor(rect.ch, rect.draw_mode));
 
         out.push_str(&format!(
             "<text x='{}' y='{}' class='atom-{}' style='font-size:{}px;font-style:normal;\
@@ -7472,15 +7012,12 @@ fn svg_to_png(svg: &str) -> Result<Vec<u8>, SvgDrawError> {
     let fontdb = opt.fontdb_mut();
     fontdb.load_font_source(usvg::fontdb::Source::Binary(embedded_draw_font_data()));
     fontdb.set_sans_serif_family(EMBEDDED_DRAW_FONT_FAMILY);
-    let tree =
-        usvg::Tree::from_str(svg, &opt).map_err(|err| SvgDrawError::SvgParse(err.to_string()))?;
+    let tree = usvg::Tree::from_str(svg, &opt).map_err(|err| SvgDrawError::SvgParse(err.to_string()))?;
     let size = tree.size().to_int_size();
-    let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or(
-        SvgDrawError::PixmapAllocation {
-            width: size.width(),
-            height: size.height(),
-        },
-    )?;
+    let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or(SvgDrawError::PixmapAllocation {
+        width: size.width(),
+        height: size.height(),
+    })?;
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
     pixmap
         .encode_png()
@@ -7562,10 +7099,7 @@ pub fn mol_to_png(molecule: &Molecule, width: u32, height: u32) -> Result<Vec<u8
     svg_to_png(&svg)
 }
 
-fn prepare_molecule_for_drawing(
-    molecule: &Molecule,
-    force_coords: bool,
-) -> Result<Molecule, SvgDrawError> {
+fn prepare_molecule_for_drawing(molecule: &Molecule, force_coords: bool) -> Result<Molecule, SvgDrawError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/MolDraw2D/MolDraw2DUtils.cpp :: prepareMolForDrawing
     // RDKit✔️✔️: void prepareMolForDrawing(RWMol &mol, bool kekulize, bool addChiralHs,
     // RDKit✔️✔️:                           bool wedgeBonds, bool forceCoords, bool wavyBonds) {
@@ -7609,11 +7143,9 @@ fn prepare_molecule_for_drawing(
     let mut prepared = molecule.clone();
 
     if kekulize && prepared.num_bonds() > 0 {
-        prepared = prepared.with_kekulized_bonds(false).map_err(|e| {
-            SvgDrawError::Unsupported(format!(
-                "prepareMolForDrawing KekulizeIfPossible failed: {e}"
-            ))
-        })?;
+        prepared = prepared
+            .with_kekulized_bonds(false)
+            .map_err(|e| SvgDrawError::Unsupported(format!("prepareMolForDrawing KekulizeIfPossible failed: {e}")))?;
     }
 
     if add_chiral_hs {
@@ -7628,18 +7160,15 @@ fn prepare_molecule_for_drawing(
                     .iter()
                     .filter(|atom| {
                         ring_info.num_atom_rings(atom.id()) > 1
-                            && matches!(
-                                atom.chiral_tag(),
-                                ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw
-                            )
+                            && matches!(atom.chiral_tag(), ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw)
                     })
                     .map(|atom| atom.id())
                     .collect::<Vec<AtomId>>()
             })
             .unwrap_or_default();
         if !chiral_ats.is_empty() {
-            let add_coords = !force_coords
-                && (!prepared.conformers_2d().is_empty() || !prepared.conformers_3d().is_empty());
+            let add_coords =
+                !force_coords && (!prepared.conformers_2d().is_empty() || !prepared.conformers_3d().is_empty());
             prepared = prepared
                 .with_hydrogens_with_params(AddHsParams {
                     add_coords,
@@ -7647,31 +7176,25 @@ fn prepare_molecule_for_drawing(
                     ..AddHsParams::default()
                 })
                 .map_err(|e| {
-                    SvgDrawError::Unsupported(format!(
-                        "prepareMolForDrawing addHs on chiral atoms failed: {e}"
-                    ))
+                    SvgDrawError::Unsupported(format!("prepareMolForDrawing addHs on chiral atoms failed: {e}"))
                 })?;
         }
     }
 
-    if force_coords || (prepared.conformers_2d().is_empty() && prepared.conformers_3d().is_empty())
-    {
+    if force_coords || (prepared.conformers_2d().is_empty() && prepared.conformers_3d().is_empty()) {
         prepared = prepared
             .with_2d_coordinates_with_params(crate::With2DCoordinatesParams {
                 canon_orient: true,
                 ..crate::With2DCoordinatesParams::default()
             })
             .map_err(|e| {
-                SvgDrawError::CoordinateGeneration(format!(
-                    "prepareMolForDrawing compute2DCoords failed: {e}"
-                ))
+                SvgDrawError::CoordinateGeneration(format!("prepareMolForDrawing compute2DCoords failed: {e}"))
             })?;
     }
 
     if wedge_bonds {
-        crate::io::molblock::wedge_molecule_bonds_like_rdkit(&mut prepared, None).map_err(|e| {
-            SvgDrawError::Unsupported(format!("prepareMolForDrawing wedgeMolBonds failed: {e}"))
-        })?;
+        crate::io::molblock::wedge_molecule_bonds_like_rdkit(&mut prepared, None)
+            .map_err(|e| SvgDrawError::Unsupported(format!("prepareMolForDrawing wedgeMolBonds failed: {e}")))?;
     }
 
     if wavy_bonds {
@@ -7688,15 +7211,11 @@ fn prepare_molecule_for_svg_drawing(molecule: &Molecule) -> Result<Molecule, Svg
 }
 
 /// Prepare molecule snapshot for drawing parity comparison.
-pub(crate) fn prepare_mol_for_drawing_parity(
-    molecule: &Molecule,
-) -> Result<PreparedDrawMolecule, SvgDrawError> {
+pub(crate) fn prepare_mol_for_drawing_parity(molecule: &Molecule) -> Result<PreparedDrawMolecule, SvgDrawError> {
     let prepared = prepare_molecule_for_drawing(molecule, true)?;
 
     let coords = prepared.coordinates_2d().ok_or_else(|| {
-        SvgDrawError::CoordinateGeneration(
-            "prepareMolForDrawing did not materialize a 2D conformer".to_string(),
-        )
+        SvgDrawError::CoordinateGeneration("prepareMolForDrawing did not materialize a 2D conformer".to_string())
     })?;
 
     let atoms = coords
@@ -7832,9 +7351,7 @@ mod tests {
         let molecule = Molecule::from_smiles(r"O=C(O)/C(=C\c1ccccc1)Cc1ccccc1").unwrap();
         let svg = mol_to_svg(&molecule, 300, 300).unwrap();
 
-        assert!(
-            svg.contains("<path class='bond-12 atom-12 atom-13' d='M 76.7,130.0 L 48.7,113.9'")
-        );
+        assert!(svg.contains("<path class='bond-12 atom-12 atom-13' d='M 76.7,130.0 L 48.7,113.9'"));
     }
 
     #[test]
@@ -7848,10 +7365,9 @@ mod tests {
 
     #[test]
     fn minimum_svg_font_size_clamps_at_binary64_boundary_regression() {
-        let molecule = Molecule::from_smiles(
-            "C=C(c1ccc(Oc2ccc(Oc3ccc(C(=C)C4COC5(CCCCC5)OO4)cc3)cc2)cc1)C1COC2(CCCCC2)OO1",
-        )
-        .unwrap();
+        let molecule =
+            Molecule::from_smiles("C=C(c1ccc(Oc2ccc(Oc3ccc(C(=C)C4COC5(CCCCC5)OO4)cc3)cc2)cc1)C1COC2(CCCCC2)OO1")
+                .unwrap();
         let svg = mol_to_svg(&molecule, 300, 300).unwrap();
 
         assert!(svg.contains("class='atom-6' style='font-size:6px"));
@@ -7877,27 +7393,12 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(
-            bond_orders,
-            "SDSSSSSSSSDSSDSSSSDSDSDSSSDSSSSSSDSSSSSSSSSSSSSSSDSSDSDS"
-        );
+        assert_eq!(bond_orders, "SDSSSSSSSSDSSDSSSSDSDSDSSSDSSSSSSDSSSSSSSSSSSSSSSDSSDSDS");
         let coordinates = prepared.coordinates_2d().unwrap();
-        assert_eq!(
-            coordinates[0][0].to_bits(),
-            (-0.7271872994113224_f64).to_bits()
-        );
-        assert_eq!(
-            coordinates[0][1].to_bits(),
-            (-7.508043887184295_f64).to_bits()
-        );
-        assert_eq!(
-            coordinates[49][0].to_bits(),
-            10.57352991454218_f64.to_bits()
-        );
-        assert_eq!(
-            coordinates[49][1].to_bits(),
-            4.749281830440951_f64.to_bits()
-        );
+        assert_eq!(coordinates[0][0].to_bits(), (-0.7271872994113224_f64).to_bits());
+        assert_eq!(coordinates[0][1].to_bits(), (-7.508043887184295_f64).to_bits());
+        assert_eq!(coordinates[49][0].to_bits(), 10.57352991454218_f64.to_bits());
+        assert_eq!(coordinates[49][1].to_bits(), 4.749281830440951_f64.to_bits());
 
         let svg = mol_to_svg(&molecule, 300, 300).unwrap();
         assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 140.4,250.0 L 145.7,232.9'"));
@@ -7913,11 +7414,7 @@ mod tests {
 
         assert_eq!(prepared.num_atoms(), 46);
         assert_eq!(
-            prepared
-                .atoms()
-                .iter()
-                .filter(|atom| atom.atomic_number() == 1)
-                .count(),
+            prepared.atoms().iter().filter(|atom| atom.atomic_number() == 1).count(),
             10
         );
 
@@ -7938,26 +7435,15 @@ mod tests {
         let h2 = builder.add_atom(AtomSpec::new(Element::H));
         let h3 = builder.add_atom(AtomSpec::new(Element::H));
         let h4 = builder.add_atom(AtomSpec::new(Element::H));
-        builder
-            .add_bond(BondSpec::new(c, h1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c, h2, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c, h3, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c, h4, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c, h1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c, h2, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c, h3, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c, h4, BondOrder::Single)).unwrap();
         let mol = builder.build().expect("build methane");
 
         let svg = mol_to_svg(&mol, 300, 300).expect("svg rendering");
         // SVG doc should have expected tags
-        assert!(
-            svg.starts_with("<?xml"),
-            "SVG should start with XML declaration"
-        );
+        assert!(svg.starts_with("<?xml"), "SVG should start with XML declaration");
         assert!(svg.contains("viewBox"), "SVG should have viewBox");
         assert!(svg.contains("</svg>"), "SVG should have closing tag");
         // Atom text emission is depiction-policy dependent; for this smoke
@@ -7984,12 +7470,7 @@ mod tests {
         let text_pixels = pixmap
             .pixels()
             .iter()
-            .filter(|pixel| {
-                pixel.alpha() == 255
-                    && pixel.red() < 245
-                    && pixel.green() < 245
-                    && pixel.blue() < 245
-            })
+            .filter(|pixel| pixel.alpha() == 255 && pixel.red() < 245 && pixel.green() < 245 && pixel.blue() < 245)
             .count();
 
         assert!(
@@ -8007,9 +7488,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let svg = mol_to_svg(&mol, 300, 300).unwrap();

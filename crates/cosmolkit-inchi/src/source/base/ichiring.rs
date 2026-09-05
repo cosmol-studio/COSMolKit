@@ -1,7 +1,7 @@
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer,
-    StableSourceConstSlice, StableSourceSlice, inp_ATOM, qInt,
+    AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer, StableSourceConstSlice,
+    StableSourceSlice, inp_ATOM, qInt,
 };
 
 struct RingSearchWorkspace {
@@ -41,12 +41,9 @@ impl RingSearchWorkspace {
             return Err(SourceHeapError::PointerAllocationMismatch);
         }
 
-        let total = usize::try_from(queue_value.nTotLength)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let first =
-            usize::try_from(queue_value.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let length = usize::try_from(queue_value.nLength)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let total = usize::try_from(queue_value.nTotLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let first = usize::try_from(queue_value.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let length = usize::try_from(queue_value.nLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if total == 0 || first >= total || length > total {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -60,8 +57,7 @@ impl RingSearchWorkspace {
         let values = unsafe { heap.stable_slice_mut(queue_value.Val)? };
         let atom_level = unsafe { heap.stable_slice_mut(n_atom_level)? };
         let source = unsafe { heap.stable_slice_mut(source)? };
-        if values.len() < total || atom.len() < atom_level.len() || source.len() < atom_level.len()
-        {
+        if values.len() < total || atom.len() < atom_level.len() || source.len() < atom_level.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
 
@@ -123,10 +119,7 @@ impl RingSearchWorkspace {
     }
 }
 
-fn get_min_ring_size_with_workspace(
-    workspace: &mut RingSearchWorkspace,
-    n_max_ring_size: AT_RANK,
-) -> i32 {
+fn get_min_ring_size_with_workspace(workspace: &mut RingSearchWorkspace, n_max_ring_size: AT_RANK) -> i32 {
     let mut n_min_ring_size = (MAX_ATOMS + 1) as AT_RANK;
     let mut at_no: qInt = 0;
 
@@ -141,8 +134,7 @@ fn get_min_ring_size_with_workspace(
             if unsafe { workspace.queue_get(&mut at_no) } >= 0 {
                 let iat_no = usize::from(at_no);
                 // SAFETY: queued atom numbers obey the source graph-array contract.
-                let n_cur_level =
-                    unsafe { workspace.atom_level.get_unchecked(iat_no) }.wrapping_add(1);
+                let n_cur_level = unsafe { workspace.atom_level.get_unchecked(iat_no) }.wrapping_add(1);
                 if 2 * i32::from(n_cur_level) > i32::from(n_max_ring_size) + 4 {
                     if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
                         return if n_min_ring_size >= n_max_ring_size {
@@ -160,8 +152,7 @@ fn get_min_ring_size_with_workspace(
                 // across the independent atom allocation.
                 let valence = i32::from(unsafe { workspace.atom.get_unchecked(iat_no) }.valence);
                 for j in 0..valence {
-                    let next = unsafe { workspace.atom.get_unchecked(iat_no) }.neighbor[j as usize]
-                        as qInt;
+                    let next = unsafe { workspace.atom.get_unchecked(iat_no) }.neighbor[j as usize] as qInt;
                     let inext = usize::from(next);
                     // SAFETY: active inp_ATOM neighbors obey the source graph contract.
                     let next_level = *unsafe { workspace.atom_level.get_unchecked(inext) };
@@ -175,9 +166,7 @@ fn get_min_ring_size_with_workspace(
                         }
                     } else {
                         let next_source = *unsafe { workspace.source.get_unchecked(inext) };
-                        if i32::from(next_level) + 1 >= i32::from(n_cur_level)
-                            && next_source != current_source
-                        {
+                        if i32::from(next_level) + 1 >= i32::from(n_cur_level) && next_source != current_source {
                             if next_source == -1 {
                                 return -1;
                             }
@@ -306,8 +295,7 @@ pub(crate) fn QueueAdd(
         return Err(SourceHeapError::SourceIntegerOverflow);
     }
     let destination = queue.nFirst.wrapping_add(queue.nLength) % queue.nTotLength;
-    let destination =
-        usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let destination = usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let value = *heap
         .slice(Val.as_const())?
         .first()
@@ -433,10 +421,7 @@ pub(crate) fn QueueGetAny(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn QueueReinit(
-    heap: &mut SourceHeap,
-    q: SourceMutPointer<QUEUE>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn QueueReinit(heap: &mut SourceHeap, q: SourceMutPointer<QUEUE>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:216 QueueReinit
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds overhead.
     /*
@@ -468,10 +453,7 @@ pub(crate) fn QueueReinit(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn QueueLength(
-    heap: &SourceHeap,
-    q: SourceMutPointer<QUEUE>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn QueueLength(heap: &SourceHeap, q: SourceMutPointer<QUEUE>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:231 QueueLength
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds overhead.
     /*
@@ -500,10 +482,7 @@ pub(crate) fn QueueLength(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn QueueWrittenLength(
-    heap: &SourceHeap,
-    q: SourceMutPointer<QUEUE>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn QueueWrittenLength(heap: &SourceHeap, q: SourceMutPointer<QUEUE>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:245 QueueWrittenLength
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds overhead.
     /*
@@ -530,11 +509,7 @@ pub(crate) fn QueueWrittenLength(
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let len = queue.nFirst.wrapping_add(queue.nLength);
-    Ok(if len > queue.nTotLength {
-        queue.nTotLength
-    } else {
-        len
-    })
+    Ok(if len > queue.nTotLength { queue.nTotLength } else { len })
 }
 
 #[allow(non_snake_case)]
@@ -643,10 +618,7 @@ pub(crate) fn GetMinRingSize(
         return Ok(0);
     }
     let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
-    Ok(get_min_ring_size_with_workspace(
-        &mut workspace,
-        nMaxRingSize,
-    ))
+    Ok(get_min_ring_size_with_workspace(&mut workspace, nMaxRingSize))
 }
 
 #[allow(non_snake_case)]
@@ -731,10 +703,7 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
 
     let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
     let start = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if start >= workspace.atom.len()
-        || start >= workspace.atom_level.len()
-        || start >= workspace.source.len()
-    {
+    if start >= workspace.atom.len() || start >= workspace.atom_level.len() || start >= workspace.source.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     // SAFETY: start was checked against all three source arrays above.
@@ -924,10 +893,7 @@ mod tests {
     fn source_port__ichiring__queuecreate__line_67() {
         for (length, size) in [(0, 2), (-1, 2), (1, 0), (1, 1), (1, 3)] {
             let mut heap = SourceHeap::default();
-            assert_eq!(
-                QueueCreate(&mut heap, length, size),
-                Ok(SourceMutPointer::null())
-            );
+            assert_eq!(QueueCreate(&mut heap, length, size), Ok(SourceMutPointer::null()));
             assert_eq!(heap.live_allocation_count(), 0);
             assert_eq!(heap.source_allocation_calls(), 0);
         }
@@ -1001,10 +967,7 @@ mod tests {
     fn source_port__ichiring__queueget__line_101() {
         let mut heap = SourceHeap::default();
         let output = heap.allocate_model_storage(vec![99_u16]).unwrap();
-        assert_eq!(
-            QueueGet(&mut heap, SourceMutPointer::null(), output),
-            Ok(-1)
-        );
+        assert_eq!(QueueGet(&mut heap, SourceMutPointer::null(), output), Ok(-1));
 
         let values = heap.allocate_model_storage(vec![11_u16, 22, 33]).unwrap();
         let queue = heap
@@ -1043,9 +1006,7 @@ mod tests {
     #[test]
     fn source_port__ichiring__queuegetany__line_122() {
         let mut heap = SourceHeap::default();
-        let values = heap
-            .allocate_model_storage(vec![7_u16, 0, u16::MAX])
-            .unwrap();
+        let values = heap.allocate_model_storage(vec![7_u16, 0, u16::MAX]).unwrap();
         let queue = heap
             .allocate_model_storage(vec![QUEUE {
                 Val: values,
@@ -1063,10 +1024,7 @@ mod tests {
         }
         for ord in [i32::MIN, -1, 3, i32::MAX] {
             heap.slice_mut(output).unwrap()[0] = 99;
-            assert_eq!(
-                QueueGetAny(&mut heap, queue, SourceMutPointer::null(), ord),
-                Ok(-1)
-            );
+            assert_eq!(QueueGetAny(&mut heap, queue, SourceMutPointer::null(), ord), Ok(-1));
             assert_eq!(heap.slice(output.as_const()).unwrap()[0], 99);
         }
         assert_eq!(
@@ -1156,10 +1114,7 @@ mod tests {
         let sources = heap.allocate_model_storage(vec![3_i8]).unwrap();
         let (_values, queue) = ring_queue(&mut heap, vec![0], 1, 0, 0);
         let allocations = heap.live_allocation_count();
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(0)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(0));
         assert_eq!(heap.slice(levels.as_const()).unwrap(), &[7]);
         assert_eq!(heap.slice(sources.as_const()).unwrap(), &[3]);
         assert_eq!(heap.live_allocation_count(), allocations);
@@ -1171,10 +1126,7 @@ mod tests {
         let levels = heap.allocate_model_storage(vec![1_u16, 0, 0]).unwrap();
         let sources = heap.allocate_model_storage(vec![4_i8, 0, 0]).unwrap();
         let (values, queue) = ring_queue(&mut heap, vec![0, 91, 92], 3, 0, 1);
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(0)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(0));
         assert_eq!(heap.slice(levels.as_const()).unwrap(), &[1, 2, 3]);
         assert_eq!(heap.slice(sources.as_const()).unwrap(), &[4, 4, 4]);
         assert_eq!(heap.slice(values.as_const()).unwrap(), &[0, 1, 2]);
@@ -1204,10 +1156,7 @@ mod tests {
         let levels = heap.allocate_model_storage(vec![2_u16, 7, 2]).unwrap();
         let sources = heap.allocate_model_storage(vec![1_i8, 1, 2]).unwrap();
         let (_values, queue) = ring_queue(&mut heap, vec![0, 1], 2, 0, 2);
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(3)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(3));
         assert_eq!(heap.slice(queue.as_const()).unwrap()[0].nLength, 0);
 
         let mut heap = SourceHeap::default();
@@ -1217,10 +1166,7 @@ mod tests {
         let levels = heap.allocate_model_storage(vec![1_u16, 0, 0]).unwrap();
         let sources = heap.allocate_model_storage(vec![5_i8, 0, 0]).unwrap();
         let (values, queue) = ring_queue(&mut heap, vec![0], 1, 0, 1);
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(-1)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(-1));
         assert_eq!(heap.slice(levels.as_const()).unwrap(), &[1, 2, 0]);
         assert_eq!(heap.slice(sources.as_const()).unwrap(), &[5, 5, 0]);
         assert_eq!(heap.slice(values.as_const()).unwrap(), &[1]);
@@ -1233,10 +1179,7 @@ mod tests {
         let levels = heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
         let sources = heap.allocate_model_storage(vec![1_i8, -1]).unwrap();
         let (_values, queue) = ring_queue(&mut heap, vec![0], 1, 0, 1);
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(-1)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(-1));
 
         let mut heap = SourceHeap::default();
         let atoms = heap.allocate_model_storage(vec![ring_atom(&[])]).unwrap();
@@ -1276,10 +1219,7 @@ mod tests {
         let sources = heap.allocate_model_storage(vec![1_i8, 2, 0]).unwrap();
         let (_values, queue) = ring_queue(&mut heap, vec![0, 1, 99, 99], 4, 0, 2);
 
-        assert_eq!(
-            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
-            Ok(2)
-        );
+        assert_eq!(GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10), Ok(2));
         assert_eq!(heap.slice(levels.as_const()).unwrap(), &[1, 1, 2]);
         assert_eq!(heap.slice(sources.as_const()).unwrap(), &[1, 2, 1]);
     }
@@ -1305,11 +1245,7 @@ mod tests {
         for (maximum, expected) in [(4_u16, 3), (3_u16, 0)] {
             let mut heap = SourceHeap::default();
             let atoms = heap
-                .allocate_model_storage(vec![
-                    ring_atom(&[1, 2]),
-                    ring_atom(&[0, 2]),
-                    ring_atom(&[0, 1]),
-                ])
+                .allocate_model_storage(vec![ring_atom(&[1, 2]), ring_atom(&[0, 2]), ring_atom(&[0, 1])])
                 .unwrap();
             let levels = heap.allocate_model_storage(vec![8_u16, 9, 10]).unwrap();
             let sources = heap.allocate_model_storage(vec![8_i8, 9, 10]).unwrap();
@@ -1396,10 +1332,7 @@ mod tests {
         dangling.nNumAtInRingSystem = 3;
         dangling.valence = 1;
         dangling.neighbor[0] = u16::MAX;
-        assert_eq!(
-            evaluate(vec![dangling], 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(evaluate(vec![dangling], 0), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(
             evaluate(vec![inp_ATOM::default()], -1),
             Err(SourceHeapError::PointerOutOfBounds)

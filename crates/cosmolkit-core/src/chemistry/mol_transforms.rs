@@ -61,8 +61,7 @@ pub enum MolTransformError {
 /// `Molecule` by conformer ID.
 fn conf_coords(mol: &Molecule, conf_id: usize) -> Result<&[[f64; 3]], MolTransformError> {
     let confs = mol.conformers_3d();
-    let requested =
-        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let requested = i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
     let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(confs, requested)
         .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
     let conf = &confs[index];
@@ -74,18 +73,12 @@ fn conf_coords(mol: &Molecule, conf_id: usize) -> Result<&[[f64; 3]], MolTransfo
 /// Takes `Molecule` by value (value-style transform) and uses
 /// `Arc::make_mut` for copy-on-write. Returns the mutable coordinate slice
 /// and the modified `Molecule` for chaining.
-fn conf_coords_mut(
-    mol: &mut Molecule,
-    conf_id: usize,
-) -> Result<&mut [[f64; 3]], MolTransformError> {
+fn conf_coords_mut(mol: &mut Molecule, conf_id: usize) -> Result<&mut [[f64; 3]], MolTransformError> {
     let coord_block = mol.coordinate_block_mut();
-    let requested =
-        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
-    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(
-        &coord_block.conformers_3d,
-        requested,
-    )
-    .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
+    let requested = i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let index =
+        crate::chemistry::conformer_selection::resolve_3d_conformer_index(&coord_block.conformers_3d, requested)
+            .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
     let conf = &mut coord_block.conformers_3d[index];
     // We need mutable access to the inner Vec<[f64; 3]>.
     // Since Conformer3D's coords field is private, we rely on a pub(crate) method.
@@ -199,12 +192,7 @@ fn angle_between(v1: &[f64; 3], v2: &[f64; 3]) -> f64 {
 /// Returns the indices of all atoms reachable from `j_atom` without crossing
 /// `i_atom` (i.e. the atoms on j's side of the i-j bond).
 /// Uses the same DFS stack approach as RDKit.
-fn to_be_moved_idx_list(
-    adj: &crate::AdjacencyList,
-    n_atoms: usize,
-    i_atom: usize,
-    j_atom: usize,
-) -> Vec<usize> {
+fn to_be_moved_idx_list(adj: &crate::AdjacencyList, n_atoms: usize, i_atom: usize, j_atom: usize) -> Vec<usize> {
     let mut visited = vec![false; n_atoms];
     let mut stack: Vec<usize> = Vec::new();
     stack.push(j_atom);
@@ -258,12 +246,7 @@ fn to_be_moved_idx_list(
 /// Get the bond length (distance) between atoms `i` and `j`.
 ///
 /// Uses the first 3D conformer.
-pub fn get_bond_length(
-    mol: &Molecule,
-    i: usize,
-    j: usize,
-    conf_id: usize,
-) -> Result<f64, MolTransformError> {
+pub fn get_bond_length(mol: &Molecule, i: usize, j: usize, conf_id: usize) -> Result<f64, MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     let num_atoms = coords.len();
     if i >= num_atoms {
@@ -378,13 +361,7 @@ fn set_bond_length(
 /// Get the bond angle in radians among atoms i - j - k.
 ///
 /// Returns the angle in radians.
-pub fn get_bond_angle(
-    mol: &Molecule,
-    i: usize,
-    j: usize,
-    k: usize,
-    conf_id: usize,
-) -> Result<f64, MolTransformError> {
+pub fn get_bond_angle(mol: &Molecule, i: usize, j: usize, k: usize, conf_id: usize) -> Result<f64, MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     let num_atoms = coords.len();
 
@@ -502,17 +479,17 @@ pub fn set_bond_angle(
     }
 
     // Check bonds
-    let bond_ji = mol.bonds().iter().any(|b| {
-        (b.begin().index() == j && b.end().index() == i)
-            || (b.begin().index() == i && b.end().index() == j)
-    });
+    let bond_ji = mol
+        .bonds()
+        .iter()
+        .any(|b| (b.begin().index() == j && b.end().index() == i) || (b.begin().index() == i && b.end().index() == j));
     if !bond_ji {
         return Err(MolTransformError::AtomsNotBonded { i: j, j: i });
     }
-    let bond_jk = mol.bonds().iter().any(|b| {
-        (b.begin().index() == j && b.end().index() == k)
-            || (b.begin().index() == k && b.end().index() == j)
-    });
+    let bond_jk = mol
+        .bonds()
+        .iter()
+        .any(|b| (b.begin().index() == j && b.end().index() == k) || (b.begin().index() == k && b.end().index() == j));
     if !bond_jk {
         return Err(MolTransformError::AtomsNotBonded { i: j, j: k });
     }
@@ -786,10 +763,10 @@ pub fn set_dihedral(
     }
 
     // Check bond (j,k)
-    let bond_jk = mol.bonds().iter().any(|b| {
-        (b.begin().index() == j && b.end().index() == k)
-            || (b.begin().index() == k && b.end().index() == j)
-    });
+    let bond_jk = mol
+        .bonds()
+        .iter()
+        .any(|b| (b.begin().index() == j && b.end().index() == k) || (b.begin().index() == k && b.end().index() == j));
     if !bond_jk {
         return Err(MolTransformError::AtomsNotBonded { i: j, j: k });
     }
@@ -913,11 +890,7 @@ fn rotate_point_around_axis(point: &mut [f64; 3], axis: &[f64; 3], angle: f64) {
 
 // RDKit✔️✔️: const RDGeom::Point3D &Conformer::getAtomPos(unsigned int atomId) const
 /// Get the 3D position of a single atom from the specified conformer.
-pub fn get_atom_position(
-    mol: &Molecule,
-    atom: usize,
-    conf_id: usize,
-) -> Result<[f64; 3], MolTransformError> {
+pub fn get_atom_position(mol: &Molecule, atom: usize, conf_id: usize) -> Result<[f64; 3], MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     if atom >= coords.len() {
         return Err(MolTransformError::AtomIndexOutOfBounds {
@@ -949,13 +922,10 @@ pub(crate) fn set_atom_position_in_coordinate_block(
     pos: [f64; 3],
     conf_id: usize,
 ) -> Result<bool, MolTransformError> {
-    let requested =
-        i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
-    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(
-        &coordinates.conformers_3d,
-        requested,
-    )
-    .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
+    let requested = i64::try_from(conf_id).map_err(|_| MolTransformError::ConformerNotFound { id: conf_id })?;
+    let index =
+        crate::chemistry::conformer_selection::resolve_3d_conformer_index(&coordinates.conformers_3d, requested)
+            .ok_or(MolTransformError::ConformerNotFound { id: conf_id })?;
     let conformer = &mut coordinates.conformers_3d[index];
     let atom_count = conformer.coordinates().len();
     if atom >= atom_count {
@@ -980,10 +950,7 @@ fn mol_transform_operation_error(error: crate::OperationError) -> MolTransformEr
 
 // RDKit✔️✔️: const RDGeom::POINT3D_VECT &Conformer::getPositions() const
 /// Get all 3D atom positions from the specified conformer.
-pub fn get_atom_positions(
-    mol: &Molecule,
-    conf_id: usize,
-) -> Result<Vec<[f64; 3]>, MolTransformError> {
+pub fn get_atom_positions(mol: &Molecule, conf_id: usize) -> Result<Vec<[f64; 3]>, MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     Ok(coords.to_vec())
 }
@@ -1030,10 +997,7 @@ pub fn transform_conformer(
 ///
 /// Returns the position vectors directly from the conformer coordinates
 /// (these are the vectors from the origin to each atom).
-pub fn get_translation_vectors(
-    mol: &Molecule,
-    conf_id: usize,
-) -> Result<Vec<[f64; 3]>, MolTransformError> {
+pub fn get_translation_vectors(mol: &Molecule, conf_id: usize) -> Result<Vec<[f64; 3]>, MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     Ok(coords.to_vec())
 }
@@ -1045,11 +1009,7 @@ pub fn get_translation_vectors(
 /// from the centroid calculation.
 ///
 /// RDKit source: MolTransforms.cpp lines 46-63
-pub fn compute_centroid(
-    mol: &Molecule,
-    conf_id: usize,
-    ignore_hs: bool,
-) -> Result<[f64; 3], MolTransformError> {
+pub fn compute_centroid(mol: &Molecule, conf_id: usize, ignore_hs: bool) -> Result<[f64; 3], MolTransformError> {
     let coords = conf_coords(mol, conf_id)?;
     let mut res = [0.0, 0.0, 0.0];
     let mut count = 0usize;
@@ -1080,11 +1040,7 @@ pub fn compute_centroid(
 /// of the heavy atoms only) coincides with the origin.
 ///
 /// Returns a new `Molecule` (value-style).
-pub fn center_atoms_on_origin(
-    mol: Molecule,
-    conf_id: usize,
-    ignore_hs: bool,
-) -> Result<Molecule, MolTransformError> {
+pub fn center_atoms_on_origin(mol: Molecule, conf_id: usize, ignore_hs: bool) -> Result<Molecule, MolTransformError> {
     let centroid = compute_centroid(&mol, conf_id, ignore_hs)?;
     let mut mol = mol;
     let coords = conf_coords_mut(&mut mol, conf_id)?;

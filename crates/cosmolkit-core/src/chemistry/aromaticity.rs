@@ -3,9 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AdjacencyList, Atom, AtomId, Bond, BondOrder, Molecule, RingFindingError, RingInfo,
-    ValenceAssignment, ValenceError, ValenceModel, assign_valence, read_parts::MoleculeReadParts,
-    symmetrize_sssr,
+    AdjacencyList, Atom, AtomId, Bond, BondOrder, Molecule, RingFindingError, RingInfo, ValenceAssignment,
+    ValenceError, ValenceModel, assign_valence, read_parts::MoleculeReadParts, symmetrize_sssr,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,13 +184,8 @@ pub(crate) fn set_aromaticity_from_parts(
     let rings = if let Some(rings) = cached_rings {
         rings
     } else {
-        owned_rings = crate::rings::symmetrize_sssr_with_options_from_parts(
-            atoms.len(),
-            bonds,
-            adjacency,
-            false,
-            false,
-        )?;
+        owned_rings =
+            crate::rings::symmetrize_sssr_with_options_from_parts(atoms.len(), bonds, adjacency, false, false)?;
         &owned_rings
     };
     // RDKit✔️✔️:
@@ -202,35 +196,19 @@ pub(crate) fn set_aromaticity_from_parts(
         // RDKit✔️✔️:     case AROMATICITY_RDKIT:
         // RDKit✔️✔️:       res = aromaticityHelper(mol, srings, 0, 0, true);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Default | AromaticityModel::Rdkit => aromaticity_helper_from_parts(
-            atoms,
-            bonds,
-            adjacency,
-            cached_valence,
-            rings,
-            0,
-            0,
-            true,
-        ),
+        AromaticityModel::Default | AromaticityModel::Rdkit => {
+            aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings, 0, 0, true)
+        }
         // RDKit✔️✔️:     case AROMATICITY_SIMPLE:
         // RDKit✔️✔️:       res = aromaticityHelper(mol, srings, 5, 6, false);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Simple => aromaticity_helper_from_parts(
-            atoms,
-            bonds,
-            adjacency,
-            cached_valence,
-            rings,
-            5,
-            6,
-            false,
-        ),
+        AromaticityModel::Simple => {
+            aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings, 5, 6, false)
+        }
         // RDKit✔️✔️:     case AROMATICITY_MDL:
         // RDKit✔️✔️:       res = mdlAromaticityHelper(mol, srings);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Mdl => {
-            mdl_aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings)
-        }
+        AromaticityModel::Mdl => mdl_aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings),
         // RDKit✔️✔️:     case AROMATICITY_MMFF94:
         // RDKit✔️✔️:       res = mmff94AromaticityHelper(mol, srings);
         // RDKit✔️✔️:       break;
@@ -412,13 +390,7 @@ fn aromaticity_helper_from_parts(
     let valence = if let Some(valence) = cached_valence {
         valence.clone()
     } else {
-        crate::valence::assign_valence_with_options_from_parts(
-            atoms,
-            bonds,
-            adjacency,
-            ValenceModel::RdkitLike,
-            true,
-        )?
+        crate::valence::assign_valence_with_options_from_parts(atoms, bonds, adjacency, ValenceModel::RdkitLike, true)?
     };
     let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
     let mut atom_aromatic = vec![false; atoms.len()];
@@ -431,9 +403,7 @@ fn aromaticity_helper_from_parts(
 
     for ring in rings.atom_rings() {
         let ring_size = ring.len();
-        if (min_ring_size != 0 && ring_size < min_ring_size)
-            || (max_ring_size != 0 && ring_size > max_ring_size)
-        {
+        if (min_ring_size != 0 && ring_size < min_ring_size) || (max_ring_size != 0 && ring_size > max_ring_size) {
             continue;
         }
         let mut all_aromatic = true;
@@ -450,8 +420,7 @@ fn aromaticity_helper_from_parts(
                 continue;
             }
             atom_seen[atom_id.index()] = true;
-            electron_donors[atom_id.index()] =
-                get_atom_donor_type_aromaticity(&context, atom_id, true)?;
+            electron_donors[atom_id.index()] = get_atom_donor_type_aromaticity(&context, atom_id, true)?;
             atom_candidates[atom_id.index()] = is_atom_candidate_for_aromaticity(
                 &context,
                 atom_id,
@@ -537,21 +506,17 @@ fn pick_fused_rings(
     done: &mut [bool],
     depth: usize,
 ) -> Result<(), AromaticityError> {
-    crate::source_port_helpers::rdkit_pick_fused_rings(current, neighbor_map, result, done, depth)
-        .map_err(|error| AromaticityError::InvariantViolation {
+    crate::source_port_helpers::rdkit_pick_fused_rings(current, neighbor_map, result, done, depth).map_err(|error| {
+        AromaticityError::InvariantViolation {
             message: match error {
                 crate::source_port_helpers::RingNeighborError::MissingRing => "bad argument",
-                crate::source_port_helpers::RingNeighborError::RingIndexOutOfBounds => {
-                    "ring index out of range"
-                }
+                crate::source_port_helpers::RingNeighborError::RingIndexOutOfBounds => "ring index out of range",
             },
-        })
+        }
+    })
 }
 #[allow(dead_code)]
-fn check_fused(
-    ring_ids: &[usize],
-    ring_neighbors: &RingNeighborMap,
-) -> Result<bool, AromaticityError> {
+fn check_fused(ring_ids: &[usize], ring_neighbors: &RingNeighborMap) -> Result<bool, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION RingUtils::checkFused
     // RDKit✔️✔️: bool checkFused(const INT_VECT &rids, INT_INT_VECT_MAP &ringNeighs) {
     // RDKit✔️✔️:   auto nrings = rdcast<int>(ringNeighs.size());
@@ -601,11 +566,7 @@ fn check_fused(
 }
 
 #[allow(dead_code)]
-fn make_ring_neighbor_map(
-    bond_rings: &[Vec<usize>],
-    max_size: usize,
-    max_overlap_size: usize,
-) -> RingNeighborMap {
+fn make_ring_neighbor_map(bond_rings: &[Vec<usize>], max_size: usize, max_overlap_size: usize) -> RingNeighborMap {
     crate::source_port_helpers::rdkit_make_ring_neighbor_map(
         bond_rings.len(),
         |index| bond_rings[index].as_slice(),
@@ -625,22 +586,20 @@ fn convert_candidate_ring_to_bonds(
     for pair in ring.windows(2) {
         let begin = AtomId::new(pair[0]);
         let end = AtomId::new(pair[1]);
-        let bond =
-            context
-                .bond_between_atoms(begin, end)
-                .ok_or(AromaticityError::InvariantViolation {
-                    message: "expected ring bond not found",
-                })?;
-        bond_ring.push(bond.id().index());
-    }
-    let begin = AtomId::new(*ring.last().expect("ring is non-empty"));
-    let end = AtomId::new(ring[0]);
-    let bond =
-        context
+        let bond = context
             .bond_between_atoms(begin, end)
             .ok_or(AromaticityError::InvariantViolation {
                 message: "expected ring bond not found",
             })?;
+        bond_ring.push(bond.id().index());
+    }
+    let begin = AtomId::new(*ring.last().expect("ring is non-empty"));
+    let end = AtomId::new(ring[0]);
+    let bond = context
+        .bond_between_atoms(begin, end)
+        .ok_or(AromaticityError::InvariantViolation {
+            message: "expected ring bond not found",
+        })?;
     bond_ring.push(bond.id().index());
     Ok(bond_ring)
 }
@@ -656,10 +615,7 @@ fn convert_candidate_rings_to_bonds(
 }
 
 #[allow(dead_code)]
-fn mdl_aromaticity_helper(
-    molecule: &Molecule,
-    rings: &RingInfo,
-) -> Result<AromaticityAssignment, AromaticityError> {
+fn mdl_aromaticity_helper(molecule: &Molecule, rings: &RingInfo) -> Result<AromaticityAssignment, AromaticityError> {
     mdl_aromaticity_helper_from_parts(
         molecule.atoms(),
         molecule.bonds(),
@@ -751,13 +707,7 @@ fn mdl_aromaticity_helper_from_parts(
     let valence = if let Some(valence) = cached_valence {
         valence.clone()
     } else {
-        crate::valence::assign_valence_with_options_from_parts(
-            atoms,
-            bonds,
-            adjacency,
-            ValenceModel::RdkitLike,
-            true,
-        )?
+        crate::valence::assign_valence_with_options_from_parts(atoms, bonds, adjacency, ValenceModel::RdkitLike, true)?
     };
     let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
     let mut atom_aromatic = vec![false; atoms.len()];
@@ -783,8 +733,7 @@ fn mdl_aromaticity_helper_from_parts(
                 continue;
             }
             atom_seen[atom_id.index()] = true;
-            electron_donors[atom_id.index()] =
-                get_atom_donor_type_aromaticity(&context, atom_id, false)?;
+            electron_donors[atom_id.index()] = get_atom_donor_type_aromaticity(&context, atom_id, false)?;
             if electron_donors[atom_id.index()] != ElectronDonorType::One {
                 all_aromatic = false;
                 continue;
@@ -845,10 +794,7 @@ fn mdl_aromaticity_helper_from_parts(
 }
 
 #[allow(dead_code)]
-fn mmff94_aromaticity_helper(
-    molecule: &Molecule,
-    rings: &RingInfo,
-) -> Result<AromaticityAssignment, AromaticityError> {
+fn mmff94_aromaticity_helper(molecule: &Molecule, rings: &RingInfo) -> Result<AromaticityAssignment, AromaticityError> {
     mmff94_aromaticity_helper_from_parts(
         molecule.atoms(),
         molecule.bonds(),
@@ -917,10 +863,7 @@ fn mmff94_aromaticity_helper_from_parts(
 }
 
 #[allow(dead_code)]
-fn set_mmff_aromaticity(
-    molecule: &Molecule,
-    rings: &RingInfo,
-) -> Result<AromaticityAssignment, AromaticityError> {
+fn set_mmff_aromaticity(molecule: &Molecule, rings: &RingInfo) -> Result<AromaticityAssignment, AromaticityError> {
     set_mmff_aromaticity_from_parts(
         molecule.atoms(),
         molecule.bonds(),
@@ -1114,13 +1057,7 @@ fn set_mmff_aromaticity_from_parts(
     let valence = if let Some(valence) = cached_valence {
         valence.clone()
     } else {
-        crate::valence::assign_valence_with_options_from_parts(
-            atoms,
-            bonds,
-            adjacency,
-            ValenceModel::RdkitLike,
-            false,
-        )?
+        crate::valence::assign_valence_with_options_from_parts(atoms, bonds, adjacency, ValenceModel::RdkitLike, false)?
     };
     let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
     let num_atoms = atoms.len();
@@ -1153,19 +1090,12 @@ fn set_mmff_aromaticity_from_parts(
 
                 // Check if N, O, or divalent S
                 let atomic_num = atom.atomic_number();
-                if atomic_num == 7
-                    || atomic_num == 8
-                    || (atomic_num == 16 && context.atom_degree(*atom_id) == 2)
-                {
+                if atomic_num == 7 || atomic_num == 8 || (atomic_num == 16 && context.atom_degree(*atom_id) == 2) {
                     is_nos_in_ring = true;
                 }
 
                 // Get the next atom in the ring (wrapping around)
-                let next_atom_id = if j == ring_size - 1 {
-                    ring[0]
-                } else {
-                    ring[j + 1]
-                };
+                let next_atom_id = if j == ring_size - 1 { ring[0] } else { ring[j + 1] };
 
                 // Check if double bonded to next atom in ring
                 if let Some(bond) = context.bond_between_atoms(*atom_id, next_atom_id) {
@@ -1178,9 +1108,7 @@ fn set_mmff_aromaticity_from_parts(
                 // Not a double bond — check if carbon or nitrogen with total bond order = 4
                 if atomic_num != 6
                     && !(atomic_num == 7
-                        && (context.explicit_valence(*atom_id)?
-                            + context.implicit_hydrogens(*atom_id)?)
-                            == 4)
+                        && (context.explicit_valence(*atom_id)? + context.implicit_hydrogens(*atom_id)?) == 4)
                 {
                     continue;
                 }
@@ -1290,11 +1218,7 @@ fn set_mmff_aromaticity_from_parts(
         aromatic_ring_count += 1;
         let ring_size = ring.len();
         for (j, atom_id) in ring.iter().enumerate() {
-            let next_atom_id = if j == ring_size - 1 {
-                ring[0]
-            } else {
-                ring[j + 1]
-            };
+            let next_atom_id = if j == ring_size - 1 { ring[0] } else { ring[j + 1] };
             if let Some(bond) = context.bond_between_atoms(*atom_id, next_atom_id) {
                 bond_aromatic[bond.id().index()] = true;
                 atom_aromatic[atom_id.index()] = true;
@@ -1311,10 +1235,7 @@ fn set_mmff_aromaticity_from_parts(
 }
 
 #[allow(dead_code)]
-fn count_atom_electrons(
-    context: &AromaticityContext<'_>,
-    atom_id: AtomId,
-) -> Result<i32, AromaticityError> {
+fn count_atom_electrons(context: &AromaticityContext<'_>, atom_id: AtomId) -> Result<i32, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::countAtomElec
     // RDKit❗✔️: int countAtomElec(const Atom *at) {
     // RDKit❗✔️:   PRECONDITION(at, "bad atom");
@@ -1379,17 +1300,13 @@ fn count_atom_electrons(
         return Ok(-1);
     }
 
-    let total_hydrogens =
-        i32::from(atom.explicit_hydrogens()) + context.implicit_hydrogens(atom_id)?;
-    let mut degree = i32::try_from(context.atom_degree(atom_id)).map_err(|_| {
-        AromaticityError::InvariantViolation {
-            message: "atom degree out of range",
-        }
+    let total_hydrogens = i32::from(atom.explicit_hydrogens()) + context.implicit_hydrogens(atom_id)?;
+    let mut degree = i32::try_from(context.atom_degree(atom_id)).map_err(|_| AromaticityError::InvariantViolation {
+        message: "atom degree out of range",
     })? + total_hydrogens;
 
     for bond in context.incident_bonds(atom_id)? {
-        if crate::valence::bond_valence_contrib(bond, atom_id)? == 0.0 && !is_bond_order_query(bond)
-        {
+        if crate::valence::bond_valence_contrib(bond, atom_id)? == 0.0 && !is_bond_order_query(bond) {
             degree -= 1;
         }
     }
@@ -1405,10 +1322,8 @@ fn count_atom_electrons(
 
     if result > 1 {
         let unsaturations = context.explicit_valence(atom_id)?
-            - i32::try_from(context.atom_degree(atom_id)).map_err(|_| {
-                AromaticityError::InvariantViolation {
-                    message: "atom degree out of range",
-                }
+            - i32::try_from(context.atom_degree(atom_id)).map_err(|_| AromaticityError::InvariantViolation {
+                message: "atom degree out of range",
             })?;
         if unsaturations > 1 {
             result = 1;
@@ -1442,9 +1357,7 @@ fn incident_non_cyclic_multiple_bond(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION incidentNonCyclicMultipleBond
     for bond in context.incident_bonds(atom_id)? {
-        if context.rings.num_bond_rings(bond.id()) == 0
-            && crate::valence::bond_valence_contrib(bond, atom_id)? >= 2.0
-        {
+        if context.rings.num_bond_rings(bond.id()) == 0 && crate::valence::bond_valence_contrib(bond, atom_id)? >= 2.0 {
             return Ok(Some(if bond.begin() == atom_id {
                 bond.end()
             } else {
@@ -1456,10 +1369,7 @@ fn incident_non_cyclic_multiple_bond(
 }
 
 #[allow(dead_code)]
-fn incident_cyclic_multiple_bond(
-    context: &AromaticityContext<'_>,
-    atom_id: AtomId,
-) -> Result<bool, AromaticityError> {
+fn incident_cyclic_multiple_bond(context: &AromaticityContext<'_>, atom_id: AtomId) -> Result<bool, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION incidentCyclicMultipleBond
     // RDKit❗✔️: bool incidentCyclicMultipleBond(const Atom *at) {
     // RDKit❗✔️:   PRECONDITION(at, "bad atom");
@@ -1475,9 +1385,7 @@ fn incident_cyclic_multiple_bond(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION incidentCyclicMultipleBond
     for bond in context.incident_bonds(atom_id)? {
-        if context.rings.num_bond_rings(bond.id()) != 0
-            && crate::valence::bond_valence_contrib(bond, atom_id)? >= 2.0
-        {
+        if context.rings.num_bond_rings(bond.id()) != 0 && crate::valence::bond_valence_contrib(bond, atom_id)? >= 2.0 {
             return Ok(true);
         }
     }
@@ -1485,10 +1393,7 @@ fn incident_cyclic_multiple_bond(
 }
 
 #[allow(dead_code)]
-fn incident_multiple_bond(
-    context: &AromaticityContext<'_>,
-    atom_id: AtomId,
-) -> Result<bool, AromaticityError> {
+fn incident_multiple_bond(context: &AromaticityContext<'_>, atom_id: AtomId) -> Result<bool, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION incidentMultipleBond
     // RDKit❗✔️: bool incidentMultipleBond(const Atom *at) {
     // RDKit❗✔️:   PRECONDITION(at, "bad atom");
@@ -1503,10 +1408,8 @@ fn incident_multiple_bond(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION incidentMultipleBond
     let atom = context.atom(atom_id)?;
-    let mut degree = i32::try_from(context.atom_degree(atom_id)).map_err(|_| {
-        AromaticityError::InvariantViolation {
-            message: "atom degree out of range",
-        }
+    let mut degree = i32::try_from(context.atom_degree(atom_id)).map_err(|_| AromaticityError::InvariantViolation {
+        message: "atom degree out of range",
     })? + i32::from(atom.explicit_hydrogens());
     for bond in context.incident_bonds(atom_id)? {
         if crate::valence::bond_valence_contrib(bond, atom_id)?.round() == 0.0 {
@@ -1635,9 +1538,7 @@ fn is_atom_candidate_for_aromaticity(
     if !allow_third_row && atom.atomic_number() > 10 {
         return Ok(false);
     }
-    if atom.atomic_number() > 18
-        && (!allow_higher_exceptions || !matches!(atom.atomic_number(), 34 | 52))
-    {
+    if atom.atomic_number() > 18 && (!allow_higher_exceptions || !matches!(atom.atomic_number(), 34 | 52)) {
         return Ok(false);
     }
     if electron_donor == ElectronDonorType::None {
@@ -1649,8 +1550,7 @@ fn is_atom_candidate_for_aromaticity(
     if !(0..=u8::MAX as i16).contains(&effective_atomic_number) {
         return Ok(false);
     }
-    let effective_default_valence =
-        crate::valence::rdkit_default_valence(effective_atomic_number as u8)?;
+    let effective_default_valence = crate::valence::rdkit_default_valence(effective_atomic_number as u8)?;
     let total_valence = context.explicit_valence(atom_id)? + context.implicit_hydrogens(atom_id)?;
     if default_valence > 0 && total_valence > effective_default_valence {
         return Ok(false);
@@ -1661,10 +1561,8 @@ fn is_atom_candidate_for_aromaticity(
     }
 
     let unsaturations = context.explicit_valence(atom_id)?
-        - i32::try_from(context.atom_degree(atom_id)).map_err(|_| {
-            AromaticityError::InvariantViolation {
-                message: "atom degree out of range",
-            }
+        - i32::try_from(context.atom_degree(atom_id)).map_err(|_| AromaticityError::InvariantViolation {
+            message: "atom degree out of range",
         })?;
     if unsaturations > 1 {
         let mut multiple_bond_count = 0usize;
@@ -1718,8 +1616,7 @@ fn is_bond_order_query(bond: &crate::Bond) -> bool {
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION MolOps::isBondOrderQuery
     bond.query().is_some_and(|query| {
-        crate::valence::has_bond_type_query(query)
-            || crate::valence::has_complex_bond_type_query(query)
+        crate::valence::has_bond_type_query(query) || crate::valence::has_complex_bond_type_query(query)
     })
 }
 
@@ -1830,10 +1727,7 @@ fn get_atom_donor_type_aromaticity(
         if let Some(other_atom) = incident_non_cyclic_multiple_bond(context, atom_id)? {
             let other = context.atom(other_atom)?;
             if exocyclic_bonds_steal_electrons
-                && crate::valence::periodic_table_more_electronegative(
-                    other.atomic_number(),
-                    atom.atomic_number(),
-                )?
+                && crate::valence::periodic_table_more_electronegative(other.atomic_number(), atom.atomic_number())?
             {
                 result = ElectronDonorType::Vacant;
             } else {
@@ -1849,10 +1743,7 @@ fn get_atom_donor_type_aromaticity(
         if let Some(other_atom) = incident_non_cyclic_multiple_bond(context, atom_id)? {
             let other = context.atom(other_atom)?;
             if exocyclic_bonds_steal_electrons
-                && crate::valence::periodic_table_more_electronegative(
-                    other.atomic_number(),
-                    atom.atomic_number(),
-                )?
+                && crate::valence::periodic_table_more_electronegative(other.atomic_number(), atom.atomic_number())?
             {
                 adjusted_electron_count -= 1;
             }
@@ -1902,11 +1793,7 @@ fn get_min_max_atom_electrons(dtype: ElectronDonorType) -> (i32, i32) {
 }
 
 #[allow(dead_code)]
-fn apply_huckel(
-    ring: &[usize],
-    electron_donors: &[ElectronDonorType],
-    min_ring_size: usize,
-) -> bool {
+fn apply_huckel(ring: &[usize], electron_donors: &[ElectronDonorType], min_ring_size: usize) -> bool {
     // BEGIN RDKIT CPP FUNCTION applyHuckel
     // RDKit✔️✔️: bool applyHuckel(ROMol &, const INT_VECT &ring, const VECT_EDON_TYPE &edon,
     // RDKit✔️✔️:                  unsigned int minRingSize) {
@@ -2110,13 +1997,9 @@ fn apply_huckel_to_fused(
     let mut combination = Vec::new();
     let mut fused_bonds = BTreeSet::new();
     for &ring_index in fused {
-        for &bond_index in
-            bond_rings
-                .get(ring_index)
-                .ok_or(AromaticityError::InvariantViolation {
-                    message: "fused ring index out of range",
-                })?
-        {
+        for &bond_index in bond_rings.get(ring_index).ok_or(AromaticityError::InvariantViolation {
+            message: "fused ring index out of range",
+        })? {
             fused_bonds.insert(bond_index);
         }
     }
@@ -2129,9 +2012,7 @@ fn apply_huckel_to_fused(
                 break;
             }
             current_size += 1;
-            if current_size > ring_count.min(max_num_fused_rings)
-                || done_bonds.len() >= ring_bond_count
-            {
+            if current_size > ring_count.min(max_num_fused_rings) || done_bonds.len() >= ring_bond_count {
                 break;
             }
             combination = (0..current_size).collect();
@@ -2143,23 +2024,16 @@ fn apply_huckel_to_fused(
             continue;
         }
 
-        let current_rings = combination
-            .iter()
-            .map(|&index| fused[index])
-            .collect::<Vec<_>>();
+        let current_rings = combination.iter().map(|&index| fused[index]).collect::<Vec<_>>();
         if !ring_neighbors.is_empty() && !check_fused(&current_rings, ring_neighbors)? {
             continue;
         }
 
         let mut atoms_in_ring_system = vec![0usize; atom_count];
         for &ring_index in &current_rings {
-            for &atom_index in
-                atom_rings
-                    .get(ring_index)
-                    .ok_or(AromaticityError::InvariantViolation {
-                        message: "aromatic ring index out of range",
-                    })?
-            {
+            for &atom_index in atom_rings.get(ring_index).ok_or(AromaticityError::InvariantViolation {
+                message: "aromatic ring index out of range",
+            })? {
                 atoms_in_ring_system[atom_index] += 1;
             }
         }
@@ -2241,11 +2115,9 @@ fn mark_atoms_bonds_aromatic(
     // END RDKIT CPP FUNCTION markAtomsBondsArom
     let mut bond_counter = BTreeMap::<usize, usize>::new();
     for &ring_id in ring_ids {
-        let bond_ring = bond_rings
-            .get(ring_id)
-            .ok_or(AromaticityError::InvariantViolation {
-                message: "aromatic bond ring index out of range",
-            })?;
+        let bond_ring = bond_rings.get(ring_id).ok_or(AromaticityError::InvariantViolation {
+            message: "aromatic bond ring index out of range",
+        })?;
         for &bond_index in bond_ring {
             *bond_counter.entry(bond_index).or_default() += 1;
         }
@@ -2258,11 +2130,9 @@ fn mark_atoms_bonds_aromatic(
                 });
             };
             *slot = true;
-            let bond = bonds
-                .get(bond_index)
-                .ok_or(AromaticityError::InvariantViolation {
-                    message: "aromatic bond index out of range",
-                })?;
+            let bond = bonds.get(bond_index).ok_or(AromaticityError::InvariantViolation {
+                message: "aromatic bond index out of range",
+            })?;
             if matches!(bond.order(), BondOrder::Single | BondOrder::Double) {
                 for atom_id in [bond.begin(), bond.end()] {
                     let Some(atom_slot) = atom_aromatic.get_mut(atom_id.index()) else {
@@ -2324,8 +2194,8 @@ fn next_combination(combination: &mut [usize], total: usize) -> i32 {
 #[cfg(test)]
 mod tests {
     use crate::aromaticity::{
-        ElectronDonorType, apply_huckel, check_fused, get_min_max_atom_electrons,
-        make_ring_neighbor_map, pick_fused_rings,
+        ElectronDonorType, apply_huckel, check_fused, get_min_max_atom_electrons, make_ring_neighbor_map,
+        pick_fused_rings,
     };
     use crate::{AromaticityModel, Molecule, set_aromaticity};
 
@@ -2384,19 +2254,11 @@ mod tests {
 
         assert!(result.derived_cache().aromaticity_valid);
         assert_eq!(
-            result
-                .atoms()
-                .iter()
-                .map(crate::Atom::is_aromatic)
-                .collect::<Vec<_>>(),
+            result.atoms().iter().map(crate::Atom::is_aromatic).collect::<Vec<_>>(),
             vec![true; 6]
         );
         assert_eq!(
-            result
-                .bonds()
-                .iter()
-                .map(crate::Bond::is_aromatic)
-                .collect::<Vec<_>>(),
+            result.bonds().iter().map(crate::Bond::is_aromatic).collect::<Vec<_>>(),
             vec![true; 6]
         );
         assert!(
@@ -2406,45 +2268,30 @@ mod tests {
                 .all(|bond| bond.order() == crate::BondOrder::Aromatic)
         );
         let expected_valence =
-            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, true)
-                .unwrap();
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, true).unwrap();
         assert_eq!(result.derived_cache().valence, Some(expected_valence));
     }
 
     #[test]
     fn get_min_max_atom_electrons_matches_rdkit_switch_table() {
         assert_eq!(get_min_max_atom_electrons(ElectronDonorType::Any), (1, 2));
-        assert_eq!(
-            get_min_max_atom_electrons(ElectronDonorType::OneOrTwo),
-            (1, 2)
-        );
+        assert_eq!(get_min_max_atom_electrons(ElectronDonorType::OneOrTwo), (1, 2));
         assert_eq!(get_min_max_atom_electrons(ElectronDonorType::One), (1, 1));
         assert_eq!(get_min_max_atom_electrons(ElectronDonorType::Two), (2, 2));
         assert_eq!(get_min_max_atom_electrons(ElectronDonorType::None), (0, 0));
-        assert_eq!(
-            get_min_max_atom_electrons(ElectronDonorType::Vacant),
-            (0, 0)
-        );
+        assert_eq!(get_min_max_atom_electrons(ElectronDonorType::Vacant), (0, 0));
     }
 
     #[test]
     fn apply_huckel_matches_rdkit_electron_window_logic() {
         assert!(!apply_huckel(
             &[0, 1, 2],
-            &[
-                ElectronDonorType::Two,
-                ElectronDonorType::Two,
-                ElectronDonorType::Two,
-            ],
+            &[ElectronDonorType::Two, ElectronDonorType::Two, ElectronDonorType::Two,],
             4
         ));
         assert!(apply_huckel(
             &[0, 1, 2],
-            &[
-                ElectronDonorType::Two,
-                ElectronDonorType::Two,
-                ElectronDonorType::Two,
-            ],
+            &[ElectronDonorType::Two, ElectronDonorType::Two, ElectronDonorType::Two,],
             0
         ));
         assert!(apply_huckel(&[0], &[ElectronDonorType::OneOrTwo], 0));

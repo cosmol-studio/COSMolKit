@@ -3,8 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::{
-    AtomId, BondOrder, BondStereo, InchiErrorKind, Molecule, cached_valence_assignment,
-    mol_from_inchi, mol_to_inchi,
+    AtomId, BondOrder, BondStereo, InchiErrorKind, Molecule, cached_valence_assignment, mol_from_inchi, mol_to_inchi,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -85,20 +84,10 @@ fn load_golden() -> Vec<InchiGoldenRecord> {
         .lines()
         .enumerate()
         .map(|(index, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            })
+            let line =
+                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), index + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1))
         })
         .collect()
 }
@@ -168,11 +157,7 @@ fn compare_mol_from_inchi_branches(
 ) {
     for sanitize in [false, true] {
         for remove_hs in [false, true] {
-            let branch = format!(
-                "sanitize{}_remove_hs{}",
-                u8::from(sanitize),
-                u8::from(remove_hs)
-            );
+            let branch = format!("sanitize{}_remove_hs{}", u8::from(sanitize), u8::from(remove_hs));
             let golden = expected
                 .get(&branch)
                 .unwrap_or_else(|| panic!("row {row}: InChI golden is missing branch {branch}"));
@@ -219,17 +204,12 @@ fn inchi_matches_pinned_rdkit_for_every_active_profile_row() {
     for (index, (smiles, expected)) in corpus.iter().zip(&golden).enumerate() {
         let row = index + 1;
         assert_eq!(expected.row, row, "golden row index changed at row {row}");
-        assert_eq!(
-            expected.smiles, *smiles,
-            "golden SMILES differs from corpus row {row}"
-        );
+        assert_eq!(expected.smiles, *smiles, "golden SMILES differs from corpus row {row}");
 
         let actual = match Molecule::from_smiles(smiles) {
             Ok(molecule) => match mol_to_inchi(&molecule, None) {
                 Ok(output) => ActualInchi::Output(output.inchi),
-                Err(error) if error.kind == InchiErrorKind::UnsupportedState => {
-                    ActualInchi::UnsupportedState
-                }
+                Err(error) if error.kind == InchiErrorKind::UnsupportedState => ActualInchi::UnsupportedState,
                 Err(error) => ActualInchi::GenerationFailed(error.to_string()),
             },
             Err(error) => ActualInchi::ParseFailed(error.to_string()),
@@ -256,9 +236,7 @@ fn inchi_matches_pinned_rdkit_for_every_active_profile_row() {
             )),
             (false, None, ActualInchi::UnsupportedState) => {
                 if expected.error.is_none() {
-                    mismatches.push(format!(
-                        "row {row} ({smiles}): failed RDKit record has no error"
-                    ));
+                    mismatches.push(format!("row {row} ({smiles}): failed RDKit record has no error"));
                 }
             }
             (false, None, ActualInchi::Output(actual)) if actual.is_empty() => {}
@@ -283,7 +261,8 @@ fn inchi_matches_pinned_rdkit_for_every_active_profile_row() {
 
 #[test]
 fn mol_from_inchi_unsanitized_fused_ring_stereo_matches_pinned_rdkit() {
-    const INCHI: &[u8] = b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
+    const INCHI: &[u8] =
+        b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
 
     for remove_hs in [false, true] {
         let output = mol_from_inchi(INCHI, false, remove_hs).expect("pinned RDKit accepts input");
@@ -293,9 +272,6 @@ fn mol_from_inchi_unsanitized_fused_ring_stereo_matches_pinned_rdkit() {
         assert_eq!((bond.begin().index(), bond.end().index()), (11, 13));
         assert_eq!(bond.order(), BondOrder::Double);
         assert_eq!(bond.stereo(), BondStereo::Z);
-        assert_eq!(
-            bond.stereo_atoms(),
-            Some([AtomId::new(15), AtomId::new(19)])
-        );
+        assert_eq!(bond.stereo_atoms(), Some([AtomId::new(15), AtomId::new(19)]));
     }
 }

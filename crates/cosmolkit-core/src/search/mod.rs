@@ -8,11 +8,10 @@ mod smarts_write;
 pub mod substruct;
 
 pub use query_graph::{
-    CompiledQuery, MatchResult, McsResult, QueryAtom, QueryBond, QueryGraph, QueryGraphError,
-    QueryGraphOperator,
+    CompiledQuery, MatchResult, McsResult, QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryGraphOperator,
 };
 pub use smarts_parse::{SmartsParseParams, mol_from_smarts, parse_smarts};
 pub use smarts_write::{
-    SmartsWriteError, get_atom_smarts, get_bond_smarts, mol_fragment_to_cx_smarts,
-    mol_fragment_to_smarts, mol_to_cx_smarts, mol_to_smarts,
+    SmartsWriteError, get_atom_smarts, get_bond_smarts, mol_fragment_to_cx_smarts, mol_fragment_to_smarts,
+    mol_to_cx_smarts, mol_to_smarts,
 };

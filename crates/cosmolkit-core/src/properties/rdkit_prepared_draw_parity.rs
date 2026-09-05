@@ -45,12 +45,9 @@ fn load_golden() -> Vec<PreparedDrawRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -123,10 +120,7 @@ fn prepared_draw_molecule_matches_rdkit_golden() {
 #[test]
 fn prepared_draw_molecule_matches_rdkit_golden_in_parallel_batch() {
     let records = load_golden();
-    let smiles = records
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let actual = batch
         .prepare_for_drawing_parity_list()
@@ -161,11 +155,7 @@ fn prepared_draw_molecule_matches_rdkit_golden_in_parallel_batch() {
     }
 }
 
-fn assert_prepared_draw_matches(
-    row_idx: usize,
-    record: &PreparedDrawRecord,
-    actual: &PreparedDrawMolecule,
-) {
+fn assert_prepared_draw_matches(row_idx: usize, record: &PreparedDrawRecord, actual: &PreparedDrawMolecule) {
     let expected_atoms = record.atoms.as_ref().expect("rdkit ok row has atoms");
     let expected_bonds = record.bonds.as_ref().expect("rdkit ok row has bonds");
 
@@ -184,9 +174,7 @@ fn assert_prepared_draw_matches(
         record.smiles
     );
 
-    for (atom_idx, (actual_atom, expected_atom)) in
-        actual.atoms.iter().zip(expected_atoms).enumerate()
-    {
+    for (atom_idx, (actual_atom, expected_atom)) in actual.atoms.iter().zip(expected_atoms).enumerate() {
         assert_eq!(
             actual_atom.index,
             expected_atom.idx,
@@ -217,9 +205,7 @@ fn assert_prepared_draw_matches(
         );
     }
 
-    for (bond_idx, (actual_bond, expected_bond)) in
-        actual.bonds.iter().zip(expected_bonds).enumerate()
-    {
+    for (bond_idx, (actual_bond, expected_bond)) in actual.bonds.iter().zip(expected_bonds).enumerate() {
         assert_eq!(
             actual_bond.index,
             expected_bond.idx,

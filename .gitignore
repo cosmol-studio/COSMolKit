@@ -13,3 +13,11 @@ python/cosmolkit.pyi
 tmp/
 python/examples/output
 /dev/tools/inchi/source_type_generator/target/
+.alef/
+__pycache__/
+/.alef-generation.toml
+/.alef-toml-merge-provenance.toml
+/poly.toml
+/rust-toolchain.toml
+/rustfmt.toml
+/.cargo/config.toml

@@ -119,14 +119,8 @@ fn layered_uses_the_shared_vector_and_one_scalar_core() {
 
 #[test]
 fn layered_batch_and_python_surfaces_delegate_without_algorithm_copies() {
-    let batch =
-        fs::read_to_string(core_root().join("src/properties/batch.rs")).expect("read batch source");
-    assert_eq!(
-        batch
-            .matches("fn layered_fingerprint_list_with_runtime(")
-            .count(),
-        1
-    );
+    let batch = fs::read_to_string(core_root().join("src/properties/batch.rs")).expect("read batch source");
+    assert_eq!(batch.matches("fn layered_fingerprint_list_with_runtime(").count(), 1);
     assert_eq!(
         batch
             .matches("fn layered_fingerprint_with_output_list_with_runtime(")
@@ -134,31 +128,15 @@ fn layered_batch_and_python_surfaces_delegate_without_algorithm_copies() {
         1
     );
     assert_eq!(batch.matches(".layered_fingerprint(params)").count(), 1);
-    assert_eq!(
-        batch
-            .matches(".layered_fingerprint_with_output(params)")
-            .count(),
-        1
-    );
+    assert_eq!(batch.matches(".layered_fingerprint_with_output(params)").count(), 1);
     assert!(!batch.contains("prepare_layered_fingerprint"));
     assert!(!batch.contains("project_layered_path"));
 
-    let python = fs::read_to_string(repository_root().join("python/src/lib.rs"))
-        .expect("read Python binding source");
+    let python = fs::read_to_string(repository_root().join("python/src/lib.rs")).expect("read Python binding source");
     assert_eq!(python.matches("fn fingerprint_layered(").count(), 1);
-    assert_eq!(
-        python
-            .matches("fn fingerprint_layered_with_output(")
-            .count(),
-        1
-    );
+    assert_eq!(python.matches("fn fingerprint_layered_with_output(").count(), 1);
     assert_eq!(python.matches(".layered_fingerprint(&params)").count(), 1);
-    assert_eq!(
-        python
-            .matches(".layered_fingerprint_with_output(&params)")
-            .count(),
-        1
-    );
+    assert_eq!(python.matches(".layered_fingerprint_with_output(&params)").count(), 1);
     assert!(!python.contains("prepare_layered_fingerprint"));
     assert!(!python.contains("project_layered_path"));
 }

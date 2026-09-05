@@ -5,9 +5,7 @@
 //! projections. Ring perception, SMARTS matching, and stereo assignment remain
 //! shared chemistry infrastructure.
 
-use super::{
-    DescriptorError, DescriptorResult, rdkit_count_query_matches, rdkit_count_smarts_matches,
-};
+use super::{DescriptorError, DescriptorResult, rdkit_count_query_matches, rdkit_count_smarts_matches};
 use crate::{AtomId, BondOrder, ChiralTag, Molecule};
 use std::borrow::Cow;
 
@@ -29,12 +27,12 @@ fn stereo_assigned_for_descriptor(molecule: &Molecule) -> DescriptorResult<Cow<'
     }
 
     let mut working = molecule.clone();
-    crate::smiles_write::assign_stereochemistry_on_working_copy(&mut working, true).map_err(
-        |_| DescriptorError::Unsupported {
+    crate::smiles_write::assign_stereochemistry_on_working_copy(&mut working, true).map_err(|_| {
+        DescriptorError::Unsupported {
             function: "stereo_center_descriptors",
             rdkit_function: "MolOps::assignStereochemistry",
-        },
-    )?;
+        }
+    })?;
     Ok(Cow::Owned(working))
 }
 
@@ -94,8 +92,7 @@ pub(super) fn num_unspecified_atom_stereo_centers(molecule: &Molecule) -> Descri
         // RDKit✔️✔️:         atom->getChiralTag() == Atom::CHI_UNSPECIFIED) {
         // RDKit✔️✔️:       ++res;
         // RDKit✔️✔️:     }
-        if atom.prop("_ChiralityPossible").is_some() && atom.chiral_tag() == ChiralTag::Unspecified
-        {
+        if atom.prop("_ChiralityPossible").is_some() && atom.chiral_tag() == ChiralTag::Unspecified {
             result += 1;
         }
         // RDKit✔️✔️:   }
@@ -139,11 +136,12 @@ pub(super) fn calc_lipinski_hbd(molecule: &Molecule) -> DescriptorResult<u32> {
         // RDKit✔️✔️:     if (((*iter)->getAtomicNum() == 7 || (*iter)->getAtomicNum() == 8)) {
         if atom.atomic_number() == 7 || atom.atomic_number() == 8 {
             // RDKit✔️✔️:       res += (*iter)->getTotalNumHs(true);
-            result += crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), true)
-                .map_err(|_| DescriptorError::Unsupported {
+            result += crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), true).map_err(|_| {
+                DescriptorError::Unsupported {
                     function: "calc_lipinski_hbd",
                     rdkit_function: "Atom::getTotalNumHs(true)",
-                })?;
+                }
+            })?;
             // RDKit✔️✔️:     }
         }
         // RDKit✔️✔️:   }
@@ -216,11 +214,10 @@ pub(super) fn calc_num_atoms(molecule: &Molecule) -> DescriptorResult<u32> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::ROMol::getNumAtoms
     // RDKit✔️✔️: unsigned int ROMol::getNumAtoms(bool onlyExplicit) const {
     // RDKit✔️✔️:   int res = rdcast<int>(boost::num_vertices(d_graph));
-    let mut result =
-        u32::try_from(molecule.num_atoms()).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_atoms",
-            rdkit_function: "ROMol::getNumAtoms explicit vertex count",
-        })?;
+    let mut result = u32::try_from(molecule.num_atoms()).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_atoms",
+        rdkit_function: "ROMol::getNumAtoms explicit vertex count",
+    })?;
     // RDKit✔️✔️:   if (!onlyExplicit) {
     // RDKit✔️✔️:     // if we are interested in hydrogens as well add them up from
     // RDKit✔️✔️:     // each
@@ -229,11 +226,12 @@ pub(super) fn calc_num_atoms(molecule: &Molecule) -> DescriptorResult<u32> {
         // RDKit✔️✔️:       res += atom->getTotalNumHs();
         result = result
             .checked_add(
-                crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false)
-                    .map_err(|_| DescriptorError::Unsupported {
+                crate::chemistry::valence::total_num_hydrogens(molecule, atom.id(), false).map_err(|_| {
+                    DescriptorError::Unsupported {
                         function: "calc_num_atoms",
                         rdkit_function: "Atom::getTotalNumHs(false)",
-                    })?,
+                    }
+                })?,
             )
             .ok_or(DescriptorError::Unsupported {
                 function: "calc_num_atoms",
@@ -254,11 +252,10 @@ pub(super) fn calc_num_rings(molecule: &Molecule) -> DescriptorResult<u32> {
     // RDKit✔️✔️:   return mol.getRingInfo()->numRings();
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: RDKit::Descriptors::calcNumRings
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_rings",
-            rdkit_function: "RingInfo::numRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_rings",
+        rdkit_function: "RingInfo::numRings",
+    })?;
     u32::try_from(rings.num_rings()).map_err(|_| DescriptorError::Unsupported {
         function: "calc_num_rings",
         rdkit_function: "RingInfo::numRings unsigned result",
@@ -270,11 +267,10 @@ pub(super) fn calc_num_heterocycles(molecule: &Molecule) -> DescriptorResult<u32
     // RDKit✔️✔️: unsigned int calcNumHeterocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_heterocycles",
-            rdkit_function: "RingInfo::atomRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_heterocycles",
+        rdkit_function: "RingInfo::atomRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->atomRings()) {
     for ring in rings.atom_rings() {
         // RDKit✔️✔️:     for (auto i : iv) {
@@ -302,11 +298,10 @@ pub(super) fn calc_num_saturated_rings(molecule: &Molecule) -> DescriptorResult<
     // RDKit✔️✔️: unsigned int calcNumSaturatedRings(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_saturated_rings",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_saturated_rings",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     ++res;
@@ -338,11 +333,10 @@ pub(super) fn calc_num_aliphatic_rings(molecule: &Molecule) -> DescriptorResult<
     // RDKit✔️✔️: unsigned int calcNumAliphaticRings(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_aliphatic_rings",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_aliphatic_rings",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     for (auto i : iv) {
@@ -370,11 +364,10 @@ pub(super) fn calc_num_aromatic_heterocycles(molecule: &Molecule) -> DescriptorR
     // RDKit✔️✔️: unsigned int calcNumAromaticHeterocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_aromatic_heterocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_aromatic_heterocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool countIt = false;
@@ -424,11 +417,10 @@ pub(super) fn calc_num_aromatic_carbocycles(molecule: &Molecule) -> DescriptorRe
     // RDKit✔️✔️: unsigned int calcNumAromaticCarbocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_aromatic_carbocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_aromatic_carbocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool countIt = true;
@@ -478,11 +470,10 @@ pub(super) fn calc_num_aliphatic_heterocycles(molecule: &Molecule) -> Descriptor
     // RDKit✔️✔️: unsigned int calcNumAliphaticHeterocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_aliphatic_heterocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_aliphatic_heterocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool hasAliph = false;
@@ -532,11 +523,10 @@ pub(super) fn calc_num_aliphatic_carbocycles(molecule: &Molecule) -> DescriptorR
     // RDKit✔️✔️: unsigned int calcNumAliphaticCarbocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_aliphatic_carbocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_aliphatic_carbocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool hasAliph = false;
@@ -586,11 +576,10 @@ pub(super) fn calc_num_saturated_heterocycles(molecule: &Molecule) -> Descriptor
     // RDKit✔️✔️: unsigned int calcNumSaturatedHeterocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_saturated_heterocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_saturated_heterocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool countIt = false;
@@ -641,11 +630,10 @@ pub(super) fn calc_num_saturated_carbocycles(molecule: &Molecule) -> DescriptorR
     // RDKit✔️✔️: unsigned int calcNumSaturatedCarbocycles(const ROMol &mol) {
     // RDKit✔️✔️:   unsigned int res = 0;
     let mut result = 0_u32;
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_saturated_carbocycles",
-            rdkit_function: "RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_saturated_carbocycles",
+        rdkit_function: "RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   for (const auto &iv : mol.getRingInfo()->bondRings()) {
     for ring in rings.bond_rings() {
         // RDKit✔️✔️:     bool countIt = true;
@@ -691,21 +679,17 @@ pub(super) fn calc_num_saturated_carbocycles(molecule: &Molecule) -> DescriptorR
     Ok(result)
 }
 
-pub(super) fn calc_num_spiro_atoms(
-    molecule: &Molecule,
-    atoms: Option<&mut Vec<AtomId>>,
-) -> DescriptorResult<u32> {
+pub(super) fn calc_num_spiro_atoms(molecule: &Molecule, atoms: Option<&mut Vec<AtomId>>) -> DescriptorResult<u32> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcNumSpiroAtoms
     // RDKit✔️✔️: unsigned int calcNumSpiroAtoms(const ROMol &mol,
     // RDKit✔️✔️:                                std::vector<unsigned int> *atoms) {
     // RDKit✔️✔️:   if (!mol.getRingInfo() || !mol.getRingInfo()->isSssrOrBetter()) {
     // RDKit✔️✔️:     MolOps::findSSSR(mol);
     // RDKit✔️✔️:   }
-    let rings =
-        super::descriptor_ring_info(molecule, true).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_spiro_atoms",
-            rdkit_function: "MolOps::findSSSR/RingInfo::atomRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, true).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_spiro_atoms",
+        rdkit_function: "MolOps::findSSSR/RingInfo::atomRings",
+    })?;
     // RDKit✔️✔️:   const RingInfo *rInfo = mol.getRingInfo();
     // RDKit✔️✔️:   std::vector<unsigned int> lAtoms;
     let mut local_atoms = Vec::new();
@@ -754,21 +738,17 @@ pub(super) fn calc_num_spiro_atoms(
     })
 }
 
-pub(super) fn calc_num_bridgehead_atoms(
-    molecule: &Molecule,
-    atoms: Option<&mut Vec<AtomId>>,
-) -> DescriptorResult<u32> {
+pub(super) fn calc_num_bridgehead_atoms(molecule: &Molecule, atoms: Option<&mut Vec<AtomId>>) -> DescriptorResult<u32> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcNumBridgeheadAtoms
     // RDKit✔️✔️: unsigned int calcNumBridgeheadAtoms(const ROMol &mol,
     // RDKit✔️✔️:                                     std::vector<unsigned int> *atoms) {
     // RDKit✔️✔️:   if (!mol.getRingInfo() || !mol.getRingInfo()->isSssrOrBetter()) {
     // RDKit✔️✔️:     MolOps::findSSSR(mol);
     // RDKit✔️✔️:   }
-    let rings =
-        super::descriptor_ring_info(molecule, true).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_num_bridgehead_atoms",
-            rdkit_function: "MolOps::findSSSR/RingInfo::bondRings",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, true).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_num_bridgehead_atoms",
+        rdkit_function: "MolOps::findSSSR/RingInfo::bondRings",
+    })?;
     // RDKit✔️✔️:   const RingInfo *rInfo = mol.getRingInfo();
     // RDKit✔️✔️:   std::vector<unsigned int> lAtoms;
     let mut local_atoms = Vec::new();
@@ -840,13 +820,11 @@ pub(super) fn calc_num_bridgehead_atoms(
 #[cfg(test)]
 mod tests {
     use super::{
-        calc_lipinski_hba, calc_lipinski_hbd, calc_num_aliphatic_carbocycles,
-        calc_num_aliphatic_heterocycles, calc_num_aliphatic_rings, calc_num_amide_bonds,
-        calc_num_aromatic_carbocycles, calc_num_aromatic_heterocycles, calc_num_atoms,
-        calc_num_bridgehead_atoms, calc_num_heavy_atoms, calc_num_heteroatoms,
-        calc_num_heterocycles, calc_num_rings, calc_num_saturated_carbocycles,
-        calc_num_saturated_heterocycles, calc_num_saturated_rings, calc_num_spiro_atoms,
-        has_stereo_assigned, num_atom_stereo_centers, num_unspecified_atom_stereo_centers,
+        calc_lipinski_hba, calc_lipinski_hbd, calc_num_aliphatic_carbocycles, calc_num_aliphatic_heterocycles,
+        calc_num_aliphatic_rings, calc_num_amide_bonds, calc_num_aromatic_carbocycles, calc_num_aromatic_heterocycles,
+        calc_num_atoms, calc_num_bridgehead_atoms, calc_num_heavy_atoms, calc_num_heteroatoms, calc_num_heterocycles,
+        calc_num_rings, calc_num_saturated_carbocycles, calc_num_saturated_heterocycles, calc_num_saturated_rings,
+        calc_num_spiro_atoms, has_stereo_assigned, num_atom_stereo_centers, num_unspecified_atom_stereo_centers,
     };
     use crate::{AtomId, AtomSpec, BondOrder, BondSpec, Element, Molecule, MoleculeBuilder};
 
@@ -903,14 +881,8 @@ mod tests {
         let molecule = explicit_methylamine();
         assert_eq!(calc_lipinski_hba(&molecule), Ok(1));
         assert_eq!(calc_lipinski_hbd(&molecule), Ok(2));
-        assert_eq!(
-            crate::properties::descriptors::calc_num_hba(&molecule),
-            Ok(1)
-        );
-        assert_eq!(
-            crate::properties::descriptors::calc_num_hbd(&molecule),
-            Ok(1)
-        );
+        assert_eq!(crate::properties::descriptors::calc_num_hba(&molecule), Ok(1));
+        assert_eq!(crate::properties::descriptors::calc_num_hbd(&molecule), Ok(1));
         assert_eq!(calc_num_heteroatoms(&molecule), Ok(1));
         assert_eq!(calc_num_amide_bonds(&molecule), Ok(0));
         assert_eq!(calc_num_heavy_atoms(&molecule), Ok(2));
@@ -974,11 +946,7 @@ mod tests {
             );
             assert_eq!(
                 spiro_atoms,
-                expected_spiro
-                    .iter()
-                    .copied()
-                    .map(AtomId::new)
-                    .collect::<Vec<_>>(),
+                expected_spiro.iter().copied().map(AtomId::new).collect::<Vec<_>>(),
                 "{smiles:?} spiro atom order"
             );
             assert_eq!(
@@ -988,17 +956,12 @@ mod tests {
             );
             assert_eq!(
                 bridgehead_atoms,
-                expected_bridgehead
-                    .iter()
-                    .copied()
-                    .map(AtomId::new)
-                    .collect::<Vec<_>>(),
+                expected_bridgehead.iter().copied().map(AtomId::new).collect::<Vec<_>>(),
                 "{smiles:?} bridgehead atom order"
             );
         }
 
-        let molecule =
-            Molecule::from_smiles("C1CCC2(CC1)CCC1(CC2)CCCC1").expect("multi-spiro fixture");
+        let molecule = Molecule::from_smiles("C1CCC2(CC1)CCC1(CC2)CCCC1").expect("multi-spiro fixture");
         let mut atoms = vec![AtomId::new(3)];
         assert_eq!(calc_num_spiro_atoms(&molecule, Some(&mut atoms)), Ok(2));
         assert_eq!(atoms, vec![AtomId::new(3), AtomId::new(8)]);
@@ -1037,11 +1000,8 @@ mod tests {
             assert_eq!(molecule, before, "{smiles:?} descriptor caller state");
         }
 
-        let mut preassigned =
-            Molecule::from_smiles("C[C@H](F)Cl").expect("preassigned stereo-center fixture");
-        preassigned
-            .properties_mut()
-            .set_computed_prop("_StereochemDone", "1");
+        let mut preassigned = Molecule::from_smiles("C[C@H](F)Cl").expect("preassigned stereo-center fixture");
+        preassigned.properties_mut().set_computed_prop("_StereochemDone", "1");
         assert!(has_stereo_assigned(&preassigned));
         let before = preassigned.clone();
         assert_eq!(num_atom_stereo_centers(&preassigned), Ok(1));

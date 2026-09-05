@@ -1,7 +1,6 @@
 use crate::source_types::{
-    AT_NUMB, BOND_TYPE_ALTERN, BOND_TYPE_MASK, BOND_TYPE_TRIPLE, NUM_H_ISOTOPES, RADICAL_DOUBLET,
-    RADICAL_SINGLET, RADICAL_TRIPLET, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError,
-    SourceMutPointer, inp_ATOM,
+    AT_NUMB, BOND_TYPE_ALTERN, BOND_TYPE_MASK, BOND_TYPE_TRIPLE, NUM_H_ISOTOPES, RADICAL_DOUBLET, RADICAL_SINGLET,
+    RADICAL_TRIPLET, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, inp_ATOM,
     local_util::{ERR_ELEM, MAX_ATOM_CHARGE, MAX_NUM_VALENCES, MIN_ATOM_CHARGE, NEUTRAL_STATE},
 };
 use std::{
@@ -43,18 +42,14 @@ fn calloc_integer_storage<T>(count: usize) -> Result<Vec<T>, SourceHeapError> {
     Ok(unsafe { Vec::from_raw_parts(pointer, count, count) })
 }
 
-pub(crate) fn inchi_malloc(
-    heap: &mut SourceHeap,
-    byte_count: u64,
-) -> Result<SourceMutPointer<i8>, SourceHeapError> {
+pub(crate) fn inchi_malloc(heap: &mut SourceHeap, byte_count: u64) -> Result<SourceMutPointer<i8>, SourceHeapError> {
     // BEGIN INCHI ACTIVE MACRO: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mode.h:1171 inchi_malloc
     // INCHI✔️❌: #ifndef inchi_malloc
     // INCHI✔️❌: #define inchi_malloc   malloc
     // INCHI✔️❌: #endif
     // END INCHI ACTIVE MACRO: inchi_malloc
 
-    let byte_count = usize::try_from(byte_count)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let byte_count = usize::try_from(byte_count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(byte_count)
@@ -77,8 +72,7 @@ pub(crate) fn inchi_calloc<T: Clone + Default + 'static>(
     count
         .checked_mul(source_element_size)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    let count =
-        usize::try_from(count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let count = usize::try_from(count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let values = if calloc_integer_zero_is_valid::<T>() {
         calloc_integer_storage(count)?
     } else {
@@ -105,8 +99,7 @@ pub(crate) fn inchi_realloc<T: Clone + Default + 'static>(
     // INCHI✔️❌: #endif
     // END INCHI ACTIVE MACRO: inchi_realloc
 
-    let count =
-        usize::try_from(count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let count = usize::try_from(count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let old = if pointer.is_null() {
         Vec::new()
     } else {
@@ -434,10 +427,7 @@ void remove_trailing_spaces( char* p )
     Ok(())
 }
 
-pub(crate) fn get_element_chemical_symbol(
-    mut atomic_number: i32,
-    element: &mut [i8],
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn get_element_chemical_symbol(mut atomic_number: i32, element: &mut [i8]) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:289 get_element_chemical_symbol
     // INCHI✔️❌: int get_element_chemical_symbol( int nAtNum, char *szElement )
     // INCHI✔️❌: {
@@ -478,9 +468,7 @@ pub(crate) fn get_element_chemical_symbol(
         .len()
         .checked_add(1)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    let destination = element
-        .get_mut(..required)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let destination = element.get_mut(..required).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for (target, source) in destination.iter_mut().zip(symbol.iter().copied()) {
         *target = source as i8;
     }
@@ -541,9 +529,7 @@ pub(crate) fn get_element_or_pseudoelement_symbol(
         .len()
         .checked_add(1)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    let destination = element
-        .get_mut(..required)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let destination = element.get_mut(..required).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for (target, source) in destination.iter_mut().zip(symbol.iter().copied()) {
         *target = source as i8;
     }
@@ -552,10 +538,7 @@ pub(crate) fn get_element_or_pseudoelement_symbol(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn remove_one_lf(
-    heap: &mut SourceHeap,
-    pointer: SourceMutPointer<i8>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn remove_one_lf(heap: &mut SourceHeap, pointer: SourceMutPointer<i8>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1740 remove_one_lf
     // INCHI✔️❌: complete source frame follows verbatim.
     /*
@@ -659,8 +642,7 @@ pub(crate) fn lrtrim(
     }
 
     if let Some(output_length) = output_length {
-        *output_length =
-            i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        *output_length = i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     }
     Ok(pointer)
 }
@@ -744,21 +726,16 @@ pub(crate) fn extract_inchi_substring(
     if nul == 0 {
         return Ok(());
     }
-    let Some(start) = bytes[..nul].windows(6).position(|window| {
-        window
-            == [
-                b'I' as i8, b'n' as i8, b'C' as i8, b'h' as i8, b'I' as i8, b'=' as i8,
-            ]
-    }) else {
+    let Some(start) = bytes[..nul]
+        .windows(6)
+        .position(|window| window == [b'I' as i8, b'n' as i8, b'C' as i8, b'h' as i8, b'I' as i8, b'=' as i8])
+    else {
         return Ok(());
     };
-    let limit = usize::try_from(string_length)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let limit = usize::try_from(string_length).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let mut length = 0_usize;
     while length < limit {
-        let byte = *bytes
-            .get(start + length)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+        let byte = *bytes.get(start + length).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
         if byte.is_ascii_alphanumeric()
             || matches!(
                 byte,
@@ -952,8 +929,8 @@ pub(crate) fn mystrncpy(
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         u32::try_from(source_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let maximum_length = usize::try_from(maximum_length)
-            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let maximum_length =
+            usize::try_from(maximum_length).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         let copied_length = if source_length < maximum_length {
             source_length
         } else if source_bytes[..maximum_length].iter().any(|byte| *byte == 0) {
@@ -990,8 +967,8 @@ pub(crate) fn mystrncpy_slice(
     if maximum_length == 0 {
         return Ok(0);
     }
-    let maximum_length = usize::try_from(maximum_length)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let maximum_length =
+        usize::try_from(maximum_length).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let source_length = source
         .iter()
         .position(|byte| *byte == 0)
@@ -1022,26 +999,23 @@ fn source_is_ascii_lower(value: i8) -> Result<bool, SourceHeapError> {
 // `INCHI_ZFRAG` rows are excluded; the terminal sentinel is not part of
 // `nElDataLen`.
 const EL_DATA_ATOMIC_MASSES: [i32; 122] = [
-    1, 2, 3, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48, 51,
-    52, 55, 56, 59, 59, 64, 65, 70, 73, 75, 79, 80, 84, 85, 88, 89, 91, 93, 96, 98, 101, 103, 106,
-    108, 112, 115, 119, 122, 128, 127, 131, 133, 137, 139, 140, 141, 144, 145, 150, 152, 157, 159,
-    163, 165, 167, 169, 173, 175, 178, 181, 184, 186, 190, 192, 195, 197, 201, 204, 207, 209, 209,
-    210, 222, 223, 226, 227, 232, 231, 238, 237, 244, 243, 247, 247, 251, 252, 257, 258, 259, 260,
-    261, 270, 269, 270, 270, 278, 281, 281, 285, 278, 289, 289, 293, 297, 294, 0, 0,
+    1, 2, 3, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48, 51, 52, 55, 56, 59, 59,
+    64, 65, 70, 73, 75, 79, 80, 84, 85, 88, 89, 91, 93, 96, 98, 101, 103, 106, 108, 112, 115, 119, 122, 128, 127, 131,
+    133, 137, 139, 140, 141, 144, 145, 150, 152, 157, 159, 163, 165, 167, 169, 173, 175, 178, 181, 184, 186, 190, 192,
+    195, 197, 201, 204, 207, 209, 209, 210, 222, 223, 226, 227, 232, 231, 238, 237, 244, 243, 247, 247, 251, 252, 257,
+    258, 259, 260, 261, 270, 269, 270, 270, 278, 281, 281, 285, 278, 289, 289, 293, 297, 294, 0, 0,
 ];
 
 // Configured `ElData[].nType & IS_METAL` projection from util.c:103-273.
 // The inactive `INCHI_ZFRAG` rows and terminal sentinel are excluded.
 const EL_DATA_IS_METAL: [bool; 122] = [
-    false, false, false, false, true, true, false, false, false, false, false, false, true, true,
-    true, false, false, false, false, false, true, true, true, true, true, true, true, true, true,
-    true, true, true, true, false, false, false, false, false, true, true, true, true, true, true,
-    true, true, true, true, true, true, true, true, true, false, false, false, true, true, true,
-    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-    true, true, true, true, true, true, true, true, true, true, true, false, false, true, true,
-    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-    true, true, true, true, true, true, true, true, true, true, true, true, true, true, false,
-    false,
+    false, false, false, false, true, true, false, false, false, false, false, false, true, true, true, false, false,
+    false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false,
+    false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true,
+    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, true, true, true, true, false, false,
 ];
 
 // Configured `ElData[].nType` projection from util.c:103-273. `METAL2` is
@@ -1056,8 +1030,8 @@ const EL_DATA_TYPES: [i32; 122] = {
         index += 1;
     }
     let metal2 = [
-        26_usize, 27, 28, 29, 51, 59, 60, 63, 64, 66, 69, 70, 75, 76, 77, 78, 79, 81, 82, 83, 85,
-        91, 92, 93, 94, 95, 96,
+        26_usize, 27, 28, 29, 51, 59, 60, 63, 64, 66, 69, 70, 75, 76, 77, 78, 79, 81, 82, 83, 85, 91, 92, 93, 94, 95,
+        96,
     ];
     index = 0;
     while index < metal2.len() {
@@ -1090,16 +1064,14 @@ const EL_DATA_SKIP_ADDING_H: [bool; 122] = {
 };
 
 const EL_DATA_SYMBOLS: [&[u8]; 122] = [
-    b"H", b"D", b"T", b"He", b"Li", b"Be", b"B", b"C", b"N", b"O", b"F", b"Ne", b"Na", b"Mg",
-    b"Al", b"Si", b"P", b"S", b"Cl", b"Ar", b"K", b"Ca", b"Sc", b"Ti", b"V", b"Cr", b"Mn", b"Fe",
-    b"Co", b"Ni", b"Cu", b"Zn", b"Ga", b"Ge", b"As", b"Se", b"Br", b"Kr", b"Rb", b"Sr", b"Y",
-    b"Zr", b"Nb", b"Mo", b"Tc", b"Ru", b"Rh", b"Pd", b"Ag", b"Cd", b"In", b"Sn", b"Sb", b"Te",
-    b"I", b"Xe", b"Cs", b"Ba", b"La", b"Ce", b"Pr", b"Nd", b"Pm", b"Sm", b"Eu", b"Gd", b"Tb",
-    b"Dy", b"Ho", b"Er", b"Tm", b"Yb", b"Lu", b"Hf", b"Ta", b"W", b"Re", b"Os", b"Ir", b"Pt",
-    b"Au", b"Hg", b"Tl", b"Pb", b"Bi", b"Po", b"At", b"Rn", b"Fr", b"Ra", b"Ac", b"Th", b"Pa",
-    b"U", b"Np", b"Pu", b"Am", b"Cm", b"Bk", b"Cf", b"Es", b"Fm", b"Md", b"No", b"Lr", b"Rf",
-    b"Db", b"Sg", b"Bh", b"Hs", b"Mt", b"Ds", b"Rg", b"Cn", b"Nh", b"Fl", b"Mc", b"Lv", b"Ts",
-    b"Og", b"Zy", b"Zz",
+    b"H", b"D", b"T", b"He", b"Li", b"Be", b"B", b"C", b"N", b"O", b"F", b"Ne", b"Na", b"Mg", b"Al", b"Si", b"P", b"S",
+    b"Cl", b"Ar", b"K", b"Ca", b"Sc", b"Ti", b"V", b"Cr", b"Mn", b"Fe", b"Co", b"Ni", b"Cu", b"Zn", b"Ga", b"Ge",
+    b"As", b"Se", b"Br", b"Kr", b"Rb", b"Sr", b"Y", b"Zr", b"Nb", b"Mo", b"Tc", b"Ru", b"Rh", b"Pd", b"Ag", b"Cd",
+    b"In", b"Sn", b"Sb", b"Te", b"I", b"Xe", b"Cs", b"Ba", b"La", b"Ce", b"Pr", b"Nd", b"Pm", b"Sm", b"Eu", b"Gd",
+    b"Tb", b"Dy", b"Ho", b"Er", b"Tm", b"Yb", b"Lu", b"Hf", b"Ta", b"W", b"Re", b"Os", b"Ir", b"Pt", b"Au", b"Hg",
+    b"Tl", b"Pb", b"Bi", b"Po", b"At", b"Rn", b"Fr", b"Ra", b"Ac", b"Th", b"Pa", b"U", b"Np", b"Pu", b"Am", b"Cm",
+    b"Bk", b"Cf", b"Es", b"Fm", b"Md", b"No", b"Lr", b"Rf", b"Db", b"Sg", b"Bh", b"Hs", b"Mt", b"Ds", b"Rg", b"Cn",
+    b"Nh", b"Fl", b"Mc", b"Lv", b"Ts", b"Og", b"Zy", b"Zz",
 ];
 
 // Configured `ElData[].cValence` projection from util.c:103-273. The inactive
@@ -1961,9 +1933,7 @@ const EL_DATA_VALENCES: [[[i8; 5]; 5]; 122] = [
     ], // Zz
 ];
 
-pub(crate) fn el_number_in_internal_ref_table(
-    element_name: Option<&[i8]>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn el_number_in_internal_ref_table(element_name: Option<&[i8]>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:347 el_number_in_internal_ref_table
     // INCHI✔❌: int el_number_in_internal_ref_table( const char* elname )
     // INCHI✔❌: {
@@ -1999,9 +1969,7 @@ pub(crate) fn el_number_in_internal_ref_table(
     Ok(ERR_ELEM)
 }
 
-pub(crate) fn get_periodic_table_number(
-    element_name: Option<&[i8]>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn get_periodic_table_number(element_name: Option<&[i8]>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:364 get_periodic_table_number
     // INCHI✔❌: int get_periodic_table_number( const char* elname )
     // INCHI✔❌: {
@@ -2106,11 +2074,7 @@ pub(crate) fn get_periodic_table_number(
 
     let mut number = el_number_in_internal_ref_table(Some(element_name))?;
     if number < ERR_ELEM {
-        number = 1.max(
-            number
-                .checked_sub(1)
-                .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-        );
+        number = 1.max(number.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?);
     }
     Ok(number)
 }
@@ -2135,8 +2099,7 @@ pub(crate) fn if_skip_add_H(periodic_number: i32) -> Result<i32, SourceHeapError
     } else {
         0
     };
-    let table_index =
-        usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let table_index = usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     EL_DATA_SKIP_ADDING_H
         .get(table_index)
         .copied()
@@ -2144,11 +2107,7 @@ pub(crate) fn if_skip_add_H(periodic_number: i32) -> Result<i32, SourceHeapError
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
-pub(crate) fn get_el_valence(
-    periodic_number: i32,
-    charge: i32,
-    valence_number: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn get_el_valence(periodic_number: i32, charge: i32, valence_number: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:439 get_el_valence
     // INCHI✔❌: int get_el_valence( int nPeriodicNum, int charge, int val_num )
     // INCHI✔❌: {
@@ -2162,17 +2121,12 @@ pub(crate) fn get_el_valence(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: get_el_valence
 
-    if charge < MIN_ATOM_CHARGE
-        || charge > MAX_ATOM_CHARGE as i32
-        || valence_number >= MAX_NUM_VALENCES as i32
-    {
+    if charge < MIN_ATOM_CHARGE || charge > MAX_ATOM_CHARGE as i32 || valence_number >= MAX_NUM_VALENCES as i32 {
         return Ok(0);
     }
     let charge_index = NEUTRAL_STATE as i32 + charge;
-    let charge_index =
-        usize::try_from(charge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let valence_number =
-        usize::try_from(valence_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let charge_index = usize::try_from(charge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let valence_number = usize::try_from(valence_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let table_index = if periodic_number > 1 {
         periodic_number
             .checked_add(1)
@@ -2180,8 +2134,7 @@ pub(crate) fn get_el_valence(
     } else {
         0
     };
-    let table_index =
-        usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let table_index = usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
 
     if table_index == EL_DATA_VALENCES.len() {
         return Ok(0);
@@ -2281,11 +2234,7 @@ pub(crate) fn get_unusual_el_valence(
         return Ok(0);
     }
     if charge < MIN_ATOM_CHARGE || charge > MAX_ATOM_CHARGE as i32 {
-        return Ok(if bonds_valence == bond_count {
-            0
-        } else {
-            bonds_valence
-        });
+        return Ok(if bonds_valence == bond_count { 0 } else { bonds_valence });
     }
     if get_el_valence(periodic_number, charge, 0)? == 0 && bonds_valence == bond_count {
         return Ok(0);
@@ -2465,10 +2414,7 @@ pub(crate) fn needed_unusual_el_valence(
         || bonds_valence != actual_bonds_valence
         || expected_hydrogen_count != hydrogen_count
     {
-        if hydrogen_count == 0
-            && expected_hydrogen_count == 0
-            && bonds_valence == actual_bonds_valence
-        {
+        if hydrogen_count == 0 && expected_hydrogen_count == 0 && bonds_valence == actual_bonds_valence {
             return Ok(0);
         }
         return Ok(chemical_valence);
@@ -2578,11 +2524,7 @@ pub(crate) fn detect_unusual_el_valence(
         return Ok(0);
     }
     if charge < MIN_ATOM_CHARGE || charge > MAX_ATOM_CHARGE as i32 {
-        return Ok(if bonds_valence == bond_count {
-            0
-        } else {
-            bonds_valence
-        });
+        return Ok(if bonds_valence == bond_count { 0 } else { bonds_valence });
     }
     if get_el_valence(periodic_number, charge, 0)? == 0 && bonds_valence == bond_count {
         return Ok(0);
@@ -2606,21 +2548,14 @@ pub(crate) fn detect_unusual_el_valence(
 
 fn source_strtol_base_10(bytes: &[i8], start: usize) -> Result<(i32, usize), SourceHeapError> {
     let mut cursor = start;
-    while bytes
-        .get(cursor)
-        .is_some_and(|byte| source_is_ascii_space(*byte))
-    {
-        cursor = cursor
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+    while bytes.get(cursor).is_some_and(|byte| source_is_ascii_space(*byte)) {
+        cursor = cursor.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
     }
     let mut negative = false;
     if let Some(sign) = bytes.get(cursor).map(|byte| *byte as u8) {
         if sign == b'+' || sign == b'-' {
             negative = sign == b'-';
-            cursor = cursor
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+            cursor = cursor.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
         }
     }
     let first_digit = cursor;
@@ -2630,18 +2565,12 @@ fn source_strtol_base_10(bytes: &[i8], start: usize) -> Result<(i32, usize), Sou
         i64::MAX as u128
     };
     let mut magnitude = 0_u128;
-    while let Some(digit) = bytes
-        .get(cursor)
-        .map(|byte| *byte as u8)
-        .filter(u8::is_ascii_digit)
-    {
+    while let Some(digit) = bytes.get(cursor).map(|byte| *byte as u8).filter(u8::is_ascii_digit) {
         magnitude = magnitude
             .saturating_mul(10)
             .saturating_add(u128::from(digit - b'0'))
             .min(limit);
-        cursor = cursor
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        cursor = cursor.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
     }
     if cursor == first_digit {
         return Ok((0, start));
@@ -2767,15 +2696,11 @@ pub(crate) fn extract_charges_and_radicals(
                     _ => break,
                 };
                 last_sign = sign;
-                value = value
-                    .checked_add(sign)
-                    .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                value = value.checked_add(sign).ok_or(SourceHeapError::SourceIntegerOverflow)?;
                 charge_length = charge_length
                     .checked_add(1)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                offset = offset
-                    .checked_add(1)
-                    .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+                offset = offset.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
             }
             let number_start = token
                 .checked_add(offset)
@@ -2783,18 +2708,13 @@ pub(crate) fn extract_charges_and_radicals(
             let (parsed, end) = source_strtol_base_10(&bytes[..length], number_start)?;
             if parsed != 0 {
                 let adjustment = last_sign
-                    .checked_mul(
-                        parsed
-                            .checked_sub(1)
-                            .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-                    )
+                    .checked_mul(parsed.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                 value = value
                     .checked_add(adjustment)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
-            charge_length =
-                i32::try_from(end - token).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            charge_length = i32::try_from(end - token).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             total_charge = total_charge
                 .checked_add(value)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -2802,8 +2722,7 @@ pub(crate) fn extract_charges_and_radicals(
             radical_count = 1;
             charge_length = 1;
             loop {
-                let run_length = usize::try_from(charge_length)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let run_length = usize::try_from(charge_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let next = token
                     .checked_add(run_length)
                     .ok_or(SourceHeapError::PointerOffsetOverflow)?;
@@ -2818,8 +2737,7 @@ pub(crate) fn extract_charges_and_radicals(
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
         }
-        let removed =
-            usize::try_from(charge_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let removed = usize::try_from(charge_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let source = token
             .checked_add(removed)
             .ok_or(SourceHeapError::PointerOffsetOverflow)?;
@@ -2833,10 +2751,7 @@ pub(crate) fn extract_charges_and_radicals(
     }
 
     if let Some(position) = bytes[..length].iter().rposition(|byte| *byte as u8 == b':')
-        && position
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?
-            == length
+        && position.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)? == length
     {
         radical_count = RADICAL_SINGLET as i32;
         bytes[position] = 0;
@@ -2973,9 +2888,7 @@ pub(crate) fn extract_h_atoms(
             b'T' => Some(2_usize),
             _ => None,
         };
-        let mut next = index
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        let mut next = index.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
         let next_character = *bytes.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
 
         if let Some(isotope_index) = isotope_index
@@ -2999,15 +2912,11 @@ pub(crate) fn extract_h_atoms(
                 isotope_hydrogens[isotope_index] = accumulated as S_CHAR;
             }
 
-            let consumed = next
-                .checked_sub(index)
-                .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+            let consumed = next.checked_sub(index).ok_or(SourceHeapError::PointerOffsetOverflow)?;
             length = length
                 .checked_sub(consumed)
                 .ok_or(SourceHeapError::PointerOffsetOverflow)?;
-            let copied_length = length
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+            let copied_length = length.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
             let source_end = next
                 .checked_add(copied_length)
                 .ok_or(SourceHeapError::PointerOffsetOverflow)?;
@@ -3019,13 +2928,9 @@ pub(crate) fn extract_h_atoms(
             }
             bytes.copy_within(next..source_end, index);
         } else {
-            index = index
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+            index = index.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
         }
-        current = *bytes
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        current = *bytes.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     }
 
     let final_length = bytes
@@ -3050,8 +2955,7 @@ pub(crate) fn is_el_a_metal(periodic_number: i32) -> Result<i32, SourceHeapError
     let table_index = periodic_number
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let table_index =
-        usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let table_index = usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if table_index == EL_DATA_IS_METAL.len() {
         return Ok(0);
     }
@@ -3079,8 +2983,7 @@ pub(crate) fn get_el_type(periodic_number: i32) -> Result<i32, SourceHeapError> 
     let table_index = periodic_number
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let table_index =
-        usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let table_index = usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if table_index == EL_DATA_TYPES.len() {
         return Ok(0);
     }
@@ -3259,8 +3162,7 @@ pub(crate) fn get_num_H(
     // cases accepted for caller-provided `element_name` below.
     let cached_element = |slot: &OnceLock<i32>, symbol: i8| {
         *slot.get_or_init(|| {
-            el_number_in_internal_ref_table(Some(&[symbol, 0]))
-                .expect("an ASCII element literal is valid source text")
+            el_number_in_internal_ref_table(Some(&[symbol, 0])).expect("an ASCII element literal is valid source text")
         })
     };
     let nitrogen = cached_element(&INTERNAL_ELEMENT_N, b'N' as i8);
@@ -3309,12 +3211,7 @@ pub(crate) fn get_num_H(
         }
         if element == nitrogen && charge == 0 && radical == 0 && valence == 5 {
             valence = 3;
-        } else if element == sulfur
-            && charge == 0
-            && radical == 0
-            && valence == 4
-            && chemical_bond_valence == 3
-        {
+        } else if element == sulfur && charge == 0 && radical == 0 && valence == 4 && chemical_bond_valence == 3 {
             valence = 3;
         } else if has_metal_neighbor != 0 && element != carbon && valence > 0 {
             valence -= 1;
@@ -3365,13 +3262,10 @@ pub(crate) fn num_of_H(atoms: &[inp_ATOM], iat: i32) -> Result<i32, SourceHeapEr
     // END INCHI ACTIVE MACRO CONFIGURATION: num_of_H
 
     let atom_index = usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut explicit_h = 0_i32;
     for index in 0..i32::from(atom.valence) {
-        let neighbor_index =
-            usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let neighbor_atom_index = usize::from(
             *atom
                 .neighbor
@@ -3471,10 +3365,7 @@ pub(crate) fn has_other_ion_neigh(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: has_other_ion_neigh
 
     let ion_neighbor = atoms
-        .get(
-            usize::try_from(ion_neighbor_number)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )
+        .get(usize::try_from(ion_neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let charge = ion_neighbor.charge;
     let atom = atoms
@@ -3488,10 +3379,7 @@ pub(crate) fn has_other_ion_neigh(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
         let neighbor = atoms
-            .get(
-                usize::try_from(neighbor_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )
+            .get(usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if neighbor_number != ion_neighbor_number
             && neighbor.charge == charge
@@ -3567,11 +3455,8 @@ pub(crate) fn has_other_ion_in_sphere_2(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: has_other_ion_in_sphere_2
 
     const MAXQ: usize = 16;
-    let center_index =
-        usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    atoms
-        .get(center_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let center_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    atoms.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
 
     let mut queue = [0_u16; MAXQ];
     let mut queue_length = 0_usize;
@@ -3599,16 +3484,9 @@ pub(crate) fn has_other_ion_in_sphere_2(
                         .and_then(|atom| atom.neighbor.get(usize::try_from(ordinal).ok()?))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let neighbor = atoms
-                    .get(neighbor_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if neighbor.cFlags == 0
-                    && neighbor.valence <= 3
-                    && ion_el_group(i32::from(neighbor.el_number)) != 0
-                {
-                    let queue_slot = queue
-                        .get_mut(queue_length)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let neighbor = atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if neighbor.cFlags == 0 && neighbor.valence <= 3 && ion_el_group(i32::from(neighbor.el_number)) != 0 {
+                    let queue_slot = queue.get_mut(queue_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     *queue_slot = neighbor_index as u16;
                     queue_length += 1;
                     atoms[neighbor_index].cFlags = 1;
@@ -3790,8 +3668,7 @@ pub(crate) fn is_in_the_list(
     if path_length == 0 {
         return Ok(None);
     }
-    let path_length =
-        usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let path_length = usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let path = path_atom.ok_or(SourceHeapError::NullPointer)?;
     for index in 0..path_length {
         let candidate = path.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3824,8 +3701,7 @@ pub(crate) fn is_in_the_ilist(
     if path_length == 0 {
         return Ok(None);
     }
-    let path_length =
-        usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let path_length = usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let path = path_atom.ok_or(SourceHeapError::NullPointer)?;
     for index in 0..path_length {
         let candidate = path.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3864,13 +3740,10 @@ pub(crate) fn is_ilist_inside(
     if list_length <= 0 {
         return Ok(1);
     }
-    let list_length =
-        usize::try_from(list_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let list_length = usize::try_from(list_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let integer_list = integer_list.ok_or(SourceHeapError::NullPointer)?;
     for index in 0..list_length {
-        let value = *integer_list
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let value = *integer_list.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if is_in_the_ilist(embedding_list, value, embedding_length)?.is_none() {
             return Ok(0);
         }
@@ -3878,10 +3751,7 @@ pub(crate) fn is_ilist_inside(
     Ok(1)
 }
 
-pub(crate) fn n_bonds_val_to_metal(
-    atoms: Option<&[inp_ATOM]>,
-    atom_index: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn n_bonds_val_to_metal(atoms: Option<&[inp_ATOM]>, atom_index: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1100 nBondsValToMetal
     // INCHI✔❌: int nBondsValToMetal( inp_ATOM* at, int iat )
     // INCHI✔❌: {
@@ -3912,29 +3782,18 @@ pub(crate) fn n_bonds_val_to_metal(
     // END INCHI C FUNCTION: nBondsValToMetal
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut valence_to_metal = 0_i32;
 
     for index in 0..i32::from(atom.valence) {
         let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let neighbor_index = *atom
-            .neighbor
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index = *atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let neighbor = atoms
             .get(usize::from(neighbor_index))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if is_el_a_metal(i32::from(neighbor.el_number))? != 0 {
-            let bond_type = i32::from(
-                *atom
-                    .bond_type
-                    .get(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+            let bond_type = i32::from(*atom.bond_type.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?);
             if bond_type <= BOND_TYPE_TRIPLE as i32 {
                 valence_to_metal = valence_to_metal
                     .checked_add(bond_type)
@@ -3948,10 +3807,7 @@ pub(crate) fn n_bonds_val_to_metal(
     Ok(valence_to_metal)
 }
 
-pub(crate) fn n_no_metal_num_bonds(
-    atoms: Option<&[inp_ATOM]>,
-    atom_index: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn n_no_metal_num_bonds(atoms: Option<&[inp_ATOM]>, atom_index: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1253 nNoMetalNumBonds
     // INCHI✔️✔️: int nNoMetalNumBonds( inp_ATOM *at, int at_no )
     // INCHI✔️✔️: {
@@ -4025,38 +3881,25 @@ pub(crate) fn n_no_metal_num_bonds(
     // END INCHI ACTIVE MACRO CONFIGURATION: nNoMetalNumBonds
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let num_h = i32::from(atom.num_H)
         + i32::from(atom.num_iso_H[0])
         + i32::from(atom.num_iso_H[1])
         + i32::from(atom.num_iso_H[2]);
-    let std_chem_bonds_valence =
-        get_el_valence(i32::from(atom.el_number), i32::from(atom.charge), 0)?;
+    let std_chem_bonds_valence = get_el_valence(i32::from(atom.el_number), i32::from(atom.charge), 0)?;
 
     if i32::from(atom.chem_bonds_valence) + num_h > std_chem_bonds_valence {
         let mut valence_to_metal = 0_i32;
         let mut num_bonds_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
-            let index =
-                usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let neighbor_index = *atom
-                .neighbor
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let neighbor_index = *atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor = atoms
                 .get(usize::from(neighbor_index))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if is_el_a_metal(i32::from(neighbor.el_number))? != 0 {
-                let bond_type = i32::from(
-                    *atom
-                        .bond_type
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
+                let bond_type = i32::from(*atom.bond_type.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?);
                 if (bond_type & BOND_TYPE_MASK as i32) >= BOND_TYPE_ALTERN as i32 {
                     return Ok(i32::from(atom.valence));
                 }
@@ -4074,22 +3917,13 @@ pub(crate) fn n_no_metal_num_bonds(
         let mut valence_to_metal = 0_i32;
         let mut num_bonds_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
-            let index =
-                usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let neighbor_index = *atom
-                .neighbor
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let neighbor_index = *atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor = atoms
                 .get(usize::from(neighbor_index))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if is_el_a_metal(i32::from(neighbor.el_number))? != 0 {
-                let bond_type = i32::from(
-                    *atom
-                        .bond_type
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
+                let bond_type = i32::from(*atom.bond_type.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?);
                 if (bond_type & BOND_TYPE_MASK as i32) >= BOND_TYPE_ALTERN as i32 {
                     return Ok(i32::from(atom.valence));
                 }
@@ -4105,10 +3939,7 @@ pub(crate) fn n_no_metal_num_bonds(
     Ok(i32::from(atom.valence))
 }
 
-pub(crate) fn n_no_metal_bonds_valence(
-    atoms: Option<&[inp_ATOM]>,
-    atom_index: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn n_no_metal_bonds_valence(atoms: Option<&[inp_ATOM]>, atom_index: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1320 nNoMetalBondsValence
     // INCHI✔️✔️: int nNoMetalBondsValence( inp_ATOM *at, int at_no )
     // INCHI✔️✔️: {
@@ -4181,38 +4012,25 @@ pub(crate) fn n_no_metal_bonds_valence(
     // END INCHI ACTIVE MACRO CONFIGURATION: nNoMetalBondsValence
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let num_h = i32::from(atom.num_H)
         + i32::from(atom.num_iso_H[0])
         + i32::from(atom.num_iso_H[1])
         + i32::from(atom.num_iso_H[2]);
     let atom_chem_valence = i32::from(atom.chem_bonds_valence);
-    let std_chem_bonds_valence =
-        get_el_valence(i32::from(atom.el_number), i32::from(atom.charge), 0)?;
+    let std_chem_bonds_valence = get_el_valence(i32::from(atom.el_number), i32::from(atom.charge), 0)?;
 
     if atom_chem_valence + num_h > std_chem_bonds_valence {
         let mut valence_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
-            let index =
-                usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let neighbor_index = *atom
-                .neighbor
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let neighbor_index = *atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor = atoms
                 .get(usize::from(neighbor_index))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if is_el_a_metal(i32::from(neighbor.el_number))? != 0 {
-                let bond_type = i32::from(
-                    *atom
-                        .bond_type
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
+                let bond_type = i32::from(*atom.bond_type.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?);
                 if (bond_type & BOND_TYPE_MASK as i32) >= BOND_TYPE_ALTERN as i32 {
                     return Ok(i32::from(atom.valence));
                 }
@@ -4228,22 +4046,13 @@ pub(crate) fn n_no_metal_bonds_valence(
     {
         let mut valence_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
-            let index =
-                usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let neighbor_index = *atom
-                .neighbor
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let neighbor_index = *atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor = atoms
                 .get(usize::from(neighbor_index))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if is_el_a_metal(i32::from(neighbor.el_number))? != 0 {
-                let bond_type = i32::from(
-                    *atom
-                        .bond_type
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
+                let bond_type = i32::from(*atom.bond_type.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?);
                 if (bond_type & BOND_TYPE_MASK as i32) >= BOND_TYPE_ALTERN as i32 {
                     return Ok(i32::from(atom.valence));
                 }
@@ -4258,10 +4067,7 @@ pub(crate) fn n_no_metal_bonds_valence(
     Ok(atom_chem_valence)
 }
 
-pub(crate) fn n_no_metal_neigh_index(
-    atoms: Option<&[inp_ATOM]>,
-    atom_index: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn n_no_metal_neigh_index(atoms: Option<&[inp_ATOM]>, atom_index: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1386 nNoMetalNeighIndex
     // INCHI✔️✔️: int nNoMetalNeighIndex( inp_ATOM *at, int at_no )
     // INCHI✔️✔️: {
@@ -4282,14 +4088,10 @@ pub(crate) fn n_no_metal_neigh_index(
     // END INCHI C FUNCTION: nNoMetalNeighIndex
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
-        let index_usize =
-            usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let index_usize = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neighbor_index = *atom
             .neighbor
             .get(index_usize)
@@ -4331,14 +4133,10 @@ pub(crate) fn n_no_metal_other_neigh_index(
     // END INCHI C FUNCTION: nNoMetalOtherNeighIndex
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
-        let index_usize =
-            usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let index_usize = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neigh = i32::from(
             *atom
                 .neighbor
@@ -4388,14 +4186,10 @@ pub(crate) fn n_no_metal_other_neigh_index2(
     // END INCHI C FUNCTION: nNoMetalOtherNeighIndex2
 
     let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom_index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
-        let index_usize =
-            usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let index_usize = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neigh = i32::from(
             *atom
                 .neighbor
@@ -4465,9 +4259,7 @@ pub(crate) fn inchi_memicmp(
         if left != right && lower(left) != lower(right) {
             return Ok(i32::from(lower(left)) - i32::from(lower(right)));
         }
-        index = index
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        index = index.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
     }
     Ok(0)
 }
@@ -4516,24 +4308,16 @@ pub(crate) fn inchi_stricmp(
     let second_bytes = heap.slice(second)?;
     let mut index = 0_usize;
     loop {
-        let left = *first_bytes
-            .get(index)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        let left = *first_bytes.get(index).ok_or(SourceHeapError::MissingNulTerminator)?;
         if left == 0 {
-            let right = *second_bytes
-                .get(index)
-                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            let right = *second_bytes.get(index).ok_or(SourceHeapError::MissingNulTerminator)?;
             return Ok(if right != 0 { -1 } else { 0 });
         }
-        let right = *second_bytes
-            .get(index)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        let right = *second_bytes.get(index).ok_or(SourceHeapError::MissingNulTerminator)?;
         if left != right && lower(left) != lower(right) {
             return Ok(lower(left) - lower(right));
         }
-        index = index
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        index = index.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
     }
 }
 
@@ -4570,8 +4354,7 @@ pub(crate) fn inchi__strdup(
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         source[..=length].to_vec()
     };
-    let byte_count = u64::try_from(copied.len())
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let byte_count = u64::try_from(copied.len()).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let duplicate = inchi_malloc(heap, byte_count)?;
     heap.slice_mut(duplicate)?.copy_from_slice(&copied);
     Ok(duplicate)
@@ -4637,10 +4420,7 @@ mod tests {
     #[test]
     fn source_port__util__dotify_non_printable_chars__line_1630() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            dotify_non_printable_chars(&mut heap, SourceMutPointer::null()),
-            Ok(0)
-        );
+        assert_eq!(dotify_non_printable_chars(&mut heap, SourceMutPointer::null()), Ok(0));
 
         let empty = heap.allocate(vec![0_i8, 7]).unwrap();
         assert_eq!(dotify_non_printable_chars(&mut heap, empty), Ok(0));
@@ -4667,15 +4447,13 @@ mod tests {
     #[test]
     fn source_port__util__get_element_or_pseudoelement_symbol__line_316() {
         let expected = [
-            "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
-            "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga",
-            "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh",
-            "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr",
-            "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta",
-            "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr",
-            "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md",
-            "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc",
-            "Lv", "Ts", "Og", "Zz", "Zz",
+            "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
+            "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb",
+            "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs",
+            "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta",
+            "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa",
+            "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt",
+            "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og", "Zz", "Zz",
         ];
         assert_eq!(expected.len(), 120);
         for (index, symbol) in expected.iter().enumerate() {
@@ -4692,11 +4470,7 @@ mod tests {
                 &bytes.iter().map(|byte| *byte as i8).collect::<Vec<_>>()
             );
             assert_eq!(output[bytes.len()], 0);
-            assert!(
-                output[bytes.len() + 1..]
-                    .iter()
-                    .all(|byte| *byte == b'X' as i8)
-            );
+            assert!(output[bytes.len() + 1..].iter().all(|byte| *byte == b'X' as i8));
         }
 
         for atomic_number in [i32::MIN, -100, -1, 0, 121, 122, i32::MAX] {
@@ -4722,36 +4496,16 @@ mod tests {
     fn source_port__util__inchi_memicmp__line_1971() {
         let mut heap = SourceHeap::default();
         assert_eq!(
-            inchi_memicmp(
-                &heap,
-                SourceConstPointer::null(),
-                SourceConstPointer::null(),
-                0,
-            ),
+            inchi_memicmp(&heap, SourceConstPointer::null(), SourceConstPointer::null(), 0,),
             Ok(0)
         );
-        let left = allocate_source_fixture(
-            &mut heap,
-            vec![b'A' as i8, b'z' as i8, 0x80_u8 as i8, b'Q' as i8],
-        );
-        let equal = allocate_source_fixture(
-            &mut heap,
-            vec![b'a' as i8, b'Z' as i8, 0x80_u8 as i8, b'q' as i8],
-        );
-        assert_eq!(
-            inchi_memicmp(&heap, left.as_const(), equal.as_const(), 4),
-            Ok(0)
-        );
+        let left = allocate_source_fixture(&mut heap, vec![b'A' as i8, b'z' as i8, 0x80_u8 as i8, b'Q' as i8]);
+        let equal = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'Z' as i8, 0x80_u8 as i8, b'q' as i8]);
+        assert_eq!(inchi_memicmp(&heap, left.as_const(), equal.as_const(), 4), Ok(0));
         let low = allocate_source_fixture(&mut heap, vec![b'a' as i8, 0]);
         let high = allocate_source_fixture(&mut heap, vec![0xff_u8 as i8, 0]);
-        assert_eq!(
-            inchi_memicmp(&heap, low.as_const(), high.as_const(), 1),
-            Ok(97 - 255)
-        );
-        assert_eq!(
-            inchi_memicmp(&heap, high.as_const(), low.as_const(), 1),
-            Ok(255 - 97)
-        );
+        assert_eq!(inchi_memicmp(&heap, low.as_const(), high.as_const(), 1), Ok(97 - 255));
+        assert_eq!(inchi_memicmp(&heap, high.as_const(), low.as_const(), 1), Ok(255 - 97));
         assert_eq!(
             inchi_memicmp(&heap, left.as_const(), equal.as_const(), 5),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -4769,22 +4523,13 @@ mod tests {
         let a = allocate_source_fixture(&mut heap, vec![b'A' as i8, 0]);
         let lower_a = allocate_source_fixture(&mut heap, vec![b'a' as i8, 0]);
         let ab = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'B' as i8, 0]);
-        assert_eq!(
-            inchi_stricmp(&heap, empty.as_const(), empty.as_const()),
-            Ok(0)
-        );
-        assert_eq!(
-            inchi_stricmp(&heap, a.as_const(), lower_a.as_const()),
-            Ok(0)
-        );
+        assert_eq!(inchi_stricmp(&heap, empty.as_const(), empty.as_const()), Ok(0));
+        assert_eq!(inchi_stricmp(&heap, a.as_const(), lower_a.as_const()), Ok(0));
         assert_eq!(inchi_stricmp(&heap, a.as_const(), ab.as_const()), Ok(-1));
         assert_eq!(inchi_stricmp(&heap, ab.as_const(), a.as_const()), Ok(98));
 
         let negative = allocate_source_fixture(&mut heap, vec![0xff_u8 as i8, 0]);
-        assert_eq!(
-            inchi_stricmp(&heap, negative.as_const(), a.as_const()),
-            Ok(-1 - 97)
-        );
+        assert_eq!(inchi_stricmp(&heap, negative.as_const(), a.as_const()), Ok(-1 - 97));
         assert_eq!(
             inchi_stricmp(&heap, SourceConstPointer::null(), a.as_const()),
             Err(SourceHeapError::NullPointer)
@@ -4812,10 +4557,7 @@ mod tests {
         assert_eq!(heap.source_allocation_calls(), 1);
         assert_eq!(heap.slice(empty_copy.as_const()).unwrap(), &[0]);
 
-        let source = allocate_source_fixture(
-            &mut heap,
-            vec![b'A' as i8, 0xff_u8 as i8, b'Z' as i8, 0, 88, 99],
-        );
+        let source = allocate_source_fixture(&mut heap, vec![b'A' as i8, 0xff_u8 as i8, b'Z' as i8, 0, 88, 99]);
         heap.trace_source_allocations();
         let duplicate = inchi__strdup(&mut heap, source.as_const()).unwrap();
         assert_eq!(heap.source_allocation_calls(), 1);
@@ -4858,10 +4600,7 @@ mod tests {
             is_in_the_list(Some(&path), 1, 5),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            is_in_the_list(None, 1, 1),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(is_in_the_list(None, 1, 1), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
@@ -4880,10 +4619,7 @@ mod tests {
             is_in_the_ilist(Some(&path), 1, 5),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            is_in_the_ilist(None, 1, 1),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(is_in_the_ilist(None, 1, 1), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
@@ -4915,10 +4651,7 @@ mod tests {
             is_ilist_inside(Some(&[7]), 1, Some(&embedding), -1),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
-        assert_eq!(
-            is_ilist_inside(Some(&[8, 7]), 2, Some(&embedding), 1),
-            Ok(0)
-        );
+        assert_eq!(is_ilist_inside(Some(&[8, 7]), 2, Some(&embedding), 1), Ok(0));
     }
 
     #[test]
@@ -4946,8 +4679,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -5007,11 +4739,7 @@ mod tests {
                 .map(|byte| byte as i8)
                 .collect::<Vec<_>>();
             assert_eq!(&output[..expected.len()], expected.as_slice());
-            assert!(
-                output[expected.len()..]
-                    .iter()
-                    .all(|byte| *byte == b'!' as i8)
-            );
+            assert!(output[expected.len()..].iter().all(|byte| *byte == b'!' as i8));
         }
 
         let mut short = [0_i8; 2];
@@ -5023,10 +4751,7 @@ mod tests {
 
     #[test]
     fn source_port__util__el_number_in_internal_ref_table__line_347() {
-        assert_eq!(
-            el_number_in_internal_ref_table(None),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(el_number_in_internal_ref_table(None), Err(SourceHeapError::NullPointer));
 
         // Fixed expected indices are emitted by the independent official C
         // oracle; they are not derived from EL_DATA_SYMBOLS.
@@ -5067,10 +4792,7 @@ mod tests {
             el_number_in_internal_ref_table(Some(&[b'C' as i8])),
             Err(SourceHeapError::MissingNulTerminator)
         );
-        assert_eq!(
-            el_number_in_internal_ref_table(Some(&[-1_i8, 0])),
-            Ok(ERR_ELEM)
-        );
+        assert_eq!(el_number_in_internal_ref_table(Some(&[-1_i8, 0])), Ok(ERR_ELEM));
     }
 
     #[test]
@@ -5176,10 +4898,7 @@ mod tests {
                 "missing symbol {missing}"
             );
         }
-        assert_eq!(
-            get_periodic_table_number(Some(&[b'C' as i8, 0, b'l' as i8, 0])),
-            Ok(6)
-        );
+        assert_eq!(get_periodic_table_number(Some(&[b'C' as i8, 0, b'l' as i8, 0])), Ok(6));
         assert_eq!(
             get_periodic_table_number(Some(&[b'C' as i8])),
             Err(SourceHeapError::MissingNulTerminator)
@@ -5225,9 +4944,7 @@ mod tests {
             assert_eq!(official["operation"], "get_periodic_table_number");
             assert_eq!(official["output"]["err_elem"], 255);
             let case_id = official["case_id"].as_str().expect("case_id must be text");
-            let is_null = official["input"]["is_null"]
-                .as_bool()
-                .expect("is_null must be bool");
+            let is_null = official["input"]["is_null"].as_bool().expect("is_null must be bool");
             let rust = if is_null {
                 get_periodic_table_number(None).unwrap()
             } else {
@@ -5237,8 +4954,7 @@ mod tests {
                     .iter()
                     .map(|value| value.as_u64().expect("symbol byte must be u8") as i8)
                     .collect::<Vec<_>>();
-                get_periodic_table_number(Some(&symbol))
-                    .unwrap_or_else(|error| panic!("{case_id}: {error:?}"))
+                get_periodic_table_number(Some(&symbol)).unwrap_or_else(|error| panic!("{case_id}: {error:?}"))
             };
             let expected = official["output"]["result"]
                 .as_i64()
@@ -5269,10 +4985,7 @@ mod tests {
             );
         }
         assert_eq!(if_skip_add_H(121), Err(SourceHeapError::PointerOutOfBounds));
-        assert_eq!(
-            if_skip_add_H(i32::MAX),
-            Err(SourceHeapError::SourceIntegerOverflow)
-        );
+        assert_eq!(if_skip_add_H(i32::MAX), Err(SourceHeapError::SourceIntegerOverflow));
         assert_eq!(if_skip_add_H(i32::MIN), Ok(0));
     }
 
@@ -5315,14 +5028,8 @@ mod tests {
         assert_eq!(get_el_valence(i32::MAX, 3, -1), Ok(0));
         assert_eq!(get_el_valence(6, 0, 5), Ok(0));
         assert_eq!(get_el_valence(6, 0, i32::MAX), Ok(0));
-        assert_eq!(
-            get_el_valence(6, 0, -1),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
-        assert_eq!(
-            get_el_valence(122, 0, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(get_el_valence(6, 0, -1), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(get_el_valence(122, 0, 0), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(
             get_el_valence(i32::MAX, 0, 0),
             Err(SourceHeapError::SourceIntegerOverflow)
@@ -5368,8 +5075,8 @@ mod tests {
             let periodic_number = input["periodic_number"].as_i64().unwrap() as i32;
             let charge = input["charge"].as_i64().unwrap() as i32;
             let slot = input["slot"].as_i64().unwrap() as i32;
-            let rust = get_el_valence(periodic_number, charge, slot)
-                .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
+            let rust =
+                get_el_valence(periodic_number, charge, slot).unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
             let expected = official["output"]["result"].as_i64().unwrap() as i32;
             assert_eq!(rust, expected, "{case_id}");
         }
@@ -5386,21 +5093,9 @@ mod tests {
             ("carbon-nonexact", (6, 0, 0, 2, 1, 2), 3),
             ("nitrogen-first-exact", (7, 0, 0, 1, 2, 1), 0),
             ("nitrogen-multiple-fit", (7, 0, 0, 1, 4, 1), 5),
-            (
-                "doublet-adjustment",
-                (6, 0, RADICAL_DOUBLET as i32, 2, 1, 2),
-                0,
-            ),
-            (
-                "triplet-adjustment",
-                (6, 0, RADICAL_TRIPLET as i32, 1, 1, 1),
-                0,
-            ),
-            (
-                "singlet-is-not-adjusted",
-                (6, 0, RADICAL_SINGLET as i32, 1, 1, 1),
-                2,
-            ),
+            ("doublet-adjustment", (6, 0, RADICAL_DOUBLET as i32, 2, 1, 2), 0),
+            ("triplet-adjustment", (6, 0, RADICAL_TRIPLET as i32, 1, 1, 1), 0),
+            ("singlet-is-not-adjusted", (6, 0, RADICAL_SINGLET as i32, 1, 1, 1), 2),
             ("unknown-radical-is-not-adjusted", (6, 0, 99, 1, 1, 1), 2),
             ("negative-chemical-valence", (6, 0, 0, -3, 1, 1), -2),
         ] {
@@ -5440,24 +5135,14 @@ mod tests {
             ("expected-h-mismatch", (6, 0, 0, 4, 4, 1, 1), 5),
             ("nitrogen-exact-first", (7, 0, 0, 2, 2, 1, 1), 0),
             ("sulfur-multiple-known", (16, 0, 0, 3, 3, 0, 1), 3),
-            (
-                "doublet-adjustment",
-                (6, 0, RADICAL_DOUBLET as i32, 3, 3, 0, 1),
-                0,
-            ),
-            (
-                "triplet-adjustment",
-                (6, 0, RADICAL_TRIPLET as i32, 2, 2, 0, 1),
-                0,
-            ),
+            ("doublet-adjustment", (6, 0, RADICAL_DOUBLET as i32, 3, 3, 0, 1), 0),
+            ("triplet-adjustment", (6, 0, RADICAL_TRIPLET as i32, 2, 2, 0, 1), 0),
             ("unknown-radical-zero", (6, 0, 99, 0, 0, 0, 1), -1),
             ("invalid-element-no-h", (121, 0, 0, 0, 0, 0, 1), 0),
         ] {
             let (periodic, charge, radical, bonds, actual, hydrogens, bond_count) = input;
             assert_eq!(
-                needed_unusual_el_valence(
-                    periodic, charge, radical, bonds, actual, hydrogens, bond_count,
-                ),
+                needed_unusual_el_valence(periodic, charge, radical, bonds, actual, hydrogens, bond_count,),
                 Ok(expected),
                 "{case}"
             );
@@ -5471,10 +5156,7 @@ mod tests {
 
     #[test]
     fn source_port__util__detect_unusual_el_valence__line_620() {
-        assert_eq!(
-            detect_unusual_el_valence(i32::MAX, 99, 99, i32::MAX, 0, 0),
-            Ok(0)
-        );
+        assert_eq!(detect_unusual_el_valence(i32::MAX, 99, 99, i32::MAX, 0, 0), Ok(0));
         assert_eq!(detect_unusual_el_valence(6, 3, 0, 2, 2, 2), Ok(0));
         assert_eq!(detect_unusual_el_valence(6, 3, 0, 2, 1, 1), Ok(2));
         assert_eq!(detect_unusual_el_valence(2, 0, 0, 2, 0, 2), Ok(0));
@@ -5535,8 +5217,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -5583,11 +5264,7 @@ mod tests {
             let mut charge = -92;
 
             assert_eq!(
-                extract_charges_and_radicals(
-                    Some(&mut bytes),
-                    Some(&mut radical),
-                    Some(&mut charge),
-                ),
+                extract_charges_and_radicals(Some(&mut bytes), Some(&mut radical), Some(&mut charge),),
                 Ok(expected_status),
                 "input {input:?}"
             );
@@ -5661,9 +5338,7 @@ mod tests {
         );
         assert_eq!(
             exact,
-            [
-                b'C' as i8, b'H' as i8, 0, b'3' as i8, 0, b'3' as i8, 0, 0x55, 0x66,
-            ]
+            [b'C' as i8, b'H' as i8, 0, b'3' as i8, 0, b'3' as i8, 0, 0x55, 0x66,]
         );
         assert_eq!((radical, charge), (0, -1));
 
@@ -5691,11 +5366,7 @@ mod tests {
 
         let mut unterminated = b"C+2".map(|byte| byte as i8);
         assert_eq!(
-            extract_charges_and_radicals(
-                Some(&mut unterminated),
-                Some(&mut radical),
-                Some(&mut charge),
-            ),
+            extract_charges_and_radicals(Some(&mut unterminated), Some(&mut radical), Some(&mut charge),),
             Err(SourceHeapError::MissingNulTerminator)
         );
         assert_eq!(unterminated, b"C+2".map(|byte| byte as i8));
@@ -5703,11 +5374,7 @@ mod tests {
 
         let mut local_overflow = b"X++2147483647\0".map(|byte| byte as i8);
         assert_eq!(
-            extract_charges_and_radicals(
-                Some(&mut local_overflow),
-                Some(&mut radical),
-                Some(&mut charge),
-            ),
+            extract_charges_and_radicals(Some(&mut local_overflow), Some(&mut radical), Some(&mut charge),),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
         assert_eq!(local_overflow, b"X++2147483647\0".map(|byte| byte as i8));
@@ -5715,28 +5382,17 @@ mod tests {
 
         let mut narrowed_overflow = b"X+-2147483648\0".map(|byte| byte as i8);
         assert_eq!(
-            extract_charges_and_radicals(
-                Some(&mut narrowed_overflow),
-                Some(&mut radical),
-                Some(&mut charge),
-            ),
+            extract_charges_and_radicals(Some(&mut narrowed_overflow), Some(&mut radical), Some(&mut charge),),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
         assert_eq!((radical, charge), (17, 19));
 
         let mut accumulated_overflow = b"X+2147483647Y+\0".map(|byte| byte as i8);
         assert_eq!(
-            extract_charges_and_radicals(
-                Some(&mut accumulated_overflow),
-                Some(&mut radical),
-                Some(&mut charge),
-            ),
+            extract_charges_and_radicals(Some(&mut accumulated_overflow), Some(&mut radical), Some(&mut charge),),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
-        assert_eq!(
-            &accumulated_overflow[..4],
-            &[b'X' as i8, b'Y' as i8, b'+' as i8, 0]
-        );
+        assert_eq!(&accumulated_overflow[..4], &[b'X' as i8, b'Y' as i8, b'+' as i8, 0]);
         assert_eq!((radical, charge), (17, 19));
     }
 
@@ -5765,16 +5421,13 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
             assert_eq!(official["operation"], "extract_charges_and_radicals");
             let case_id = official["case_id"].as_str().expect("case_id must be text");
-            let text = official["input"]["text"]
-                .as_str()
-                .expect("input text must be text");
+            let text = official["input"]["text"].as_str().expect("input text must be text");
             let mut buffer = vec![0x55_i8; 128];
             for (target, source) in buffer.iter_mut().zip(text.bytes()) {
                 *target = source as i8;
@@ -5782,28 +5435,12 @@ mod tests {
             buffer[text.len()] = 0;
             let mut radical = -1901;
             let mut charge = -1902;
-            let status = extract_charges_and_radicals(
-                Some(&mut buffer),
-                Some(&mut radical),
-                Some(&mut charge),
-            )
-            .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
+            let status = extract_charges_and_radicals(Some(&mut buffer), Some(&mut radical), Some(&mut charge))
+                .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
             let expected = &official["output"];
-            assert_eq!(
-                status,
-                expected["status"].as_i64().unwrap() as i32,
-                "{case_id}"
-            );
-            assert_eq!(
-                radical,
-                expected["radical"].as_i64().unwrap() as i32,
-                "{case_id}"
-            );
-            assert_eq!(
-                charge,
-                expected["charge"].as_i64().unwrap() as i32,
-                "{case_id}"
-            );
+            assert_eq!(status, expected["status"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(radical, expected["radical"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(charge, expected["charge"].as_i64().unwrap() as i32, "{case_id}");
             let nul_offset = buffer
                 .iter()
                 .position(|byte| *byte == 0)
@@ -5847,12 +5484,7 @@ mod tests {
             );
             let nul = bytes.iter().position(|byte| *byte == 0).unwrap();
             let actual_name: Vec<u8> = bytes[..nul].iter().map(|byte| *byte as u8).collect();
-            assert_eq!(
-                actual_name,
-                expected_name,
-                "input {:?}",
-                String::from_utf8_lossy(input)
-            );
+            assert_eq!(actual_name, expected_name, "input {:?}", String::from_utf8_lossy(input));
             assert_eq!(isotopes, expected_isotopes);
         }
 
@@ -5905,15 +5537,10 @@ mod tests {
 
         let mut exact = b"CH3X\0AB".map(|byte| byte as i8);
         let mut isotopes = [0; 3];
-        assert_eq!(
-            extract_h_atoms(Some(&mut exact), Some(&mut isotopes)),
-            Ok(3)
-        );
+        assert_eq!(extract_h_atoms(Some(&mut exact), Some(&mut isotopes)), Ok(3));
         assert_eq!(
             exact,
-            [
-                b'C' as i8, b'?' as i8, 0, b'A' as i8, 0, b'A' as i8, b'B' as i8
-            ]
+            [b'C' as i8, b'?' as i8, 0, b'A' as i8, 0, b'A' as i8, b'B' as i8]
         );
         assert_eq!(isotopes, [0, 0, 0]);
 
@@ -5964,8 +5591,7 @@ mod tests {
         assert_eq!(isotope_overflow, b"D2147483647\0".map(|byte| byte as i8));
         assert_eq!(maximum_isotope, [0, S_CHAR::MAX, 0]);
 
-        let mut count_overflow: Vec<i8> =
-            b"H2147483647H\0".iter().map(|byte| *byte as i8).collect();
+        let mut count_overflow: Vec<i8> = b"H2147483647H\0".iter().map(|byte| *byte as i8).collect();
         count_overflow.resize(count_overflow.len() + 16, 0x55);
         let mut zero_isotopes = [0; 3];
         assert_eq!(
@@ -6070,35 +5696,20 @@ mod tests {
             .unwrap()
         };
 
-        assert_eq!(
-            call(&unknown, i32::MIN, None, 99, 99, 99, 99, 1, 1, 1),
-            i32::MIN
-        );
+        assert_eq!(call(&unknown, i32::MIN, None, 99, 99, 99, 99, 1, 1, 1), i32::MIN);
         assert_eq!(call(&c, 0, None, 0, 0, 1, 4, 0, 0, 0), 3);
         assert_eq!(call(&c, 0, None, 0, 0, 5, 4, 0, 0, 0), 0);
         assert_eq!(call(&c, 7, None, 0, 0, 0, 15, 0, 0, 0), 0);
         assert_eq!(call(&c, 7, None, MIN_ATOM_CHARGE - 1, 0, 0, 0, 0, 0, 0), 7);
-        assert_eq!(
-            call(&c, 7, None, MAX_ATOM_CHARGE as i32 + 1, 0, 0, 0, 0, 0, 0,),
-            7
-        );
+        assert_eq!(call(&c, 7, None, MAX_ATOM_CHARGE as i32 + 1, 0, 0, 0, 0, 0, 0,), 7);
         assert_eq!(call(&unknown, 7, None, 0, 0, 0, 0, 0, 0, 0), 7);
         assert_eq!(call(&sc, 7, None, 0, 0, 0, 0, 0, 0, 0), 7);
         assert_eq!(call(&c, 7, None, 0, 0, 0, 0, 0, 1, 0), 7);
 
-        assert_eq!(
-            call(&c, 0, None, 0, RADICAL_DOUBLET as i32, 1, 0, 0, 0, 0),
-            2
-        );
-        assert_eq!(
-            call(&c, 0, None, 0, RADICAL_TRIPLET as i32, 1, 0, 0, 0, 0),
-            1
-        );
+        assert_eq!(call(&c, 0, None, 0, RADICAL_DOUBLET as i32, 1, 0, 0, 0, 0), 2);
+        assert_eq!(call(&c, 0, None, 0, RADICAL_TRIPLET as i32, 1, 0, 0, 0, 0), 1);
         assert_eq!(call(&c, 0, None, 0, 99, 1, 0, 0, 0, 0), 0);
-        assert_eq!(
-            call(&c, 0, None, 0, RADICAL_SINGLET as i32, 1, 0, 0, 0, 0),
-            3
-        );
+        assert_eq!(call(&c, 0, None, 0, RADICAL_SINGLET as i32, 1, 0, 0, 0, 0), 3);
 
         assert_eq!(call(&n, 0, None, 0, 0, 4, 0, 0, 0, 0), 0);
         assert_eq!(call(&s, 0, None, 0, 0, 3, 0, 0, 0, 0), 0);
@@ -6151,10 +5762,7 @@ mod tests {
         let atoms = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(num_of_H(atoms, 0), Ok(7));
         assert_eq!(num_of_H(atoms, 1), Ok(1));
-        assert_eq!(
-            num_of_H(atoms, -1),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(num_of_H(atoms, -1), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(num_of_H(atoms, 4), Err(SourceHeapError::PointerOutOfBounds));
 
         let mut negative_heap = SourceHeap::default();
@@ -6396,10 +6004,7 @@ mod tests {
         charge_one[0].bond_type[1] = BOND_DOUBLE as u8;
         assert_eq!(n_no_metal_num_bonds(Some(&charge_one), 0), Ok(1));
 
-        assert_eq!(
-            n_no_metal_num_bonds(None, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(n_no_metal_num_bonds(None, 0), Err(SourceHeapError::NullPointer));
         assert_eq!(
             n_no_metal_num_bonds(Some(&atoms), 3),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6445,10 +6050,7 @@ mod tests {
         no_metal[1].el_number = 6;
         assert_eq!(n_no_metal_bonds_valence(Some(&no_metal), 0), Ok(3));
 
-        assert_eq!(
-            n_no_metal_bonds_valence(None, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(n_no_metal_bonds_valence(None, 0), Err(SourceHeapError::NullPointer));
         assert_eq!(
             n_no_metal_bonds_valence(Some(&atoms), -1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6487,10 +6089,7 @@ mod tests {
         negative[0].valence = -1;
         assert_eq!(n_no_metal_neigh_index(Some(&negative), 0), Ok(-1));
 
-        assert_eq!(
-            n_no_metal_neigh_index(None, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(n_no_metal_neigh_index(None, 0), Err(SourceHeapError::NullPointer));
         assert_eq!(
             n_no_metal_neigh_index(Some(&atoms), -1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6528,10 +6127,7 @@ mod tests {
 
         let mut skipped_invalid = atoms.clone();
         skipped_invalid[0].neighbor[1] = 99;
-        assert_eq!(
-            n_no_metal_other_neigh_index(Some(&skipped_invalid), 0, 99),
-            Ok(-1)
-        );
+        assert_eq!(n_no_metal_other_neigh_index(Some(&skipped_invalid), 0, 99), Ok(-1));
         assert_eq!(
             n_no_metal_other_neigh_index(Some(&skipped_invalid), 0, -1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6576,10 +6172,7 @@ mod tests {
 
         let mut skipped_invalid = atoms.clone();
         skipped_invalid[0].neighbor[2] = 99;
-        assert_eq!(
-            n_no_metal_other_neigh_index2(Some(&skipped_invalid), 0, 1, 99),
-            Ok(3)
-        );
+        assert_eq!(n_no_metal_other_neigh_index2(Some(&skipped_invalid), 0, 1, 99), Ok(3));
         assert_eq!(
             n_no_metal_other_neigh_index2(Some(&skipped_invalid), 0, -1, -1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6587,10 +6180,7 @@ mod tests {
 
         let mut negative = atoms.clone();
         negative[0].valence = -1;
-        assert_eq!(
-            n_no_metal_other_neigh_index2(Some(&negative), 0, 1, 2),
-            Ok(-1)
-        );
+        assert_eq!(n_no_metal_other_neigh_index2(Some(&negative), 0, 1, 2), Ok(-1));
         assert_eq!(
             n_no_metal_other_neigh_index2(None, 0, 1, 2),
             Err(SourceHeapError::NullPointer)
@@ -6636,8 +6226,7 @@ mod tests {
             assert_eq!(official["operation"], "get_atomic_mass_from_elnum");
             let case_id = official["case_id"].as_str().expect("case_id must be text");
             let atomic_number = official["input"]["atomic_number"].as_i64().unwrap() as i32;
-            let rust = get_atomic_mass_from_elnum(atomic_number)
-                .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
+            let rust = get_atomic_mass_from_elnum(atomic_number).unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
             let expected = official["output"]["result"].as_i64().unwrap() as i32;
             assert_eq!(rust, expected, "{case_id}");
         }
@@ -6668,16 +6257,13 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
             assert_eq!(official["operation"], "extract_H_atoms");
             let case_id = official["case_id"].as_str().expect("case_id must be text");
-            let text = official["input"]["text"]
-                .as_str()
-                .expect("input text must be text");
+            let text = official["input"]["text"].as_str().expect("input text must be text");
             let mut buffer = vec![0x55_i8; 128];
             for (target, source) in buffer.iter_mut().zip(text.bytes()) {
                 *target = source as i8;
@@ -6741,21 +6327,14 @@ mod tests {
 
         assert_eq!(is_el_a_metal(-2), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(is_el_a_metal(121), Ok(0));
-        assert_eq!(
-            is_el_a_metal(i32::MIN),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
-        assert_eq!(
-            is_el_a_metal(i32::MAX),
-            Err(SourceHeapError::SourceIntegerOverflow)
-        );
+        assert_eq!(is_el_a_metal(i32::MIN), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(is_el_a_metal(i32::MAX), Err(SourceHeapError::SourceIntegerOverflow));
     }
 
     #[test]
     fn source_port__util__get_el_type__line_679() {
         const METAL2_PERIODIC_NUMBERS: [i32; 27] = [
-            25, 26, 27, 28, 50, 58, 59, 62, 63, 65, 68, 69, 74, 75, 76, 77, 78, 80, 81, 82, 84, 90,
-            91, 92, 93, 94, 95,
+            25, 26, 27, 28, 50, 58, 59, 62, 63, 65, 68, 69, 74, 75, 76, 77, 78, 80, 81, 82, 84, 90, 91, 92, 93, 94, 95,
         ];
         for periodic_number in -1..=120 {
             let expected = if METAL2_PERIODIC_NUMBERS.contains(&periodic_number) {
@@ -6776,14 +6355,8 @@ mod tests {
         }
         assert_eq!(get_el_type(-2), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(get_el_type(121), Ok(0));
-        assert_eq!(
-            get_el_type(i32::MIN),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
-        assert_eq!(
-            get_el_type(i32::MAX),
-            Err(SourceHeapError::SourceIntegerOverflow)
-        );
+        assert_eq!(get_el_type(i32::MIN), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(get_el_type(i32::MAX), Err(SourceHeapError::SourceIntegerOverflow));
     }
 
     #[test]
@@ -6821,8 +6394,7 @@ mod tests {
             assert_eq!(official["operation"], "is_el_a_metal");
             let case_id = official["case_id"].as_str().expect("case_id must be text");
             let periodic_number = official["input"]["periodic_number"].as_i64().unwrap() as i32;
-            let rust = is_el_a_metal(periodic_number)
-                .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
+            let rust = is_el_a_metal(periodic_number).unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
             let expected = official["output"]["result"].as_i64().unwrap() as i32;
             assert_eq!(rust, expected, "{case_id}");
         }
@@ -6830,10 +6402,7 @@ mod tests {
 
     #[test]
     fn source_port__util__nbondsvaltometal__line_1100() {
-        assert_eq!(
-            n_bonds_val_to_metal(None, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(n_bonds_val_to_metal(None, 0), Err(SourceHeapError::NullPointer));
         assert_eq!(
             n_bonds_val_to_metal(Some(&[]), 0),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6864,20 +6433,14 @@ mod tests {
         all_orders.valence = 4;
         all_orders.neighbor[..4].copy_from_slice(&[1, 1, 1, 1]);
         all_orders.bond_type[..4].copy_from_slice(&[0, 1, 2, 3]);
-        assert_eq!(
-            n_bonds_val_to_metal(Some(&[all_orders, atoms[1].clone()]), 0),
-            Ok(6)
-        );
+        assert_eq!(n_bonds_val_to_metal(Some(&[all_orders, atoms[1].clone()]), 0), Ok(6));
 
         for undefined_order in [4_u8, u8::MAX] {
             let mut undefined = inp_ATOM::default();
             undefined.valence = 1;
             undefined.neighbor[0] = 1;
             undefined.bond_type[0] = undefined_order;
-            assert_eq!(
-                n_bonds_val_to_metal(Some(&[undefined, atoms[3].clone()]), 0),
-                Ok(-1)
-            );
+            assert_eq!(n_bonds_val_to_metal(Some(&[undefined, atoms[3].clone()]), 0), Ok(-1));
         }
 
         let mut ignored_undefined = inp_ATOM::default();
@@ -6902,10 +6465,7 @@ mod tests {
         invalid_element.neighbor[0] = 1;
         let mut element_121 = inp_ATOM::default();
         element_121.el_number = 121;
-        assert_eq!(
-            n_bonds_val_to_metal(Some(&[invalid_element, element_121]), 0),
-            Ok(0)
-        );
+        assert_eq!(n_bonds_val_to_metal(Some(&[invalid_element, element_121]), 0), Ok(0));
 
         let mut excessive_valence = inp_ATOM::default();
         excessive_valence.valence = 21;
@@ -6952,8 +6512,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -6974,8 +6533,7 @@ mod tests {
                 atoms[0].bond_type[index] = bond_types[index].as_u64().unwrap() as u8;
                 atoms[index + 1].el_number = elements[index].as_u64().unwrap() as u8;
             }
-            let rust = n_bonds_val_to_metal(Some(&atoms), 0)
-                .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
+            let rust = n_bonds_val_to_metal(Some(&atoms), 0).unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
             let expected = official["output"]["result"].as_i64().unwrap() as i32;
             assert_eq!(rust, expected, "{case_id}");
             record_count += 1;
@@ -7009,37 +6567,25 @@ mod tests {
             &[b'a' as i8, b'\n' as i8, b'\n' as i8, 0, 91],
             &[b'a' as i8, b'\n' as i8, 0, 0, 91],
         );
-        run_case(
-            &[b'a' as i8, b'\r' as i8, 0, 91],
-            &[b'a' as i8, b'\r' as i8, 0, 91],
-        );
+        run_case(&[b'a' as i8, b'\r' as i8, 0, 91], &[b'a' as i8, b'\r' as i8, 0, 91]);
 
         let unterminated = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'\n' as i8]);
         assert_eq!(
             remove_one_lf(&mut heap, unterminated),
             Err(SourceHeapError::MissingNulTerminator)
         );
-        assert_eq!(
-            heap.slice(unterminated.as_const()).unwrap(),
-            &[b'a' as i8, b'\n' as i8]
-        );
+        assert_eq!(heap.slice(unterminated.as_const()).unwrap(), &[b'a' as i8, b'\n' as i8]);
     }
 
     #[test]
     fn source_port__util__mystrncpy__line_1760() {
         let mut heap = SourceHeap::default();
         assert_eq!(
-            mystrncpy(
-                &mut heap,
-                SourceMutPointer::null(),
-                SourceConstPointer::null(),
-                5
-            ),
+            mystrncpy(&mut heap, SourceMutPointer::null(), SourceConstPointer::null(), 5),
             Ok(0)
         );
 
-        let source =
-            allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, b'c' as i8, 0]);
+        let source = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, b'c' as i8, 0]);
         let target = allocate_source_fixture(&mut heap, vec![99_i8; 6]);
         assert_eq!(mystrncpy(&mut heap, target, source.as_const(), 6), Ok(1));
         assert_eq!(
@@ -7049,14 +6595,7 @@ mod tests {
         assert_eq!(inchi_free(&mut heap, source), Ok(()));
         assert_eq!(inchi_free(&mut heap, target), Ok(()));
 
-        let source = allocate_source_fixture(
-            &mut heap,
-            b"abcdef"
-                .iter()
-                .map(|byte| *byte as i8)
-                .chain([0])
-                .collect(),
-        );
+        let source = allocate_source_fixture(&mut heap, b"abcdef".iter().map(|byte| *byte as i8).chain([0]).collect());
         let target = allocate_source_fixture(&mut heap, vec![99_i8; 4]);
         assert_eq!(mystrncpy(&mut heap, target, source.as_const(), 4), Ok(1));
         assert_eq!(
@@ -7068,11 +6607,7 @@ mod tests {
 
         let overlap = allocate_source_fixture(
             &mut heap,
-            b"abcdef"
-                .iter()
-                .map(|byte| *byte as i8)
-                .chain([0, 99, 99])
-                .collect(),
+            b"abcdef".iter().map(|byte| *byte as i8).chain([0, 99, 99]).collect(),
         );
         assert_eq!(
             mystrncpy(&mut heap, overlap.offset(2).unwrap(), overlap.as_const(), 5),
@@ -7127,10 +6662,7 @@ mod tests {
         let extracted = heap.slice(output.as_const()).unwrap();
         let length = extracted.iter().position(|byte| *byte == 0).unwrap();
         assert_eq!(
-            extracted[..length]
-                .iter()
-                .map(|byte| *byte as u8)
-                .collect::<Vec<_>>(),
+            extracted[..length].iter().map(|byte| *byte as u8).collect::<Vec<_>>(),
             b"InChI=1S/C2H6/c1-2/h1-2H3?@(),*+.;="
         );
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[b'o' as i8, 0]);
@@ -7175,10 +6707,7 @@ mod tests {
 
     #[test]
     fn source_port__util__extract_auxinfo_substring__line_1921() {
-        fn allocated(
-            heap: &mut SourceHeap,
-            bytes: impl IntoIterator<Item = i8>,
-        ) -> SourceMutPointer<i8> {
+        fn allocated(heap: &mut SourceHeap, bytes: impl IntoIterator<Item = i8>) -> SourceMutPointer<i8> {
             allocate_source_fixture(heap, bytes.into_iter().collect())
         }
 
@@ -7200,19 +6729,13 @@ mod tests {
             );
             assert_eq!(
                 heap.slice(output.as_const()).unwrap(),
-                b"AuxInfo=1/0/N:1\0"
-                    .iter()
-                    .map(|byte| *byte as i8)
-                    .collect::<Vec<_>>()
+                b"AuxInfo=1/0/N:1\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
             );
             assert_eq!(heap.slice(old.as_const()).unwrap(), &[b'o' as i8, 0]);
         }
 
         let mut heap = SourceHeap::default();
-        let input = allocated(
-            &mut heap,
-            b"xxAuxInfo=1/1/N:1\xA0Z \0".iter().map(|byte| *byte as i8),
-        );
+        let input = allocated(&mut heap, b"xxAuxInfo=1/1/N:1\xA0Z \0".iter().map(|byte| *byte as i8));
         let mut truncated = SourceMutPointer::null();
         assert_eq!(
             extract_auxinfo_substring(&mut heap, &mut truncated, input.as_const(), 4),
@@ -7250,16 +6773,10 @@ mod tests {
         );
         assert_eq!(
             heap.slice(through_nul.as_const()).unwrap(),
-            b"AuxInfo=A\0Q\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect::<Vec<_>>()
+            b"AuxInfo=A\0Q\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
         );
 
-        let old = allocated(
-            &mut heap,
-            [b'l' as i8, b'e' as i8, b'a' as i8, b'k' as i8, 0],
-        );
+        let old = allocated(&mut heap, [b'l' as i8, b'e' as i8, b'a' as i8, b'k' as i8, 0]);
         let empty = allocated(&mut heap, [0]);
         let mut output = old;
         assert_eq!(
@@ -7343,24 +6860,16 @@ mod tests {
         );
         assert_eq!(inchi_free(&mut heap, text), Ok(()));
 
-        let all_space =
-            allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0]);
+        let all_space = allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0]);
         let mut length = -1;
-        assert_eq!(
-            lrtrim(&mut heap, all_space, Some(&mut length)),
-            Ok(all_space)
-        );
+        assert_eq!(lrtrim(&mut heap, all_space, Some(&mut length)), Ok(all_space));
         assert_eq!(length, 0);
         assert_eq!(heap.slice(all_space.as_const()).unwrap()[0], 0);
         assert_eq!(inchi_free(&mut heap, all_space), Ok(()));
 
-        let non_ascii =
-            allocate_source_fixture(&mut heap, vec![b' ' as i8, 0xa0_u8 as i8, b' ' as i8, 0]);
+        let non_ascii = allocate_source_fixture(&mut heap, vec![b' ' as i8, 0xa0_u8 as i8, b' ' as i8, 0]);
         assert_eq!(lrtrim(&mut heap, non_ascii, None), Ok(non_ascii));
-        assert_eq!(
-            &heap.slice(non_ascii.as_const()).unwrap()[..2],
-            &[0xa0_u8 as i8, 0]
-        );
+        assert_eq!(&heap.slice(non_ascii.as_const()).unwrap()[..2], &[0xa0_u8 as i8, 0]);
         assert_eq!(inchi_free(&mut heap, non_ascii), Ok(()));
 
         let unterminated = allocate_source_fixture(&mut heap, vec![b'x' as i8]);
@@ -7413,23 +6922,12 @@ mod tests {
 
         let all_space = allocate_source_fixture(
             &mut heap,
-            vec![
-                b'\t' as i8,
-                b'\n' as i8,
-                0x0b,
-                0x0c,
-                b'\r' as i8,
-                b' ' as i8,
-                0,
-                77,
-            ],
+            vec![b'\t' as i8, b'\n' as i8, 0x0b, 0x0c, b'\r' as i8, b' ' as i8, 0, 77],
         );
         assert_eq!(normalize_string(&mut heap, all_space), Ok(0));
         assert_eq!(
             heap.slice(all_space.as_const()).unwrap(),
-            &[
-                0, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, 0, 77
-            ]
+            &[0, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, 0, 77]
         );
 
         let empty = allocate_source_fixture(&mut heap, vec![0_i8, 91]);
@@ -7438,14 +6936,7 @@ mod tests {
 
         let non_ascii = allocate_source_fixture(
             &mut heap,
-            vec![
-                b' ' as i8,
-                0xa0_u8 as i8,
-                b' ' as i8,
-                b'C' as i8,
-                b' ' as i8,
-                0,
-            ],
+            vec![b' ' as i8, 0xa0_u8 as i8, b' ' as i8, b'C' as i8, b' ' as i8, 0],
         );
         assert_eq!(normalize_string(&mut heap, non_ascii), Ok(3));
         assert_eq!(
@@ -7453,16 +6944,10 @@ mod tests {
             &[0xa0_u8 as i8, b' ' as i8, b'C' as i8, 0]
         );
 
-        let interior = allocate_source_fixture(
-            &mut heap,
-            vec![99_i8, b' ' as i8, b'D' as i8, b' ' as i8, 0, 88],
-        );
+        let interior = allocate_source_fixture(&mut heap, vec![99_i8, b' ' as i8, b'D' as i8, b' ' as i8, 0, 88]);
         let interior_start = interior.offset(1).unwrap();
         assert_eq!(normalize_string(&mut heap, interior_start), Ok(1));
-        assert_eq!(
-            heap.slice(interior.as_const()).unwrap(),
-            &[99, b'D' as i8, 0, 0, 0, 88]
-        );
+        assert_eq!(heap.slice(interior.as_const()).unwrap(), &[99, b'D' as i8, 0, 0, 0, 88]);
 
         assert_eq!(
             normalize_string(&mut heap, SourceMutPointer::null()),
@@ -7473,23 +6958,12 @@ mod tests {
             normalize_string(&mut heap, unterminated),
             Err(SourceHeapError::MissingNulTerminator)
         );
-        assert_eq!(
-            heap.slice(unterminated.as_const()).unwrap(),
-            &[b' ' as i8, b'Q' as i8]
-        );
+        assert_eq!(heap.slice(unterminated.as_const()).unwrap(), &[b' ' as i8, b'Q' as i8]);
     }
 
     #[test]
     fn source_port__util__is_matching_any_delim__line_1710() {
-        let whitespace = [
-            b' ' as i8,
-            b'\t' as i8,
-            b'\n' as i8,
-            0x0b,
-            0x0c,
-            b'\r' as i8,
-            0,
-        ];
+        let whitespace = [b' ' as i8, b'\t' as i8, b'\n' as i8, 0x0b, 0x0c, b'\r' as i8, 0];
         for character in &whitespace[..6] {
             assert_eq!(is_matching_any_delim(*character, Some(&whitespace)), Ok(1));
         }
@@ -7499,10 +6973,7 @@ mod tests {
             is_matching_any_delim(b',' as i8, Some(&[b';' as i8, b',' as i8, b',' as i8, 0])),
             Ok(1)
         );
-        assert_eq!(
-            is_matching_any_delim(0xff_u8 as i8, Some(&[0xff_u8 as i8, 0])),
-            Ok(0)
-        );
+        assert_eq!(is_matching_any_delim(0xff_u8 as i8, Some(&[0xff_u8 as i8, 0])), Ok(0));
         assert_eq!(
             is_matching_any_delim(b'A' as i8, None),
             Err(SourceHeapError::NullPointer)
@@ -7511,20 +6982,14 @@ mod tests {
             is_matching_any_delim(b'A' as i8, Some(&[b'B' as i8, b'C' as i8])),
             Err(SourceHeapError::MissingNulTerminator)
         );
-        assert_eq!(
-            is_matching_any_delim(b'A' as i8, Some(&[b'A' as i8])),
-            Ok(1)
-        );
+        assert_eq!(is_matching_any_delim(b'A' as i8, Some(&[b'A' as i8])), Ok(1));
     }
 
     #[test]
     fn source_port__util__read_upto_delim__line_1658() {
         let mut heap = SourceHeap::default();
         let delimiters = [b',' as i8, b';' as i8, 0];
-        let input = allocate_source_fixture(
-            &mut heap,
-            b" \talpha,beta\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let input = allocate_source_fixture(&mut heap, b" \talpha,beta\0".iter().map(|byte| *byte as i8).collect());
         let field = allocate_source_fixture(&mut heap, vec![0x55_i8; 16]);
         let mut cursor = input;
         assert_eq!(
@@ -7534,9 +6999,7 @@ mod tests {
         assert_eq!(cursor, input.offset(7).unwrap());
         assert_eq!(
             &heap.slice(field.as_const()).unwrap()[..8],
-            &[
-                b'a' as i8, b'l' as i8, b'p' as i8, b'h' as i8, b'a' as i8, 0, 0, 0x55
-            ]
+            &[b'a' as i8, b'l' as i8, b'p' as i8, b'h' as i8, b'a' as i8, 0, 0, 0x55]
         );
 
         heap.slice_mut(field).unwrap().fill(0x44);
@@ -7559,10 +7022,7 @@ mod tests {
             &[b'b' as i8, b'e' as i8, b't' as i8, b'a' as i8, 0, 0, 0x33]
         );
 
-        let too_long = allocate_source_fixture(
-            &mut heap,
-            b"  abc,\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let too_long = allocate_source_fixture(&mut heap, b"  abc,\0".iter().map(|byte| *byte as i8).collect());
         cursor = too_long;
         heap.slice_mut(field).unwrap().fill(0x22);
         assert_eq!(
@@ -7570,25 +7030,16 @@ mod tests {
             Ok(-1)
         );
         assert_eq!(cursor, too_long);
-        assert!(
-            heap.slice(field.as_const())
-                .unwrap()
-                .iter()
-                .all(|byte| *byte == 0x22)
-        );
+        assert!(heap.slice(field.as_const()).unwrap().iter().all(|byte| *byte == 0x22));
         assert_eq!(
             read_upto_delim(&mut heap, &mut cursor, field, -1, Some(&delimiters)),
             Ok(-1)
         );
         assert_eq!(cursor, too_long);
 
-        let spaces =
-            allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0]);
+        let spaces = allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0]);
         cursor = spaces;
-        assert_eq!(
-            read_upto_delim(&mut heap, &mut cursor, field, 1, None),
-            Ok(0)
-        );
+        assert_eq!(read_upto_delim(&mut heap, &mut cursor, field, 1, None), Ok(0));
         assert!(cursor.is_null());
 
         cursor = input.offset(2).unwrap();
@@ -7606,13 +7057,7 @@ mod tests {
         let empty = allocate_source_fixture(&mut heap, vec![0_i8]);
         cursor = empty;
         assert_eq!(
-            read_upto_delim(
-                &mut heap,
-                &mut cursor,
-                SourceMutPointer::null(),
-                1,
-                Some(&delimiters)
-            ),
+            read_upto_delim(&mut heap, &mut cursor, SourceMutPointer::null(), 1, Some(&delimiters)),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(cursor, empty);
@@ -7654,15 +7099,13 @@ mod tests {
                 77,
             ]
         );
-        let all_space =
-            allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0, 88]);
+        let all_space = allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0, 88]);
         assert_eq!(remove_trailing_spaces(&mut heap, all_space), Ok(()));
         assert_eq!(
             heap.slice(all_space.as_const()).unwrap(),
             &[0, b'\t' as i8, b'\n' as i8, 0, 88]
         );
-        let non_ascii =
-            allocate_source_fixture(&mut heap, vec![b'X' as i8, 0xa0_u8 as i8, b' ' as i8, 0]);
+        let non_ascii = allocate_source_fixture(&mut heap, vec![b'X' as i8, 0xa0_u8 as i8, b' ' as i8, 0]);
         assert_eq!(remove_trailing_spaces(&mut heap, non_ascii), Ok(()));
         assert_eq!(
             heap.slice(non_ascii.as_const()).unwrap(),
@@ -7680,10 +7123,7 @@ mod tests {
             remove_trailing_spaces(&mut heap, unterminated),
             Err(SourceHeapError::MissingNulTerminator)
         );
-        assert_eq!(
-            heap.slice(unterminated.as_const()).unwrap(),
-            &[b'X' as i8, b' ' as i8]
-        );
+        assert_eq!(heap.slice(unterminated.as_const()).unwrap(), &[b'X' as i8, b' ' as i8]);
     }
 
     #[test]
@@ -7700,21 +7140,11 @@ mod tests {
         let mut heap = SourceHeap::default();
 
         let signed_bytes = inchi_calloc::<i8>(&mut heap, 5, 1).unwrap();
-        assert_source_slice_eq(
-            "zeroed-i8-allocation",
-            &heap,
-            signed_bytes.as_const(),
-            &[0; 5],
-        );
+        assert_source_slice_eq("zeroed-i8-allocation", &heap, signed_bytes.as_const(), &[0; 5]);
         assert_eq!(inchi_free(&mut heap, signed_bytes), Ok(()));
 
         let atom_numbers = inchi_calloc::<u16>(&mut heap, 3, 2).unwrap();
-        assert_source_slice_eq(
-            "zeroed-u16-allocation",
-            &heap,
-            atom_numbers.as_const(),
-            &[0; 3],
-        );
+        assert_source_slice_eq("zeroed-u16-allocation", &heap, atom_numbers.as_const(), &[0; 3]);
         assert_eq!(inchi_free(&mut heap, atom_numbers), Ok(()));
 
         let integers = inchi_calloc::<i32>(&mut heap, 4, 4).unwrap();
@@ -7725,12 +7155,8 @@ mod tests {
         assert_source_slice_eq("zeroed-u64-allocation", &heap, wide.as_const(), &[0; 2]);
         assert_eq!(inchi_free(&mut heap, wide), Ok(()));
 
-        let aggregate_fallback = inchi_calloc::<NonZeroDefault>(
-            &mut heap,
-            3,
-            std::mem::size_of::<NonZeroDefault>() as u64,
-        )
-        .unwrap();
+        let aggregate_fallback =
+            inchi_calloc::<NonZeroDefault>(&mut heap, 3, std::mem::size_of::<NonZeroDefault>() as u64).unwrap();
         assert_source_slice_eq(
             "aggregate-default-allocation",
             &heap,
@@ -7748,10 +7174,7 @@ mod tests {
     #[test]
     fn source_port__util__inchi_free__line_1570() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            inchi_free(&mut heap, SourceMutPointer::<u8>::null()),
-            Ok(())
-        );
+        assert_eq!(inchi_free(&mut heap, SourceMutPointer::<u8>::null()), Ok(()));
 
         let allocation = allocate_source_fixture(&mut heap, vec![3_u8, 1, 4]);
         let alias = allocation.as_const();

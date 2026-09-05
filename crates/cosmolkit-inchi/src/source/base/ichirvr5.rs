@@ -1,16 +1,14 @@
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
 use crate::source::base::ichirvr1::{
-    AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge,
-    MakeOneInChIOutOfStrFromINChI2, RemoveForbiddenEdgeMask, RunBnsRestoreOnce, RunBnsTestOnce,
-    SetForbiddenEdgeMask,
+    AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge, MakeOneInChIOutOfStrFromINChI2,
+    RemoveForbiddenEdgeMask, RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
 };
 use crate::source::base::ichirvr4::{FillOutCMP2MHINCHI, FillOutExtraFixedHDataRestr};
 use crate::source_types::{
-    ALL_TC_GROUPS, BFS_Q, BN_DATA, BN_STRUCT, BOND_TYPE_SINGLE, CANON_GLOBALS, CMP2MHINCHI,
-    EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE, INCHI_CLOCK, INChI, INPUT_PARMS, MAX_DIFF_FIXH,
-    MAX_DIFF_MOBH, NO_VERTEX, RI_ERR_PROGR, STRUCT_DATA, SourceHeap, SourceHeapError,
-    SourceMutPointer, SourceTGroupInfoPointer, StrFromINChI, VAL_AT, clock_t, inp_ATOM,
-    tagTCGroupTypes_TCG_Minus as TCG_Minus, tagTCGroupTypes_TCG_Plus as TCG_Plus,
+    ALL_TC_GROUPS, BFS_Q, BN_DATA, BN_STRUCT, BOND_TYPE_SINGLE, CANON_GLOBALS, CMP2MHINCHI, EDGE_LIST, EDGE_LIST_CLEAR,
+    EDGE_LIST_FREE, INCHI_CLOCK, INChI, INPUT_PARMS, MAX_DIFF_FIXH, MAX_DIFF_MOBH, NO_VERTEX, RI_ERR_PROGR,
+    STRUCT_DATA, SourceHeap, SourceHeapError, SourceMutPointer, SourceTGroupInfoPointer, StrFromINChI, VAL_AT, clock_t,
+    inp_ATOM, tagTCGroupTypes_TCG_Minus as TCG_Minus, tagTCGroupTypes_TCG_Plus as TCG_Plus,
 };
 
 const INC_ADD_EDGE: i32 = 64;
@@ -200,8 +198,7 @@ pub(crate) fn bIsUnsatCarbonInASmallRing(
         }
         let mut current_ring_size = min_ring_size.wrapping_add(1);
         let mut minimum_ring_size = current_ring_size;
-        if (atom.valence == 2 || atom.valence == 3)
-            && i32::from(atom.chem_bonds_valence) == i32::from(atom.valence) + 1
+        if (atom.valence == 2 || atom.valence == 3) && i32::from(atom.chem_bonds_valence) == i32::from(atom.valence) + 1
         {
             let mut neighbor_order = 0_i32;
             while neighbor_order < i32::from(atom.valence) {
@@ -1614,18 +1611,12 @@ pub(crate) fn FixMobileHRestoredStructure(
         while group_index < pTCGroups.num_tgroups {
             let group = heap
                 .slice(pTCGroups.pTCG.as_const())?
-                .get(
-                    usize::try_from(group_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get(usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let vertex = heap
                 .slice(pBNS.vert.as_const())?
-                .get(
-                    usize::try_from(group.nVertexNumber)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get(usize::try_from(group.nVertexNumber).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut order = 0_i32;
@@ -1633,10 +1624,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 let edge = i32::from(
                     *heap
                         .slice(vertex.iedge.as_const())?
-                        .get(
-                            usize::try_from(order)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
                 ret = AddToEdgeList(heap, &mut taut_edges, edge, INC_ADD_EDGE)?;
@@ -1650,20 +1638,13 @@ pub(crate) fn FixMobileHRestoredStructure(
 
         let mut atom_number = 0_i32;
         while atom_number < pStruct.num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let valence = pVA
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?.clone();
             let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
             if minus_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .forbidden
                     == 0
@@ -1677,10 +1658,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             if plus_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(plus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .forbidden
                     == 0
@@ -1694,10 +1672,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     if upper != NO_VERTEX {
                         let flower = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(upper)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(upper).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if flower.forbidden == 0 && flower.flow != 0 {
@@ -1705,22 +1680,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                             if ret != 0 {
                                 return Ok(());
                             }
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut nitrogen_flower_edges,
-                                upper,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut nitrogen_flower_edges, upper, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
                         } else {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut other_nitrogen_flower_edges,
-                                upper,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut other_nitrogen_flower_edges, upper, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -1739,8 +1704,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             atom_number = 0;
             while atom_number < pStruct.num_atoms {
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -1756,18 +1720,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let edge_number = i32::from(
                         *heap
                             .slice(vertex.iedge.as_const())?
-                            .get(
-                                usize::try_from(order)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
                     if i32::from(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden,
                     ) == forbidden_stereo_edge_mask
@@ -1783,12 +1741,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             99,
                         )?;
                         if ring > 0 {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut fixed_large_ring_stereo_edges,
-                                edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut fixed_large_ring_stereo_edges, edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -1804,8 +1757,7 @@ pub(crate) fn FixMobileHRestoredStructure(
 
         if comparison.nNumTgInChI == 1
             && (comparison.nNumEndpRevrs < comparison.nNumEndpInChI || comparison.nNumTgRevrs > 1)
-            && i32::from(comparison.nNumTgDBNMinusRevrs) + i32::from(comparison.nNumTgNHMinusRevrs)
-                == 0
+            && i32::from(comparison.nNumTgDBNMinusRevrs) + i32::from(comparison.nNumTgNHMinusRevrs) == 0
             && comparison.nNumTgOMinusInChI != 0
         {
             let flags = heap
@@ -1837,15 +1789,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret = FillOutCMP2MHINCHI(
-                    heap,
-                    pStruct,
-                    pTCGroups,
-                    &at2_snapshot,
-                    pVA,
-                    pInChI,
-                    &mut comparison,
-                )?;
+                ret = FillOutCMP2MHINCHI(heap, pStruct, pTCGroups, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -1854,8 +1798,7 @@ pub(crate) fn FixMobileHRestoredStructure(
 
         if comparison.nNumTgInChI == 1
             && (comparison.nNumEndpRevrs < comparison.nNumEndpInChI || comparison.nNumTgRevrs > 1)
-            && i32::from(comparison.nNumTgDBNMinusRevrs) + i32::from(comparison.nNumTgNHMinusRevrs)
-                == 0
+            && i32::from(comparison.nNumTgDBNMinusRevrs) + i32::from(comparison.nNumTgNHMinusRevrs) == 0
             && comparison.nNumTgOMinusInChI == 0
         {
             let mut double_bond_n_iii = [0_i32; MAX_DIFF_MOBH as usize];
@@ -1867,16 +1810,13 @@ pub(crate) fn FixMobileHRestoredStructure(
 
             let mut atom_number = 0_i32;
             while atom_number < pStruct.num_atoms {
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if valence.cNumValenceElectrons == 5
                     && valence.cPeriodicRowNumber == 1
                     && atom.endpoint == 0
@@ -1899,10 +1839,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         let minus_edge_available = {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             edge.forbidden == 0 && edge.cap != 0 && edge.flow == 0
                         };
@@ -1923,22 +1860,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                             let plus_edge_available = {
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
-                                    .get(
-                                        usize::try_from(plus_edge)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 edge.forbidden == 0 && edge.cap != 0 && edge.flow != 0
                             };
                             if plus_edge_available {
                                 single_bond_n_iii[number_single_bond_n_iii as usize] = atom_number;
                                 number_single_bond_n_iii = number_single_bond_n_iii.wrapping_add(1);
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_edges,
-                                    plus_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -1955,56 +1884,41 @@ pub(crate) fn FixMobileHRestoredStructure(
                 let mut candidate_index = 0_i32;
                 while candidate_index < number_double_bond_n_iii && current_success == 0 {
                     let atom_number = double_bond_n_iii[candidate_index as usize];
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let incident_edges = heap.slice(atom_vertex.iedge.as_const())?;
-                    let first_edge_number = *incident_edges
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let first_edge_number = *incident_edges.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let first_has_flow = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(first_edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(first_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .flow
                         != 0;
                     let bond_edge_number = if first_has_flow {
                         first_edge_number
                     } else {
-                        let second_edge_number = *incident_edges
-                            .get(1)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let second_edge_number = *incident_edges.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let second_has_flow = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(second_edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(second_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             != 0;
-                        if second_has_flow {
-                            second_edge_number
-                        } else {
-                            NO_VERTEX
-                        }
+                        if second_has_flow { second_edge_number } else { NO_VERTEX }
                     };
                     if bond_edge_number == NO_VERTEX {
                         candidate_index = candidate_index.wrapping_add(1);
                         continue;
                     }
                     let minus_edge_number = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
-                    let bond_edge_index = usize::try_from(bond_edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let minus_edge_index = usize::try_from(minus_edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let bond_edge_index =
+                        usize::try_from(bond_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let minus_edge_index =
+                        usize::try_from(minus_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let bond_edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -2019,12 +1933,9 @@ pub(crate) fn FixMobileHRestoredStructure(
                     {
                         let edges = heap.slice_mut(pBNS.edge)?;
                         edges[bond_edge_index].forbidden =
-                            (i32::from(edges[bond_edge_index].forbidden) | forbidden_edge_mask)
-                                as i8;
-                        edges[minus_edge_index].forbidden = (i32::from(
-                            edges[minus_edge_index].forbidden,
-                        ) & forbidden_edge_mask_inv)
-                            as i8;
+                            (i32::from(edges[bond_edge_index].forbidden) | forbidden_edge_mask) as i8;
+                        edges[minus_edge_index].forbidden =
+                            (i32::from(edges[minus_edge_index].forbidden) & forbidden_edge_mask_inv) as i8;
                         edges[bond_edge_index].flow = edges[bond_edge_index].flow.wrapping_sub(1);
                     }
                     {
@@ -2032,8 +1943,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -2073,14 +1983,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let minus_first_vertex = i32::from(minus_edge_before.neighbor1);
-                            let minus_second_vertex =
-                                i32::from(minus_edge_before.neighbor12) ^ minus_first_vertex;
+                            let minus_second_vertex = i32::from(minus_edge_before.neighbor12) ^ minus_first_vertex;
                             {
                                 let edges = heap.slice_mut(pBNS.edge)?;
-                                edges[minus_edge_index].cap =
-                                    edges[minus_edge_index].cap.wrapping_sub(1);
-                                edges[minus_edge_index].flow =
-                                    edges[minus_edge_index].flow.wrapping_sub(1);
+                                edges[minus_edge_index].cap = edges[minus_edge_index].cap.wrapping_sub(1);
+                                edges[minus_edge_index].flow = edges[minus_edge_index].flow.wrapping_sub(1);
                             }
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
@@ -2103,22 +2010,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             structure_atom.num_H = structure_atom.num_H.wrapping_add(1);
                             pTCGroups.total_charge = pTCGroups.total_charge.wrapping_add(1);
-                            pStruct.nNumRemovedProtonsByRevrs =
-                                pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
+                            pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
                         }
                     } else {
                         {
                             let edges = heap.slice_mut(pBNS.edge)?;
                             edges[bond_edge_index].forbidden =
-                                (i32::from(edges[bond_edge_index].forbidden)
-                                    & forbidden_edge_mask_inv)
-                                    as i8;
-                            edges[minus_edge_index].forbidden = (i32::from(
-                                edges[minus_edge_index].forbidden,
-                            ) | forbidden_edge_mask)
-                                as i8;
-                            edges[bond_edge_index].flow =
-                                edges[bond_edge_index].flow.wrapping_add(1);
+                                (i32::from(edges[bond_edge_index].forbidden) & forbidden_edge_mask_inv) as i8;
+                            edges[minus_edge_index].forbidden =
+                                (i32::from(edges[minus_edge_index].forbidden) | forbidden_edge_mask) as i8;
+                            edges[bond_edge_index].flow = edges[bond_edge_index].flow.wrapping_add(1);
                         }
                         {
                             let vertices = heap.slice_mut(pBNS.vert)?;
@@ -2163,39 +2064,25 @@ pub(crate) fn FixMobileHRestoredStructure(
             while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
                 let group = heap
                     .slice(pTCGroups.pTCG.as_const())?
-                    .get(
-                        usize::try_from(taut_group_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(taut_group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let group_vertex = heap
                     .slice(pBNS.vert.as_const())?
-                    .get(
-                        usize::try_from(group.nVertexNumber)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(group.nVertexNumber).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut group_edge_order = 0_i32;
-                while group_edge_order < i32::from(group_vertex.num_adj_edges)
-                    && current_success == 0
-                {
+                while group_edge_order < i32::from(group_vertex.num_adj_edges) && current_success == 0 {
                     let taut_edge_number = i32::from(
                         *heap
                             .slice(group_vertex.iedge.as_const())?
-                            .get(
-                                usize::try_from(group_edge_order)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(group_edge_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
                     let taut_edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(taut_edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(taut_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let endpoint = i32::from(taut_edge.neighbor1);
@@ -2204,10 +2091,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut center_edge_2 = -1_i32;
                     let mut second_endpoint = NO_VERTEX;
                     if pVA
-                        .get(
-                            usize::try_from(endpoint)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .cNumValenceElectrons
                         == 6
@@ -2215,24 +2099,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                     {
                         let endpoint_vertex = heap
                             .slice(pBNS.vert.as_const())?
-                            .get(
-                                usize::try_from(endpoint)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let endpoint_atom = heap
                             .slice(at2.as_const())?
-                            .get(
-                                usize::try_from(endpoint)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut neighbor_order = 0_i32;
-                        while neighbor_order < i32::from(endpoint_atom.valence)
-                            && second_taut_edge < 0
-                        {
+                        while neighbor_order < i32::from(endpoint_atom.valence) && second_taut_edge < 0 {
                             center_edge_1 = i32::from(
                                 *heap
                                     .slice(endpoint_vertex.iedge.as_const())?
@@ -2244,36 +2120,25 @@ pub(crate) fn FixMobileHRestoredStructure(
                             );
                             let first_center_edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(center_edge_1)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(center_edge_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let center = i32::from(first_center_edge.neighbor12) ^ endpoint;
                             let center_atom = heap
                                 .slice(at2.as_const())?
-                                .get(
-                                    usize::try_from(center)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(center).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if center_atom.endpoint != 0
                                 || first_center_edge.cap == 0
-                                || i32::from(first_center_edge.flow)
-                                    + i32::from(taut_edge.cap == taut_edge.flow)
-                                    != 1
+                                || i32::from(first_center_edge.flow) + i32::from(taut_edge.cap == taut_edge.flow) != 1
                             {
                                 neighbor_order = neighbor_order.wrapping_add(1);
                                 continue;
                             }
                             let center_vertex = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(center)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(center).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let mut center_order = 0_i32;
@@ -2299,25 +2164,22 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 let second_index = usize::try_from(second_endpoint)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 if second_center_edge.cap != 0
-                                    && i32::from(second_center_edge.flow)
-                                        + i32::from(first_center_edge.flow)
-                                        == 1
+                                    && i32::from(second_center_edge.flow) + i32::from(first_center_edge.flow) == 1
                                     && i32::from(heap.slice(at2.as_const())?[second_index].endpoint)
                                         == taut_group_index.wrapping_add(1)
                                     && pVA[second_index].cNumValenceElectrons == 5
                                 {
-                                    let candidate_taut_edge =
-                                        pVA[second_index].nTautGroupEdge.wrapping_sub(1);
+                                    let candidate_taut_edge = pVA[second_index].nTautGroupEdge.wrapping_sub(1);
                                     if candidate_taut_edge >= 0 {
-                                        let edge =
-                                            heap.slice(pBNS.edge.as_const())?
-                                                .get(usize::try_from(candidate_taut_edge).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        let edge = heap
+                                            .slice(pBNS.edge.as_const())?
+                                            .get(
+                                                usize::try_from(candidate_taut_edge)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                         if edge.forbidden == 0
-                                            && i32::from(second_center_edge.flow)
-                                                + i32::from(edge.cap == edge.flow)
+                                            && i32::from(second_center_edge.flow) + i32::from(edge.cap == edge.flow)
                                                 == 1
                                         {
                                             second_taut_edge = candidate_taut_edge;
@@ -2331,14 +2193,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                     }
                     if second_taut_edge >= 0 {
-                        let taut_index = usize::try_from(taut_edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let second_taut_index = usize::try_from(second_taut_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let center_1_index = usize::try_from(center_edge_1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let center_2_index = usize::try_from(center_edge_2)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let taut_index =
+                            usize::try_from(taut_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let second_taut_index =
+                            usize::try_from(second_taut_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let center_1_index =
+                            usize::try_from(center_edge_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let center_2_index =
+                            usize::try_from(center_edge_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let before = heap.slice(pBNS.edge.as_const())?;
                         let first_taut = before[taut_index].clone();
                         let second_taut = before[second_taut_index].clone();
@@ -2351,36 +2213,29 @@ pub(crate) fn FixMobileHRestoredStructure(
                         {
                             let edges = heap.slice_mut(pBNS.edge)?;
                             edges[taut_index].flow = edges[taut_index].flow.wrapping_sub(1);
-                            edges[second_taut_index].flow =
-                                edges[second_taut_index].flow.wrapping_add(1);
+                            edges[second_taut_index].flow = edges[second_taut_index].flow.wrapping_add(1);
                             edges[center_2_index].flow = edges[center_2_index].flow.wrapping_sub(1);
                             edges[center_1_index].flow = edges[center_1_index].flow.wrapping_add(1);
                             action |= 1;
                         }
                         let after = heap.slice(pBNS.edge.as_const())?;
                         if i32::from(after[taut_index].cap) - i32::from(after[taut_index].flow) == 1
-                            && i32::from(after[second_taut_index].cap)
-                                - i32::from(after[second_taut_index].flow)
-                                == 0
+                            && i32::from(after[second_taut_index].cap) - i32::from(after[second_taut_index].flow) == 0
                             && after[center_1_index].flow == 1
                             && after[center_2_index].flow == 0
                         {
-                            let group_index = usize::try_from(taut_group_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let group_index =
+                                usize::try_from(taut_group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
-                            groups[group_index].tg_num_H =
-                                groups[group_index].tg_num_H.wrapping_sub(1);
-                            groups[group_index].tg_num_Minus =
-                                groups[group_index].tg_num_Minus.wrapping_add(1);
+                            groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_sub(1);
+                            groups[group_index].tg_num_Minus = groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
                             groups[group_index].tg_set_Minus = second_endpoint.wrapping_add(1);
                             let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
-                            taut_groups[group_index].num[1] =
-                                taut_groups[group_index].num[1].wrapping_add(1);
+                            taut_groups[group_index].num[1] = taut_groups[group_index].num[1].wrapping_add(1);
                             pTCGroups.total_charge = pTCGroups.total_charge.wrapping_sub(1);
                             pTCGroups.tgroup_charge = pTCGroups.tgroup_charge.wrapping_sub(1);
-                            pStruct.nNumRemovedProtonsByRevrs =
-                                pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
+                            pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
                             action |= 2;
                             current_success = current_success.wrapping_add(1);
                         }
@@ -2398,18 +2253,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                 while taut_group_index < pTCGroups.num_tgroups {
                     let group = heap
                         .slice(pTCGroups.pTCG.as_const())?
-                        .get(
-                            usize::try_from(taut_group_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(taut_group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let group_vertex = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(group.nVertexNumber)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(group.nVertexNumber).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut order = 0_i32;
@@ -2417,18 +2266,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                         let taut_edge_number = i32::from(
                             *heap
                                 .slice(group_vertex.iedge.as_const())?
-                                .get(
-                                    usize::try_from(order)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
                         let taut_edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(taut_edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(taut_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let endpoint = usize::from(taut_edge.neighbor1);
@@ -2442,12 +2285,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && taut_edge.flow != 0
                             && taut_edge.flow == taut_edge.cap
                         {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut current_edges,
-                                taut_edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut current_edges, taut_edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -2465,9 +2303,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let mut found_edge = -1_i32;
                             let mut neighbor_order = 0_i32;
-                            while neighbor_order < i32::from(endpoint_atom.valence)
-                                && found_edge < 0
-                            {
+                            while neighbor_order < i32::from(endpoint_atom.valence) && found_edge < 0 {
                                 let first_edge_number = i32::from(
                                     *heap
                                         .slice(endpoint_vertex.iedge.as_const())?
@@ -2487,53 +2323,50 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if first_edge.flow == 1 {
                                     let center = i32::from(first_edge.neighbor12)
-                                        ^ i32::try_from(endpoint)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                    let center_index = usize::try_from(center)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        ^ i32::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    let center_index =
+                                        usize::try_from(center).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     if heap.slice(at2.as_const())?[center_index].endpoint != 0 {
                                         neighbor_order = neighbor_order.wrapping_add(1);
                                         continue;
                                     }
-                                    let center_atom =
-                                        heap.slice(at2.as_const())?[center_index].clone();
-                                    let center_vertex =
-                                        heap.slice(pBNS.vert.as_const())?[center_index].clone();
+                                    let center_atom = heap.slice(at2.as_const())?[center_index].clone();
+                                    let center_vertex = heap.slice(pBNS.vert.as_const())?[center_index].clone();
                                     let mut center_order = 0_i32;
                                     while center_order < i32::from(center_atom.valence) {
                                         let second_edge_number = i32::from(
                                             *heap
                                                 .slice(center_vertex.iedge.as_const())?
-                                                .get(usize::try_from(center_order).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
+                                                .get(
+                                                    usize::try_from(center_order)
+                                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                                )
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                         );
-                                        let second_edge =
-                                            heap.slice(pBNS.edge.as_const())?
-                                                .get(usize::try_from(second_edge_number).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .cloned()
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                        let second_endpoint =
-                                            i32::from(second_edge.neighbor12) ^ center;
+                                        let second_edge = heap
+                                            .slice(pBNS.edge.as_const())?
+                                            .get(
+                                                usize::try_from(second_edge_number)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .cloned()
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        let second_endpoint = i32::from(second_edge.neighbor12) ^ center;
                                         let second_index = usize::try_from(second_endpoint)
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                         if second_edge.flow == 0
-                                            && i32::from(
-                                                heap.slice(at2.as_const())?[second_index].endpoint,
-                                            ) == taut_group_index.wrapping_add(1)
+                                            && i32::from(heap.slice(at2.as_const())?[second_index].endpoint)
+                                                == taut_group_index.wrapping_add(1)
                                             && pVA[second_index].cNumValenceElectrons == 6
                                         {
-                                            let candidate =
-                                                pVA[second_index].nTautGroupEdge.wrapping_sub(1);
+                                            let candidate = pVA[second_index].nTautGroupEdge.wrapping_sub(1);
                                             if candidate > 0 {
                                                 let edge = heap
                                                     .slice(pBNS.edge.as_const())?
-                                                    .get(usize::try_from(candidate).map_err(
-                                                        |_| SourceHeapError::PointerOutOfBounds,
-                                                    )?)
+                                                    .get(
+                                                        usize::try_from(candidate)
+                                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                                    )
                                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                                 if edge.forbidden == 0 && edge.flow != 0 {
                                                     found_edge = candidate;
@@ -2556,12 +2389,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 neighbor_order = neighbor_order.wrapping_add(1);
                             }
                             if found_edge < 0 {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_edges,
-                                    taut_edge_number,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_edges, taut_edge_number, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -2581,8 +2409,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                     &current_edges
                 };
                 let selected_edges = if selected.num_edges > 0 {
-                    heap.slice(selected.pnEdges.as_const())?[..usize::try_from(selected.num_edges)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    heap.slice(selected.pnEdges.as_const())?
+                        [..usize::try_from(selected.num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                         .to_vec()
                 } else {
                     Vec::new()
@@ -2591,8 +2419,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     if current_success != 0 {
                         break;
                     }
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -2608,10 +2435,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     while index < pTCGroups.num_tgroups {
                         if heap
                             .slice(pTCGroups.pTCG.as_const())?
-                            .get(
-                                usize::try_from(index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nVertexNumber
                             == second_vertex
@@ -2630,8 +2454,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -2664,13 +2487,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                         if ret > 0 {
                             current_success = current_success.wrapping_add(1);
-                            let group_index = usize::try_from(found_group)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let group_index =
+                                usize::try_from(found_group).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
-                            groups[group_index].tg_num_H =
-                                groups[group_index].tg_num_H.wrapping_sub(1);
-                            groups[group_index].tg_num_Minus =
-                                groups[group_index].tg_num_Minus.wrapping_add(1);
+                            groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_sub(1);
+                            groups[group_index].tg_num_Minus = groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
                             let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
                             let taut_group = taut_groups
@@ -2679,8 +2500,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             taut_group.num[1] = taut_group.num[1].wrapping_add(1);
                             pTCGroups.total_charge = pTCGroups.total_charge.wrapping_sub(1);
                             pTCGroups.tgroup_charge = pTCGroups.tgroup_charge.wrapping_sub(1);
-                            pStruct.nNumRemovedProtonsByRevrs =
-                                pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
+                            pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
                             action |= 4;
                         }
                     } else {
@@ -2689,8 +2509,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -2701,15 +2520,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                 RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
-            } else if i32::from(comparison.nNumTgNHInChI) + i32::from(comparison.nNumTgNH2InChI)
-                != 0
+            } else if i32::from(comparison.nNumTgNHInChI) + i32::from(comparison.nNumTgNH2InChI) != 0
                 && comparison.nNumTgOInChI != 0
                 && current_success == 0
             {
                 taut_group_index = 0;
                 while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
-                    let group_index = usize::try_from(taut_group_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let group_index =
+                        usize::try_from(taut_group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let group = heap
                         .slice(pTCGroups.pTCG.as_const())?
                         .get(group_index)
@@ -2717,10 +2535,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(group.nVertexNumber)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(group.nVertexNumber).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut order = 0_i32;
@@ -2728,18 +2543,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                         let edge_number = i32::from(
                             *heap
                                 .slice(vertex.iedge.as_const())?
-                                .get(
-                                    usize::try_from(order)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let endpoint = usize::from(edge.neighbor1);
@@ -2755,10 +2564,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                         {
                             current_success = current_success.wrapping_add(1);
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
-                            groups[group_index].tg_num_H =
-                                groups[group_index].tg_num_H.wrapping_sub(1);
-                            groups[group_index].tg_num_Minus =
-                                groups[group_index].tg_num_Minus.wrapping_add(1);
+                            groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_sub(1);
+                            groups[group_index].tg_num_Minus = groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
                             groups[group_index].tg_set_Minus = i32::try_from(endpoint)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
@@ -2770,8 +2577,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             taut_group.num[1] = taut_group.num[1].wrapping_add(1);
                             pTCGroups.total_charge = pTCGroups.total_charge.wrapping_sub(1);
                             pTCGroups.tgroup_charge = pTCGroups.tgroup_charge.wrapping_sub(1);
-                            pStruct.nNumRemovedProtonsByRevrs =
-                                pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
+                            pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_add(1);
                             action |= 8;
                         }
                         order = order.wrapping_add(1);
@@ -2796,15 +2602,13 @@ pub(crate) fn FixMobileHRestoredStructure(
                     if action & (8 | 2) != 0 {
                         let groups = heap.slice_mut(pTCGroups.pTCG)?;
                         groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_add(1);
-                        groups[group_index].tg_num_Minus =
-                            groups[group_index].tg_num_Minus.wrapping_sub(1);
+                        groups[group_index].tg_num_Minus = groups[group_index].tg_num_Minus.wrapping_sub(1);
                         groups[group_index].tg_RestoreFlags &= !TGRF_MINUS_FIRST;
                         groups[group_index].tg_set_Minus = 0;
                     } else if action & 4 != 0 {
                         let groups = heap.slice_mut(pTCGroups.pTCG)?;
                         groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_add(1);
-                        groups[group_index].tg_num_Minus =
-                            groups[group_index].tg_num_Minus.wrapping_sub(1);
+                        groups[group_index].tg_num_Minus = groups[group_index].tg_num_Minus.wrapping_sub(1);
                         groups[group_index].tg_RestoreFlags &= !TGRF_MINUS_FIRST;
                     } else {
                         ret = RI_ERR_PROGR;
@@ -2817,8 +2621,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     taut_group.num[1] = taut_group.num[1].wrapping_sub(1);
                     pTCGroups.total_charge = pTCGroups.total_charge.wrapping_add(1);
                     pTCGroups.tgroup_charge = pTCGroups.tgroup_charge.wrapping_add(1);
-                    pStruct.nNumRemovedProtonsByRevrs =
-                        pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
+                    pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
                     current_success = current_success.wrapping_sub(1);
                     rebuild!();
                     compare!();
@@ -2843,16 +2646,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let canonical_to_atom = pStruct.nCanon2Atno[0];
                     let mut canonical_number = 0_i32;
                     while canonical_number < pStruct.num_atoms {
-                        let canonical_index = usize::try_from(canonical_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let canonical_index =
+                            usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let atom_number = i32::from(
                             *heap
                                 .slice(canonical_to_atom.as_const())?
                                 .get(canonical_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
-                        let atom_index = usize::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index =
+                            usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let atom = heap
                             .slice(at2.as_const())?
                             .get(atom_index)
@@ -2868,18 +2671,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                             if plus_edge >= 0 {
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
-                                    .get(
-                                        usize::try_from(plus_edge)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if edge.flow != 0 && edge.forbidden == 0 {
-                                    ret = AddToEdgeList(
-                                        heap,
-                                        &mut current_edges,
-                                        plus_edge,
-                                        INC_ADD_EDGE,
-                                    )?;
+                                    ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                                     if ret != 0 {
                                         return Ok(());
                                     }
@@ -2895,8 +2690,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut taut_group_index = 0_i32;
                     while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
                         current_edges_2.num_edges = 0;
-                        let group_index = usize::try_from(taut_group_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let group_index =
+                            usize::try_from(taut_group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let group = heap
                             .slice(pTCGroups.pTCG.as_const())?
                             .get(group_index)
@@ -2916,18 +2711,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                             let edge_number = i32::from(
                                 *heap
                                     .slice(group_vertex.iedge.as_const())?
-                                    .get(
-                                        usize::try_from(order)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(edge_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let endpoint = usize::from(edge.neighbor1);
@@ -2935,16 +2724,9 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .slice(at2.as_const())?
                                 .get(endpoint)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            if atom.charge == 0
-                                && atom.radical == 0
-                                && i32::from(edge.cap) - i32::from(edge.flow) == 1
+                            if atom.charge == 0 && atom.radical == 0 && i32::from(edge.cap) - i32::from(edge.flow) == 1
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_edges_2,
-                                    edge_number,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_edges_2, edge_number, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -2980,10 +2762,7 @@ pub(crate) fn FixMobileHRestoredStructure(
 
                         let plus_vertex = heap
                             .slice(pBNS.vert.as_const())?
-                            .get(
-                                usize::try_from(plus_minus_vertex)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_minus_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut plus_order = 0_i32;
@@ -2991,35 +2770,26 @@ pub(crate) fn FixMobileHRestoredStructure(
                             let edge_number = i32::from(
                                 *heap
                                     .slice(plus_vertex.iedge.as_const())?
-                                    .get(
-                                        usize::try_from(plus_order)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(plus_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(edge_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let intermediate = i32::from(edge.neighbor12) ^ plus_minus_vertex;
                             let intermediate_vertex = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(intermediate)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(intermediate).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let edge_numbers = heap.slice(intermediate_vertex.iedge.as_const())?
                                 [..usize::from(intermediate_vertex.num_adj_edges)]
                                 .to_vec();
                             for edge_number in edge_numbers {
-                                let index = usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let index =
+                                    usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(index)
@@ -3048,10 +2818,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                             &mut visited,
                         )?;
                         if ret == 1
-                            && ((path_end == plus_minus_vertex
-                                && path_start == group_vertex_number)
-                                || (path_end == group_vertex_number
-                                    && path_start == plus_minus_vertex))
+                            && ((path_end == plus_minus_vertex && path_start == group_vertex_number)
+                                || (path_end == group_vertex_number && path_start == plus_minus_vertex))
                             && delta_charge == 1
                         {
                             ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
@@ -3059,20 +2827,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 current_success = current_success.wrapping_add(1);
                                 pTCGroups.total_charge = pTCGroups.total_charge.wrapping_add(1);
                                 let groups = heap.slice_mut(pTCGroups.pTCG)?;
-                                groups[group_index].edges_cap =
-                                    groups[group_index].edges_cap.wrapping_add(1);
-                                groups[group_index].tg_num_H =
-                                    groups[group_index].tg_num_H.wrapping_add(1);
-                                pStruct.nNumRemovedProtonsByRevrs =
-                                    pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
+                                groups[group_index].edges_cap = groups[group_index].edges_cap.wrapping_add(1);
+                                groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_add(1);
+                                pStruct.nNumRemovedProtonsByRevrs = pStruct.nNumRemovedProtonsByRevrs.wrapping_sub(1);
                             }
                         } else {
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
                                 let plus_index = usize::try_from(plus_minus_vertex)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                vertices[plus_index].st_edge.cap =
-                                    vertices[plus_index].st_edge.cap.wrapping_sub(1);
+                                vertices[plus_index].st_edge.cap = vertices[plus_index].st_edge.cap.wrapping_sub(1);
                                 let group_vertex_index = usize::try_from(group_vertex_number)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 vertices[group_vertex_index].st_edge.cap =
@@ -3107,9 +2871,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                let edge_numbers = heap.slice(vertex.iedge.as_const())?
-                                    [..usize::from(vertex.num_adj_edges)]
-                                    .to_vec();
+                                let edge_numbers =
+                                    heap.slice(vertex.iedge.as_const())?[..usize::from(vertex.num_adj_edges)].to_vec();
                                 for edge_number in edge_numbers {
                                     let index = usize::try_from(edge_number)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -3122,12 +2885,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 plus_order = plus_order.wrapping_add(1);
                             }
                         }
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &all_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                         RemoveForbiddenEdgeMask(heap, pBNS, &taut_edges, forbidden_edge_mask)?;
                         taut_group_index = taut_group_index.wrapping_add(1);
                     }
@@ -3142,17 +2900,14 @@ pub(crate) fn FixMobileHRestoredStructure(
             }
         }
 
-        while comparison.nNumDiffMobH != 0
-            && comparison.nChargeMobHRevrs > comparison.nChargeMobHInChI
-        {
+        while comparison.nNumDiffMobH != 0 && comparison.nChargeMobHRevrs > comparison.nChargeMobHInChI {
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while current_success == 0 && difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
-                if i32::from(difference.nMobHRevrs)
-                    != i32::from(difference.nMobHInChI).wrapping_add(1)
+                if i32::from(difference.nMobHRevrs) != i32::from(difference.nMobHInChI).wrapping_add(1)
                     || difference.nNumHRevrs != difference.nMobHInChI
                     || difference.endptInChI != 0
                     || difference.endptRevrs != 0
@@ -3161,8 +2916,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     continue;
                 }
                 let oxygen_number = i32::from(difference.atomNumber);
-                let oxygen_index = usize::try_from(oxygen_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let oxygen_index = usize::try_from(oxygen_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let oxygen = heap
                     .slice(at2.as_const())?
                     .get(oxygen_index)
@@ -3177,10 +2931,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let oxygen_edge_has_flow = oxygen_minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(oxygen_minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(oxygen_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             != 0;
@@ -3192,8 +2943,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                             }
                             let mut atom_number = 0_i32;
                             while current_success == 0 && atom_number < pStruct.num_atoms {
-                                let atom_index = usize::try_from(atom_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let atom_index =
+                                    usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let atom = heap
                                     .slice(at2.as_const())?
                                     .get(atom_index)
@@ -3204,31 +2955,24 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     && atom.radical == 0
                                     && pVA[atom_index].cNumValenceElectrons == 4
                                 {
-                                    carbon_minus_edge =
-                                        pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
+                                    carbon_minus_edge = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
                                     if carbon_minus_edge >= 0 {
-                                        let carbon_edge_no_flow =
-                                            heap.slice(pBNS.edge.as_const())?
-                                                .get(usize::try_from(carbon_minus_edge).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                                .flow
-                                                == 0;
+                                        let carbon_edge_no_flow = heap
+                                            .slice(pBNS.edge.as_const())?
+                                            .get(
+                                                usize::try_from(carbon_minus_edge)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                            .flow
+                                            == 0;
                                         if carbon_edge_no_flow {
                                             let bfs = heap
                                                 .slice(pStruct.pbfsq.as_const())?
                                                 .first()
                                                 .cloned()
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                            bIsUnsatCarbonInASmallRing(
-                                                heap,
-                                                at2,
-                                                pVA,
-                                                atom_number,
-                                                &bfs,
-                                                mode,
-                                            )? > 0
+                                            bIsUnsatCarbonInASmallRing(heap, at2, pVA, atom_number, &bfs, mode)? > 0
                                         } else {
                                             false
                                         }
@@ -3239,24 +2983,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     false
                                 };
                                 if candidate_matches {
-                                    SetForbiddenEdgeMask(
-                                        heap,
-                                        pBNS,
-                                        &all_charge_edges,
-                                        forbidden_edge_mask,
-                                    )?;
+                                    SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                                     {
                                         let carbon_edge = heap
                                             .slice_mut(pBNS.edge)?
                                             .get_mut(
-                                                usize::try_from(carbon_minus_edge).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?,
+                                                usize::try_from(carbon_minus_edge)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                             )
                                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                        carbon_edge.forbidden = (i32::from(carbon_edge.forbidden)
-                                            & forbidden_edge_mask_inv)
-                                            as i8;
+                                        carbon_edge.forbidden =
+                                            (i32::from(carbon_edge.forbidden) & forbidden_edge_mask_inv) as i8;
                                     }
                                     let oxygen_edge_index = usize::try_from(oxygen_minus_edge)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -3270,20 +3007,19 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         continue;
                                     }
                                     let first_vertex = i32::from(oxygen_edge_before.neighbor1);
-                                    let second_vertex =
-                                        i32::from(oxygen_edge_before.neighbor12) ^ first_vertex;
+                                    let second_vertex = i32::from(oxygen_edge_before.neighbor12) ^ first_vertex;
                                     heap.slice_mut(pBNS.edge)?[oxygen_edge_index].flow =
                                         oxygen_edge_before.flow.wrapping_sub(1);
                                     {
                                         let vertices = heap.slice_mut(pBNS.vert)?;
                                         for vertex_number in [first_vertex, second_vertex] {
                                             let vertex = vertices
-                                                .get_mut(usize::try_from(vertex_number).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
+                                                .get_mut(
+                                                    usize::try_from(vertex_number)
+                                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                                )
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                            vertex.st_edge.flow =
-                                                vertex.st_edge.flow.wrapping_sub(1);
+                                            vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                                         }
                                     }
                                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -3307,20 +3043,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         &mut number_visited_atoms,
                                     )?;
                                     if ret == 1
-                                        && ((path_end == first_vertex
-                                            && path_start == second_vertex)
-                                            || (path_end == second_vertex
-                                                && path_start == first_vertex))
+                                        && ((path_end == first_vertex && path_start == second_vertex)
+                                            || (path_end == second_vertex && path_start == first_vertex))
                                         && delta_charge == 1
                                     {
-                                        ret = RunBnsRestoreOnce(
-                                            heap,
-                                            pBNS,
-                                            pBD,
-                                            pVA,
-                                            pTCGroups,
-                                            clock_result,
-                                        )?;
+                                        ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                         if ret > 0 {
                                             current_success = current_success.wrapping_add(1);
                                         }
@@ -3331,9 +3058,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                                 .get_mut(oxygen_edge_index)
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                             oxygen_edge.forbidden =
-                                                (i32::from(oxygen_edge.forbidden)
-                                                    | forbidden_edge_mask)
-                                                    as i8;
+                                                (i32::from(oxygen_edge.forbidden) | forbidden_edge_mask) as i8;
                                             oxygen_edge.flow = oxygen_edge.flow.wrapping_add(1);
                                         }
                                         {
@@ -3341,23 +3066,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                                             for vertex_number in [first_vertex, second_vertex] {
                                                 let vertex = vertices
                                                     .get_mut(
-                                                        usize::try_from(vertex_number).map_err(
-                                                            |_| SourceHeapError::PointerOutOfBounds,
-                                                        )?,
+                                                        usize::try_from(vertex_number)
+                                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                                     )
                                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                                vertex.st_edge.flow =
-                                                    vertex.st_edge.flow.wrapping_add(1);
+                                                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                             }
                                         }
                                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                                     }
-                                    SetForbiddenEdgeMask(
-                                        heap,
-                                        pBNS,
-                                        &all_charge_edges,
-                                        forbidden_edge_mask,
-                                    )?;
+                                    SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                                 }
                                 atom_number = atom_number.wrapping_add(1);
                             }
@@ -3398,24 +3116,22 @@ pub(crate) fn FixMobileHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at
             };
-            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] =
-                std::array::from_fn(|_| EDGE_LIST::default());
+            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] = std::array::from_fn(|_| EDGE_LIST::default());
             current_edges.num_edges = 0;
             let mut current_success = 0_i32;
             let mut leave_case = false;
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -3431,10 +3147,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         minus_edge >= 0
                             && heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .forbidden
                                 == 0
@@ -3464,8 +3177,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         == 5
                         && nitrogen.valence == 3
                         && (nitrogen.charge == 0 || nitrogen.charge == 1)
-                        && i32::from(nitrogen.chem_bonds_valence)
-                            == 5_i32.wrapping_sub(i32::from(nitrogen.charge))
+                        && i32::from(nitrogen.chem_bonds_valence) == 5_i32.wrapping_sub(i32::from(nitrogen.charge))
                     {
                         dioxide_center = Some(nitrogen_index);
                     }
@@ -3480,15 +3192,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut number_others = 0_i32;
                     let mut neighbor_order = 0_i32;
                     while neighbor_order < i32::from(nitrogen.valence) {
-                        let position = usize::try_from(neighbor_order)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let position =
+                            usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_number = i32::from(nitrogen.neighbor[position]);
                         if neighbor_number == atom_number {
                             neighbor_order = neighbor_order.wrapping_add(1);
                             continue;
                         }
-                        let neighbor_index = usize::try_from(neighbor_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_index =
+                            usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor = heap
                             .slice(at2.as_const())?
                             .get(neighbor_index)
@@ -3512,9 +3224,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && neighbor.num_H == 0
                             && neighbor.radical == 0
                             && (neighbor.charge == 0 || neighbor.charge == -1)
-                            && i32::from(neighbor.chem_bonds_valence)
-                                .wrapping_sub(i32::from(neighbor.charge))
-                                == 2
+                            && i32::from(neighbor.chem_bonds_valence).wrapping_sub(i32::from(neighbor.charge)) == 2
                         {
                             number_oxygen = number_oxygen.wrapping_add(1);
                         } else if nitrogen.bond_type[position] == BOND_TYPE_SINGLE as u8
@@ -3526,28 +3236,20 @@ pub(crate) fn FixMobileHRestoredStructure(
                         neighbor_order = neighbor_order.wrapping_add(1);
                     }
                     if number_oxygen == 1 && number_others == 1 {
-                        let nitrogen_number = i32::try_from(nitrogen_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let nitrogen_number =
+                            i32::try_from(nitrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let mut duplicate_index = 0_i32;
                         while duplicate_index < number_double_bond_oxygen
-                            && i32::from(nitrogen_dioxide[duplicate_index as usize])
-                                != nitrogen_number
+                            && i32::from(nitrogen_dioxide[duplicate_index as usize]) != nitrogen_number
                         {
                             duplicate_index = duplicate_index.wrapping_add(1);
                         }
                         if duplicate_index == number_double_bond_oxygen {
-                            nitrogen_dioxide[number_double_bond_oxygen as usize] =
-                                nitrogen_number as i16;
-                            double_bond_oxygen[number_double_bond_oxygen as usize] =
-                                atom_number as i16;
+                            nitrogen_dioxide[number_double_bond_oxygen as usize] = nitrogen_number as i16;
+                            double_bond_oxygen[number_double_bond_oxygen as usize] = atom_number as i16;
                             number_double_bond_oxygen = number_double_bond_oxygen.wrapping_add(1);
                         }
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut changeable_edges[CHG_SET_O_FIXED],
-                            minus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut changeable_edges[CHG_SET_O_FIXED], minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             leave_case = true;
                         }
@@ -3559,16 +3261,13 @@ pub(crate) fn FixMobileHRestoredStructure(
             if number_double_bond_oxygen != 0 && !leave_case {
                 let mut difference_index = 0_i32;
                 while difference_index < i32::from(comparison.len_c2at) && !leave_case {
-                    let difference = comparison.c2at[usize::try_from(difference_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    let difference = comparison.c2at
+                        [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .clone();
-                    if difference.endptRevrs != 0
-                        && difference.endptInChI == 0
-                        && difference.nAtChargeRevrs == -1
-                    {
+                    if difference.endptRevrs != 0 && difference.endptInChI == 0 && difference.nAtChargeRevrs == -1 {
                         let atom_number = i32::from(difference.atomNumber);
-                        let atom_index = usize::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index =
+                            usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let minus_edge = pVA
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3578,18 +3277,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && {
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
-                                    .get(
-                                        usize::try_from(minus_edge)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 edge.forbidden == 0 && edge.flow != 0
                             }
-                            && FindInEdgeList(
-                                heap,
-                                &changeable_edges[CHG_SET_O_FIXED],
-                                minus_edge,
-                            )? < 0;
+                            && FindInEdgeList(heap, &changeable_edges[CHG_SET_O_FIXED], minus_edge)? < 0;
                         if charge_edge_ok && difference.nValElectr == 6 {
                             ret = AddToEdgeList(
                                 heap,
@@ -3628,9 +3320,8 @@ pub(crate) fn FixMobileHRestoredStructure(
 
                 let mut target_index = 0_i32;
                 while target_index < number_double_bond_oxygen && !leave_case {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_oxygen[target_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(i32::from(double_bond_oxygen[target_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let target_minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3645,8 +3336,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                         .slice(atom_vertex.iedge.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let bond_edge_index = usize::try_from(bond_edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let bond_edge_index =
+                        usize::try_from(bond_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let bond_edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -3671,8 +3362,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -3689,12 +3379,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                         let expected_delta_charge = 0_i32;
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &changeable_edges[set_index],
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &changeable_edges[set_index], forbidden_edge_mask)?;
                         {
                             let edge = heap
                                 .slice_mut(pBNS.edge)?
@@ -3703,8 +3388,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         }
                         let mut path_start = 0_i32;
                         let mut path_end = 0_i32;
@@ -3743,8 +3427,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(bond_edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                     }
                     if one_success == 0 {
                         heap.slice_mut(pBNS.edge)?[bond_edge_index].flow = bond_edge_before.flow;
@@ -3803,8 +3486,7 @@ pub(crate) fn FixMobileHRestoredStructure(
 mod tests {
     use super::*;
     use crate::source_types::{
-        BNS_EDGE, BNS_VERTEX, INChI_Aux, RI_ERR_ALLOC, SourceMutPointer, T_GROUP, T_GROUP_INFO,
-        TC_GROUP,
+        BNS_EDGE, BNS_VERTEX, INChI_Aux, RI_ERR_ALLOC, SourceMutPointer, T_GROUP, T_GROUP_INFO, TC_GROUP,
     };
 
     fn call_fix_mobile_h_restored_structure(
@@ -3846,11 +3528,7 @@ mod tests {
         )
     }
 
-    fn fixed_h_inchi(
-        fixed_h: SourceMutPointer<i8>,
-        mobile_h: SourceMutPointer<i8>,
-        total_charge: i32,
-    ) -> INChI {
+    fn fixed_h_inchi(fixed_h: SourceMutPointer<i8>, mobile_h: SourceMutPointer<i8>, total_charge: i32) -> INChI {
         INChI {
             nNum_H_fixed: fixed_h,
             nNum_H: mobile_h,
@@ -3868,11 +3546,7 @@ mod tests {
         .unwrap()
     }
 
-    fn group_info(
-        heap: &mut SourceHeap,
-        groups: Vec<T_GROUP>,
-        endpoints: Vec<u16>,
-    ) -> T_GROUP_INFO {
+    fn group_info(heap: &mut SourceHeap, groups: Vec<T_GROUP>, endpoints: Vec<u16>) -> T_GROUP_INFO {
         T_GROUP_INFO {
             num_t_groups: groups.len() as i32,
             max_num_t_groups: groups.len() as i32,
@@ -3954,10 +3628,7 @@ mod tests {
             nGroup: [-1; 18],
             ..ALL_TC_GROUPS::default()
         };
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &groups, 0, 0),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 0), Ok(NO_VERTEX));
 
         groups.nGroup[TCG_Plus as usize] = 0;
         assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 0), Ok(4));
@@ -3966,32 +3637,20 @@ mod tests {
 
         groups.nGroup[TCG_Plus as usize] = -1;
         assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 0), Ok(7));
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &groups, 1, 0),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 1, 0), Ok(NO_VERTEX));
 
         groups.nGroup[TCG_Plus as usize] = 0;
         groups.nGroup[TCG_Minus as usize] = -1;
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &groups, 0, 1),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 1), Ok(NO_VERTEX));
 
         groups.nGroup[TCG_Plus as usize] = 4;
         assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 0), Ok(4));
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &groups, -1, 0),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, -1, 0), Ok(NO_VERTEX));
 
         groups.nGroup[TCG_Plus as usize] = -1;
         groups.nGroup[TCG_Minus as usize] = 5;
         assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 0), Ok(1));
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &groups, 0, 2),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &groups, 0, 2), Ok(NO_VERTEX));
 
         groups.nGroup[TCG_Minus as usize] = -1;
         for rejected_group in [2, 3] {
@@ -4008,10 +3667,7 @@ mod tests {
             nGroup: [-1; 18],
             ..ALL_TC_GROUPS::default()
         };
-        assert_eq!(
-            GetPlusMinusVertex(&heap, &bns, &null_groups, 0, 0),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPlusMinusVertex(&heap, &bns, &null_groups, 0, 0), Ok(NO_VERTEX));
     }
 
     #[test]
@@ -4026,11 +3682,7 @@ mod tests {
             atom
         }
 
-        fn evaluate_fast(
-            atom: inp_ATOM,
-            ring_size: i8,
-            minimum: i32,
-        ) -> Result<i32, SourceHeapError> {
+        fn evaluate_fast(atom: inp_ATOM, ring_size: i8, minimum: i32) -> Result<i32, SourceHeapError> {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(vec![atom]).unwrap();
             bIsUnsatCarbonInASmallRing(
@@ -4064,11 +3716,7 @@ mod tests {
 
         let mut ring_heap = SourceHeap::default();
         let ring_atoms = ring_heap
-            .allocate_model_storage(vec![
-                atom(2, 3, &[1, 2]),
-                atom(2, 2, &[0, 2]),
-                atom(2, 2, &[0, 1]),
-            ])
+            .allocate_model_storage(vec![atom(2, 3, &[1, 2]), atom(2, 2, &[0, 2]), atom(2, 2, &[0, 1])])
             .unwrap();
         let levels = ring_heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
         let sources = ring_heap.allocate_model_storage(vec![0_i8; 3]).unwrap();
@@ -4088,14 +3736,7 @@ mod tests {
             ..BFS_Q::default()
         };
         assert_eq!(
-            bIsUnsatCarbonInASmallRing(
-                &mut ring_heap,
-                ring_atoms,
-                &vec![VAL_AT::default(); 3],
-                0,
-                &bfs,
-                5,
-            ),
+            bIsUnsatCarbonInASmallRing(&mut ring_heap, ring_atoms, &vec![VAL_AT::default(); 3], 0, &bfs, 5,),
             Ok(1)
         );
         assert_eq!(ring_heap.slice(levels.as_const()).unwrap(), [0, 0, 0]);
@@ -4103,11 +3744,7 @@ mod tests {
 
         let mut open_heap = SourceHeap::default();
         let open_atoms = open_heap
-            .allocate_model_storage(vec![
-                atom(2, 3, &[1, 2]),
-                atom(1, 1, &[0]),
-                atom(1, 1, &[0]),
-            ])
+            .allocate_model_storage(vec![atom(2, 3, &[1, 2]), atom(1, 1, &[0]), atom(1, 1, &[0])])
             .unwrap();
         let levels = open_heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
         let sources = open_heap.allocate_model_storage(vec![0_i8; 3]).unwrap();
@@ -4141,12 +3778,8 @@ mod tests {
     #[test]
     fn source_port__ichirvr5__fixmobilehrestoredstructure__line_141() {
         let mut no_fixed_heap = SourceHeap::default();
-        let input = no_fixed_heap
-            .allocate_model_storage(vec![INChI::default()])
-            .unwrap();
-        let reversed = no_fixed_heap
-            .allocate_model_storage(vec![INChI::default()])
-            .unwrap();
+        let input = no_fixed_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let reversed = no_fixed_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
         let mut no_fixed_structure = StrFromINChI {
             pOneINChI: [reversed, SourceMutPointer::null()],
             ..StrFromINChI::default()
@@ -4212,10 +3845,7 @@ mod tests {
                 heap.live_allocation_count(),
                 fixture_allocations + successful_allocations as usize
             );
-            assert_eq!(
-                structure.nCanon2Atno[0].is_null(),
-                successful_allocations == 0
-            );
+            assert_eq!(structure.nCanon2Atno[0].is_null(), successful_allocations == 0);
             assert!(structure.nAtno2Canon[0].is_null());
         }
 
@@ -4229,9 +3859,7 @@ mod tests {
                 .allocate_model_storage(vec![fixed_h_inchi(fixed_h, SourceMutPointer::null(), 0)])
                 .unwrap();
             let auxiliary = mapping_aux(&mut heap, vec![1]);
-            let atoms = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
+            let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
             let incident = heap.allocate_model_storage(vec![0_i32]).unwrap();
             let vertices = heap
                 .allocate_model_storage(vec![BNS_VERTEX {
@@ -4240,9 +3868,7 @@ mod tests {
                     ..BNS_VERTEX::default()
                 }])
                 .unwrap();
-            let edges = heap
-                .allocate_model_storage(vec![BNS_EDGE::default()])
-                .unwrap();
+            let edges = heap.allocate_model_storage(vec![BNS_EDGE::default()]).unwrap();
             let tcg = heap
                 .allocate_model_storage(vec![TC_GROUP {
                     nVertexNumber: 0,
@@ -4292,17 +3918,10 @@ mod tests {
                     &mut runs,
                     &mut total_delta,
                 ),
-                Ok(if fail_first_edge_list_growth {
-                    RI_ERR_ALLOC
-                } else {
-                    0
-                })
+                Ok(if fail_first_edge_list_growth { RI_ERR_ALLOC } else { 0 })
             );
             assert_eq!((runs, total_delta), (23, 29));
-            assert_eq!(
-                heap.slice(edges.as_const()).unwrap(),
-                &[BNS_EDGE::default()]
-            );
+            assert_eq!(heap.slice(edges.as_const()).unwrap(), &[BNS_EDGE::default()]);
             assert_eq!(
                 heap.live_allocation_count(),
                 fixture_allocations + usize::from(!fail_first_edge_list_growth) * 2

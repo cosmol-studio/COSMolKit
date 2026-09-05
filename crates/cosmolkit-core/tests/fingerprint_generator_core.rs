@@ -1,14 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use cosmolkit_core::fingerprint::{
-    AdditionalOutput, FingerprintFuncArguments, getMorganGeneratorWithParams,
-};
+use cosmolkit_core::fingerprint::{AdditionalOutput, FingerprintFuncArguments, getMorganGeneratorWithParams};
 use cosmolkit_core::{AtomSpec, BondOrder, BondSpec, Element, Molecule};
 
-fn morgan_generator(
-    fp_size: u32,
-    count_simulation: bool,
-) -> cosmolkit_core::fingerprint::MorganFingerprintGenerator {
+fn morgan_generator(fp_size: u32, count_simulation: bool) -> cosmolkit_core::fingerprint::MorganFingerprintGenerator {
     getMorganGeneratorWithParams(
         1,
         count_simulation,
@@ -74,14 +69,8 @@ fn shared_generator_core_preserves_all_four_morgan_scalar_outputs() {
         &BTreeMap::from([(2_246_728_737, 2), (3_545_175_291, 1)])
     );
     assert_eq!(sparse_bit.size(), u64::from(u32::MAX));
-    assert_eq!(
-        sparse_bit.on_bits(),
-        &BTreeSet::from([2_246_728_737, 3_545_175_291])
-    );
-    assert_eq!(
-        folded_count.nonzero_elements(),
-        &BTreeMap::from([(1057, 2), (1275, 1)])
-    );
+    assert_eq!(sparse_bit.on_bits(), &BTreeSet::from([2_246_728_737, 3_545_175_291]));
+    assert_eq!(folded_count.nonzero_elements(), &BTreeMap::from([(1057, 2), (1275, 1)]));
     assert_eq!(explicit_bit.on_bits(), vec![1057, 1275]);
 }
 
@@ -96,10 +85,7 @@ fn shared_generator_core_handles_collisions_count_simulation_and_extra_bits() {
     let collision_bits = collision_generator
         .getFingerprint(&molecule, &mut FingerprintFuncArguments::default())
         .expect("collision bits");
-    assert_eq!(
-        collision_count.nonzero_elements(),
-        &BTreeMap::from([(0, 3)])
-    );
+    assert_eq!(collision_count.nonzero_elements(), &BTreeMap::from([(0, 3)]));
     assert_eq!(collision_bits.on_bits(), vec![0]);
 
     let count_generator = morgan_generator(2048, true);
@@ -148,10 +134,7 @@ fn shared_generator_core_reinitializes_all_outputs_but_retains_atoms_per_bit() {
     generator
         .getSparseCountFingerprint(&molecule, &mut args)
         .expect("second fingerprint");
-    let second = args
-        .additional_output
-        .as_ref()
-        .expect("second additional output");
+    let second = args.additional_output.as_ref().expect("second additional output");
 
     assert_eq!(second.atom_counts, first.atom_counts);
     assert_eq!(second.atom_to_bits, first.atom_to_bits);
@@ -197,8 +180,5 @@ fn shared_generator_core_prepares_a_private_stereo_copy_without_mutating_source(
     assert_eq!(molecule.prop("_StereochemDone"), None);
     assert_eq!(molecule.atoms(), source_atoms.as_slice());
     assert_eq!(molecule.bonds(), source_bonds.as_slice());
-    assert_eq!(
-        molecule.to_smiles(true).expect("final SMILES"),
-        source_smiles
-    );
+    assert_eq!(molecule.to_smiles(true).expect("final SMILES"), source_smiles);
 }

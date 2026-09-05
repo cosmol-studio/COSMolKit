@@ -999,8 +999,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                     };
                     heap.slice_mut(unit)?[0].alist = alist;
                     for m in 0..group.na {
-                        heap.slice_mut(alist)?[m as usize] =
-                            heap.slice(group.alist.as_const())?[m as usize];
+                        heap.slice_mut(alist)?[m as usize] = heap.slice(group.alist.as_const())?[m as usize];
                     }
                     heap.slice_mut(unit)?[0].nb = group.nb;
                     if group.nb > 0 {
@@ -1014,8 +1013,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                         };
                         heap.slice_mut(unit)?[0].blist = blist;
                         for m in 0..group.nb * 2 {
-                            heap.slice_mut(blist)?[m as usize] =
-                                heap.slice(group.blist.as_const())?[m as usize];
+                            heap.slice_mut(blist)?[m as usize] = heap.slice(group.blist.as_const())?[m as usize];
                         }
                     } else {
                         heap.slice_mut(unit)?[0].blist = SourceMutPointer::null();
@@ -1067,9 +1065,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for byte_index in 0..usize::try_from(nat).unwrap_or(0) {
                     let word = byte_index / 4;
                     let shift = (byte_index % 4) * 8;
-                    let byte = ((heap.slice(input.atom_index_orig.as_const())?[word] as u32
-                        >> shift)
-                        & 0xff) as u32;
+                    let byte = ((heap.slice(input.atom_index_orig.as_const())?[word] as u32 >> shift) & 0xff) as u32;
                     let target = &mut heap.slice_mut(destination)?[word];
                     *target = (((*target as u32) & !(0xff << shift)) | (byte << shift)) as i32;
                 }
@@ -1086,9 +1082,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for byte_index in 0..usize::try_from(nat).unwrap_or(0) {
                     let word = byte_index / 4;
                     let shift = (byte_index % 4) * 8;
-                    let byte = ((heap.slice(input.atom_index_fin.as_const())?[word] as u32
-                        >> shift)
-                        & 0xff) as u32;
+                    let byte = ((heap.slice(input.atom_index_fin.as_const())?[word] as u32 >> shift) & 0xff) as u32;
                     let target = &mut heap.slice_mut(destination)?[word];
                     *target = (((*target as u32) & !(0xff << shift)) | (byte << shift)) as i32;
                 }
@@ -1107,11 +1101,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for m in 0..input.n_haptic_bonds {
                     let source = heap.slice(input.lists_haptic_bonds.as_const())?[m as usize];
                     let nn = heap.slice(source.as_const())?[2].wrapping_add(3);
-                    let row = match inchi_calloc(
-                        heap,
-                        u64::try_from(nn).unwrap_or(u64::MAX),
-                        SOURCE_SIZEOF_INT,
-                    ) {
+                    let row = match inchi_calloc(heap, u64::try_from(nn).unwrap_or(u64::MAX), SOURCE_SIZEOF_INT) {
                         Ok(pointer) => pointer,
                         Err(_) => {
                             err = 9001;
@@ -1120,8 +1110,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                     };
                     heap.slice_mut(outer)?[m as usize] = row;
                     for k in 0..nn {
-                        heap.slice_mut(row)?[k as usize] =
-                            heap.slice(source.as_const())?[k as usize];
+                        heap.slice_mut(row)?[k as usize] = heap.slice(source.as_const())?[k as usize];
                     }
                 }
             }
@@ -1141,11 +1130,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for m in 0..input.n_steabs {
                     let source = heap.slice(input.lists_steabs.as_const())?[m as usize];
                     let nn = heap.slice(source.as_const())?[1].wrapping_add(2);
-                    let row = match inchi_calloc(
-                        heap,
-                        u64::try_from(nn).unwrap_or(u64::MAX),
-                        SOURCE_SIZEOF_INT,
-                    ) {
+                    let row = match inchi_calloc(heap, u64::try_from(nn).unwrap_or(u64::MAX), SOURCE_SIZEOF_INT) {
                         Ok(pointer) => pointer,
                         Err(_) => {
                             err = 9001;
@@ -1154,8 +1139,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                     };
                     heap.slice_mut(outer)?[m as usize] = row;
                     for k in 0..nn {
-                        heap.slice_mut(row)?[k as usize] =
-                            heap.slice(source.as_const())?[k as usize];
+                        heap.slice_mut(row)?[k as usize] = heap.slice(source.as_const())?[k as usize];
                     }
                 }
             }
@@ -1175,11 +1159,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for m in 0..input.n_sterac {
                     let source = heap.slice(input.lists_sterac.as_const())?[m as usize];
                     let nn = heap.slice(source.as_const())?[1].wrapping_add(2);
-                    let row = match inchi_calloc(
-                        heap,
-                        u64::try_from(nn).unwrap_or(u64::MAX),
-                        SOURCE_SIZEOF_INT,
-                    ) {
+                    let row = match inchi_calloc(heap, u64::try_from(nn).unwrap_or(u64::MAX), SOURCE_SIZEOF_INT) {
                         Ok(pointer) => pointer,
                         Err(_) => {
                             err = 9001;
@@ -1188,8 +1168,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                     };
                     heap.slice_mut(outer)?[m as usize] = row;
                     for k in 0..nn {
-                        heap.slice_mut(row)?[k as usize] =
-                            heap.slice(source.as_const())?[k as usize];
+                        heap.slice_mut(row)?[k as usize] = heap.slice(source.as_const())?[k as usize];
                     }
                 }
             }
@@ -1209,11 +1188,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 for m in 0..input.n_sterel {
                     let source = heap.slice(input.lists_sterel.as_const())?[m as usize];
                     let nn = heap.slice(source.as_const())?[1].wrapping_add(2);
-                    let row = match inchi_calloc(
-                        heap,
-                        u64::try_from(nn).unwrap_or(u64::MAX),
-                        SOURCE_SIZEOF_INT,
-                    ) {
+                    let row = match inchi_calloc(heap, u64::try_from(nn).unwrap_or(u64::MAX), SOURCE_SIZEOF_INT) {
                         Ok(pointer) => pointer,
                         Err(_) => {
                             err = 9001;
@@ -1222,8 +1197,7 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                     };
                     heap.slice_mut(outer)?[m as usize] = row;
                     for k in 0..nn {
-                        heap.slice_mut(row)?[k as usize] =
-                            heap.slice(source.as_const())?[k as usize];
+                        heap.slice_mut(row)?[k as usize] = heap.slice(source.as_const())?[k as usize];
                     }
                 }
             }
@@ -1286,12 +1260,8 @@ mod tests {
             }])
             .unwrap();
 
-        let atom_index_orig = heap
-            .allocate(vec![0x1122_3344_i32, 0x5566_7788_i32])
-            .unwrap();
-        let atom_index_fin = heap
-            .allocate(vec![0x1020_3040_i32, 0x5060_7080_i32])
-            .unwrap();
+        let atom_index_orig = heap.allocate(vec![0x1122_3344_i32, 0x5566_7788_i32]).unwrap();
+        let atom_index_fin = heap.allocate(vec![0x1020_3040_i32, 0x5060_7080_i32]).unwrap();
         let haptic_row = heap.allocate(vec![7_i32, 8, 2, 11, 12]).unwrap();
         let steabs_row = heap.allocate(vec![0_i32, 2, 21, 22]).unwrap();
         let sterac_row = heap.allocate(vec![31_i32, 2, 32, 33]).unwrap();
@@ -1349,16 +1319,10 @@ mod tests {
             }])
             .unwrap();
         let units = heap.allocate(vec![unit]).unwrap();
-        let polymer = heap
-            .allocate(vec![inchi_Input_Polymer { units, n: 1 }])
-            .unwrap();
+        let polymer = heap.allocate(vec![inchi_Input_Polymer { units, n: 1 }]).unwrap();
 
-        let atom_index_orig = heap
-            .allocate(vec![0x1122_3344_i32, 0x5566_7788_i32])
-            .unwrap();
-        let atom_index_fin = heap
-            .allocate(vec![0x1020_3040_i32, 0x5060_7080_i32])
-            .unwrap();
+        let atom_index_orig = heap.allocate(vec![0x1122_3344_i32, 0x5566_7788_i32]).unwrap();
+        let atom_index_fin = heap.allocate(vec![0x1020_3040_i32, 0x5060_7080_i32]).unwrap();
         let haptic_row = heap.allocate(vec![7_i32, 8, 2, 11, 12]).unwrap();
         let steabs_row = heap.allocate(vec![0_i32, 2, 21, 22]).unwrap();
         let sterac_row = heap.allocate(vec![31_i32, 2, 32, 33]).unwrap();
@@ -1393,12 +1357,8 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__setinchiextinputbyextorigatdata__line_3258() {
         let mut null_heap = SourceHeap::default();
-        let old_polymer = null_heap
-            .allocate(vec![inchi_Input_Polymer::default()])
-            .unwrap();
-        let old_v3000 = null_heap
-            .allocate(vec![inchi_Input_V3000::default()])
-            .unwrap();
+        let old_polymer = null_heap.allocate(vec![inchi_Input_Polymer::default()]).unwrap();
+        let old_v3000 = null_heap.allocate(vec![inchi_Input_V3000::default()]).unwrap();
         let mut polymer_slot = old_polymer;
         let mut v3000_slot = old_v3000;
         assert_eq!(
@@ -1424,9 +1384,7 @@ mod tests {
                 ..OAD_Polymer::default()
             }])
             .unwrap();
-        let old_output = zero_heap
-            .allocate(vec![inchi_Input_Polymer::default()])
-            .unwrap();
+        let old_output = zero_heap.allocate(vec![inchi_Input_Polymer::default()]).unwrap();
         let mut polymer_slot = old_output;
         let mut v3000_slot = SourceMutPointer::null();
         assert_eq!(
@@ -1476,45 +1434,21 @@ mod tests {
             (51, 52, 53, 54, 55, 56)
         );
         assert_eq!(
-            no_output_heap
-                .slice(output.atom_index_orig.as_const())
-                .unwrap(),
+            no_output_heap.slice(output.atom_index_orig.as_const()).unwrap(),
             &[0x1122_3344, 0x88, 0, 0, 0]
         );
         assert_eq!(
-            no_output_heap
-                .slice(output.atom_index_fin.as_const())
-                .unwrap(),
+            no_output_heap.slice(output.atom_index_fin.as_const()).unwrap(),
             &[0x1020_3040, 0x80, 0, 0, 0]
         );
-        let haptic = no_output_heap
-            .slice(output.lists_haptic_bonds.as_const())
-            .unwrap()[0];
-        let steabs = no_output_heap
-            .slice(output.lists_steabs.as_const())
-            .unwrap()[0];
-        let sterac = no_output_heap
-            .slice(output.lists_sterac.as_const())
-            .unwrap()[0];
-        let sterel = no_output_heap
-            .slice(output.lists_sterel.as_const())
-            .unwrap()[0];
-        assert_eq!(
-            no_output_heap.slice(haptic.as_const()).unwrap(),
-            &[7, 8, 2, 11, 12]
-        );
-        assert_eq!(
-            no_output_heap.slice(steabs.as_const()).unwrap(),
-            &[0, 2, 21, 22]
-        );
-        assert_eq!(
-            no_output_heap.slice(sterac.as_const()).unwrap(),
-            &[31, 2, 32, 33]
-        );
-        assert_eq!(
-            no_output_heap.slice(sterel.as_const()).unwrap(),
-            &[41, 2, 42, 43]
-        );
+        let haptic = no_output_heap.slice(output.lists_haptic_bonds.as_const()).unwrap()[0];
+        let steabs = no_output_heap.slice(output.lists_steabs.as_const()).unwrap()[0];
+        let sterac = no_output_heap.slice(output.lists_sterac.as_const()).unwrap()[0];
+        let sterel = no_output_heap.slice(output.lists_sterel.as_const()).unwrap()[0];
+        assert_eq!(no_output_heap.slice(haptic.as_const()).unwrap(), &[7, 8, 2, 11, 12]);
+        assert_eq!(no_output_heap.slice(steabs.as_const()).unwrap(), &[0, 2, 21, 22]);
+        assert_eq!(no_output_heap.slice(sterac.as_const()).unwrap(), &[31, 2, 32, 33]);
+        assert_eq!(no_output_heap.slice(sterel.as_const()).unwrap(), &[41, 2, 42, 43]);
         FreeInChIExtInput(&mut no_output_heap, SourceMutPointer::null(), v3000_slot).unwrap();
         FreeExtOrigAtData(&mut no_output_heap, fixture.polymer, fixture.v3000).unwrap();
         assert_eq!(no_output_heap.live_source_allocation_count(), 1);
@@ -1541,9 +1475,7 @@ mod tests {
 
         let mut existing_heap = SourceHeap::default();
         let fixture = allocate_reverse_fixture(&mut existing_heap, 0);
-        let output_polymer = existing_heap
-            .allocate(vec![inchi_Input_Polymer::default()])
-            .unwrap();
+        let output_polymer = existing_heap.allocate(vec![inchi_Input_Polymer::default()]).unwrap();
         let mut polymer_slot = output_polymer;
         let mut v3000_slot = SourceMutPointer::null();
         assert_eq!(
@@ -1604,9 +1536,7 @@ mod tests {
         inchi_free(&mut zero_lists_heap, zero_v3000).unwrap();
 
         let mut negative_heap = SourceHeap::default();
-        let negative_list = negative_heap
-            .allocate(vec![SourceMutPointer::<i32>::null()])
-            .unwrap();
+        let negative_list = negative_heap.allocate(vec![SourceMutPointer::<i32>::null()]).unwrap();
         let negative_source = negative_heap
             .allocate(vec![OAD_V3000 {
                 n_haptic_bonds: -1,
@@ -1788,11 +1718,7 @@ mod tests {
         );
         let polymer = &heap.slice(polymer_slot.as_const()).unwrap()[0];
         let unit_pointer = heap.slice(polymer.units.as_const()).unwrap()[0];
-        assert!(
-            heap.slice(unit_pointer.as_const()).unwrap()[0]
-                .blist
-                .is_null()
-        );
+        assert!(heap.slice(unit_pointer.as_const()).unwrap()[0].blist.is_null());
         FreeExtOrigAtData(&mut heap, polymer_slot, SourceMutPointer::null()).unwrap();
 
         for successful_allocations in 0..16_u64 {

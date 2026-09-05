@@ -1,8 +1,8 @@
 use cosmolkit_core::{
-    AtomId, AtomSpec, BlockSet, BondId, BondOrder, BondSpec, ChiralTag, CipDescriptor,
-    CipLabelOptions, CipLabelerError, DerivedState, Element, MOLECULE_OPS, MappingRequirement,
-    Molecule, MoleculeBuilder, MoleculeOpKind, OPERATION_INVARIANT_MATRIX, OperationDomain,
-    OperationError, PARITY_MATRIX, ParityPolicy, SUPPORT_MATRIX, SupportStatus, TopologyEditKind,
+    AtomId, AtomSpec, BlockSet, BondId, BondOrder, BondSpec, ChiralTag, CipDescriptor, CipLabelOptions,
+    CipLabelerError, DerivedState, Element, MOLECULE_OPS, MappingRequirement, Molecule, MoleculeBuilder,
+    MoleculeOpKind, OPERATION_INVARIANT_MATRIX, OperationDomain, OperationError, PARITY_MATRIX, ParityPolicy,
+    SUPPORT_MATRIX, SupportStatus, TopologyEditKind,
 };
 
 fn add_tetrahedral_center(builder: &mut MoleculeBuilder, chiral_tag: ChiralTag) -> AtomId {
@@ -30,12 +30,7 @@ fn add_stereo_double_bond(builder: &mut MoleculeBuilder) -> BondId {
                 .with_stereo_atoms(begin_high, end_high),
         )
         .expect("stereo double bond must build");
-    for (focus, neighbor) in [
-        (begin, begin_low),
-        (begin, begin_high),
-        (end, end_low),
-        (end, end_high),
-    ] {
+    for (focus, neighbor) in [(begin, begin_low), (begin, begin_high), (end, end_low), (end, end_high)] {
         builder
             .add_bond(BondSpec::new(focus, neighbor, BondOrder::Single))
             .expect("double-bond substituent must build");
@@ -126,70 +121,32 @@ fn cip_label_value_and_in_place_forms_preserve_source_indices_and_coordinates() 
     let (molecule, first, second, double_bond) = mixed_stereo_molecule();
     let source = molecule.clone();
     let source_coordinates = molecule.conformers_3d().to_vec();
-    let source_atom_ids = molecule
-        .atoms()
-        .iter()
-        .map(|atom| atom.id())
-        .collect::<Vec<_>>();
-    let source_bond_ids = molecule
-        .bonds()
-        .iter()
-        .map(|bond| bond.id())
-        .collect::<Vec<_>>();
+    let source_atom_ids = molecule.atoms().iter().map(|atom| atom.id()).collect::<Vec<_>>();
+    let source_bond_ids = molecule.bonds().iter().map(|bond| bond.id()).collect::<Vec<_>>();
 
-    let labeled = molecule
-        .with_cip_labels()
-        .expect("full assignment must succeed");
-    assert_eq!(
-        molecule, source,
-        "value-style assignment mutated its source"
-    );
+    let labeled = molecule.with_cip_labels().expect("full assignment must succeed");
+    assert_eq!(molecule, source, "value-style assignment mutated its source");
     assert_eq!(labeled.conformers_3d(), source_coordinates);
     assert_eq!(
-        labeled
-            .atoms()
-            .iter()
-            .map(|atom| atom.id())
-            .collect::<Vec<_>>(),
+        labeled.atoms().iter().map(|atom| atom.id()).collect::<Vec<_>>(),
         source_atom_ids
     );
     assert_eq!(
-        labeled
-            .bonds()
-            .iter()
-            .map(|bond| bond.id())
-            .collect::<Vec<_>>(),
+        labeled.bonds().iter().map(|bond| bond.id()).collect::<Vec<_>>(),
         source_bond_ids
     );
-    assert!(
-        labeled.atoms()[first.index()]
-            .cip_descriptor()
-            .unwrap()
-            .is_some()
-    );
-    assert!(
-        labeled.atoms()[second.index()]
-            .cip_descriptor()
-            .unwrap()
-            .is_some()
-    );
+    assert!(labeled.atoms()[first.index()].cip_descriptor().unwrap().is_some());
+    assert!(labeled.atoms()[second.index()].cip_descriptor().unwrap().is_some());
     assert!(matches!(
-        labeled.bonds()[double_bond.index()]
-            .cip_descriptor()
-            .unwrap(),
+        labeled.bonds()[double_bond.index()].cip_descriptor().unwrap(),
         Some(CipDescriptor::E | CipDescriptor::Z)
     ));
     assert_eq!(labeled.prop("_CIPComputed"), Some("1"));
 
     let shared_source = molecule.clone();
     let mut in_place = molecule;
-    in_place
-        .assign_cip_labels_()
-        .expect("in-place assignment must succeed");
-    assert_eq!(
-        shared_source, source,
-        "COW assignment escaped to a shared clone"
-    );
+    in_place.assign_cip_labels_().expect("in-place assignment must succeed");
+    assert_eq!(shared_source, source, "COW assignment escaped to a shared clone");
     assert_eq!(in_place, labeled);
 }
 
@@ -200,34 +157,16 @@ fn cip_label_selection_matches_pinned_wrapper_truth_value_dispatch() {
     let atom_only = molecule
         .with_cip_labels_with_options(CipLabelOptions::default().with_atoms([first]))
         .expect("selected atom assignment must succeed");
-    assert!(
-        atom_only.atoms()[first.index()]
-            .cip_descriptor()
-            .unwrap()
-            .is_some()
-    );
-    assert_eq!(
-        atom_only.atoms()[second.index()].cip_descriptor().unwrap(),
-        None
-    );
-    assert_eq!(
-        atom_only.bonds()[double_bond.index()]
-            .cip_descriptor()
-            .unwrap(),
-        None
-    );
+    assert!(atom_only.atoms()[first.index()].cip_descriptor().unwrap().is_some());
+    assert_eq!(atom_only.atoms()[second.index()].cip_descriptor().unwrap(), None);
+    assert_eq!(atom_only.bonds()[double_bond.index()].cip_descriptor().unwrap(), None);
 
     let bond_only = molecule
         .with_cip_labels_with_options(CipLabelOptions::default().with_bonds([double_bond]))
         .expect("selected bond assignment must succeed");
-    assert_eq!(
-        bond_only.atoms()[first.index()].cip_descriptor().unwrap(),
-        None
-    );
+    assert_eq!(bond_only.atoms()[first.index()].cip_descriptor().unwrap(), None);
     assert!(matches!(
-        bond_only.bonds()[double_bond.index()]
-            .cip_descriptor()
-            .unwrap(),
+        bond_only.bonds()[double_bond.index()].cip_descriptor().unwrap(),
         Some(CipDescriptor::E | CipDescriptor::Z)
     ));
 
@@ -238,18 +177,8 @@ fn cip_label_selection_matches_pinned_wrapper_truth_value_dispatch() {
                 .with_bonds([double_bond]),
         )
         .expect("simultaneous selected assignment must succeed");
-    assert_eq!(
-        simultaneous.atoms()[first.index()]
-            .cip_descriptor()
-            .unwrap(),
-        None
-    );
-    assert!(
-        simultaneous.atoms()[second.index()]
-            .cip_descriptor()
-            .unwrap()
-            .is_some()
-    );
+    assert_eq!(simultaneous.atoms()[first.index()].cip_descriptor().unwrap(), None);
+    assert!(simultaneous.atoms()[second.index()].cip_descriptor().unwrap().is_some());
     assert!(
         simultaneous.bonds()[double_bond.index()]
             .cip_descriptor()
@@ -273,11 +202,7 @@ fn cip_label_selection_matches_pinned_wrapper_truth_value_dispatch() {
     ));
 
     let empty_atoms_with_bond = molecule
-        .with_cip_labels_with_options(
-            CipLabelOptions::default()
-                .with_atoms([])
-                .with_bonds([double_bond]),
-        )
+        .with_cip_labels_with_options(CipLabelOptions::default().with_atoms([]).with_bonds([double_bond]))
         .expect("a non-empty bond selection must use the selected overload");
     assert!(
         empty_atoms_with_bond

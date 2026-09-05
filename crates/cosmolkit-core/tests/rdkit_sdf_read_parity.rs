@@ -4,12 +4,9 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 use std::path::PathBuf;
 
 use cosmolkit_core::{
-    BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule,
-    MoleculeBatch, SdfPropertyListTarget, SmilesWriteParams,
-    io::sdf::{
-        SdfCoordinateMode, SdfDataset, SdfReadParams, SdfReader, SdfRecord,
-        read_sdf_from_str_with_params,
-    },
+    BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule, MoleculeBatch,
+    SdfPropertyListTarget, SmilesWriteParams,
+    io::sdf::{SdfCoordinateMode, SdfDataset, SdfReadParams, SdfReader, SdfRecord, read_sdf_from_str_with_params},
 };
 use serde::Deserialize;
 
@@ -99,20 +96,10 @@ fn load_golden() -> Vec<SdfReadRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    idx + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    idx + 1
-                )
-            })
+            let line =
+                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -191,12 +178,9 @@ fn indexed_dataset_result(record: &SdfReadRecord) -> Result<SdfRecord, String> {
         .ok_or_else(|| "golden row has no SDF text".to_string())?;
     let params = read_params(record);
     let mut temp = tempfile::NamedTempFile::new().expect("should create temp SDF file");
-    temp.write_all(sdf.as_bytes())
-        .expect("should write temp SDF file");
+    temp.write_all(sdf.as_bytes()).expect("should write temp SDF file");
     let dataset = SdfDataset::open_with_params(temp.path(), params).map_err(|e| e.to_string())?;
-    dataset
-        .record_with_params(0, params)
-        .map_err(|error| error.to_string())
+    dataset.record_with_params(0, params).map_err(|error| error.to_string())
 }
 
 fn assert_result_matches_rdkit(
@@ -236,23 +220,13 @@ fn assert_result_matches_rdkit(
     assert_record_matches_rdkit(&parsed, record, row_idx, api_under_test);
 }
 
-fn assert_record_matches_rdkit(
-    actual: &SdfRecord,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_record_matches_rdkit(actual: &SdfRecord, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     assert_molecule_matches_rdkit(&actual.molecule, record, row_idx, api_under_test);
     assert_sdf_data_fields_match(actual, record, row_idx, api_under_test);
     assert_sdf_property_lists_match(&actual.molecule, record, row_idx, api_under_test);
 }
 
-fn assert_molecule_matches_rdkit(
-    molecule: &Molecule,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_molecule_matches_rdkit(molecule: &Molecule, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     let expected_atoms = record.atoms.as_ref().expect("rdkit_ok row has atoms");
     let expected_bonds = record.bonds.as_ref().expect("rdkit_ok row has bonds");
 
@@ -309,16 +283,8 @@ fn assert_molecule_matches_rdkit(
     assert_public_atom_bond_properties_match_rdkit(molecule, record, row_idx, api_under_test);
 }
 
-fn assert_coordinates_match_rdkit(
-    molecule: &Molecule,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
-    let expected_positions = record
-        .positions
-        .as_ref()
-        .expect("rdkit_ok row should have positions");
+fn assert_coordinates_match_rdkit(molecule: &Molecule, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
+    let expected_positions = record.positions.as_ref().expect("rdkit_ok row should have positions");
     if record.dimension == "2D" {
         let coords = molecule.coordinates_2d().unwrap_or_else(|| {
             panic!(
@@ -368,12 +334,7 @@ fn assert_coordinates_match_rdkit(
     }
 }
 
-fn assert_chirality_matches_rdkit(
-    molecule: &Molecule,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_chirality_matches_rdkit(molecule: &Molecule, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     let expected_tags = record
         .chiral_tags
         .as_ref()
@@ -393,12 +354,7 @@ fn assert_chirality_matches_rdkit(
     );
 }
 
-fn assert_smiles_matches_rdkit(
-    molecule: &Molecule,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_smiles_matches_rdkit(molecule: &Molecule, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     let expected = record
         .smiles_out
         .as_ref()
@@ -486,12 +442,7 @@ fn assert_molfile_properties_match_rdkit(
     }
 }
 
-fn assert_sdf_data_fields_match(
-    actual: &SdfRecord,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_sdf_data_fields_match(actual: &SdfRecord, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     let Some(expected_props) = record.properties.as_ref() else {
         return;
     };
@@ -620,17 +571,11 @@ fn assert_public_atom_bond_properties_match_rdkit(
 
 fn public_modeled_props(props: &BTreeMap<String, String>) -> impl Iterator<Item = (&str, &str)> {
     props.iter().filter_map(|(key, value)| {
-        (!key.starts_with('_') && key != "__computedProps")
-            .then_some((key.as_str(), value.as_str()))
+        (!key.starts_with('_') && key != "__computedProps").then_some((key.as_str(), value.as_str()))
     })
 }
 
-fn assert_sdf_property_lists_match(
-    molecule: &Molecule,
-    record: &SdfReadRecord,
-    row_idx: usize,
-    api_under_test: &str,
-) {
+fn assert_sdf_property_lists_match(molecule: &Molecule, record: &SdfReadRecord, row_idx: usize, api_under_test: &str) {
     let expected = expected_property_lists_from_rdkit(record);
     let actual = molecule
         .properties()
@@ -641,11 +586,7 @@ fn assert_sdf_property_lists_match(
                 SdfPropertyListTarget::Atom => "atom",
                 SdfPropertyListTarget::Bond => "bond",
             };
-            (
-                target.to_string(),
-                list.name().to_string(),
-                list.values().to_vec(),
-            )
+            (target.to_string(), list.name().to_string(), list.values().to_vec())
         })
         .collect::<Vec<_>>();
     assert_eq!(
@@ -658,70 +599,28 @@ fn assert_sdf_property_lists_match(
     );
 }
 
-fn expected_property_lists_from_rdkit(
-    record: &SdfReadRecord,
-) -> Vec<(String, String, Vec<Option<String>>)> {
+fn expected_property_lists_from_rdkit(record: &SdfReadRecord) -> Vec<(String, String, Vec<Option<String>>)> {
     if !record.process_property_lists.unwrap_or(true) {
         return Vec::new();
     }
     let mut out = Vec::new();
     for (name, _) in expected_sdf_fields(record) {
         if let Some(prop_name) = name.strip_prefix("atom.prop.") {
-            push_expected_list(
-                &mut out,
-                "atom",
-                prop_name,
-                record.atom_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "atom", prop_name, record.atom_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("atom.iprop.") {
-            push_expected_list(
-                &mut out,
-                "atom",
-                prop_name,
-                record.atom_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "atom", prop_name, record.atom_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("atom.dprop.") {
-            push_expected_list(
-                &mut out,
-                "atom",
-                prop_name,
-                record.atom_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "atom", prop_name, record.atom_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("atom.bprop.") {
-            push_expected_list(
-                &mut out,
-                "atom",
-                prop_name,
-                record.atom_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "atom", prop_name, record.atom_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("bond.prop.") {
-            push_expected_list(
-                &mut out,
-                "bond",
-                prop_name,
-                record.bond_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "bond", prop_name, record.bond_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("bond.iprop.") {
-            push_expected_list(
-                &mut out,
-                "bond",
-                prop_name,
-                record.bond_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "bond", prop_name, record.bond_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("bond.dprop.") {
-            push_expected_list(
-                &mut out,
-                "bond",
-                prop_name,
-                record.bond_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "bond", prop_name, record.bond_properties.as_deref());
         } else if let Some(prop_name) = name.strip_prefix("bond.bprop.") {
-            push_expected_list(
-                &mut out,
-                "bond",
-                prop_name,
-                record.bond_properties.as_deref(),
-            );
+            push_expected_list(&mut out, "bond", prop_name, record.bond_properties.as_deref());
         }
     }
     out
@@ -742,10 +641,7 @@ fn push_expected_list(
     out.push((
         target.to_string(),
         prop_name.to_string(),
-        props
-            .iter()
-            .map(|row| row.get(prop_name).cloned())
-            .collect(),
+        props.iter().map(|row| row.get(prop_name).cloned()).collect(),
     ));
 }
 
@@ -772,9 +668,7 @@ fn assert_case_matrix(records: &[SdfReadRecord]) {
     }
     for api in ["ForwardSDMolSupplier", "SDMolSupplier"] {
         assert!(
-            records
-                .iter()
-                .any(|record| record.api.as_deref() == Some(api)),
+            records.iter().any(|record| record.api.as_deref() == Some(api)),
             "SDF read golden is missing API {api}"
         );
     }
@@ -802,10 +696,9 @@ fn assert_case_matrix(records: &[SdfReadRecord]) {
         }
     }
     assert!(
-        records.iter().any(|record| record
-            .sdf
-            .as_deref()
-            .is_some_and(|sdf| sdf.contains(">  <ID>"))),
+        records
+            .iter()
+            .any(|record| record.sdf.as_deref().is_some_and(|sdf| sdf.contains(">  <ID>"))),
         "SDF read golden must cover data fields"
     );
     assert!(
@@ -935,8 +828,8 @@ fn molecule_batch_sdf_reader_and_dataset_paths_match_rdkit_defaults() {
     let mut temp = tempfile::NamedTempFile::new().expect("should create temp SDF dataset");
     temp.write_all(dataset_sdf.as_bytes())
         .expect("should write temp SDF dataset");
-    let dataset = SdfDataset::open_with_params(temp.path(), SdfReadParams::default())
-        .expect("should open temp SDF dataset");
+    let dataset =
+        SdfDataset::open_with_params(temp.path(), SdfReadParams::default()).expect("should open temp SDF dataset");
     let batch = MoleculeBatch::read_sdf_dataset_with_params_and_options(
         &dataset,
         SdfReadParams::default(),
@@ -968,9 +861,7 @@ fn quick_sdf_parity_rows(records: &[SdfReadRecord]) -> Vec<(usize, &SdfReadRecor
 
     for api in [None, Some("ForwardSDMolSupplier"), Some("SDMolSupplier")] {
         push_first(&|record| {
-            record.rdkit_ok
-                && record.api.as_deref() == api
-                && read_params(record) == SdfReadParams::default()
+            record.rdkit_ok && record.api.as_deref() == api && read_params(record) == SdfReadParams::default()
         });
     }
     for sanitize in [false, true] {
@@ -1001,11 +892,7 @@ fn quick_sdf_parity_rows(records: &[SdfReadRecord]) -> Vec<(usize, &SdfReadRecor
     rows
 }
 
-fn default_success_rows<'a>(
-    records: &'a [SdfReadRecord],
-    api: &str,
-    limit: usize,
-) -> Vec<(usize, &'a SdfReadRecord)> {
+fn default_success_rows<'a>(records: &'a [SdfReadRecord], api: &str, limit: usize) -> Vec<(usize, &'a SdfReadRecord)> {
     records
         .iter()
         .enumerate()
@@ -1019,16 +906,8 @@ fn default_success_rows<'a>(
         .collect()
 }
 
-fn assert_batch_matches_rows(
-    batch: &MoleculeBatch,
-    rows: &[(usize, &SdfReadRecord)],
-    api_under_test: &str,
-) {
-    assert_eq!(
-        batch.len(),
-        rows.len(),
-        "{api_under_test} batch length mismatch"
-    );
+fn assert_batch_matches_rows(batch: &MoleculeBatch, rows: &[(usize, &SdfReadRecord)], api_under_test: &str) {
+    assert_eq!(batch.len(), rows.len(), "{api_under_test} batch length mismatch");
     for ((row_idx, record), batch_record) in rows.iter().zip(batch.iter()) {
         let BatchRecord::Molecule(molecule) = batch_record else {
             panic!(

@@ -4,12 +4,11 @@ use std::sync::{
 };
 
 use cosmolkit_core::{
-    ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC, MaccsFingerprintParams, Molecule, OperationError,
-    SupportStatus, TAUTOMER_ENUMERATION_FEATURE, TautomerCanonicalizationError, TautomerCatalog,
-    TautomerCatalogError, TautomerEnumeration, TautomerEnumerationCallback,
-    TautomerEnumerationError, TautomerEnumerationStatus, TautomerEnumerator, TautomerOptions,
-    TautomerRunError, TautomerScore, TautomerScoreError, TautomerScoreTerm, TautomerTransform,
-    TautomerTransformError, calc_exact_mol_wt, default_tautomer_score_terms, mol_from_binary,
+    ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC, MaccsFingerprintParams, Molecule, OperationError, SupportStatus,
+    TAUTOMER_ENUMERATION_FEATURE, TautomerCanonicalizationError, TautomerCatalog, TautomerCatalogError,
+    TautomerEnumeration, TautomerEnumerationCallback, TautomerEnumerationError, TautomerEnumerationStatus,
+    TautomerEnumerator, TautomerOptions, TautomerRunError, TautomerScore, TautomerScoreError, TautomerScoreTerm,
+    TautomerTransform, TautomerTransformError, calc_exact_mol_wt, default_tautomer_score_terms, mol_from_binary,
     mol_to_binary, score_tautomer,
 };
 
@@ -35,10 +34,7 @@ fn root_exports_defaults_and_registered_molecule_entry_points_are_discoverable()
     assert!(options.reassign_stereo());
 
     assert_eq!(TAUTOMER_ENUMERATION_FEATURE.name, "tautomer.enumeration");
-    assert_eq!(
-        TAUTOMER_ENUMERATION_FEATURE.status,
-        SupportStatus::Experimental
-    );
+    assert_eq!(TAUTOMER_ENUMERATION_FEATURE.status, SupportStatus::Experimental);
     assert_eq!(
         ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC.method,
         "enumerate_tautomers_with_options"
@@ -50,9 +46,7 @@ fn root_exports_defaults_and_registered_molecule_entry_points_are_discoverable()
     let configured_result = source
         .enumerate_tautomers_with_options(&enumerator)
         .expect("configured molecule entry point");
-    let enumerator_result = enumerator
-        .enumerate(&source)
-        .expect("enumerator entry point");
+    let enumerator_result = enumerator.enumerate(&source).expect("enumerator entry point");
 
     assert_eq!(default_result, configured_result);
     assert_eq!(configured_result, enumerator_result);
@@ -99,16 +93,9 @@ fn options_result_sequence_and_canonicalization_form_one_value_style_surface() {
     assert_eq!((&result).into_iter().count(), 2);
     assert_eq!(result[0].to_smiles(true).unwrap(), "C=C(C)O");
 
-    let selected = enumerator
-        .pick_canonical(&result)
-        .expect("pick canonical tautomer");
-    let canonical = enumerator
-        .canonicalize(&source)
-        .expect("canonicalize source");
-    assert_eq!(
-        selected.to_smiles(true).unwrap(),
-        canonical.to_smiles(true).unwrap()
-    );
+    let selected = enumerator.pick_canonical(&result).expect("pick canonical tautomer");
+    let canonical = enumerator.canonicalize(&source).expect("canonicalize source");
+    assert_eq!(selected.to_smiles(true).unwrap(), canonical.to_smiles(true).unwrap());
     assert_eq!(source, before);
     assert_eq!(canonical.prop("record"), Some("source"));
 }
@@ -124,10 +111,8 @@ fn custom_catalog_and_custom_scoring_reuse_the_public_core_types() {
     let catalog = TautomerCatalog::from_data(&definitions).expect("custom catalog");
     assert_eq!(catalog.transforms().len(), 1);
     assert_eq!(catalog.transform(0).unwrap().name(), definitions[0].0);
-    let enumerator = TautomerEnumerator::from_catalog_and_options(
-        catalog,
-        TautomerOptions::default().with_max_transforms(100),
-    );
+    let enumerator =
+        TautomerEnumerator::from_catalog_and_options(catalog, TautomerOptions::default().with_max_transforms(100));
     assert_eq!(enumerator.catalog().transforms().len(), 1);
 
     let source = acetone();
@@ -188,8 +173,8 @@ fn borrowed_callback_cancels_at_the_source_callback_boundary() {
 
 #[test]
 fn public_failures_retain_their_structured_error_categories() {
-    let invalid = Molecule::from_smiles_with_sanitize("c1cccc1", false)
-        .expect("parse deliberately invalid aromatic ring");
+    let invalid =
+        Molecule::from_smiles_with_sanitize("c1cccc1", false).expect("parse deliberately invalid aromatic ring");
     let run_error = invalid
         .enumerate_tautomers()
         .expect_err("invalid aromatic input must fail");
@@ -221,10 +206,8 @@ fn public_failures_retain_their_structured_error_categories() {
     ));
 
     fn assert_score_error(_: &TautomerScoreError) {}
-    let unsanitized_phosphorus =
-        Molecule::from_smiles_with_sanitize("P", false).expect("parse unsanitized phosphorus");
-    let score_error =
-        score_tautomer(&unsanitized_phosphorus).expect_err("phosphorus requires valence state");
+    let unsanitized_phosphorus = Molecule::from_smiles_with_sanitize("P", false).expect("parse unsanitized phosphorus");
+    let score_error = score_tautomer(&unsanitized_phosphorus).expect_err("phosphorus requires valence state");
     assert_score_error(&score_error);
 }
 
@@ -243,10 +226,7 @@ fn emitted_tautomers_compose_with_descriptors_fingerprints_and_binary_io() {
         );
         let binary = mol_to_binary(tautomer).expect("serialize tautomer");
         let restored = mol_from_binary(&binary).expect("restore tautomer");
-        assert_eq!(
-            restored.to_smiles(true).unwrap(),
-            tautomer.to_smiles(true).unwrap()
-        );
+        assert_eq!(restored.to_smiles(true).unwrap(), tautomer.to_smiles(true).unwrap());
     }
 }
 
@@ -286,16 +266,10 @@ fn public_surface_has_no_rdkit_style_or_duplicate_in_place_names() {
 
 #[test]
 fn root_transform_export_constructs_checked_custom_values() {
-    let query =
-        cosmolkit_core::mol_from_smarts("[O]-[C]", &cosmolkit_core::SmartsParseParams::default())
-            .expect("compile transform query");
-    let transform = TautomerTransform::new(
-        "custom",
-        query,
-        vec![cosmolkit_core::BondOrder::Single],
-        Vec::new(),
-    )
-    .expect("construct transform");
+    let query = cosmolkit_core::mol_from_smarts("[O]-[C]", &cosmolkit_core::SmartsParseParams::default())
+        .expect("compile transform query");
+    let transform = TautomerTransform::new("custom", query, vec![cosmolkit_core::BondOrder::Single], Vec::new())
+        .expect("construct transform");
     assert_eq!(transform.name(), "custom");
     assert_eq!(transform.bond_types(), [cosmolkit_core::BondOrder::Single]);
 }

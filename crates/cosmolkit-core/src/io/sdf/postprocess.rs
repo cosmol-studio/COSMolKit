@@ -94,18 +94,11 @@ pub(super) fn finish_mol_processing(
     }
     let explicit_valence = calculate_explicit_valence_before_mol_props(&molecule)?;
     process_mol_props(&mut molecule, params, &explicit_valence)?;
-    let default_conformer_is_3d = molecule
-        .conformers_3d()
-        .first()
-        .is_some_and(crate::Conformer3D::is_3d);
+    let default_conformer_is_3d = molecule.conformers_3d().first().is_some_and(crate::Conformer3D::is_3d);
     if chirality_possible || default_conformer_is_3d {
         if default_conformer_is_3d {
-            let valence = crate::assign_valence_with_options(
-                &molecule,
-                crate::ValenceModel::RdkitLike,
-                false,
-            )
-            .map_err(|err| SdfReadError::Parse(err.to_string()))?;
+            let valence = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+                .map_err(|err| SdfReadError::Parse(err.to_string()))?;
             molecule.derived_cache_mut().valence = Some(valence);
             molecule = assign_chiral_types_from_3d(molecule, params)?;
         } else {
@@ -129,17 +122,12 @@ pub(super) fn finish_mol_processing(
     }
     if molecule.prop("_NeedsQueryScan").is_some() {
         molecule.properties_mut().clear_prop("_NeedsQueryScan");
-        crate::search::query::complete_mol_queries(
-            &mut molecule,
-            crate::search::query::QUERY_SCAN_MAGIC_VALUE,
-        );
+        crate::search::query::complete_mol_queries(&mut molecule, crate::search::query::QUERY_SCAN_MAGIC_VALUE);
     }
     Ok(molecule)
 }
 
-fn calculate_explicit_valence_before_mol_props(
-    molecule: &Molecule,
-) -> Result<Vec<i32>, SdfReadError> {
+fn calculate_explicit_valence_before_mol_props(molecule: &Molecule) -> Result<Vec<i32>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     // RDKit✔️✔️:   // calculate explicit valence on each atom:
     // RDKit✔️✔️:   for (auto atom : res->atoms()) {
@@ -261,9 +249,9 @@ fn process_mol_props(
                 QueryNode::not(QueryNode::predicate(AtomQueryPredicate::Any))
             } else {
                 // RDKit LessEqualQuery stores N but matches N <= atom degree.
-                QueryNode::not(QueryNode::predicate(
-                    AtomQueryPredicate::ExplicitDegreeLessEqual((ival - 1) as u8),
-                ))
+                QueryNode::not(QueryNode::predicate(AtomQueryPredicate::ExplicitDegreeLessEqual(
+                    (ival - 1) as u8,
+                )))
             };
             atom.set_query(Some(merge_atom_query(atom.query().cloned(), degree_query)));
         }
@@ -285,10 +273,7 @@ fn process_mol_props(
     process_sgroups(molecule, params)
 }
 
-pub(super) fn process_sgroups(
-    molecule: &mut Molecule,
-    params: SdfReadParams,
-) -> Result<(), SdfReadError> {
+pub(super) fn process_sgroups(molecule: &mut Molecule, params: SdfReadParams) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: process_sgroups
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void processSGroups
     // RDKit❗❗:
@@ -397,11 +382,8 @@ pub(super) fn process_sgroups(
 fn atom_prop_i32(atom: &crate::Atom, key: &str) -> Result<Option<i32>, SdfReadError> {
     atom.prop(key)
         .map(|value| {
-            parse_rdkit_int(value, false).map_err(|_| {
-                SdfReadError::Parse(format!(
-                    "Cannot convert '{value}' to int for atom property {key}"
-                ))
-            })
+            parse_rdkit_int(value, false)
+                .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{value}' to int for atom property {key}")))
         })
         .transpose()
 }
@@ -417,10 +399,7 @@ pub(super) fn merge_atom_query(
 }
 
 pub(super) fn atom_query_needs_scan(query: &QueryNode<AtomQueryPredicate>) -> bool {
-    crate::search::query::atom_query_has_magic_value(
-        query,
-        crate::search::query::QUERY_SCAN_MAGIC_VALUE,
-    )
+    crate::search::query::atom_query_has_magic_value(query, crate::search::query::QUERY_SCAN_MAGIC_VALUE)
 }
 
 fn sgroup_data_values(sgroup: &SubstanceGroup) -> Vec<&str> {
@@ -434,10 +413,7 @@ fn sgroup_data_values(sgroup: &SubstanceGroup) -> Vec<&str> {
     }
 }
 
-fn process_mrv_coordinate_bond(
-    molecule: &mut Molecule,
-    sgroup: &SubstanceGroup,
-) -> Result<(), SdfReadError> {
+fn process_mrv_coordinate_bond(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: process_mrv_coordinate_bond
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void processMrvCoordinateBond
     // RDKit✔️✔️:   std::vector<std::string> dataFields;
@@ -578,31 +554,21 @@ fn process_smartsq(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(
     // Local complexity review: compile the SMARTS once, then cheaply clone the
     // Arc-backed canonical query molecule for each SGroup atom. This removes
     // RDKit's repeated per-atom parse while preserving identical query data.
-    let Ok(query_molecule) = crate::mol_from_smarts(smarts, &crate::SmartsParseParams::default())
-    else {
+    let Ok(query_molecule) = crate::mol_from_smarts(smarts, &crate::SmartsParseParams::default()) else {
         return Ok(());
     };
     for atom_id in sgroup.atoms() {
         let Some(atom) = molecule.topology_block_mut().atoms.get_mut(atom_id.index()) else {
             continue;
         };
-        atom.set_query(Some(QueryNode::predicate(
-            AtomQueryPredicate::RecursiveSmarts(
-                crate::search::query::RecursiveStructureQuery::from_smarts(
-                    smarts,
-                    query_molecule.clone(),
-                    0,
-                ),
-            ),
-        )));
+        atom.set_query(Some(QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
+            crate::search::query::RecursiveStructureQuery::from_smarts(smarts, query_molecule.clone(), 0),
+        ))));
     }
     Ok(())
 }
 
-fn process_mrv_implicit_h(
-    molecule: &mut Molecule,
-    sgroup: &SubstanceGroup,
-) -> Result<(), SdfReadError> {
+fn process_mrv_implicit_h(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: process_mrv_implicit_h
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void processMrvImplicitH
     // RDKit✔️✔️:   std::vector<std::string> dataFields;
@@ -649,9 +615,8 @@ fn process_mrv_implicit_h(
     let data_fields = sgroup_data_values(sgroup);
     for data_field in data_fields {
         if let Some(rest) = data_field.strip_prefix("IMPL_H") {
-            let val = parse_rdkit_int(rest, false).map_err(|_| {
-                SdfReadError::Parse(format!("Cannot convert '{rest}' to int in MRV_IMPLICIT_H"))
-            })?;
+            let val = parse_rdkit_int(rest, false)
+                .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{rest}' to int in MRV_IMPLICIT_H")))?;
             let aromatic_by_atom: Vec<bool> = molecule
                 .atoms()
                 .iter()
@@ -664,11 +629,7 @@ fn process_mrv_implicit_h(
                 .collect();
             let topology = molecule.topology_block_mut();
             for atom_id in sgroup.atoms() {
-                if aromatic_by_atom
-                    .get(atom_id.index())
-                    .copied()
-                    .unwrap_or(false)
-                {
+                if aromatic_by_atom.get(atom_id.index()).copied().unwrap_or(false) {
                     topology.atoms[atom_id.index()].set_explicit_hydrogens(val as u8);
                 }
             }
@@ -702,8 +663,7 @@ fn parse_sgroup_semicolon_ints(data_field: &str) -> Result<Vec<i32>, SdfReadErro
             if part.is_empty() {
                 Ok(0)
             } else {
-                parse_rdkit_int(part, false)
-                    .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{part}' to int")))
+                parse_rdkit_int(part, false).map_err(|_| SdfReadError::Parse(format!("Cannot convert '{part}' to int")))
             }
         })
         .collect()
@@ -811,10 +771,7 @@ fn process_hyd(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(), S
     Ok(())
 }
 
-fn expand_attachment_points(
-    mut molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn expand_attachment_points(mut molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: expand_attachment_points
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: unsigned int addExplicitAttachmentPoint
     // RDKit✔️❌:   Atom *newAtom = nullptr;
@@ -906,21 +863,17 @@ fn add_explicit_attachment_point(
     let new_idx = {
         let topology = molecule.topology_block_mut();
         let atom_id = AtomId::new(topology.atoms.len());
-        let mut atom_spec =
-            AtomSpec::new(Element::DUMMY).with_prop("_fromAttachPoint", val.to_string());
+        let mut atom_spec = AtomSpec::new(Element::DUMMY).with_prop("_fromAttachPoint", val.to_string());
         if add_as_query {
             atom_spec = atom_spec.with_query(QueryNode::predicate(AtomQueryPredicate::Any));
         }
-        topology
-            .atoms
-            .push(crate::Atom::from_spec(atom_id, atom_spec));
+        topology.atoms.push(crate::Atom::from_spec(atom_id, atom_spec));
         let bond_id = BondId::new(topology.bonds.len());
         topology.bonds.push(crate::Bond::from_spec(
             bond_id,
             BondSpec::new(AtomId::new(atom_idx), atom_id, BondOrder::Single),
         ));
-        topology.adjacency =
-            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology.adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         atom_id.index()
     };
 
@@ -975,10 +928,7 @@ fn add_explicit_attachment_point_coords(
     Ok(())
 }
 
-fn attachment_virtual_adjacency(
-    bonds: &[crate::Bond],
-    atom_count: usize,
-) -> Vec<Vec<(usize, Option<BondId>)>> {
+fn attachment_virtual_adjacency(bonds: &[crate::Bond], atom_count: usize) -> Vec<Vec<(usize, Option<BondId>)>> {
     let mut adjacency = vec![Vec::new(); atom_count];
     for bond in bonds {
         adjacency[bond.begin().index()].push((bond.end().index(), Some(bond.id())));
@@ -1043,10 +993,7 @@ pub(super) fn assign_chiral_types_from_bond_dirs(
             false,
         )
     });
-    let conformer = molecule
-        .conformers_3d()
-        .first()
-        .or(fallback_2d_conformer.as_ref());
+    let conformer = molecule.conformers_3d().first().or(fallback_2d_conformer.as_ref());
     let Some(conformer) = conformer else {
         return Ok(molecule);
     };
@@ -1058,9 +1005,8 @@ pub(super) fn assign_chiral_types_from_bond_dirs(
         atom_degree[bond.begin().index()] += 1;
         atom_degree[bond.end().index()] += 1;
     }
-    let valence =
-        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
-            .map_err(|err| SdfReadError::Parse(err.to_string()))?;
+    let valence = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+        .map_err(|err| SdfReadError::Parse(err.to_string()))?;
     let mut chiral_tag_updates = vec![None; atom_count];
     let mut promote_implicit_h = vec![false; atom_count];
 
@@ -1081,16 +1027,13 @@ pub(super) fn assign_chiral_types_from_bond_dirs(
             continue;
         }
         if atoms_set[atom_idx]
-            || (!replace_existing_tags
-                && molecule.atoms()[atom_idx].chiral_tag() != crate::ChiralTag::Unspecified)
+            || (!replace_existing_tags && molecule.atoms()[atom_idx].chiral_tag() != crate::ChiralTag::Unspecified)
         {
             continue;
         }
 
-        let code = crate::chemistry::stereo::atom_chiral_type_from_bond_dir_pseudo_3d(
-            &molecule, bond_idx, conformer,
-        )
-        .unwrap_or(crate::ChiralTag::Unspecified);
+        let code = crate::chemistry::stereo::atom_chiral_type_from_bond_dir_pseudo_3d(&molecule, bond_idx, conformer)
+            .unwrap_or(crate::ChiralTag::Unspecified);
         if code != crate::ChiralTag::Unspecified {
             atoms_set[atom_idx] = true;
         }
@@ -1139,10 +1082,7 @@ pub(super) fn assign_chiral_types_from_3d(
         .map_err(|error| SdfReadError::Parse(error.to_string()))?;
     Ok(molecule)
 }
-fn detect_atropisomer_chirality(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn detect_atropisomer_chirality(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: detect_atropisomer_chirality
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atropisomers.cpp :: void detectAtropisomerChirality
     // RDKit✔️❌:   PRECONDITION(conf == nullptr || &(conf->getOwningMol()) == &mol,
@@ -1238,12 +1178,9 @@ fn detect_atropisomer_chirality(
     }
 
     let adjacency = crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds())
-        .map_err(|_| {
-            SdfReadError::Parse("atropisomer topology bond atom index out of range".into())
-        })?;
-    let valence =
-        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
-            .map_err(|err| SdfReadError::Parse(err.to_string()))?;
+        .map_err(|_| SdfReadError::Parse("atropisomer topology bond atom index out of range".into()))?;
+    let valence = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+        .map_err(|err| SdfReadError::Parse(err.to_string()))?;
 
     let mut degree_check_passed = false;
     for candidate_id in &candidates {
@@ -1252,18 +1189,8 @@ fn detect_atropisomer_chirality(
         };
         if candidate.order() == BondOrder::Single
             && candidate.stereo() != BondStereo::Any
-            && (2..=3).contains(&atrop_total_degree(
-                &molecule,
-                &adjacency,
-                &valence,
-                candidate.begin(),
-            )?)
-            && (2..=3).contains(&atrop_total_degree(
-                &molecule,
-                &adjacency,
-                &valence,
-                candidate.end(),
-            )?)
+            && (2..=3).contains(&atrop_total_degree(&molecule, &adjacency, &valence, candidate.begin())?)
+            && (2..=3).contains(&atrop_total_degree(&molecule, &adjacency, &valence, candidate.end())?)
         {
             degree_check_passed = true;
             break;
@@ -1274,33 +1201,24 @@ fn detect_atropisomer_chirality(
     }
 
     if molecule.derived_cache().valence.is_none()
-        || molecule.atoms().iter().any(|atom| {
-            atom.atomic_number() != 0 && atom.hybridization() == crate::Hybridization::Unspecified
-        })
+        || molecule
+            .atoms()
+            .iter()
+            .any(|atom| atom.atomic_number() != 0 && atom.hybridization() == crate::Hybridization::Unspecified)
     {
         molecule.derived_cache_mut().valence = Some(valence);
         let conjugation = crate::operations::ops::sanitize_conjugation_assignment(
             crate::read_parts::MoleculeReadParts::from_molecule(&molecule),
         )
         .map_err(|err| SdfReadError::Parse(err.to_string()))?;
-        for (bond, is_conjugated) in molecule
-            .topology_block_mut()
-            .bonds
-            .iter_mut()
-            .zip(conjugation)
-        {
+        for (bond, is_conjugated) in molecule.topology_block_mut().bonds.iter_mut().zip(conjugation) {
             bond.set_conjugated(is_conjugated);
         }
         let hybridization = crate::operations::ops::sanitize_hybridization_assignment(
             crate::read_parts::MoleculeReadParts::from_molecule(&molecule),
         )
         .map_err(|err| SdfReadError::Parse(err.to_string()))?;
-        for (atom, hybridization) in molecule
-            .topology_block_mut()
-            .atoms
-            .iter_mut()
-            .zip(hybridization)
-        {
+        for (atom, hybridization) in molecule.topology_block_mut().atoms.iter_mut().zip(hybridization) {
             atom.set_hybridization(hybridization);
         }
     }
@@ -1313,16 +1231,12 @@ fn detect_atropisomer_chirality(
         };
         if candidate.order() != BondOrder::Single
             || candidate.stereo() == BondStereo::Any
-            || molecule.atoms()[candidate.begin().index()].hybridization()
-                != crate::Hybridization::Sp2
-            || molecule.atoms()[candidate.end().index()].hybridization()
-                != crate::Hybridization::Sp2
+            || molecule.atoms()[candidate.begin().index()].hybridization() != crate::Hybridization::Sp2
+            || molecule.atoms()[candidate.end().index()].hybridization() != crate::Hybridization::Sp2
         {
             continue;
         }
-        if let Some(stereo) =
-            detect_atropisomer_chirality_one_bond(&molecule, candidate_id, conformer)?
-        {
+        if let Some(stereo) = detect_atropisomer_chirality_one_bond(&molecule, candidate_id, conformer)? {
             assignments.push((candidate_id, stereo));
         }
     }
@@ -1332,27 +1246,20 @@ fn detect_atropisomer_chirality(
                 bond.set_stereo(stereo);
             }
         }
-        molecule.derived_cache_mut().invalidate(
-            crate::DerivedState::STEREO
-                | crate::DerivedState::DRAWING
-                | crate::DerivedState::FINGERPRINT,
-        );
+        molecule
+            .derived_cache_mut()
+            .invalidate(crate::DerivedState::STEREO | crate::DerivedState::DRAWING | crate::DerivedState::FINGERPRINT);
     }
     Ok(molecule)
 }
 
 fn atrop_bonds_to_try(molecule: &Molecule) -> Result<Vec<BondId>, SdfReadError> {
     let adjacency = crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds())
-        .map_err(|_| {
-            SdfReadError::Parse("atropisomer topology bond atom index out of range".into())
-        })?;
+        .map_err(|_| SdfReadError::Parse("atropisomer topology bond atom index out of range".into()))?;
     let mut candidates = BTreeSet::new();
     for bond in molecule.bonds() {
         if !atrop_can_have_direction(bond.order())
-            || !matches!(
-                bond.direction(),
-                BondDirection::BeginDash | BondDirection::BeginWedge
-            )
+            || !matches!(bond.direction(), BondDirection::BeginDash | BondDirection::BeginWedge)
         {
             continue;
         }
@@ -1372,9 +1279,9 @@ fn atrop_total_degree(
     valence: &crate::ValenceAssignment,
     atom: AtomId,
 ) -> Result<i32, SdfReadError> {
-    let atom_data = molecule.atom(atom).ok_or_else(|| {
-        SdfReadError::Parse("atropisomer total-degree atom index out of range".into())
-    })?;
+    let atom_data = molecule
+        .atom(atom)
+        .ok_or_else(|| SdfReadError::Parse("atropisomer total-degree atom index out of range".into()))?;
     let graph_degree = i32::try_from(adjacency.neighbors_of(atom.index()).len())
         .map_err(|_| SdfReadError::Parse("atropisomer atom degree out of range".into()))?;
     Ok(graph_degree
@@ -1589,25 +1496,22 @@ fn detect_atropisomer_chirality_one_bond(
             "atropisomer conformer coordinate count is smaller than atom count".into(),
         ));
     }
-    let Some((_x_axis, y_axis, z_axis)) =
-        atrop_bond_frame_of_reference(molecule, bond_id, conformer)
-    else {
+    let Some((_x_axis, y_axis, z_axis)) = atrop_bond_frame_of_reference(molecule, bond_id, conformer) else {
         return Ok(None);
     };
     let mut bond_vecs = [[0.0; 3]; 2];
-    for (bond_atom_index, (focus_atom, nbr_bonds)) in
-        [(candidate.begin(), &nbr0), (candidate.end(), &nbr1)]
-            .into_iter()
-            .enumerate()
+    for (bond_atom_index, (focus_atom, nbr_bonds)) in [(candidate.begin(), &nbr0), (candidate.end(), &nbr1)]
+        .into_iter()
+        .enumerate()
     {
         if !conformer.is_3d() {
             let (ok, dir) = atrop_end_wedge_direction(molecule, nbr_bonds);
             if !ok {
                 return Ok(None);
             }
-            let Some(mut bond_vec) = atrop_projected_end_vector(
-                molecule, conformer, focus_atom, nbr_bonds, y_axis, z_axis, true,
-            ) else {
+            let Some(mut bond_vec) =
+                atrop_projected_end_vector(molecule, conformer, focus_atom, nbr_bonds, y_axis, z_axis, true)
+            else {
                 return Ok(None);
             };
             if dir == BondDirection::BeginWedge {
@@ -1619,9 +1523,9 @@ fn detect_atropisomer_chirality_one_bond(
             }
             bond_vecs[bond_atom_index] = bond_vec;
         } else {
-            let Some(bond_vec) = atrop_projected_end_vector(
-                molecule, conformer, focus_atom, nbr_bonds, y_axis, z_axis, false,
-            ) else {
+            let Some(bond_vec) =
+                atrop_projected_end_vector(molecule, conformer, focus_atom, nbr_bonds, y_axis, z_axis, false)
+            else {
                 return Ok(None);
             };
             if vec3_len(bond_vec) < REALLY_SMALL_BOND_LEN {
@@ -1674,9 +1578,7 @@ fn atrop_neighbor_bonds(
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atropisomers.cpp :: bool getAtropisomerAtomsAndBonds
     let adjacency = crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds())
-        .map_err(|_| {
-            SdfReadError::Parse("atropisomer topology bond atom index out of range".into())
-        })?;
+        .map_err(|_| SdfReadError::Parse("atropisomer topology bond atom index out of range".into()))?;
     let mut bonds: Vec<BondId> = adjacency
         .neighbors_of(focus_atom.index())
         .iter()
@@ -1696,14 +1598,11 @@ fn atrop_neighbor_bonds(
     Ok(Some(bonds))
 }
 
-fn atrop_other_atom(
-    molecule: &Molecule,
-    bond_id: BondId,
-    atom: AtomId,
-) -> Result<AtomId, SdfReadError> {
-    let bond = molecule.bonds().get(bond_id.index()).ok_or_else(|| {
-        SdfReadError::Parse("atropisomer neighbor bond index out of range".into())
-    })?;
+fn atrop_other_atom(molecule: &Molecule, bond_id: BondId, atom: AtomId) -> Result<AtomId, SdfReadError> {
+    let bond = molecule
+        .bonds()
+        .get(bond_id.index())
+        .ok_or_else(|| SdfReadError::Parse("atropisomer neighbor bond index out of range".into()))?;
     if bond.begin() == atom {
         Ok(bond.end())
     } else if bond.end() == atom {
@@ -1754,9 +1653,9 @@ fn atrop_end_wedge_direction(molecule: &Molecule, nbr_bonds: &[BondId]) -> (bool
         _ => BondDirection::None,
     };
     let dir1 = match bond1.map(crate::Bond::direction) {
-        Some(BondDirection::BeginWedge | BondDirection::BeginDash) => bond1
-            .map(crate::Bond::direction)
-            .unwrap_or(BondDirection::None),
+        Some(BondDirection::BeginWedge | BondDirection::BeginDash) => {
+            bond1.map(crate::Bond::direction).unwrap_or(BondDirection::None)
+        }
         _ => BondDirection::None,
     };
     if dir0 != BondDirection::None && dir1 != BondDirection::None && dir0 == dir1 {
@@ -1820,18 +1719,13 @@ fn atrop_bond_frame_of_reference(
         if y_len < REALLY_SMALL_BOND_LEN {
             return None;
         }
-        return Some((
-            x_axis,
-            [-x_axis[1] / y_len, x_axis[0] / y_len, 0.0],
-            [0.0, 0.0, 1.0],
-        ));
+        return Some((x_axis, [-x_axis[1] / y_len, x_axis[0] / y_len, 0.0], [0.0, 0.0, 1.0]));
     }
-    let mut z_axis =
-        if x_axis[0].abs() > REALLY_SMALL_BOND_LEN || x_axis[1].abs() > REALLY_SMALL_BOND_LEN {
-            [0.0, 0.0, 1.0]
-        } else {
-            [1.0, 0.0, 0.0]
-        };
+    let mut z_axis = if x_axis[0].abs() > REALLY_SMALL_BOND_LEN || x_axis[1].abs() > REALLY_SMALL_BOND_LEN {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
     let mut y_axis = vec3_cross(z_axis, x_axis);
     let y_len = vec3_len(y_axis);
     if y_len < REALLY_SMALL_BOND_LEN {
@@ -1912,11 +1806,7 @@ fn atrop_projected_end_vector(
             conformer.coordinates()[other1.index()],
             conformer.coordinates()[focus_atom.index()],
         );
-        other_vec = [
-            0.0,
-            vec3_dot(other_vec, y_axis),
-            vec3_dot(other_vec, z_axis),
-        ];
+        other_vec = [0.0, vec3_dot(other_vec, y_axis), vec3_dot(other_vec, z_axis)];
         if vec3_len(bond_vec) < REALLY_SMALL_BOND_LEN {
             bond_vec = [-other_vec[0], -other_vec[1], -other_vec[2]];
         } else if vec3_dot(bond_vec, other_vec) > REALLY_SMALL_BOND_LEN {
@@ -1954,18 +1844,12 @@ fn vec3_len(v: [f64; 3]) -> f64 {
     vec3_dot(v, v).sqrt()
 }
 
-fn clear_single_bond_dir_flags(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn clear_single_bond_dir_flags(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     let _ = params;
     clear_single_bond_dir_flags_with_mode(molecule, false)
 }
 
-fn clear_single_bond_dir_flags_with_mode(
-    molecule: Molecule,
-    only_wedge_flags: bool,
-) -> Result<Molecule, SdfReadError> {
+fn clear_single_bond_dir_flags_with_mode(molecule: Molecule, only_wedge_flags: bool) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: clear_single_bond_dir_flags
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void clearSingleBondDirFlags
     // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
@@ -2004,10 +1888,7 @@ fn clear_single_bond_dir_flags_with_mode(
     Ok(molecule)
 }
 
-pub(super) fn detect_bond_stereochemistry(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+pub(super) fn detect_bond_stereochemistry(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: detect_bond_stereochemistry
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void detectBondStereochemistry
     // RDKit✔️✔️:   if (!mol.getNumConformers()) {
@@ -2027,16 +1908,12 @@ pub(super) fn detect_bond_stereochemistry(
     // setDoubleBondNeighborDirections data flow: one adjacency pass, per-bond
     // direction flags, neighbor vectors, ordered double-bond processing, and
     // recursive follow-up propagation.
-    crate::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id).map_err(|err| {
-        SdfReadError::Parse(format!("double-bond stereo detection failed: {err}"))
-    })?;
+    crate::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id)
+        .map_err(|err| SdfReadError::Parse(format!("double-bond stereo detection failed: {err}")))?;
     Ok(molecule)
 }
 
-fn sanitize_cleanup_for_sdf_remove_hs(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn sanitize_cleanup_for_sdf_remove_hs(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     // RDKit✔️❌:       unsigned int failedOp = 0;
     // RDKit✔️❌:       MolOps::sanitizeMol(*res, failedOp, MolOps::SANITIZE_CLEANUP);
@@ -2049,10 +1926,7 @@ fn sanitize_cleanup_for_sdf_remove_hs(
     Ok(molecule)
 }
 
-fn sanitize_after_sdf_parse(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn sanitize_after_sdf_parse(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     // RDKit✔️❌:       MolOps::sanitizeMol(*res);
     // COSMolKit routes full default sanitization through the registered sanitize operation.
@@ -2062,10 +1936,7 @@ fn sanitize_after_sdf_parse(
     Ok(molecule)
 }
 
-fn remove_hs_after_sdf_parse(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn remove_hs_after_sdf_parse(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: remove_hs_after_sdf_parse
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/AddHs.cpp :: bool shouldRemoveH
     // RDKit❗❗:   if (atom->getAtomicNum() != 1) {
@@ -2226,27 +2097,19 @@ fn molecule_atom_degrees(molecule: &Molecule) -> Vec<usize> {
     degrees
 }
 
-fn assign_stereochemistry_after_sdf_parse(
-    molecule: Molecule,
-    params: SdfReadParams,
-) -> Result<Molecule, SdfReadError> {
+fn assign_stereochemistry_after_sdf_parse(molecule: Molecule, params: SdfReadParams) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     // RDKit❗❌:     MolOps::assignStereochemistry(*res, true, true, true);
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     let _ = params;
     let mut molecule = molecule;
-    crate::smiles::assign_stereochemistry_cleanup_subset(&mut molecule, true).map_err(|err| {
+    crate::smiles::assign_stereochemistry_cleanup_subset(&mut molecule, true)
+        .map_err(|err| SdfReadError::Parse(format!("post-parse stereochemistry assignment failed: {err}")))?;
+    crate::smiles::assign_double_bond_stereo_after_smiles_parse(&mut molecule, true).map_err(|err| {
         SdfReadError::Parse(format!(
-            "post-parse stereochemistry assignment failed: {err}"
+            "post-parse double-bond stereochemistry assignment failed: {err}"
         ))
     })?;
-    crate::smiles::assign_double_bond_stereo_after_smiles_parse(&mut molecule, true).map_err(
-        |err| {
-            SdfReadError::Parse(format!(
-                "post-parse double-bond stereochemistry assignment failed: {err}"
-            ))
-        },
-    )?;
     Ok(molecule)
 }
 
@@ -2281,11 +2144,7 @@ mod tests {
             .add_bond(BondSpec::new(atom_zero, atom_as_drawn, BondOrder::Single))
             .unwrap();
         builder
-            .add_bond(BondSpec::new(
-                atom_as_drawn,
-                atom_six_or_more,
-                BondOrder::Single,
-            ))
+            .add_bond(BondSpec::new(atom_as_drawn, atom_six_or_more, BondOrder::Single))
             .unwrap();
         let mut molecule = builder.build().unwrap();
 
@@ -2440,10 +2299,7 @@ mod tests {
         let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
-            .add_bond(
-                BondSpec::new(center, fluorine, BondOrder::Single)
-                    .with_direction(BondDirection::BeginWedge),
-            )
+            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single).with_direction(BondDirection::BeginWedge))
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
@@ -2454,12 +2310,7 @@ mod tests {
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![
-                    [0.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [-1.0, -1.0, 0.0],
-                ],
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]],
                 false,
             ))
             .unwrap();
@@ -2476,10 +2327,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
     }
@@ -2492,10 +2340,7 @@ mod tests {
         let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
-            .add_bond(
-                BondSpec::new(center, hydrogen, BondOrder::Single)
-                    .with_direction(BondDirection::BeginWedge),
-            )
+            .add_bond(BondSpec::new(center, hydrogen, BondOrder::Single).with_direction(BondDirection::BeginWedge))
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, fluorine, BondOrder::Single))
@@ -2538,10 +2383,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(molecule.num_atoms(), 5);
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
     }
 
@@ -2584,15 +2426,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
-        assert!(
-            molecule.atoms()[0]
-                .prop("_NonExplicit3DChirality")
-                .is_some()
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert!(molecule.atoms()[0].prop("_NonExplicit3DChirality").is_some());
     }
 
     #[test]
@@ -2601,9 +2436,7 @@ mod tests {
         let carbon = builder.add_atom(AtomSpec::new(Element::C).with_prop("atom_prop", "kept"));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         builder
-            .add_bond(
-                BondSpec::new(carbon, oxygen, BondOrder::Single).with_prop("bond_prop", "kept"),
-            )
+            .add_bond(BondSpec::new(carbon, oxygen, BondOrder::Single).with_prop("bond_prop", "kept"))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -2619,11 +2452,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            molecule
-                .properties()
-                .props()
-                .get("user_prop")
-                .map(String::as_str),
+            molecule.properties().props().get("user_prop").map(String::as_str),
             Some("kept")
         );
         assert_eq!(molecule.atoms()[0].prop("atom_prop"), Some("kept"));
@@ -2659,10 +2488,7 @@ mod tests {
         let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
-            .add_bond(
-                BondSpec::new(center, fluorine, BondOrder::Single)
-                    .with_direction(BondDirection::BeginWedge),
-            )
+            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single).with_direction(BondDirection::BeginWedge))
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
@@ -2673,12 +2499,7 @@ mod tests {
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![
-                    [0.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [-1.0, -1.0, 0.0],
-                ],
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]],
                 false,
             ))
             .unwrap();
@@ -2697,10 +2518,7 @@ mod tests {
 
         assert_eq!(molecule.atoms()[0].prop("molTotValence"), None);
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
     }
 
@@ -2760,15 +2578,8 @@ mod tests {
             molecule.source_coordinate_dim(),
             Some(crate::CoordinateDimension::ThreeD)
         );
-        assert_eq!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
-        assert!(
-            molecule.atoms()[0]
-                .prop("_NonExplicit3DChirality")
-                .is_none()
-        );
+        assert_eq!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert!(molecule.atoms()[0].prop("_NonExplicit3DChirality").is_none());
     }
 
     fn difluoroethene_with_optional_hydrogen(use_hydrogen: bool, is_3d: bool) -> Molecule {
@@ -2781,15 +2592,9 @@ mod tests {
             Element::from_atomic_number(9).unwrap()
         }));
         let right = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-        builder
-            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c0, left, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c1, right, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
+        builder.add_bond(BondSpec::new(c0, left, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c1, right, BondOrder::Single)).unwrap();
         builder
             .add_conformer(Conformer3D::new(
                 0,
@@ -2845,9 +2650,7 @@ mod tests {
         let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
         let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
         let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-        builder
-            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
         builder
             .add_bond(
                 BondSpec::new(f, c0, BondOrder::Single)
@@ -2855,18 +2658,11 @@ mod tests {
                     .with_unknown_stereo(true),
             )
             .unwrap();
-        builder
-            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![
-                    [-1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [-1.0, 1.0, 0.0],
-                    [1.0, -1.0, 0.0],
-                ],
+                vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, -1.0, 0.0]],
                 false,
             ))
             .unwrap();
@@ -2952,10 +2748,7 @@ mod tests {
     }
 
     fn v2000_bond_line(begin: u32, end: u32, bond_type: u32, stereo: u32, topology: u32) -> String {
-        format!(
-            "{begin:>3}{end:>3}{bond_type:>3}{stereo:>3}{:>3}{topology:>3}",
-            0
-        )
+        format!("{begin:>3}{end:>3}{bond_type:>3}{stereo:>3}{:>3}{topology:>3}", 0)
     }
 
     fn nitro_group_fixture() -> (Molecule, AtomId, AtomId, AtomId) {
@@ -2976,21 +2769,11 @@ mod tests {
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![
-                    [0.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [2.0, 1.0, 0.0],
-                    [2.0, -1.0, 0.0],
-                ],
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 1.0, 0.0], [2.0, -1.0, 0.0]],
                 false,
             ))
             .unwrap();
-        (
-            builder.build().unwrap(),
-            nitrogen,
-            oxygen_single,
-            oxygen_double,
-        )
+        (builder.build().unwrap(), nitrogen, oxygen_single, oxygen_double)
     }
 
     #[test]
@@ -3144,21 +2927,14 @@ M  END
 
         let molecule = finish_mol_processing(molecule, true, sanitize_remove_hs_params()).unwrap();
 
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
     }
 
     #[test]
     fn molblock_sanitize_remove_hs_handles_explicit_h_on_aromatic_nitrogen_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
-        let nitrogen = builder.add_atom(
-            AtomSpec::new(Element::N)
-                .with_aromatic(true)
-                .with_no_implicit(true),
-        );
+        let nitrogen = builder.add_atom(AtomSpec::new(Element::N).with_aromatic(true).with_no_implicit(true));
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let c1 = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
         let c2 = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
@@ -3218,10 +2994,7 @@ M  END
         let alkene_f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
         let alkene_cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         builder
-            .add_bond(
-                BondSpec::new(center, hydrogen, BondOrder::Single)
-                    .with_direction(BondDirection::BeginWedge),
-            )
+            .add_bond(BondSpec::new(center, hydrogen, BondOrder::Single).with_direction(BondDirection::BeginWedge))
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, fluorine, BondOrder::Single))
@@ -3262,10 +3035,7 @@ M  END
 
         let molecule = finish_mol_processing(molecule, true, sanitize_remove_hs_params()).unwrap();
 
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.num_atoms(), 8);
         assert_eq!(molecule.bonds()[3].stereo(), BondStereo::E);
         assert_eq!(
@@ -3306,10 +3076,7 @@ M  END
 
         let molecule = finish_mol_processing(molecule, true, sanitize_keep_hs_params()).unwrap();
 
-        assert_ne!(
-            molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
         assert_eq!(molecule.prop("_StereochemDone"), Some("1"));
     }

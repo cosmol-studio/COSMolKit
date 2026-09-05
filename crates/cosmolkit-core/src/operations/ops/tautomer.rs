@@ -7,9 +7,8 @@ use crate::chemistry::tautomer::{
     TautomerEnumeration, TautomerEnumerationStatus, TautomerEnumerator, TautomerExpandedProduct,
     TautomerExpansionAttempt, TautomerExpansionError, TautomerExpansionState, TautomerProductPlan,
     TautomerPruningError, TautomerRunError, TautomerStereoUpdatePlan, TautomerTransformAttempt,
-    apply_tautomer_transform_match, evaluate_tautomer_callback,
-    expand_tautomer_candidates_in_source_order, find_tautomer_transform_matches,
-    materialize_tautomer_candidates_in_source_order, plan_tautomer_initialization,
+    apply_tautomer_transform_match, evaluate_tautomer_callback, expand_tautomer_candidates_in_source_order,
+    find_tautomer_transform_matches, materialize_tautomer_candidates_in_source_order, plan_tautomer_initialization,
     plan_tautomer_stereo_update, prune_and_rekey_tautomer_candidates_in_source_order,
 };
 
@@ -27,10 +26,7 @@ fn tautomer_operation_error(source: TautomerRunError) -> OperationError {
     }
 }
 
-fn apply_derived_cache_snapshot(
-    branch: &mut OpParts<'_>,
-    cache: &crate::molecule::DerivedCacheBlock,
-) {
+fn apply_derived_cache_snapshot(branch: &mut OpParts<'_>, cache: &crate::molecule::DerivedCacheBlock) {
     branch.clear_cache(ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC.needs_update());
     if let Some(rings) = &cache.rings {
         branch.set_rings_cache(rings.clone());
@@ -79,10 +75,7 @@ fn apply_kekulize_snapshot(
     Ok(())
 }
 
-fn apply_product_plan(
-    branch: &mut OpParts<'_>,
-    plan: &TautomerProductPlan,
-) -> Result<(), OperationError> {
+fn apply_product_plan(branch: &mut OpParts<'_>, plan: &TautomerProductPlan) -> Result<(), OperationError> {
     apply_topology_and_property_snapshot(
         branch,
         plan.topology.clone(),
@@ -91,10 +84,7 @@ fn apply_product_plan(
     )
 }
 
-fn apply_stereo_update_plan(
-    branch: &mut OpParts<'_>,
-    plan: &TautomerStereoUpdatePlan,
-) -> Result<(), OperationError> {
+fn apply_stereo_update_plan(branch: &mut OpParts<'_>, plan: &TautomerStereoUpdatePlan) -> Result<(), OperationError> {
     apply_topology_and_property_snapshot(
         branch,
         plan.topology.clone(),
@@ -180,12 +170,9 @@ pub(super) fn enumerate_tautomers_with_options_impl(
             transforms,
             options,
             |kekulized, transform| {
-                executor
-                    .borrow()
-                    .with_branch_read_parts(*kekulized, |read| {
-                        find_tautomer_transform_matches(read, transform)
-                            .map_err(tautomer_operation_error)
-                    })
+                executor.borrow().with_branch_read_parts(*kekulized, |read| {
+                    find_tautomer_transform_matches(read, transform).map_err(tautomer_operation_error)
+                })
             },
             |kekulized, transform, matched, modified_atoms, modified_bonds, existing_smiles| {
                 let attempt = executor.borrow().with_source_and_branch_read_parts(
@@ -229,9 +216,8 @@ pub(super) fn enumerate_tautomers_with_options_impl(
                         let kekulize_assignment = plan.kekulize_assignment.clone();
                         let derived_cache = plan.derived_cache.clone();
                         let mut executor = executor.borrow_mut();
-                        let tautomer = executor.derive_from_branch(*kekulized, |branch| {
-                            apply_product_plan(branch, &plan)
-                        })?;
+                        let tautomer =
+                            executor.derive_from_branch(*kekulized, |branch| apply_product_plan(branch, &plan))?;
                         let kekulized = executor.derive_from_branch(tautomer, |branch| {
                             apply_kekulize_snapshot(branch, &kekulize_assignment, &derived_cache)
                         })?;
@@ -263,13 +249,10 @@ pub(super) fn enumerate_tautomers_with_options_impl(
                             })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let branches = ordered
-                    .iter()
-                    .map(|(_, branch)| *branch)
-                    .collect::<Vec<_>>();
-                executor.borrow().with_source_and_branches_read_parts(
-                    &branches,
-                    |source_read, branch_reads| {
+                let branches = ordered.iter().map(|(_, branch)| *branch).collect::<Vec<_>>();
+                executor
+                    .borrow()
+                    .with_source_and_branches_read_parts(&branches, |source_read, branch_reads| {
                         let candidate_reads = ordered
                             .iter()
                             .map(|(canonical_smiles, _)| canonical_smiles.clone())
@@ -284,8 +267,7 @@ pub(super) fn enumerate_tautomers_with_options_impl(
                             &current.modified_bonds,
                         )
                         .map_err(tautomer_operation_error)
-                    },
-                )
+                    })
             },
         )
         .map_err(map_expansion_error)?;
@@ -295,25 +277,23 @@ pub(super) fn enumerate_tautomers_with_options_impl(
             options,
             expansion.bailed_out,
             |tautomer, modified_atoms, modified_bonds| {
-                let plan = executor.borrow().with_source_and_branch_read_parts(
-                    *tautomer,
-                    |source_read, tautomer_read| {
-                        plan_tautomer_stereo_update(
-                            source_read,
-                            tautomer_read,
-                            modified_atoms,
-                            modified_bonds,
-                            options,
-                        )
-                        .map_err(tautomer_operation_error)
-                    },
-                )?;
+                let plan =
+                    executor
+                        .borrow()
+                        .with_source_and_branch_read_parts(*tautomer, |source_read, tautomer_read| {
+                            plan_tautomer_stereo_update(
+                                source_read,
+                                tautomer_read,
+                                modified_atoms,
+                                modified_bonds,
+                                options,
+                            )
+                            .map_err(tautomer_operation_error)
+                        })?;
                 let changed = plan.changed;
                 let replacement = executor
                     .borrow_mut()
-                    .derive_from_branch(*tautomer, |branch| {
-                        apply_stereo_update_plan(branch, &plan)
-                    })?;
+                    .derive_from_branch(*tautomer, |branch| apply_stereo_update_plan(branch, &plan))?;
                 *tautomer = replacement;
                 Ok(changed)
             },
@@ -360,11 +340,7 @@ pub(super) fn assemble_tautomer_enumeration(
         });
     }
     Ok(TautomerEnumeration::from_ordered_entries(
-        metadata
-            .canonical_smiles
-            .into_iter()
-            .zip(molecules)
-            .collect(),
+        metadata.canonical_smiles.into_iter().zip(molecules).collect(),
         metadata.status,
         metadata.modified_atoms,
         metadata.modified_bonds,

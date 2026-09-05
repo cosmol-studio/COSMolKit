@@ -2,28 +2,22 @@ use crate::source::base::ichi_bns::nBondsValenceInpAt;
 use crate::source::base::ichi_io::{inchi_fgetsLf, inchi_ios_print_nodisplay};
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::util::{
-    dotify_non_printable_chars, get_atomic_mass_from_elnum, inchi_calloc, inchi_free,
-    inchi_memicmp, is_in_the_ilist, mystrncpy, needed_unusual_el_valence, normalize_string,
-    remove_trailing_spaces,
+    dotify_non_printable_chars, get_atomic_mass_from_elnum, inchi_calloc, inchi_free, inchi_memicmp, is_in_the_ilist,
+    mystrncpy, needed_unusual_el_valence, normalize_string, remove_trailing_spaces,
 };
 use crate::source_types::local_mol_fmt4::{
-    SD_FMT_END_OF_DATA_BLOCK, SD_FMT_END_OF_DATA_ITEM, SDF_DATA_HEADER, SDF_DATA_HEADER_CAS,
-    SDF_DATA_HEADER_COMMENT, SDF_DATA_HEADER_NAME, SDF_DATA_HEADER_USER, SDF_DATA_LINE,
-    SDF_EMPTY_LINE, SDF_START,
+    SD_FMT_END_OF_DATA_BLOCK, SD_FMT_END_OF_DATA_ITEM, SDF_DATA_HEADER, SDF_DATA_HEADER_CAS, SDF_DATA_HEADER_COMMENT,
+    SDF_DATA_HEADER_NAME, SDF_DATA_HEADER_USER, SDF_DATA_LINE, SDF_EMPTY_LINE, SDF_START,
 };
 use crate::source_types::{
-    _IS_ERROR, FILE, INCHI_IOSTREAM, INT_ARRAY, MAX_SDF_VALUE, MOL_FMT_INPLINELEN,
-    MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH, MOL_FMT_M_CONN_HT, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK,
-    MOL_FMT_M_SST_RAN, MOL_FMT_MAXLINELEN, MOL_FMT_SGROUP, MOL_FMT_SGROUPS, NUM_LISTS,
-    OAD_PolymerUnit, ORIG_ATOM_DATA, RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET,
-    SD_FMT_END_OF_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
+    _IS_ERROR, FILE, INCHI_IOSTREAM, INT_ARRAY, MAX_SDF_VALUE, MOL_FMT_INPLINELEN, MOL_FMT_M_CONN_EU,
+    MOL_FMT_M_CONN_HH, MOL_FMT_M_CONN_HT, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK, MOL_FMT_M_SST_RAN, MOL_FMT_MAXLINELEN,
+    MOL_FMT_SGROUP, MOL_FMT_SGROUPS, NUM_LISTS, OAD_PolymerUnit, ORIG_ATOM_DATA, RADICAL_DOUBLET, RADICAL_SINGLET,
+    RADICAL_TRIPLET, SD_FMT_END_OF_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
     SourceMutPointer, SourceVaList, inp_ATOM,
 };
 
-fn mol_fmt4_add_ascii_message(
-    target: Option<&mut [i8]>,
-    message: &[u8],
-) -> Result<i32, SourceHeapError> {
+fn mol_fmt4_add_ascii_message(target: Option<&mut [i8]>, message: &[u8]) -> Result<i32, SourceHeapError> {
     let terminated = message
         .iter()
         .map(|byte| *byte as i8)
@@ -921,10 +915,7 @@ fn mol_fmt4_print(
         stream,
         stdout,
         format_pointer.as_const(),
-        &SourceVaList {
-            arguments,
-            position: 0,
-        },
+        &SourceVaList { arguments, position: 0 },
     );
     heap.free(format_pointer)?;
     result
@@ -1272,10 +1263,7 @@ int MolFmtSgroups_GetIndexBySgroupId(int id, MOL_FMT_SGROUPS *sgroups)
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn IntArray_ReAlloc(
-    heap: &mut SourceHeap,
-    items: Option<&mut INT_ARRAY>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn IntArray_ReAlloc(heap: &mut SourceHeap, items: Option<&mut INT_ARRAY>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:525 IntArray_ReAlloc
     // INCHI✔️❌: int IntArray_ReAlloc(INT_ARRAY *items)
     // INCHI✔️❌: {
@@ -1490,10 +1478,7 @@ pub(crate) fn IntArray_Reset(items: &mut INT_ARRAY) {
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn IntArray_Free(
-    heap: &mut SourceHeap,
-    items: Option<&mut INT_ARRAY>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn IntArray_Free(heap: &mut SourceHeap, items: Option<&mut INT_ARRAY>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:610 IntArray_Free
     // INCHI✔️❌: void IntArray_Free(INT_ARRAY *items)
     // INCHI✔️❌: {
@@ -1634,10 +1619,7 @@ void MolFmtSgroup_Free(MOL_FMT_SGROUP *sgroup)
     inchi_free(heap, sgroup)
 }
 
-fn mol_fmt4_c_text(
-    heap: &SourceHeap,
-    pointer: SourceConstPointer<i8>,
-) -> Result<Vec<u8>, SourceHeapError> {
+fn mol_fmt4_c_text(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<Vec<u8>, SourceHeapError> {
     if pointer.is_null() {
         return Ok(Vec::new());
     }
@@ -1817,27 +1799,13 @@ pub(crate) fn OrigAtData_WriteToSDfile(
             let label_bytes = mol_fmt4_c_text(heap, label)?;
             if !label_bytes.is_empty() {
                 let format = (*b"> <%s>\n\0").map(|byte| byte as i8);
-                mol_fmt4_print_dynamic_bytes(
-                    heap,
-                    stream.as_deref_mut(),
-                    stdout,
-                    &format,
-                    vec![],
-                    &label_bytes,
-                )?;
+                mol_fmt4_print_dynamic_bytes(heap, stream.as_deref_mut(), stdout, &format, vec![], &label_bytes)?;
             } else {
                 let format = (*b"> <ID>\n\0").map(|byte| byte as i8);
                 let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![])?;
             }
             let format = (*b" %s\n\n\0").map(|byte| byte as i8);
-            mol_fmt4_print_dynamic_bytes(
-                heap,
-                stream.as_deref_mut(),
-                stdout,
-                &format,
-                vec![],
-                &value_bytes,
-            )?;
+            mol_fmt4_print_dynamic_bytes(heap, stream.as_deref_mut(), stdout, &format, vec![], &value_bytes)?;
         }
         let format = (*b"$$$$\n\0").map(|byte| byte as i8);
         let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![])?;
@@ -1851,10 +1819,7 @@ pub(crate) fn OrigAtData_WriteToSDfile(
     }
 }
 
-fn mol_fmt4_header_text(
-    heap: &SourceHeap,
-    pointer: SourceConstPointer<i8>,
-) -> Result<Vec<u8>, SourceHeapError> {
+fn mol_fmt4_header_text(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<Vec<u8>, SourceHeapError> {
     if pointer.is_null() {
         return Ok(Vec::new());
     }
@@ -2049,17 +2014,9 @@ pub(crate) fn OrigAtData_WriteToSDfileHeaderAndCountThings(
     let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![])?;
     let comment = mol_fmt4_header_text(heap, comment)?;
     let format = (*b"%s\n\0").map(|byte| byte as i8);
-    mol_fmt4_print_dynamic_bytes(
-        heap,
-        stream.as_deref_mut(),
-        stdout,
-        &format,
-        vec![],
-        &comment,
-    )?;
+    mol_fmt4_print_dynamic_bytes(heap, stream.as_deref_mut(), stdout, &format, vec![], &comment)?;
 
-    let atom_count =
-        usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = if atom_count == 0 {
         &[][..]
     } else {
@@ -2077,12 +2034,7 @@ pub(crate) fn OrigAtData_WriteToSDfileHeaderAndCountThings(
     let mut necessary_charge_lines = 0_i32;
     let mut necessary_radical_lines = 0_i32;
     for atom in atoms {
-        let alias = atom
-            .num_iso_H
-            .iter()
-            .map(|value| i32::from(*value))
-            .sum::<i32>()
-            > 0;
+        let alias = atom.num_iso_H.iter().map(|value| i32::from(*value)).sum::<i32>() > 0;
         if alias {
             *num_alias_lines = num_alias_lines.wrapping_add(2);
             continue;
@@ -2093,10 +2045,8 @@ pub(crate) fn OrigAtData_WriteToSDfileHeaderAndCountThings(
         necessary_iso_lines = necessary_iso_lines.wrapping_add(i32::from(
             atom.iso_atw_diff == 1 || atom.iso_atw_diff < -3 || atom.iso_atw_diff > 5,
         ));
-        necessary_charge_lines =
-            necessary_charge_lines.wrapping_add(i32::from(i32::from(atom.charge).abs() > 3));
-        let valid_radical =
-            (RADICAL_SINGLET as i32..=RADICAL_TRIPLET as i32).contains(&i32::from(atom.radical));
+        necessary_charge_lines = necessary_charge_lines.wrapping_add(i32::from(i32::from(atom.charge).abs() > 3));
+        let valid_radical = (RADICAL_SINGLET as i32..=RADICAL_TRIPLET as i32).contains(&i32::from(atom.radical));
         necessary_radical_lines = necessary_radical_lines.wrapping_add(i32::from(valid_radical));
         let any_iso = if atoms_dt != 0 {
             atom.iso_atw_diff != 0 && !deuterium && !tritium
@@ -2113,11 +2063,7 @@ pub(crate) fn OrigAtData_WriteToSDfileHeaderAndCountThings(
     *num_iso_lines = num_iso_lines.wrapping_add(7) / 8;
 
     // SDF_OUTPUT_V2000 is 1 in the selected production configuration.
-    let _inactive_v2000_counters = (
-        necessary_iso_lines,
-        necessary_charge_lines,
-        necessary_radical_lines,
-    );
+    let _inactive_v2000_counters = (necessary_iso_lines, necessary_charge_lines, necessary_radical_lines);
     *num_add_lines = num_charge_lines
         .wrapping_add(*num_radical_lines)
         .wrapping_add(*num_iso_lines)
@@ -2293,8 +2239,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAtomsBlock(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigAtData_WriteToSDfileAtomsBlock
 
-    let atom_count =
-        usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = if atom_count == 0 {
         Vec::new()
     } else {
@@ -2314,12 +2259,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAtomsBlock(
         } else {
             0
         };
-        let alias = atom
-            .num_iso_H
-            .iter()
-            .map(|value| i32::from(*value))
-            .sum::<i32>()
-            > 0;
+        let alias = atom.num_iso_H.iter().map(|value| i32::from(*value)).sum::<i32>() > 0;
         let mut element = if alias {
             b"C".to_vec()
         } else if isotope_hydrogen != 0 {
@@ -2340,8 +2280,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAtomsBlock(
                 .map(|byte| *byte as u8)
                 .collect()
         };
-        let valid_radical =
-            (RADICAL_SINGLET as i32..=RADICAL_TRIPLET as i32).contains(&i32::from(atom.radical));
+        let valid_radical = (RADICAL_SINGLET as i32..=RADICAL_TRIPLET as i32).contains(&i32::from(atom.radical));
         let mut molfile_charge = 0_i32;
         if !alias {
             if i32::from(atom.charge).abs() <= 3 && !valid_radical {
@@ -2364,8 +2303,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAtomsBlock(
         } else {
             atom.iso_atw_diff != 0 || deuterium || tritium
         };
-        let abnormal_iso =
-            atom.iso_atw_diff == 1 || atom.iso_atw_diff < -3 || atom.iso_atw_diff > 5;
+        let abnormal_iso = atom.iso_atw_diff == 1 || atom.iso_atw_diff < -3 || atom.iso_atw_diff > 5;
         let isotope = if any_iso && !abnormal_iso {
             if atom.iso_atw_diff > 0 {
                 i32::from(atom.iso_atw_diff) - 1
@@ -2407,8 +2345,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAtomsBlock(
                 .map(|byte| byte as i8)
                 .collect(),
         )?;
-        let format = (*b"%10.4f%10.4f%10.4f %-3.3s%2d%3d  0     0%3d  0  0  0  0\n\0")
-            .map(|byte| byte as i8);
+        let format = (*b"%10.4f%10.4f%10.4f %-3.3s%2d%3d  0     0%3d  0  0  0  0\n\0").map(|byte| byte as i8);
         let result = mol_fmt4_print(
             heap,
             stream.as_deref_mut(),
@@ -2504,8 +2441,7 @@ pub(crate) fn OrigAtData_WriteToSDfileBondsBlock(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigAtData_WriteToSDfileBondsBlock
 
-    let atom_count =
-        usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = if atom_count == 0 {
         Vec::new()
     } else {
@@ -2517,8 +2453,7 @@ pub(crate) fn OrigAtData_WriteToSDfileBondsBlock(
     for (atom_index, atom) in atoms.iter().enumerate() {
         let mut bond_index = 0_i32;
         while bond_index < i32::from(atom.valence) {
-            let order =
-                usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let order = usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neighbor = i32::from(atom.neighbor[order]);
             if atom_index as i32 >= neighbor {
                 bond_index += 1;
@@ -2882,15 +2817,7 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
         );
     }
 
-    let sty = [
-        b"NON".as_slice(),
-        b"SRU",
-        b"MON",
-        b"COP",
-        b"MOD",
-        b"CRO",
-        b"MER",
-    ];
+    let sty = [b"NON".as_slice(), b"SRU", b"MON", b"COP", b"MOD", b"CRO", b"MER"];
     let sst = [b"NON".as_slice(), b"ALT", b"RAN", b"BLO"];
     let con = [b"NON".as_slice(), b"HT", b"HH", b"EU"];
     let signed = |value: i32| SourceFormatArgument::Signed(i64::from(value));
@@ -2905,13 +2832,7 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
         if matched == 8 || j == polymer.n - 1 {
             let shown = if matched % 8 != 0 { matched % 8 } else { 8 };
             let format = (*b"M  STY%3d\0").map(|byte| byte as i8);
-            let _ = mol_fmt4_print(
-                heap,
-                stream.as_deref_mut(),
-                stdout,
-                &format,
-                vec![signed(shown)],
-            )?;
+            let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![signed(shown)])?;
             for k in previous + 1..=j {
                 let unit = &units[k as usize];
                 if unit.type_ > 0 && unit.type_ <= 6 {
@@ -2939,13 +2860,7 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
             let end = j + 1;
             let shown = if end % 8 != 0 { end % 8 } else { 8 };
             let format = (*b"M  SLB%3d\0").map(|byte| byte as i8);
-            let _ = mol_fmt4_print(
-                heap,
-                stream.as_deref_mut(),
-                stdout,
-                &format,
-                vec![signed(shown)],
-            )?;
+            let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![signed(shown)])?;
             for k in previous + 1..end {
                 let unit = &units[k as usize];
                 let format = (*b" %3d %3d\0").map(|byte| byte as i8);
@@ -2983,8 +2898,7 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
             ],
         ),
     ] {
-        let field_value =
-            |unit: &OAD_PolymerUnit| if field == 0 { unit.subtype } else { unit.conn };
+        let field_value = |unit: &OAD_PolymerUnit| if field == 0 { unit.subtype } else { unit.conn };
         if !units.iter().any(|unit| valid.contains(&field_value(unit))) {
             continue;
         }
@@ -3002,13 +2916,7 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
                 } else {
                     (*b"M  SCN%3d\0").map(|byte| byte as i8)
                 };
-                let _ = mol_fmt4_print(
-                    heap,
-                    stream.as_deref_mut(),
-                    stdout,
-                    &format,
-                    vec![signed(shown)],
-                )?;
+                let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![signed(shown)])?;
                 for k in previous + 1..=j {
                     let unit = &units[k as usize];
                     let value = field_value(unit);
@@ -3049,17 +2957,9 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
                 )?;
                 let atoms = heap.slice(unit.alist.as_const())?.to_vec();
                 for k in previous + 1..=j {
-                    let value = *atoms
-                        .get(k as usize)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let value = *atoms.get(k as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let format = (*b" %3d\0").map(|byte| byte as i8);
-                    let _ = mol_fmt4_print(
-                        heap,
-                        stream.as_deref_mut(),
-                        stdout,
-                        &format,
-                        vec![signed(value)],
-                    )?;
+                    let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![signed(value)])?;
                 }
                 let format = [b'\n' as i8, 0];
                 let _ = mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![])?;
@@ -3097,12 +2997,8 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
                 let bonds = heap.slice(unit.blist.as_const())?.to_vec();
                 for k in previous + 1..=j {
                     let offset = (2 * k) as usize;
-                    let first = *bonds
-                        .get(offset)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let second = *bonds
-                        .get(offset + 1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let first = *bonds.get(offset).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let second = *bonds.get(offset + 1).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut bond_number = 0_i32;
                     for (index, endpoints) in written.chunks_exact(2).enumerate() {
                         if (first == endpoints[0] && second == endpoints[1])
@@ -3114,13 +3010,8 @@ pub(crate) fn OrigAtData_WriteToSDfilePolymerData(
                     }
                     if bond_number != 0 {
                         let format = (*b" %3d\0").map(|byte| byte as i8);
-                        let _ = mol_fmt4_print(
-                            heap,
-                            stream.as_deref_mut(),
-                            stdout,
-                            &format,
-                            vec![signed(bond_number)],
-                        )?;
+                        let _ =
+                            mol_fmt4_print(heap, stream.as_deref_mut(), stdout, &format, vec![signed(bond_number)])?;
                     }
                 }
                 let format = [b'\n' as i8, 0];
@@ -3412,8 +3303,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
     let Some(input) = input else {
         return Ok(0);
     };
-    let atom_count =
-        usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count = usize::try_from(input.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = if atom_count == 0 {
         Vec::new()
     } else {
@@ -3422,17 +3312,9 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .to_vec()
     };
-    let is_alias = |atom: &inp_ATOM| {
-        atom.num_iso_H
-            .iter()
-            .map(|value| i32::from(*value))
-            .sum::<i32>()
-            > 0
-    };
-    let is_deuterium =
-        |atom: &inp_ATOM, name: &str| name == "D" || (atom.iso_atw_diff == 2 && name == "H");
-    let is_tritium =
-        |atom: &inp_ATOM, name: &str| name == "T" || (atom.iso_atw_diff == 3 && name == "H");
+    let is_alias = |atom: &inp_ATOM| atom.num_iso_H.iter().map(|value| i32::from(*value)).sum::<i32>() > 0;
+    let is_deuterium = |atom: &inp_ATOM, name: &str| name == "D" || (atom.iso_atw_diff == 2 && name == "H");
+    let is_tritium = |atom: &inp_ATOM, name: &str| name == "T" || (atom.iso_atw_diff == 3 && name == "H");
     let signed = |number: i32| SourceFormatArgument::Signed(i64::from(number));
     let mut ret = 0_i32;
 
@@ -3453,12 +3335,8 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
             lines += 1;
             let mut alias = mol_fmt4_atom_name(atom)?;
             for isotope in 0..3 {
-                let hydrogen_count = i32::from(atom.num_iso_H[isotope])
-                    + if isotope == 0 {
-                        i32::from(atom.num_H)
-                    } else {
-                        0
-                    };
+                let hydrogen_count =
+                    i32::from(atom.num_iso_H[isotope]) + if isotope == 0 { i32::from(atom.num_H) } else { 0 };
                 if hydrogen_count != 0 {
                     alias.push_str(["H", "D", "T"][isotope]);
                     if hydrogen_count != 1 {
@@ -3480,14 +3358,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
                 _ => "",
             });
             let format = (*b"%s\n\0").map(|byte| byte as i8);
-            mol_fmt4_print_dynamic_bytes(
-                heap,
-                stream.as_deref_mut(),
-                stdout,
-                &format,
-                vec![],
-                alias.as_bytes(),
-            )?;
+            mol_fmt4_print_dynamic_bytes(heap, stream.as_deref_mut(), stdout, &format, vec![], alias.as_bytes())?;
             lines += 1;
         }
         if lines != num_alias_lines {
@@ -3524,10 +3395,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
             if ((index + 1 == atoms.len()) && count != 0) || count == 8 {
                 let mut format = tag.to_vec();
                 format.extend_from_slice(b"%3d%s\n\0");
-                let format = format
-                    .into_iter()
-                    .map(|byte| byte as i8)
-                    .collect::<Vec<_>>();
+                let format = format.into_iter().map(|byte| byte as i8).collect::<Vec<_>>();
                 mol_fmt4_print_dynamic_bytes(
                     heap,
                     stream.as_deref_mut(),
@@ -3621,8 +3489,7 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
 mod tests {
     use super::*;
     use crate::source_types::{
-        INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, OAD_Polymer, STR_ERR_LEN,
-        SourceFile, inp_ATOM,
+        INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, OAD_Polymer, STR_ERR_LEN, SourceFile, inp_ATOM,
     };
 
     fn string_stream() -> INCHI_IOSTREAM {
@@ -3711,13 +3578,7 @@ mod tests {
         atom
     }
 
-    fn expected_atom_line(
-        atom: &inp_ATOM,
-        symbol: &str,
-        isotope: i32,
-        charge: i32,
-        valence: i32,
-    ) -> String {
+    fn expected_atom_line(atom: &inp_ATOM, symbol: &str, isotope: i32, charge: i32, valence: i32) -> String {
         format!(
             "{:10.4}{:10.4}{:10.4} {:<3.3}{:2}{:3}  0     0{:3}  0  0  0  0\n",
             atom.x, atom.y, atom.z, symbol, isotope, charge, valence
@@ -3821,28 +3682,14 @@ mod tests {
         check(b"+12\0", 0, b"\012\0");
         check(b" 12\0", 0, b"\012\0");
         check(b"1-2--3\0", 123, b"123\0-3\0");
-        check(
-            b"18446744073709551615\0",
-            u64::MAX,
-            b"18446744073709551615\0",
-        );
-        check(
-            b"18446744073709551616\0",
-            u64::MAX,
-            b"18446744073709551616\0",
-        );
+        check(b"18446744073709551615\0", u64::MAX, b"18446744073709551615\0");
+        check(b"18446744073709551616\0", u64::MAX, b"18446744073709551616\0");
         check(b"-18446744073709551615\0", 1, b"-18446744073709551615\0");
-        check(
-            b"-18446744073709551616\0",
-            u64::MAX,
-            b"-18446744073709551616\0",
-        );
+        check(b"-18446744073709551616\0", u64::MAX, b"-18446744073709551616\0");
         check(b"\xff12\0", 0, b"\012\0");
 
         let mut heap = SourceHeap::default();
-        let unterminated = heap
-            .allocate_model_storage(vec![b'1' as i8, b'2' as i8])
-            .unwrap();
+        let unterminated = heap.allocate_model_storage(vec![b'1' as i8, b'2' as i8]).unwrap();
         assert_eq!(
             SDFileExtractCASNo(&mut heap, unterminated),
             Err(SourceHeapError::MissingNulTerminator)
@@ -4044,10 +3891,7 @@ mod tests {
             Ok(9)
         );
         let long_errors = error_bytes(&errors);
-        assert!(
-            long_errors
-                .starts_with(b"Too long SData line truncated; Unexpected SData header line:")
-        );
+        assert!(long_errors.starts_with(b"Too long SData line truncated; Unexpected SData header line:"));
         assert!(long_errors.ends_with(b"Bypassing to next structure"));
 
         errors.fill(0);
@@ -4131,10 +3975,7 @@ mod tests {
                 SourceMutPointer::null(),
             ]
         );
-        assert_eq!(
-            heap.slice(old.as_const()).unwrap(),
-            &[SourceMutPointer::null()]
-        );
+        assert_eq!(heap.slice(old.as_const()).unwrap(), &[SourceMutPointer::null()]);
 
         let mut zero = NUM_LISTS {
             used: 9,
@@ -4156,14 +3997,8 @@ mod tests {
         };
         assert_eq!(NumLists_Alloc(&mut heap, Some(&mut negative), -1), Ok(-1));
         assert!(negative.lists.is_null());
-        assert_eq!(
-            (negative.allocated, negative.used, negative.increment),
-            (4, 2, 6)
-        );
-        assert_eq!(
-            heap.slice(stale.as_const()).unwrap(),
-            &[SourceMutPointer::null()]
-        );
+        assert_eq!((negative.allocated, negative.used, negative.increment), (4, 2, 6));
+        assert_eq!(heap.slice(stale.as_const()).unwrap(), &[SourceMutPointer::null()]);
 
         let leaked = heap
             .allocate_model_storage(vec![SourceMutPointer::<i32>::null()])
@@ -4177,14 +4012,8 @@ mod tests {
         heap.fail_after_allocations(0);
         assert_eq!(NumLists_Alloc(&mut heap, Some(&mut failing), 2), Ok(-1));
         assert!(failing.lists.is_null());
-        assert_eq!(
-            (failing.allocated, failing.used, failing.increment),
-            (8, 5, 9)
-        );
-        assert_eq!(
-            heap.slice(leaked.as_const()).unwrap(),
-            &[SourceMutPointer::null()]
-        );
+        assert_eq!((failing.allocated, failing.used, failing.increment), (8, 5, 9));
+        assert_eq!(heap.slice(leaked.as_const()).unwrap(), &[SourceMutPointer::null()]);
     }
 
     #[test]
@@ -4208,17 +4037,9 @@ mod tests {
         assert_ne!(lists.lists, old);
         assert_eq!(
             heap.slice(lists.lists.as_const()).unwrap(),
-            &[
-                first,
-                second,
-                SourceMutPointer::null(),
-                SourceMutPointer::null()
-            ]
+            &[first, second, SourceMutPointer::null(), SourceMutPointer::null()]
         );
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let leaked = heap.allocate_model_storage(vec![first]).unwrap();
         let mut failing = NUM_LISTS {
@@ -4231,10 +4052,7 @@ mod tests {
         assert_eq!(NumLists_ReAlloc(&mut heap, Some(&mut failing)), Ok(-1));
         assert!(failing.lists.is_null());
         assert_eq!(heap.slice(leaked.as_const()).unwrap(), &[first]);
-        assert_eq!(
-            (failing.allocated, failing.used, failing.increment),
-            (1, 1, 1)
-        );
+        assert_eq!((failing.allocated, failing.used, failing.increment), (1, 1, 1));
     }
 
     #[test]
@@ -4269,10 +4087,7 @@ mod tests {
             &heap.slice(lists.lists.as_const()).unwrap()[..3],
             &[first, SourceMutPointer::null(), second]
         );
-        assert_eq!(
-            heap.slice(array.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(array.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let old = heap.allocate_model_storage(vec![first]).unwrap();
         let mut failing = NUM_LISTS {
@@ -4282,15 +4097,9 @@ mod tests {
             increment: 1,
         };
         heap.fail_after_allocations(0);
-        assert_eq!(
-            NumLists_Append(&mut heap, Some(&mut failing), second),
-            Ok(-1)
-        );
+        assert_eq!(NumLists_Append(&mut heap, Some(&mut failing), second), Ok(-1));
         assert!(failing.lists.is_null());
-        assert_eq!(
-            (failing.used, failing.allocated, failing.increment),
-            (1, 1, 1)
-        );
+        assert_eq!((failing.used, failing.allocated, failing.increment), (1, 1, 1));
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[first]);
     }
 
@@ -4302,9 +4111,7 @@ mod tests {
         let first = heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
         let second = heap.allocate_model_storage(vec![3_i32]).unwrap();
         let unused = heap.allocate_model_storage(vec![4_i32, 5]).unwrap();
-        let list_array = heap
-            .allocate_model_storage(vec![first, second, unused])
-            .unwrap();
+        let list_array = heap.allocate_model_storage(vec![first, second, unused]).unwrap();
         let mut lists = NUM_LISTS {
             lists: list_array,
             allocated: 3,
@@ -4313,14 +4120,8 @@ mod tests {
         };
         assert_eq!(NumLists_Free(&mut heap, Some(&mut lists)), Ok(()));
         assert_eq!(lists, NUM_LISTS::default());
-        assert_eq!(
-            heap.slice(first.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(second.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(first.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(second.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(list_array.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -4354,16 +4155,7 @@ mod tests {
         let mut atoms = Vec::new();
         let mut expected = String::new();
 
-        for (source_charge, molfile_charge) in [
-            (3, 1),
-            (2, 2),
-            (1, 3),
-            (0, 0),
-            (-1, 5),
-            (-2, 6),
-            (-3, 7),
-            (4, 0),
-        ] {
+        for (source_charge, molfile_charge) in [(3, 1), (2, 2), (1, 3), (0, 0), (-1, 5), (-2, 6), (-3, 7), (4, 0)] {
             let mut atom = bonded_atom(b"C", 1, 1);
             atom.charge = source_charge;
             atom.x = f64::from(source_charge);
@@ -4620,8 +4412,7 @@ mod tests {
             ..ORIG_ATOM_DATA::default()
         };
         let mut stream = string_stream();
-        let (mut aliases, mut charges, mut radicals, mut isotopes, mut additions, mut bonds) =
-            (5, 1, 1, 1, -99, -99);
+        let (mut aliases, mut charges, mut radicals, mut isotopes, mut additions, mut bonds) = (5, 1, 1, 1, -99, -99);
         assert_eq!(
             OrigAtData_WriteToSDfileHeaderAndCountThings(
                 &mut heap,
@@ -4661,8 +4452,7 @@ mod tests {
         };
         for (atoms_dt, expected_iso, expected_add) in [(0, 1, 2), (1, 0, 1)] {
             let mut stream = string_stream();
-            let (mut aliases, mut charges, mut radicals, mut isotopes, mut additions, mut bonds) =
-                (0, 0, 0, 0, 0, 0);
+            let (mut aliases, mut charges, mut radicals, mut isotopes, mut additions, mut bonds) = (0, 0, 0, 0, 0, 0);
             assert_eq!(
                 OrigAtData_WriteToSDfileHeaderAndCountThings(
                     &mut heap,
@@ -4736,10 +4526,7 @@ mod tests {
         failure_heap.fail_after_allocations(0);
         assert_eq!(IntArray_Alloc(&mut failure_heap, &mut failure, 2), Ok(-1));
         assert!(failure.item.is_null());
-        assert_eq!(
-            (failure.allocated, failure.used, failure.increment),
-            (8, 6, 4)
-        );
+        assert_eq!((failure.allocated, failure.used, failure.increment), (8, 6, 4));
         assert_eq!(failure_heap.slice(old.as_const()).unwrap(), &[1, 2]);
 
         let old = heap.allocate_model_storage(vec![3_i32]).unwrap();
@@ -4751,10 +4538,7 @@ mod tests {
         };
         assert_eq!(IntArray_Alloc(&mut heap, &mut negative, -1), Ok(-1));
         assert!(negative.item.is_null());
-        assert_eq!(
-            (negative.allocated, negative.used, negative.increment),
-            (1, 1, 1)
-        );
+        assert_eq!((negative.allocated, negative.used, negative.increment), (1, 1, 1));
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[3]);
     }
 
@@ -4806,15 +4590,9 @@ mod tests {
             increment: 4,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            MolFmtSgroups_Alloc(&mut failure_heap, Some(&mut failure), 2),
-            Ok(-1)
-        );
+        assert_eq!(MolFmtSgroups_Alloc(&mut failure_heap, Some(&mut failure), 2), Ok(-1));
         assert!(failure.group.is_null());
-        assert_eq!(
-            (failure.allocated, failure.used, failure.increment),
-            (8, 6, 4)
-        );
+        assert_eq!((failure.allocated, failure.used, failure.increment), (8, 6, 4));
         assert_eq!(failure_heap.slice(old.as_const()).unwrap().len(), 1);
 
         let old = heap
@@ -4826,15 +4604,9 @@ mod tests {
             used: 1,
             increment: 1,
         };
-        assert_eq!(
-            MolFmtSgroups_Alloc(&mut heap, Some(&mut negative), -1),
-            Ok(-1)
-        );
+        assert_eq!(MolFmtSgroups_Alloc(&mut heap, Some(&mut negative), -1), Ok(-1));
         assert!(negative.group.is_null());
-        assert_eq!(
-            (negative.allocated, negative.used, negative.increment),
-            (1, 1, 1)
-        );
+        assert_eq!((negative.allocated, negative.used, negative.increment), (1, 1, 1));
         assert_eq!(heap.slice(old.as_const()).unwrap().len(), 1);
     }
 
@@ -4846,17 +4618,13 @@ mod tests {
         for mut invalid in [
             MOL_FMT_SGROUPS::default(),
             MOL_FMT_SGROUPS {
-                group: heap
-                    .allocate_model_storage(vec![SourceMutPointer::null()])
-                    .unwrap(),
+                group: heap.allocate_model_storage(vec![SourceMutPointer::null()]).unwrap(),
                 allocated: 0,
                 used: 0,
                 increment: 1,
             },
             MOL_FMT_SGROUPS {
-                group: heap
-                    .allocate_model_storage(vec![SourceMutPointer::null()])
-                    .unwrap(),
+                group: heap.allocate_model_storage(vec![SourceMutPointer::null()]).unwrap(),
                 allocated: 1,
                 used: 0,
                 increment: 0,
@@ -4867,15 +4635,9 @@ mod tests {
             assert_eq!(invalid, before);
         }
 
-        let first = heap
-            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
-            .unwrap();
-        let second = heap
-            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
-            .unwrap();
-        let old = heap
-            .allocate(vec![first, second, SourceMutPointer::null()])
-            .unwrap();
+        let first = heap.allocate_model_storage(vec![MOL_FMT_SGROUP::default()]).unwrap();
+        let second = heap.allocate_model_storage(vec![MOL_FMT_SGROUP::default()]).unwrap();
+        let old = heap.allocate(vec![first, second, SourceMutPointer::null()]).unwrap();
         let mut groups = MOL_FMT_SGROUPS {
             group: old,
             allocated: 3,
@@ -4894,14 +4656,9 @@ mod tests {
                 SourceMutPointer::null()
             ]
         );
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
-        let empty_old = heap
-            .allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new())
-            .unwrap();
+        let empty_old = heap.allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new()).unwrap();
         let mut empty = MOL_FMT_SGROUPS {
             group: empty_old,
             allocated: 1,
@@ -4926,15 +4683,9 @@ mod tests {
             increment: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            MolFmtSgroups_ReAlloc(&mut failure_heap, Some(&mut failure)),
-            Ok(-1)
-        );
+        assert_eq!(MolFmtSgroups_ReAlloc(&mut failure_heap, Some(&mut failure)), Ok(-1));
         assert!(failure.group.is_null());
-        assert_eq!(
-            (failure.allocated, failure.used, failure.increment),
-            (1, 1, 2)
-        );
+        assert_eq!((failure.allocated, failure.used, failure.increment), (1, 1, 2));
         assert_eq!(
             failure_heap.slice(failure_old.as_const()).unwrap(),
             &[SourceMutPointer::null()]
@@ -4957,10 +4708,7 @@ mod tests {
             used: 0,
             increment: 2,
         };
-        assert_eq!(
-            MolFmtSgroups_Append(&mut heap, Some(&mut groups), 17, 19),
-            Ok(0)
-        );
+        assert_eq!(MolFmtSgroups_Append(&mut heap, Some(&mut groups), 17, 19), Ok(0));
         assert_eq!((groups.allocated, groups.used, groups.increment), (2, 1, 2));
         let appended = heap.slice(groups.group.as_const()).unwrap()[0];
         let value = &heap.slice(appended.as_const()).unwrap()[0];
@@ -4969,19 +4717,14 @@ mod tests {
         assert_eq!(MolFmtSgroup_Free(&mut heap, appended), Ok(()));
         assert_eq!(inchi_free(&mut heap, groups.group), Ok(()));
 
-        let full_array = heap
-            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
-            .unwrap();
+        let full_array = heap.allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()]).unwrap();
         let mut full = MOL_FMT_SGROUPS {
             group: full_array,
             allocated: 1,
             used: 1,
             increment: 2,
         };
-        assert_eq!(
-            MolFmtSgroups_Append(&mut heap, Some(&mut full), -7, 31),
-            Ok(0)
-        );
+        assert_eq!(MolFmtSgroups_Append(&mut heap, Some(&mut full), -7, 31), Ok(0));
         assert_eq!((full.allocated, full.used, full.increment), (3, 2, 2));
         let expanded = heap.slice(full.group.as_const()).unwrap();
         assert!(expanded[0].is_null());
@@ -5019,10 +4762,7 @@ mod tests {
                 Ok(-1)
             );
             assert_eq!(failure.group, old);
-            assert_eq!(
-                (failure.allocated, failure.used, failure.increment),
-                (1, 0, 1)
-            );
+            assert_eq!((failure.allocated, failure.used, failure.increment), (1, 0, 1));
             assert_eq!(failure_heap.live_source_allocation_count(), 1);
         }
 
@@ -5038,12 +4778,7 @@ mod tests {
         };
         realloc_failure_heap.fail_after_allocations(3);
         assert_eq!(
-            MolFmtSgroups_Append(
-                &mut realloc_failure_heap,
-                Some(&mut realloc_failure),
-                23,
-                29,
-            ),
+            MolFmtSgroups_Append(&mut realloc_failure_heap, Some(&mut realloc_failure), 23, 29,),
             Ok(-1)
         );
         assert!(realloc_failure.group.is_null());
@@ -5077,11 +4812,7 @@ mod tests {
         );
         assert_eq!(invalid_growth.group, invalid_old);
         assert_eq!(
-            (
-                invalid_growth.allocated,
-                invalid_growth.used,
-                invalid_growth.increment
-            ),
+            (invalid_growth.allocated, invalid_growth.used, invalid_growth.increment),
             (1, 1, 0)
         );
         assert_eq!(invalid_growth_heap.live_source_allocation_count(), 1);
@@ -5100,9 +4831,7 @@ mod tests {
         let first_blist = heap.slice(first.as_const()).unwrap()[0].blist.item;
         let second_alist = heap.slice(second.as_const()).unwrap()[0].alist.item;
         let second_blist = heap.slice(second.as_const()).unwrap()[0].blist.item;
-        let array = heap
-            .allocate(vec![first, second, SourceMutPointer::null()])
-            .unwrap();
+        let array = heap.allocate(vec![first, second, SourceMutPointer::null()]).unwrap();
         let mut groups = MOL_FMT_SGROUPS {
             group: array,
             allocated: 3,
@@ -5125,9 +4854,7 @@ mod tests {
             assert_eq!(pointer_result, Err(SourceHeapError::MissingAllocation));
         }
 
-        let empty_array = heap
-            .allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new())
-            .unwrap();
+        let empty_array = heap.allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new()).unwrap();
         let mut empty = MOL_FMT_SGROUPS {
             group: empty_array,
             allocated: 0,
@@ -5141,10 +4868,7 @@ mod tests {
         let mut used_child = SourceMutPointer::null();
         let mut unused_child = SourceMutPointer::null();
         assert_eq!(MolFmtSgroup_Create(&mut heap, &mut used_child, 5, 6), Ok(0));
-        assert_eq!(
-            MolFmtSgroup_Create(&mut heap, &mut unused_child, 7, 8),
-            Ok(0)
-        );
+        assert_eq!(MolFmtSgroup_Create(&mut heap, &mut unused_child, 7, 8), Ok(0));
         let partial_array = heap.allocate(vec![used_child, unused_child]).unwrap();
         let mut partial = MOL_FMT_SGROUPS {
             group: partial_array,
@@ -5182,10 +4906,7 @@ mod tests {
             used: -1,
             ..MOL_FMT_SGROUPS::default()
         };
-        assert_eq!(
-            MolFmtSgroups_GetIndexBySgroupId(&heap, 1, &negative_used),
-            Ok(-1)
-        );
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 1, &negative_used), Ok(-1));
 
         let first = heap
             .allocate_model_storage(vec![MOL_FMT_SGROUP {
@@ -5223,19 +4944,13 @@ mod tests {
         assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 17, &groups), Ok(0));
         assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, -3, &groups), Ok(1));
         assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 99, &groups), Ok(-1));
-        assert_eq!(
-            MolFmtSgroups_GetIndexBySgroupId(&heap, 123, &groups),
-            Ok(-1)
-        );
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 123, &groups), Ok(-1));
     }
 
     #[test]
     fn source_port__mol_fmt4__molfmtsgroup_free__line_658() {
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            MolFmtSgroup_Free(&mut heap, SourceMutPointer::null()),
-            Ok(())
-        );
+        assert_eq!(MolFmtSgroup_Free(&mut heap, SourceMutPointer::null()), Ok(()));
 
         let alist = heap.allocate(vec![1_i32, 2, 3]).unwrap();
         let blist = heap.allocate(vec![4_i32, 5]).unwrap();
@@ -5260,18 +4975,9 @@ mod tests {
         assert_eq!(heap.live_source_allocation_count(), 3);
         assert_eq!(MolFmtSgroup_Free(&mut heap, group), Ok(()));
         assert_eq!(heap.live_source_allocation_count(), 0);
-        assert_eq!(
-            heap.slice(alist.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(blist.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(group.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(alist.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(blist.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(group.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let group_with_null_lists = heap
             .allocate(vec![MOL_FMT_SGROUP {
@@ -5286,9 +4992,7 @@ mod tests {
     #[test]
     fn source_port__mol_fmt4__molfmtsgroup_create__line_634() {
         let mut heap = SourceHeap::default();
-        let stale = heap
-            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
-            .unwrap();
+        let stale = heap.allocate_model_storage(vec![MOL_FMT_SGROUP::default()]).unwrap();
         let mut group = stale;
         assert_eq!(MolFmtSgroup_Create(&mut heap, &mut group, -17, 23), Ok(0));
         assert_ne!(group, stale);
@@ -5299,19 +5003,11 @@ mod tests {
         assert_eq!(created.xbr2, [0.0; 4]);
         assert_eq!(created.smt, [0; 80]);
         assert_eq!(
-            (
-                created.alist.allocated,
-                created.alist.used,
-                created.alist.increment
-            ),
+            (created.alist.allocated, created.alist.used, created.alist.increment),
             (8, 0, 8)
         );
         assert_eq!(
-            (
-                created.blist.allocated,
-                created.blist.used,
-                created.blist.increment
-            ),
+            (created.blist.allocated, created.blist.used, created.blist.increment),
             (8, 0, 8)
         );
         assert_eq!(heap.slice(created.alist.item.as_const()).unwrap(), &[0; 8]);
@@ -5371,9 +5067,7 @@ mod tests {
             assert_eq!(invalid, before);
         }
 
-        let old = heap
-            .allocate_model_storage(vec![11_i32, -22, 33, 44])
-            .unwrap();
+        let old = heap.allocate_model_storage(vec![11_i32, -22, 33, 44]).unwrap();
         let mut items = INT_ARRAY {
             item: old,
             allocated: 4,
@@ -5383,14 +5077,8 @@ mod tests {
         assert_eq!(IntArray_ReAlloc(&mut heap, Some(&mut items)), Ok(0));
         assert_eq!((items.allocated, items.increment, items.used), (7, 3, 3));
         assert_ne!(items.item, old);
-        assert_eq!(
-            heap.slice(items.item.as_const()).unwrap(),
-            &[11, -22, 33, 0, 0, 0, 0]
-        );
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(items.item.as_const()).unwrap(), &[11, -22, 33, 0, 0, 0, 0]);
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let mut failure_heap = SourceHeap::default();
         let failure_old = failure_heap.allocate_model_storage(vec![5_i32, 6]).unwrap();
@@ -5401,15 +5089,9 @@ mod tests {
             used: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            IntArray_ReAlloc(&mut failure_heap, Some(&mut failure)),
-            Ok(-1)
-        );
+        assert_eq!(IntArray_ReAlloc(&mut failure_heap, Some(&mut failure)), Ok(-1));
         assert!(failure.item.is_null());
-        assert_eq!(
-            (failure.allocated, failure.increment, failure.used),
-            (2, 2, 2)
-        );
+        assert_eq!((failure.allocated, failure.increment, failure.used), (2, 2, 2));
         assert_eq!(
             failure_heap.slice(failure_old.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -5421,9 +5103,7 @@ mod tests {
         let mut heap = SourceHeap::default();
         assert_eq!(IntArray_Append(&mut heap, None, 7), Ok(-1));
 
-        let storage = heap
-            .allocate_model_storage(vec![10_i32, 20, 91, 92])
-            .unwrap();
+        let storage = heap.allocate_model_storage(vec![10_i32, 20, 91, 92]).unwrap();
         let mut items = INT_ARRAY {
             item: storage,
             allocated: 4,
@@ -5432,18 +5112,12 @@ mod tests {
         };
         assert_eq!(IntArray_Append(&mut heap, Some(&mut items), -30), Ok(0));
         assert_eq!((items.allocated, items.used), (4, 3));
-        assert_eq!(
-            heap.slice(items.item.as_const()).unwrap(),
-            &[10, 20, -30, 92]
-        );
+        assert_eq!(heap.slice(items.item.as_const()).unwrap(), &[10, 20, -30, 92]);
 
         items.used = 4;
         assert_eq!(IntArray_Append(&mut heap, Some(&mut items), 50), Ok(0));
         assert_eq!((items.allocated, items.used), (6, 5));
-        assert_eq!(
-            heap.slice(items.item.as_const()).unwrap(),
-            &[10, 20, -30, 92, 50, 0]
-        );
+        assert_eq!(heap.slice(items.item.as_const()).unwrap(), &[10, 20, -30, 92, 50, 0]);
 
         let mut failure_heap = SourceHeap::default();
         let old = failure_heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
@@ -5454,15 +5128,9 @@ mod tests {
             increment: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            IntArray_Append(&mut failure_heap, Some(&mut failure), 3),
-            Ok(-1)
-        );
+        assert_eq!(IntArray_Append(&mut failure_heap, Some(&mut failure), 3), Ok(-1));
         assert!(failure.item.is_null());
-        assert_eq!(
-            (failure.allocated, failure.used, failure.increment),
-            (2, 2, 2)
-        );
+        assert_eq!((failure.allocated, failure.used, failure.increment), (2, 2, 2));
         assert_eq!(
             failure_heap.slice(old.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -5498,10 +5166,7 @@ mod tests {
         for duplicate in [i32::MIN, 7, i32::MAX] {
             let before = heap.slice(items.item.as_const()).unwrap().to_vec();
             let pointer = items.item;
-            assert_eq!(
-                IntArray_AppendIfAbsent(&mut heap, &mut items, duplicate),
-                Ok(0)
-            );
+            assert_eq!(IntArray_AppendIfAbsent(&mut heap, &mut items, duplicate), Ok(0));
             assert_eq!(items.item, pointer);
             assert_eq!((items.allocated, items.used, items.increment), (5, 3, 2));
             assert_eq!(heap.slice(items.item.as_const()).unwrap(), before);
@@ -5523,10 +5188,7 @@ mod tests {
             heap.slice(items.item.as_const()).unwrap(),
             &[i32::MIN, 7, i32::MAX, -11, 92, 123, 0]
         );
-        assert_eq!(
-            heap.slice(old.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let empty_storage = heap.allocate_model_storage(vec![44_i32]).unwrap();
         let mut empty = INT_ARRAY {
@@ -5535,10 +5197,7 @@ mod tests {
             used: 0,
             increment: 1,
         };
-        assert_eq!(
-            IntArray_AppendIfAbsent(&mut heap, &mut empty, i32::MIN),
-            Ok(0)
-        );
+        assert_eq!(IntArray_AppendIfAbsent(&mut heap, &mut empty, i32::MIN), Ok(0));
         assert_eq!(empty.used, 1);
         assert_eq!(heap.slice(empty.item.as_const()).unwrap(), &[i32::MIN]);
 
@@ -5551,15 +5210,9 @@ mod tests {
             increment: 2,
         };
         failure_heap.fail_after_allocations(0);
-        assert_eq!(
-            IntArray_AppendIfAbsent(&mut failure_heap, &mut failure, 3),
-            Ok(-1)
-        );
+        assert_eq!(IntArray_AppendIfAbsent(&mut failure_heap, &mut failure, 3), Ok(-1));
         assert!(failure.item.is_null());
-        assert_eq!(
-            (failure.allocated, failure.used, failure.increment),
-            (2, 2, 2)
-        );
+        assert_eq!((failure.allocated, failure.used, failure.increment), (2, 2, 2));
         assert_eq!(
             failure_heap.slice(failure_old.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -5611,9 +5264,7 @@ mod tests {
             assert_eq!(items.used, used);
         }
 
-        let item = heap
-            .allocate_model_storage(vec![i32::MIN, 0, i32::MAX])
-            .unwrap();
+        let item = heap.allocate_model_storage(vec![i32::MIN, 0, i32::MAX]).unwrap();
         let items = heap
             .allocate_model_storage(vec![INT_ARRAY {
                 item,
@@ -5623,10 +5274,7 @@ mod tests {
             }])
             .unwrap();
         IntArray_DebugPrint(items);
-        assert_eq!(
-            heap.slice(item.as_const()).unwrap(),
-            &[i32::MIN, 0, i32::MAX]
-        );
+        assert_eq!(heap.slice(item.as_const()).unwrap(), &[i32::MIN, 0, i32::MAX]);
     }
 
     #[test]
@@ -5644,10 +5292,7 @@ mod tests {
         IntArray_Reset(&mut items);
         assert_eq!(items.item, pointer);
         assert_eq!((items.allocated, items.used, items.increment), (4, 0, -9));
-        assert_eq!(
-            heap.slice(pointer.as_const()).unwrap(),
-            &[11, -7, i32::MAX, i32::MIN]
-        );
+        assert_eq!(heap.slice(pointer.as_const()).unwrap(), &[11, -7, i32::MAX, i32::MIN]);
 
         items.used = i32::MIN;
         IntArray_Reset(&mut items);
@@ -5695,10 +5340,7 @@ mod tests {
         };
         assert_eq!(IntArray_Free(&mut heap, Some(&mut items)), Ok(()));
         assert_eq!(items, INT_ARRAY::default());
-        assert_eq!(
-            heap.slice(storage.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(storage.as_const()), Err(SourceHeapError::MissingAllocation));
     }
 
     #[test]
@@ -5750,10 +5392,7 @@ mod tests {
             b"  1  2  1  0  0  0  0\n  3  1  2  6  0  0  0\n  2  3  3  1  0  0  0\n"
         );
         assert_eq!(written.used, 6);
-        assert_eq!(
-            heap.slice(written.item.as_const()).unwrap(),
-            &[1, 2, 3, 1, 2, 3]
-        );
+        assert_eq!(heap.slice(written.item.as_const()).unwrap(), &[1, 2, 3, 1, 2, 3]);
 
         let null_written_storage = heap.allocate_model_storage(vec![0_i32; 6]).unwrap();
         let mut null_written = INT_ARRAY {
@@ -5777,10 +5416,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(null_written.used, 6);
-        assert_eq!(
-            heap.slice(null_written.item.as_const()).unwrap(),
-            &[1, 2, 3, 1, 2, 3]
-        );
+        assert_eq!(heap.slice(null_written.item.as_const()).unwrap(), &[1, 2, 3, 1, 2, 3]);
     }
 
     #[test]
@@ -5832,11 +5468,7 @@ mod tests {
             set_name(atom, "C");
             atom.el_number = 6;
             atom.charge = if offset == 8 { -4 } else { 1 };
-            atom.radical = if offset < 8 {
-                (offset % 3 + 1) as i8
-            } else {
-                4
-            };
+            atom.radical = if offset < 8 { (offset % 3 + 1) as i8 } else { 4 };
         }
         set_name(&mut atoms[3], "D");
         atoms[3].el_number = 1;
@@ -5987,9 +5619,7 @@ mod tests {
     #[test]
     fn source_port__mol_fmt4__origatdata_writetosdfilepolymerdata__line_1390() {
         let mut heap = SourceHeap::default();
-        let empty_polymer = heap
-            .allocate_model_storage(vec![OAD_Polymer::default()])
-            .unwrap();
+        let empty_polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
         let empty_input = ORIG_ATOM_DATA {
             polymer: empty_polymer,
             ..ORIG_ATOM_DATA::default()
@@ -6011,9 +5641,7 @@ mod tests {
         );
         assert_eq!(stream_bytes(&heap, &empty_stream), b"");
 
-        let atom_list = heap
-            .allocate_model_storage((1_i32..=16).collect::<Vec<_>>())
-            .unwrap();
+        let atom_list = heap.allocate_model_storage((1_i32..=16).collect::<Vec<_>>()).unwrap();
         let mut bond_values = Vec::new();
         let mut written_values = Vec::new();
         for index in 1_i32..=16 {

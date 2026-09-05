@@ -8,8 +8,7 @@ use std::{
 
 use crate::Molecule;
 use crate::io::sdf::{
-    SdfReadError, SdfReadParams, read_mol_block_molecule_with_params,
-    read_mol_data_stream_molecule_with_params,
+    SdfReadError, SdfReadParams, read_mol_block_molecule_with_params, read_mol_data_stream_molecule_with_params,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,10 +27,7 @@ pub fn read_mol_file(path: impl AsRef<Path>) -> Result<MolFileRecord, SdfReadErr
     )
 }
 
-pub fn read_mol_file_with_params(
-    path: impl AsRef<Path>,
-    params: SdfReadParams,
-) -> Result<MolFileRecord, SdfReadError> {
+pub fn read_mol_file_with_params(path: impl AsRef<Path>, params: SdfReadParams) -> Result<MolFileRecord, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolFile
     // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromMolFile(const std::string &fName,
     // RDKit✔️✔️:                                       const MolFileParserParams &params) {
@@ -54,8 +50,7 @@ pub fn read_mol_file_with_params(
     // The RDKit null unique_ptr branch is represented at this Result boundary
     // as a parse error, matching the generated RDKit failure golden rows.
     let path = path.as_ref();
-    let file = File::open(path)
-        .map_err(|_| SdfReadError::Parse(format!("Bad input file {}", path.display())))?;
+    let file = File::open(path).map_err(|_| SdfReadError::Parse(format!("Bad input file {}", path.display())))?;
     let mut reader = BufReader::new(file);
     if reader
         .fill_buf()
@@ -87,10 +82,7 @@ pub fn read_mol_record_from_str(s: &str) -> Result<MolFileRecord, SdfReadError> 
     )
 }
 
-pub fn read_mol_record_from_str_with_params(
-    s: &str,
-    params: SdfReadParams,
-) -> Result<MolFileRecord, SdfReadError> {
+pub fn read_mol_record_from_str_with_params(s: &str, params: SdfReadParams) -> Result<MolFileRecord, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolBlock
     // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromMolBlock(const std::string &molBlock,
     // RDKit✔️✔️:                                        const MolFileParserParams &params) {
@@ -154,10 +146,7 @@ M  END
             },
         )
         .unwrap();
-        assert_eq!(
-            as_2d.molecule.source_coordinate_dim(),
-            Some(CoordinateDimension::TwoD)
-        );
+        assert_eq!(as_2d.molecule.source_coordinate_dim(), Some(CoordinateDimension::TwoD));
         assert!(as_2d.molecule.coordinates_2d().is_some());
         assert!(as_2d.molecule.conformers_3d().is_empty());
 
@@ -182,8 +171,7 @@ M  END
 
     #[test]
     fn molfile_reader_ignores_unread_trailing_text_after_m_end() {
-        let record =
-            read_mol_record_from_str(&format!("{FLAT_MOL}>  <FIELD>\nvalue\n\n$$$$\n")).unwrap();
+        let record = read_mol_record_from_str(&format!("{FLAT_MOL}>  <FIELD>\nvalue\n\n$$$$\n")).unwrap();
         assert_eq!(record.molecule.num_atoms(), 1);
         assert_eq!(record.molecule.prop("FIELD"), None);
     }

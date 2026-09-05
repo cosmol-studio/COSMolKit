@@ -3,9 +3,8 @@
 use super::cif::{CifBlock, CifDocument, CifEntry, CifToken, CifWriteOptions, quote_cif_value};
 use super::sprintf::{format_fixed, format_general};
 use crate::bio::{
-    AltLocLabel, AtomName, BioAssemblySpecialKind, BioAsu, BioAtomAddress, BioCalcFlag,
-    BioConnectionType, BioStructure, BioTransform, CrystalCell, EntityKind, PdbChainId,
-    PolymerKind, ResidueRow,
+    AltLocLabel, AtomName, BioAssemblySpecialKind, BioAsu, BioAtomAddress, BioCalcFlag, BioConnectionType,
+    BioStructure, BioTransform, CrystalCell, EntityKind, PdbChainId, PolymerKind, ResidueRow,
 };
 use std::collections::BTreeSet;
 
@@ -249,10 +248,7 @@ pub(super) fn write_cell_parameters(cell: CrystalCell, block: &mut CifBlock) {
 
 fn atom_name_text(name: AtomName) -> Result<String, BioWriteError> {
     let bytes = name.0;
-    let start = bytes
-        .iter()
-        .position(|byte| *byte != b' ')
-        .unwrap_or(bytes.len());
+    let start = bytes.iter().position(|byte| *byte != b' ').unwrap_or(bytes.len());
     let end = bytes
         .iter()
         .rposition(|byte| *byte != b' ')
@@ -275,13 +271,9 @@ fn pdb_chain_text<'a>(id: &'a PdbChainId, field: &'static str) -> Result<&'a str
 fn residue_name_text(residue: &ResidueRow) -> Result<&str, BioWriteError> {
     let length = usize::from(residue.name.1);
     if length > residue.name.0.len() {
-        return Err(BioWriteError::Invariant(
-            "residue name length exceeds its storage",
-        ));
+        return Err(BioWriteError::Invariant("residue name length exceeds its storage"));
     }
-    std::str::from_utf8(&residue.name.0[..length]).map_err(|_| BioWriteError::InvalidText {
-        field: "residue name",
-    })
+    std::str::from_utf8(&residue.name.0[..length]).map_err(|_| BioWriteError::InvalidText { field: "residue name" })
 }
 
 // BEGIN GEMMI CPP FUNCTION gemmi::use_hetatm
@@ -314,10 +306,7 @@ fn use_hetatm(residue: &ResidueRow) -> Result<bool, BioWriteError> {
 }
 
 fn push_cif_value(loop_: &mut super::cif::CifLoop, value: String) {
-    loop_.values.push(CifToken {
-        value,
-        line_number: 0,
-    });
+    loop_.values.push(CifToken { value, line_number: 0 });
 }
 
 fn calc_flag_text(flag: BioCalcFlag) -> &'static str {
@@ -510,12 +499,10 @@ pub(super) fn add_cif_atoms(
         "auth_asym_id",
         "pdbx_PDB_model_num",
     ];
-    let has_calc_flag = structure.atoms.iter().any(|atom| {
-        !matches!(
-            atom.calc_flag,
-            BioCalcFlag::NotSet | BioCalcFlag::NoHydrogen
-        )
-    });
+    let has_calc_flag = structure
+        .atoms
+        .iter()
+        .any(|atom| !matches!(atom.calc_flag, BioCalcFlag::NotSet | BioCalcFlag::NoHydrogen));
     let has_tls_group_id = structure
         .atoms
         .iter()
@@ -534,14 +521,10 @@ pub(super) fn add_cif_atoms(
         atom_loop.tags.push("_atom_site.calc_flag".to_string());
     }
     if has_tls_group_id {
-        atom_loop
-            .tags
-            .push("_atom_site.pdbx_tls_group_id".to_string());
+        atom_loop.tags.push("_atom_site.pdbx_tls_group_id".to_string());
     }
     if structure.has_d_fraction {
-        atom_loop
-            .tags
-            .push("_atom_site.ccp4_deuterium_fraction".to_string());
+        atom_loop.tags.push("_atom_site.ccp4_deuterium_fraction".to_string());
     }
     let value_capacity = atom_site_count
         .checked_mul(atom_loop.tags.len())
@@ -553,13 +536,10 @@ pub(super) fn add_cif_atoms(
         let model_number = model.source_model_number.unwrap_or(0);
         let chain_start = model.chain_span.start as usize;
         let chain_end = model.chain_span.end() as usize;
-        let chains =
-            structure
-                .chains
-                .get(chain_start..chain_end)
-                .ok_or(BioWriteError::Invariant(
-                    "model chain span is out of bounds",
-                ))?;
+        let chains = structure
+            .chains
+            .get(chain_start..chain_end)
+            .ok_or(BioWriteError::Invariant("model chain span is out of bounds"))?;
         for chain in chains {
             let auth_chain = match chain.source.auth_chain_id {
                 Some(ref id) => pdb_chain_text(id, "author chain identifier")?.to_string(),
@@ -567,9 +547,10 @@ pub(super) fn add_cif_atoms(
             };
             let residue_start = chain.residue_span.start as usize;
             let residue_end = chain.residue_span.end() as usize;
-            let residues = structure.residues.get(residue_start..residue_end).ok_or(
-                BioWriteError::Invariant("chain residue span is out of bounds"),
-            )?;
+            let residues = structure
+                .residues
+                .get(residue_start..residue_end)
+                .ok_or(BioWriteError::Invariant("chain residue span is out of bounds"))?;
             for residue in residues {
                 let as_het = use_hetatm(residue)?;
                 let residue_name = residue_name_text(residue)?.to_string();
@@ -593,26 +574,22 @@ pub(super) fn add_cif_atoms(
                 let entity_id = entity_id_for_residue(structure, residue);
                 let atom_start = residue.atom_span.start as usize;
                 let atom_end = residue.atom_span.end() as usize;
-                let atoms =
-                    structure
-                        .atoms
-                        .get(atom_start..atom_end)
-                        .ok_or(BioWriteError::Invariant(
-                            "residue atom span is out of bounds",
-                        ))?;
+                let atoms = structure
+                    .atoms
+                    .get(atom_start..atom_end)
+                    .ok_or(BioWriteError::Invariant("residue atom span is out of bounds"))?;
                 for (atom_offset, atom) in atoms.iter().enumerate() {
                     let atom_index = atom_start + atom_offset;
-                    let position = structure.coordinates.positions.get(atom_index).ok_or(
-                        BioWriteError::Invariant("atom coordinate index is out of bounds"),
-                    )?;
+                    let position = structure
+                        .coordinates
+                        .positions
+                        .get(atom_index)
+                        .ok_or(BioWriteError::Invariant("atom coordinate index is out of bounds"))?;
                     serial = serial
                         .checked_add(1)
                         .ok_or(BioWriteError::Invariant("atom-site serial overflow"))?;
                     if use_group_pdb {
-                        push_cif_value(
-                            atom_loop,
-                            if as_het { "HETATM" } else { "ATOM" }.to_string(),
-                        );
+                        push_cif_value(atom_loop, if as_het { "HETATM" } else { "ATOM" }.to_string());
                     }
                     push_cif_value(atom_loop, serial.to_string());
                     push_cif_value(atom_loop, atom.element.symbol().to_ascii_uppercase());
@@ -632,14 +609,8 @@ pub(super) fn add_cif_atoms(
                     push_cif_value(atom_loop, gemmi_to_string_f64(position[0]));
                     push_cif_value(atom_loop, gemmi_to_string_f64(position[1]));
                     push_cif_value(atom_loop, gemmi_to_string_f64(position[2]));
-                    push_cif_value(
-                        atom_loop,
-                        gemmi_to_string_f32(atom.occupancy.unwrap_or(f32::NAN)),
-                    );
-                    push_cif_value(
-                        atom_loop,
-                        gemmi_to_string_f32(atom.b_iso.unwrap_or(f32::NAN)),
-                    );
+                    push_cif_value(atom_loop, gemmi_to_string_f32(atom.occupancy.unwrap_or(f32::NAN)));
+                    push_cif_value(atom_loop, gemmi_to_string_f32(atom.b_iso.unwrap_or(f32::NAN)));
                     push_cif_value(
                         atom_loop,
                         atom.formal_charge
@@ -665,15 +636,9 @@ pub(super) fn add_cif_atoms(
                         );
                     }
                     if structure.has_d_fraction {
-                        push_cif_value(
-                            atom_loop,
-                            gemmi_to_string_f32(atom.fraction.unwrap_or(0.0)),
-                        );
+                        push_cif_value(atom_loop, gemmi_to_string_f32(atom.fraction.unwrap_or(0.0)));
                     }
-                    if atom
-                        .anisou
-                        .is_some_and(|aniso| aniso[0] + aniso[1] + aniso[2] != 0.0)
-                    {
+                    if atom.anisou.is_some_and(|aniso| aniso[0] + aniso[1] + aniso[2] != 0.0) {
                         anisotropic_atoms.push((serial, model_number, atom_index));
                     }
                 }
@@ -704,15 +669,11 @@ pub(super) fn add_cif_atoms(
             .tags
             .len()
             .checked_mul(anisotropic_atoms.len())
-            .ok_or(BioWriteError::Invariant(
-                "atom-site anisotropic value count overflow",
-            ))?;
+            .ok_or(BioWriteError::Invariant("atom-site anisotropic value count overflow"))?;
         aniso_loop.values.reserve(aniso_capacity);
         for (atom_serial, model_number, atom_index) in anisotropic_atoms {
             let atom = &structure.atoms[atom_index];
-            let aniso = atom
-                .anisou
-                .expect("anisotropic index only records Some values");
+            let aniso = atom.anisou.expect("anisotropic index only records Some values");
             push_cif_value(aniso_loop, atom_serial.to_string());
             push_cif_value(aniso_loop, atom.element.symbol().to_ascii_uppercase());
             for value in aniso {
@@ -777,9 +738,7 @@ fn xmeric_to_number(oligomeric: &str) -> i32 {
         .take_while(u8::is_ascii_digit);
     let mut number = 0_i32;
     for digit in digits {
-        number = number
-            .wrapping_mul(10)
-            .wrapping_add(i32::from(digit - b'0'));
+        number = number.wrapping_mul(10).wrapping_add(i32::from(digit - b'0'));
     }
     number
 }
@@ -833,8 +792,7 @@ fn transform_approx(left: &BioTransform, right: &BioTransform, epsilon: f64) -> 
 // Gemmi✔️✔️:        a[2][0] == 0 && a[2][1] == 0 && a[2][2] == 1;
 // END GEMMI CPP FUNCTION
 fn transform_is_exact_identity(transform: &BioTransform) -> bool {
-    transform.mat == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        && transform.vec == [0.0, 0.0, 0.0]
+    transform.mat == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] && transform.vec == [0.0, 0.0, 0.0]
 }
 
 fn active_loop_index(block: &CifBlock, tag: &str) -> Result<usize, BioWriteError> {
@@ -842,9 +800,7 @@ fn active_loop_index(block: &CifBlock, tag: &str) -> Result<usize, BioWriteError
         .entries
         .iter()
         .find_map(|entry| match entry {
-            CifEntry::Loop(index) if block.loops[*index].tags.iter().any(|item| item == tag) => {
-                Some(*index)
-            }
+            CifEntry::Loop(index) if block.loops[*index].tags.iter().any(|item| item == tag) => Some(*index),
             CifEntry::Pair(_) | CifEntry::Loop(_) | CifEntry::Erased => None,
         })
         .ok_or(BioWriteError::Invariant(
@@ -852,10 +808,7 @@ fn active_loop_index(block: &CifBlock, tag: &str) -> Result<usize, BioWriteError
         ))
 }
 
-fn chain_name_text(
-    chain: &crate::bio::ChainRow,
-    field: &'static str,
-) -> Result<String, BioWriteError> {
+fn chain_name_text(chain: &crate::bio::ChainRow, field: &'static str) -> Result<String, BioWriteError> {
     match chain.source.auth_chain_id.or(chain.source.label_asym_id) {
         Some(ref id) => Ok(pdb_chain_text(id, field)?.to_string()),
         None => Ok(String::new()),
@@ -881,9 +834,7 @@ fn generator_subchains(
     let chains = structure
         .chains
         .get(chain_start..chain_end)
-        .ok_or(BioWriteError::Invariant(
-            "model chain span is out of bounds",
-        ))?;
+        .ok_or(BioWriteError::Invariant("model chain span is out of bounds"))?;
     for chain in chains {
         let chain_name = chain_name_text(chain, "assembly chain identifier")?;
         if !generator.chains.iter().any(|name| *name == chain_name) {
@@ -891,13 +842,10 @@ fn generator_subchains(
         }
         let residue_start = chain.residue_span.start as usize;
         let residue_end = chain.residue_span.end() as usize;
-        let residues =
-            structure
-                .residues
-                .get(residue_start..residue_end)
-                .ok_or(BioWriteError::Invariant(
-                    "chain residue span is out of bounds",
-                ))?;
+        let residues = structure
+            .residues
+            .get(residue_start..residue_end)
+            .ok_or(BioWriteError::Invariant("chain residue span is out of bounds"))?;
         let mut previous = None;
         for residue in residues {
             if previous == Some(residue.source.subchain_id) {
@@ -1005,10 +953,7 @@ fn generator_subchains(
 // Gemmi✔️✔️:   }
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-pub(super) fn write_assemblies(
-    structure: &BioStructure,
-    block: &mut CifBlock,
-) -> Result<(), BioWriteError> {
+pub(super) fn write_assemblies(structure: &BioStructure, block: &mut CifBlock) -> Result<(), BioWriteError> {
     block.entries.reserve(4);
     block.loops.reserve(4);
     block.init_mmcif_loop(
@@ -1061,9 +1006,7 @@ pub(super) fn write_assemblies(
         } else {
             match assembly.special_kind {
                 BioAssemblySpecialKind::CompleteIcosahedral => "'complete icosahedral assembly'",
-                BioAssemblySpecialKind::RepresentativeHelical => {
-                    "'representative helical assembly'"
-                }
+                BioAssemblySpecialKind::RepresentativeHelical => "'representative helical assembly'",
                 BioAssemblySpecialKind::CompletePoint => "'complete point assembly'",
                 BioAssemblySpecialKind::NA => "?",
             }
@@ -1087,11 +1030,7 @@ pub(super) fn write_assemblies(
             } else {
                 quote_cif_value(&oligomer)
             },
-            if nmer == 0 {
-                "?".to_string()
-            } else {
-                nmer.to_string()
-            },
+            if nmer == 0 { "?".to_string() } else { nmer.to_string() },
         ];
         for value in assembly_values {
             push_cif_value(&mut block.loops[assembly_loop], value);
@@ -1115,19 +1054,14 @@ pub(super) fn write_assemblies(
             for operator in &generator.operators {
                 let distinct_index = distinct_operators
                     .iter()
-                    .position(|distinct| {
-                        transform_approx(&distinct.transform, &operator.transform, 1e-9)
-                    })
+                    .position(|distinct| transform_approx(&distinct.transform, &operator.transform, 1e-9))
                     .unwrap_or(distinct_operators.len());
                 append_with_comma(&mut operator_string, &(distinct_index + 1).to_string());
                 if distinct_index != distinct_operators.len() {
                     continue;
                 }
                 distinct_operators.push(operator);
-                push_cif_value(
-                    &mut block.loops[operator_loop],
-                    (distinct_index + 1).to_string(),
-                );
+                push_cif_value(&mut block.loops[operator_loop], (distinct_index + 1).to_string());
                 let operator_type = if !operator.type_.is_empty() {
                     quote_cif_value(&operator.type_)
                 } else if transform_is_exact_identity(&operator.transform) {
@@ -1251,10 +1185,7 @@ pub(super) fn write_ncs_oper(structure: &BioStructure, block: &mut CifBlock) {
     }
     for operator in &structure.ncs_operators {
         push_cif_value(loop_, operator.id.clone());
-        push_cif_value(
-            loop_,
-            if operator.given { "given" } else { "generate" }.to_string(),
-        );
+        push_cif_value(loop_, if operator.given { "given" } else { "generate" }.to_string());
         push_transform_values(loop_, &operator.transform);
     }
 }
@@ -1294,9 +1225,7 @@ fn find_cra(
     let chains = structure
         .chains
         .get(model.chain_span.start as usize..model.chain_span.end() as usize)
-        .ok_or(BioWriteError::Invariant(
-            "model chain span is out of bounds",
-        ))?;
+        .ok_or(BioWriteError::Invariant("model chain span is out of bounds"))?;
     for chain in chains {
         if chain_name_text(chain, "atom address chain identifier")? != address.chain_name {
             continue;
@@ -1305,13 +1234,9 @@ fn find_cra(
         let residues = structure
             .residues
             .get(residue_start..chain.residue_span.end() as usize)
-            .ok_or(BioWriteError::Invariant(
-                "chain residue span is out of bounds",
-            ))?;
+            .ok_or(BioWriteError::Invariant("chain residue span is out of bounds"))?;
         for (residue_offset, residue) in residues.iter().enumerate() {
-            if residue.source.seq_id != address.seq_id
-                || residue_name_text(residue)? != address.residue_name
-            {
+            if residue.source.seq_id != address.seq_id || residue_name_text(residue)? != address.residue_name {
                 continue;
             }
             let residue_index = residue_start + residue_offset;
@@ -1322,9 +1247,7 @@ fn find_cra(
                 let atoms = structure
                     .atoms
                     .get(atom_start..residue.atom_span.end() as usize)
-                    .ok_or(BioWriteError::Invariant(
-                        "residue atom span is out of bounds",
-                    ))?;
+                    .ok_or(BioWriteError::Invariant("residue atom span is out of bounds"))?;
                 let mut found = None;
                 for (atom_offset, atom) in atoms.iter().enumerate() {
                     if atom_name_text(atom.name)? == address.atom_name
@@ -1362,15 +1285,9 @@ struct NearestImage {
 // END GEMMI CPP FUNCTIONS
 fn transform_apply(transform: &BioTransform, value: [f64; 3]) -> [f64; 3] {
     let multiplied = [
-        transform.mat[0][0] * value[0]
-            + transform.mat[0][1] * value[1]
-            + transform.mat[0][2] * value[2],
-        transform.mat[1][0] * value[0]
-            + transform.mat[1][1] * value[1]
-            + transform.mat[1][2] * value[2],
-        transform.mat[2][0] * value[0]
-            + transform.mat[2][1] * value[1]
-            + transform.mat[2][2] * value[2],
+        transform.mat[0][0] * value[0] + transform.mat[0][1] * value[1] + transform.mat[0][2] * value[2],
+        transform.mat[1][0] * value[0] + transform.mat[1][1] * value[1] + transform.mat[1][2] * value[2],
+        transform.mat[2][0] * value[0] + transform.mat[2][1] * value[1] + transform.mat[2][2] * value[2],
     ];
     [
         multiplied[0] + transform.vec[0],
@@ -1418,11 +1335,7 @@ fn crystal_is_crystal(structure: &BioStructure) -> bool {
 // Gemmi✔️✔️: return false;
 // Gemmi✔️✔️: inline int iround(double d) { return static_cast<int>(std::round(d)); }
 // END GEMMI CPP FUNCTION
-fn search_pbc_images(
-    structure: &BioStructure,
-    mut difference: [f64; 3],
-    image: &mut NearestImage,
-) -> bool {
+fn search_pbc_images(structure: &BioStructure, mut difference: [f64; 3], image: &mut NearestImage) -> bool {
     let mut negative_shift = [0_i32; 3];
     if crystal_is_crystal(structure) {
         for axis in 0..3 {
@@ -1435,10 +1348,7 @@ fn search_pbc_images(
         transform.vec = [0.0; 3];
         transform_apply(&transform, difference)
     });
-    let distance_sq = orthogonal_difference
-        .iter()
-        .map(|value| value * value)
-        .sum();
+    let distance_sq = orthogonal_difference.iter().map(|value| value * value).sum();
     if distance_sq < image.distance_sq {
         image.distance_sq = distance_sq;
         for axis in 0..3 {
@@ -1468,12 +1378,7 @@ fn search_pbc_images(
 // Gemmi✔️✔️:     image.sym_idx = n + 1;
 // Gemmi✔️✔️: return image;
 // END GEMMI CPP FUNCTION
-fn find_nearest_image(
-    structure: &BioStructure,
-    reference: [f64; 3],
-    position: [f64; 3],
-    asu: BioAsu,
-) -> NearestImage {
+fn find_nearest_image(structure: &BioStructure, reference: [f64; 3], position: [f64; 3], asu: BioAsu) -> NearestImage {
     let mut image = NearestImage {
         distance_sq: if asu == BioAsu::Different {
             f64::INFINITY
@@ -1490,9 +1395,10 @@ fn find_nearest_image(
         .crystal
         .as_ref()
         .map_or(position, |crystal| transform_apply(&crystal.frac, position));
-    let fractional_reference = structure.crystal.as_ref().map_or(reference, |crystal| {
-        transform_apply(&crystal.frac, reference)
-    });
+    let fractional_reference = structure
+        .crystal
+        .as_ref()
+        .map_or(reference, |crystal| transform_apply(&crystal.frac, reference));
     search_pbc_images(
         structure,
         [
@@ -1544,11 +1450,7 @@ fn find_nearest_image(
 // END GEMMI CPP FUNCTION
 fn symmetry_code(image: NearestImage) -> String {
     let mut output = format!("{}_", image.symmetry_index + 1);
-    if image
-        .pbc_shift
-        .iter()
-        .all(|shift| (0..=9).contains(&(5 + shift)))
-    {
+    if image.pbc_shift.iter().all(|shift| (0..=9).contains(&(5 + shift))) {
         for shift in image.pbc_shift {
             output.push(char::from((5 + shift) as u8 + b'0'));
         }
@@ -1702,10 +1604,7 @@ fn residue_writer_values(
 // Gemmi✔️✔️:       type_loop.add_row({connection_type_to_string((Connection::Type)i)});
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-pub(super) fn write_struct_conn(
-    structure: &BioStructure,
-    block: &mut CifBlock,
-) -> Result<(), BioWriteError> {
+pub(super) fn write_struct_conn(structure: &BioStructure, block: &mut CifBlock) -> Result<(), BioWriteError> {
     let use_ccp4_link_id = structure
         .connections
         .iter()
@@ -1755,23 +1654,15 @@ pub(super) fn write_struct_conn(
                     .positions
                     .get(left_atom)
                     .copied()
-                    .ok_or(BioWriteError::Invariant(
-                        "connection atom coordinate is out of bounds",
-                    ))?;
+                    .ok_or(BioWriteError::Invariant("connection atom coordinate is out of bounds"))?;
                 let right_position = structure
                     .coordinates
                     .positions
                     .get(right_atom)
                     .copied()
-                    .ok_or(BioWriteError::Invariant(
-                        "connection atom coordinate is out of bounds",
-                    ))?;
-                let image =
-                    find_nearest_image(structure, left_position, right_position, connection.asu);
-                (
-                    symmetry_code(image),
-                    distance_to_string(image.distance_sq.sqrt()),
-                )
+                    .ok_or(BioWriteError::Invariant("connection atom coordinate is out of bounds"))?;
+                let image = find_nearest_image(structure, left_position, right_position, connection.asu);
+                (symmetry_code(image), distance_to_string(image.distance_sq.sqrt()))
             }
             _ => ("?".to_string(), "?".to_string()),
         };
@@ -1861,10 +1752,7 @@ pub(super) fn write_struct_conn(
 // Gemmi✔️✔️:   }
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-pub(super) fn write_cispeps(
-    structure: &BioStructure,
-    block: &mut CifBlock,
-) -> Result<(), BioWriteError> {
+pub(super) fn write_cispeps(structure: &BioStructure, block: &mut CifBlock) -> Result<(), BioWriteError> {
     let mut loop_index = None;
     let mut pdbx_id = 0_i32;
     for cispep in &structure.cispeps {
@@ -1920,9 +1808,7 @@ pub(super) fn write_cispeps(
             }
         };
         pdbx_id += 1;
-        let model_number = structure.models[model_index]
-            .source_model_number
-            .unwrap_or(0);
+        let model_number = structure.models[model_index].source_model_number.unwrap_or(0);
         let left_values = residue_writer_values(structure, left, &cispep.partner_c)?;
         let right_values = residue_writer_values(structure, right, &cispep.partner_n)?;
         let row = [
@@ -2005,9 +1891,7 @@ fn polymer_kind_text(kind: PolymerKind) -> Option<&'static str> {
         PolymerKind::Peptide => Some("polypeptide(L)"),
         PolymerKind::DNA => Some("polydeoxyribonucleotide"),
         PolymerKind::RNA => Some("polyribonucleotide"),
-        PolymerKind::NucleicAcidHybrid => {
-            Some("'polydeoxyribonucleotide/polyribonucleotide hybrid'")
-        }
+        PolymerKind::NucleicAcidHybrid => Some("'polydeoxyribonucleotide/polyribonucleotide hybrid'"),
         PolymerKind::Saccharide => Some("polysaccharide(D)"),
         PolymerKind::PeptideLike => Some("other"),
         PolymerKind::NonPolymer | PolymerKind::Water | PolymerKind::Unknown => None,
@@ -2035,9 +1919,7 @@ fn pdbx_one_letter_code(sequence: &[String], polymer_kind: PolymerKind) -> Strin
         let code = first_monomer(item);
         let info = crate::bio::resinfo::find_tabulated_residue(code);
         let same_kind = match polymer_kind {
-            PolymerKind::Peptide | PolymerKind::PeptideLike | PolymerKind::Saccharide => {
-                info.is_amino_acid()
-            }
+            PolymerKind::Peptide | PolymerKind::PeptideLike | PolymerKind::Saccharide => info.is_amino_acid(),
             PolymerKind::DNA => info.is_dna(),
             PolymerKind::RNA | PolymerKind::NucleicAcidHybrid => info.is_rna(),
             PolymerKind::NonPolymer | PolymerKind::Water | PolymerKind::Unknown => false,
@@ -2066,9 +1948,7 @@ fn add_mmcif_rows(
     Ok(())
 }
 
-fn first_model_subchain_to_chain(
-    structure: &BioStructure,
-) -> Result<Vec<(PdbChainId, String)>, BioWriteError> {
+fn first_model_subchain_to_chain(structure: &BioStructure) -> Result<Vec<(PdbChainId, String)>, BioWriteError> {
     let Some(model) = structure.models.first() else {
         return Ok(Vec::new());
     };
@@ -2077,21 +1957,16 @@ fn first_model_subchain_to_chain(
         let chain = structure
             .chains
             .get(chain_index as usize)
-            .ok_or(BioWriteError::Invariant(
-                "model chain span is out of bounds",
-            ))?;
+            .ok_or(BioWriteError::Invariant("model chain span is out of bounds"))?;
         let chain_name = chain.source.auth_chain_id.as_ref().map_or_else(
             || Ok(String::new()),
             |id| pdb_chain_text(id, "author chain identifier").map(str::to_string),
         )?;
         for residue_index in chain.residue_span.start..chain.residue_span.end() {
-            let residue =
-                structure
-                    .residues
-                    .get(residue_index as usize)
-                    .ok_or(BioWriteError::Invariant(
-                        "chain residue span is out of bounds",
-                    ))?;
+            let residue = structure
+                .residues
+                .get(residue_index as usize)
+                .ok_or(BioWriteError::Invariant("chain residue span is out of bounds"))?;
             if let Some(subchain) = residue.source.subchain_id
                 && !result.iter().any(|(candidate, _)| *candidate == subchain)
             {
@@ -2191,13 +2066,7 @@ pub(super) fn write_primary_mmcif_categories(
             "model".to_string()
         };
     }
-    let mut id = quote_cif_value(
-        structure
-            .metadata
-            .entry_id
-            .as_deref()
-            .unwrap_or(&block.name),
-    );
+    let mut id = quote_cif_value(structure.metadata.entry_id.as_deref().unwrap_or(&block.name));
     if groups.entry {
         block.set_pair("_entry.id", id.clone());
     } else if let Some(value) = block
@@ -2222,11 +2091,7 @@ pub(super) fn write_primary_mmcif_categories(
             .as_deref()
             .filter(|date| !date.is_empty())
     {
-        block.set_pair_in_category(
-            "_pdbx_database_status.",
-            "_pdbx_database_status.entry_id",
-            id.clone(),
-        );
+        block.set_pair_in_category("_pdbx_database_status.", "_pdbx_database_status.entry_id", id.clone());
         block.set_pair_in_category(
             "_pdbx_database_status.",
             "_pdbx_database_status.recvd_initial_deposition_date",
@@ -2383,12 +2248,7 @@ pub(super) fn write_primary_mmcif_categories(
         add_mmcif_rows(
             block,
             "_entity_poly.",
-            &[
-                "entity_id",
-                "type",
-                "pdbx_strand_id",
-                "pdbx_seq_one_letter_code",
-            ],
+            &["entity_id", "type", "pdbx_strand_id", "pdbx_seq_one_letter_code"],
             rows,
         )?;
     }
@@ -2442,10 +2302,7 @@ fn write_struct_ref_categories(
             // Gemmi✔️✔️:   if (strand_id == subs_to_strands.end())
             // Gemmi✔️✔️:     continue;
             for subchain in &entity.subchains {
-                let Some((_, strand_id)) = subchain_to_chain
-                    .iter()
-                    .find(|(candidate, _)| candidate == subchain)
-                else {
+                let Some((_, strand_id)) = subchain_to_chain.iter().find(|(candidate, _)| candidate == subchain) else {
                     continue;
                 };
                 let residues = subchain_residues(structure, *subchain);
@@ -2458,16 +2315,12 @@ fn write_struct_ref_categories(
                 // Gemmi✔️✔️:     label_end = span.auth_seq_id_to_label(dbref.seq_end);
                 // Gemmi✔️✔️:   } catch (const std::out_of_range&) {}
                 // Gemmi✔️✔️: }
-                let label_begin = dbref.label_seq_begin.or_else(|| {
-                    dbref
-                        .seq_begin
-                        .and_then(|auth| label_from_auth(&residues, auth))
-                });
-                let label_end = dbref.label_seq_end.or_else(|| {
-                    dbref
-                        .seq_end
-                        .and_then(|auth| label_from_auth(&residues, auth))
-                });
+                let label_begin = dbref
+                    .label_seq_begin
+                    .or_else(|| dbref.seq_begin.and_then(|auth| label_from_auth(&residues, auth)));
+                let label_end = dbref
+                    .label_seq_end
+                    .or_else(|| dbref.seq_end.and_then(|auth| label_from_auth(&residues, auth)));
                 // Gemmi✔️✔️: SeqId begin = dbref.seq_begin;
                 // Gemmi✔️✔️: SeqId end = dbref.seq_end;
                 // Gemmi✔️✔️: if (!begin.num || !end.num) {
@@ -2638,12 +2491,7 @@ fn write_experiment_categories(
                     ]
                 })
                 .collect();
-            add_mmcif_rows(
-                block,
-                "_exptl.",
-                &["entry_id", "method", "crystals_number"],
-                rows,
-            )?;
+            add_mmcif_rows(block, "_exptl.", &["entry_id", "method", "crystals_number"], rows)?;
         } else if let Some(methods) = &structure.metadata.experimental_method {
             let rows = methods
                 .split("; ")
@@ -2708,10 +2556,7 @@ fn write_experiment_categories(
     Ok(())
 }
 
-fn write_diffraction_categories(
-    structure: &BioStructure,
-    block: &mut CifBlock,
-) -> Result<(), BioWriteError> {
+fn write_diffraction_categories(structure: &BioStructure, block: &mut CifBlock) -> Result<(), BioWriteError> {
     // Gemmi✔️✔️: for (const CrystalInfo& cryst : st.meta.crystals)
     // Gemmi✔️✔️:   for (const DiffractionInfo& diffr : cryst.diffractions)
     // Gemmi✔️✔️:     loop.add_row({diffr.id, cryst.id, number_or_qmark(diffr.temperature)});
@@ -2749,13 +2594,7 @@ fn write_diffraction_categories(
     add_mmcif_rows(
         block,
         "_diffrn_detector.",
-        &[
-            "diffrn_id",
-            "pdbx_collection_date",
-            "detector",
-            "type",
-            "details",
-        ],
+        &["diffrn_id", "pdbx_collection_date", "detector", "type", "details"],
         diffractions
             .iter()
             .map(|(_, diffraction)| {
@@ -2963,9 +2802,7 @@ fn write_refinement_categories(
         .iter()
         .flat_map(|refinement| &refinement.bins)
         .collect::<Vec<_>>();
-    let has_shell_fsc = bins
-        .iter()
-        .any(|bin| bin.fsc_work.is_some() || bin.fsc_free.is_some());
+    let has_shell_fsc = bins.iter().any(|bin| bin.fsc_work.is_some() || bin.fsc_free.is_some());
     let has_shell_ffcc = bins
         .iter()
         .any(|bin| bin.cc_fo_fc_work.is_some() || bin.cc_fo_fc_free.is_some());
@@ -2973,44 +2810,26 @@ fn write_refinement_categories(
         .iter()
         .any(|bin| bin.cc_intensity_work.is_some() || bin.cc_intensity_free.is_some());
     let refinements = &structure.metadata.refinement;
-    let has_rfree_count = refinements
-        .iter()
-        .any(|value| value.rfree_set_count.is_some());
+    let has_rfree_count = refinements.iter().any(|value| value.rfree_set_count.is_some());
     let has_r_all = refinements.iter().any(|value| value.r_all.is_some());
     let has_r_work = refinements.iter().any(|value| value.r_work.is_some());
     let has_r_free = refinements.iter().any(|value| value.r_free.is_some());
     let has_cross_validation = refinements
         .iter()
         .any(|value| !value.cross_validation_method.is_empty());
-    let has_rfree_selection = refinements
-        .iter()
-        .any(|value| !value.rfree_selection_method.is_empty());
+    let has_rfree_selection = refinements.iter().any(|value| !value.rfree_selection_method.is_empty());
     let has_mean_b = refinements.iter().any(|value| value.mean_b.is_some());
     let has_aniso = refinements.iter().any(|value| !value.aniso_b.u11.is_nan());
     let has_dpi_blow_r = refinements.iter().any(|value| value.dpi_blow_r.is_some());
-    let has_dpi_blow_rfree = refinements
-        .iter()
-        .any(|value| value.dpi_blow_rfree.is_some());
-    let has_dpi_cruickshank_r = refinements
-        .iter()
-        .any(|value| value.dpi_cruickshank_r.is_some());
-    let has_dpi_cruickshank_rfree = refinements
-        .iter()
-        .any(|value| value.dpi_cruickshank_rfree.is_some());
-    let has_cc_fo_fc_work = refinements
-        .iter()
-        .any(|value| value.cc_fo_fc_work.is_some());
-    let has_cc_fo_fc_free = refinements
-        .iter()
-        .any(|value| value.cc_fo_fc_free.is_some());
+    let has_dpi_blow_rfree = refinements.iter().any(|value| value.dpi_blow_rfree.is_some());
+    let has_dpi_cruickshank_r = refinements.iter().any(|value| value.dpi_cruickshank_r.is_some());
+    let has_dpi_cruickshank_rfree = refinements.iter().any(|value| value.dpi_cruickshank_rfree.is_some());
+    let has_cc_fo_fc_work = refinements.iter().any(|value| value.cc_fo_fc_work.is_some());
+    let has_cc_fo_fc_free = refinements.iter().any(|value| value.cc_fo_fc_free.is_some());
     let has_fsc_work = refinements.iter().any(|value| value.fsc_work.is_some());
     let has_fsc_free = refinements.iter().any(|value| value.fsc_free.is_some());
-    let has_cc_intensity_work = refinements
-        .iter()
-        .any(|value| value.cc_intensity_work.is_some());
-    let has_cc_intensity_free = refinements
-        .iter()
-        .any(|value| value.cc_intensity_free.is_some());
+    let has_cc_intensity_work = refinements.iter().any(|value| value.cc_intensity_work.is_some());
+    let has_cc_intensity_free = refinements.iter().any(|value| value.cc_intensity_free.is_some());
 
     let mut refine_tags = vec![
         "entry_id",
@@ -3049,10 +2868,7 @@ fn write_refinement_categories(
         (has_dpi_blow_r, "pdbx_overall_SU_R_Blow_DPI"),
         (has_dpi_blow_rfree, "pdbx_overall_SU_R_free_Blow_DPI"),
         (has_dpi_cruickshank_r, "overall_SU_R_Cruickshank_DPI"),
-        (
-            has_dpi_cruickshank_rfree,
-            "pdbx_overall_SU_R_free_Cruickshank_DPI",
-        ),
+        (has_dpi_cruickshank_rfree, "pdbx_overall_SU_R_free_Cruickshank_DPI"),
         (has_cc_fo_fc_work, "correlation_coeff_Fo_to_Fc"),
         (has_cc_fo_fc_free, "correlation_coeff_Fo_to_Fc_free"),
         (has_fsc_work, "pdbx_average_fsc_work"),
@@ -3161,9 +2977,7 @@ fn write_refinement_categories(
             row.push(number_or_qmark(refinement.cc_intensity_free));
         }
         if has_solved_by {
-            row.push(string_or_qmark(
-                structure.metadata.solved_by.as_deref().unwrap_or(""),
-            ));
+            row.push(string_or_qmark(structure.metadata.solved_by.as_deref().unwrap_or("")));
         }
         if has_starting_model {
             row.push(string_or_qmark(
@@ -3212,10 +3026,7 @@ fn write_refinement_categories(
                 shell.extend([number_or_qmark(bin.fsc_work), number_or_qmark(bin.fsc_free)]);
             }
             if has_shell_ffcc {
-                shell.extend([
-                    number_or_qmark(bin.cc_fo_fc_work),
-                    number_or_qmark(bin.cc_fo_fc_free),
-                ]);
+                shell.extend([number_or_qmark(bin.cc_fo_fc_work), number_or_qmark(bin.cc_fo_fc_free)]);
             }
             if has_shell_iicc {
                 shell.extend([
@@ -3262,16 +3073,10 @@ fn write_refinement_categories(
         shell_tags.extend(["pdbx_fsc_work", "pdbx_fsc_free"]);
     }
     if has_shell_ffcc {
-        shell_tags.extend([
-            "correlation_coeff_Fo_to_Fc",
-            "correlation_coeff_Fo_to_Fc_free",
-        ]);
+        shell_tags.extend(["correlation_coeff_Fo_to_Fc", "correlation_coeff_Fo_to_Fc_free"]);
     }
     if has_shell_iicc {
-        shell_tags.extend([
-            "correlation_coeff_I_to_Fcsqd_work",
-            "correlation_coeff_I_to_Fcsqd_free",
-        ]);
+        shell_tags.extend(["correlation_coeff_I_to_Fcsqd_work", "correlation_coeff_I_to_Fcsqd_free"]);
     }
     add_mmcif_rows(block, "_refine_ls_shell.", &shell_tags, shell_rows)
 }
@@ -3301,11 +3106,7 @@ fn write_title_keyword_categories(
     // Gemmi✔️✔️: if (keywords != st.info.end())
     // Gemmi✔️✔️:   span.set_pair(keywords->first, cif::quote(keywords->second));
     if structure.metadata.pdbx_keywords.is_some() || structure.metadata.keywords.is_some() {
-        block.set_pair_in_category(
-            "_struct_keywords.",
-            "_struct_keywords.entry_id",
-            entry_id.to_string(),
-        );
+        block.set_pair_in_category("_struct_keywords.", "_struct_keywords.entry_id", entry_id.to_string());
     }
     if let Some(keywords) = &structure.metadata.pdbx_keywords {
         block.set_pair_in_category(
@@ -3315,11 +3116,7 @@ fn write_title_keyword_categories(
         );
     }
     if let Some(keywords) = &structure.metadata.keywords {
-        block.set_pair_in_category(
-            "_struct_keywords.",
-            "_struct_keywords.text",
-            quote_cif_value(keywords),
-        );
+        block.set_pair_in_category("_struct_keywords.", "_struct_keywords.text", quote_cif_value(keywords));
     }
 }
 
@@ -3340,9 +3137,7 @@ fn helix_class_number(class: crate::bio::BioHelixClass) -> i32 {
     }
 }
 
-fn software_classification_text(
-    classification: crate::bio::BioSoftwareClassification,
-) -> &'static str {
+fn software_classification_text(classification: crate::bio::BioSoftwareClassification) -> &'static str {
     use crate::bio::BioSoftwareClassification;
     // BEGIN GEMMI CPP FUNCTION gemmi::software_classification_to_string
     // Gemmi✔️✔️: case SoftwareItem::DataCollection: return "data collection";
@@ -3426,18 +3221,16 @@ pub(super) fn write_secondary_mmcif_categories(
         let model = &structure.models[0];
         let mut rows = Vec::new();
         for chain_index in model.chain_span.start..model.chain_span.end() {
-            let chain =
-                structure
-                    .chains
-                    .get(chain_index as usize)
-                    .ok_or(BioWriteError::Invariant(
-                        "model chain span is out of bounds",
-                    ))?;
+            let chain = structure
+                .chains
+                .get(chain_index as usize)
+                .ok_or(BioWriteError::Invariant("model chain span is out of bounds"))?;
             let mut previous = None;
             for residue_index in chain.residue_span.start..chain.residue_span.end() {
-                let residue = structure.residues.get(residue_index as usize).ok_or(
-                    BioWriteError::Invariant("chain residue span is out of bounds"),
-                )?;
+                let residue = structure
+                    .residues
+                    .get(residue_index as usize)
+                    .ok_or(BioWriteError::Invariant("chain residue span is out of bounds"))?;
                 let subchain = residue.source.subchain_id;
                 if subchain == previous {
                     continue;
@@ -3623,12 +3416,7 @@ fn write_secondary_sheet_categories(
                     string_or_dot(&sheet.name),
                     index.to_string(),
                     (index + 1).to_string(),
-                    if strand.sense > 0 {
-                        "parallel"
-                    } else {
-                        "anti-parallel"
-                    }
-                    .to_string(),
+                    if strand.sense > 0 { "parallel" } else { "anti-parallel" }.to_string(),
                 ]);
             }
         }
@@ -3796,11 +3584,7 @@ fn write_secondary_tail_categories(
             .filter(|details| !details.is_empty())
     {
         block.set_pair_in_category("_struct_biol.", "_struct_biol.id", "1".to_string());
-        block.set_pair_in_category(
-            "_struct_biol.",
-            "_struct_biol.details",
-            quote_cif_value(details),
-        );
+        block.set_pair_in_category("_struct_biol.", "_struct_biol.details", quote_cif_value(details));
     }
 
     // Gemmi✔️✔️: if (groups.assembly && !st.assemblies.empty())
@@ -3826,10 +3610,7 @@ fn write_secondary_tail_categories(
     // Gemmi✔️✔️:     if (!modres.mod_id.empty())
     // Gemmi✔️✔️:       use_ccp4_mod_id = true;
     if groups.modres && !structure.mod_residues.is_empty() {
-        let use_ccp4_mod_id = structure
-            .mod_residues
-            .iter()
-            .any(|modres| !modres.mod_id.is_empty());
+        let use_ccp4_mod_id = structure.mod_residues.iter().any(|modres| !modres.mod_id.is_empty());
         let mut tags = vec![
             "id",
             "auth_asym_id",
@@ -3902,11 +3683,7 @@ fn write_secondary_tail_categories(
             for column in 0..3 {
                 block.set_pair_in_category(
                     "_atom_sites.",
-                    &format!(
-                        "_atom_sites.fract_transf_matrix[{}][{}]",
-                        row + 1,
-                        column + 1
-                    ),
+                    &format!("_atom_sites.fract_transf_matrix[{}][{}]", row + 1, column + 1),
                     gemmi_to_string_f64(crystal.frac.mat[row][column]),
                 );
             }
@@ -3965,17 +3742,9 @@ fn write_secondary_tail_categories(
             if entity.kind != EntityKind::Polymer {
                 continue;
             }
-            let hetero_no = if entity.reflects_microhetero {
-                "n"
-            } else {
-                "?"
-            };
+            let hetero_no = if entity.reflects_microhetero { "n" } else { "?" };
             for (index, monomers) in entity.sequence.iter().enumerate() {
-                let hetero = if monomers.contains(',') {
-                    "y"
-                } else {
-                    hetero_no
-                };
+                let hetero = if monomers.contains(',') { "y" } else { hetero_no };
                 for monomer in monomers.split(',') {
                     // Gemmi✔️✔️: poly_loop.add_row({qchain(ent.name), num,
                     // Gemmi✔️✔️:                    mon_ids.substr(start),
@@ -4181,12 +3950,7 @@ fn write_software_category(
         // Gemmi✔️✔️: loop.tags.insert(loop.tags.end(),
         // Gemmi✔️✔️:                  {"_software.date", "_software.description",
         // Gemmi✔️✔️:                   "_software.contact_author", "_software.contact_author_email"});
-        tags.extend([
-            "date",
-            "description",
-            "contact_author",
-            "contact_author_email",
-        ]);
+        tags.extend(["date", "description", "contact_author", "contact_author_email"]);
     }
     let mut rows = Vec::with_capacity(structure.metadata.software.len());
     for (index, item) in structure.metadata.software.iter().enumerate() {
@@ -4261,10 +4025,7 @@ pub(super) fn make_mmcif_document(
 // Gemmi✔️✔️:   return block;
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-pub(super) fn make_mmcif_block(
-    structure: &BioStructure,
-    groups: MmcifOutputGroups,
-) -> Result<CifBlock, BioWriteError> {
+pub(super) fn make_mmcif_block(structure: &BioStructure, groups: MmcifOutputGroups) -> Result<CifBlock, BioWriteError> {
     let mut block = CifBlock::default();
     update_mmcif_block(structure, &mut block, groups)?;
     Ok(block)
@@ -4292,10 +4053,7 @@ pub(super) fn make_mmcif_headers(structure: &BioStructure) -> Result<CifBlock, B
 // Gemmi✔️✔️:   add_cif_atoms(st, block, /*use_group_pdb=*/false, /*auth_all=*/false);
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-pub(super) fn add_minimal_mmcif_data(
-    structure: &BioStructure,
-    block: &mut CifBlock,
-) -> Result<(), BioWriteError> {
+pub(super) fn add_minimal_mmcif_data(structure: &BioStructure, block: &mut CifBlock) -> Result<(), BioWriteError> {
     let default_crystal;
     let crystal = if let Some(crystal) = &structure.crystal {
         crystal
@@ -4316,11 +4074,10 @@ pub(super) fn add_minimal_mmcif_data(
 pub(crate) mod tests {
     use super::*;
     use crate::bio::{
-        BioAssembly, BioAssemblyGenerator, BioAssemblyOperator, BioCisPep, BioConnection,
-        BioConnectionType, BioDiffractionInfo, BioEntityDbRef, BioExperimentCrystalInfo,
-        BioExperimentInfo, BioHelix, BioHelixClass, BioModRes, BioNcsOperator, BioRefinementInfo,
-        BioReflectionsInfo, BioSheet, BioSheetStrand, BioSoftwareClassification, BioSoftwareItem,
-        BioTlsGroup, BioTlsSelection, PdbChainId, PdbSeqId,
+        BioAssembly, BioAssemblyGenerator, BioAssemblyOperator, BioCisPep, BioConnection, BioConnectionType,
+        BioDiffractionInfo, BioEntityDbRef, BioExperimentCrystalInfo, BioExperimentInfo, BioHelix, BioHelixClass,
+        BioModRes, BioNcsOperator, BioRefinementInfo, BioReflectionsInfo, BioSheet, BioSheetStrand,
+        BioSoftwareClassification, BioSoftwareItem, BioTlsGroup, BioTlsSelection, PdbChainId, PdbSeqId,
     };
     use crate::io::bio::cif::{CifEntry, CifLoop, CifToken};
 
@@ -4585,15 +4342,10 @@ ATOM 2 N N . GLY A 1 2 1 0 0 20 GLY X
         structure
     }
 
-    pub(crate) fn check_mmcif_output_group_all_categories_emit_and_replace_prepopulated_categories()
-    {
+    pub(crate) fn check_mmcif_output_group_all_categories_emit_and_replace_prepopulated_categories() {
         let structure = full_output_structure();
         let mut block = CifBlock::default();
-        for tag in [
-            "_struct_asym.legacy",
-            "_atom_type.legacy",
-            "_software.legacy",
-        ] {
+        for tag in ["_struct_asym.legacy", "_atom_type.legacy", "_software.legacy"] {
             block.push_pair(
                 tag.to_string(),
                 CifToken {
@@ -4661,53 +4413,19 @@ ATOM 2 N N . GLY A 1 2 1 0 0 20 GLY X
             "_pdbx_refine_tls_group.id",
             "_software.pdbx_ordinal",
         ] {
-            assert!(
-                active_has_tag(&block, tag),
-                "missing active writer tag {tag}"
-            );
+            assert!(active_has_tag(&block, tag), "missing active writer tag {tag}");
         }
-        for tag in [
-            "_struct_asym.legacy",
-            "_atom_type.legacy",
-            "_software.legacy",
-        ] {
+        for tag in ["_struct_asym.legacy", "_atom_type.legacy", "_software.legacy"] {
             assert!(!active_has_tag(&block, tag), "stale category item {tag}");
         }
+        assert_eq!(loop_rows(loop_with_tag(&block, "_struct_conf.id"))[0][15], "2");
         assert_eq!(
-            loop_rows(loop_with_tag(&block, "_struct_conf.id"))[0][15],
-            "2"
-        );
-        assert_eq!(
-            loop_rows(loop_with_tag(
-                &block,
-                "_pdbx_struct_mod_residue.auth_comp_id"
-            ))[0],
-            [
-                "1",
-                "X",
-                "20",
-                "?",
-                "MSE",
-                "MSE",
-                "MET",
-                "selenomethionine",
-                "MOD1"
-            ]
+            loop_rows(loop_with_tag(&block, "_pdbx_struct_mod_residue.auth_comp_id"))[0],
+            ["1", "X", "20", "?", "MSE", "MSE", "MET", "selenomethionine", "MOD1"]
         );
         assert_eq!(
             loop_rows(loop_with_tag(&block, "_pdbx_refine_tls_group.id"))[0],
-            [
-                "1",
-                "1",
-                "X-RAY",
-                "X",
-                "10",
-                "?",
-                "X",
-                "20",
-                "A",
-                "'chain selection'"
-            ]
+            ["1", "1", "X-RAY", "X", "10", "?", "X", "20", "A", "'chain selection'"]
         );
     }
 
@@ -4863,21 +4581,21 @@ HETATM 99 Cl CL . LIG B . ? -2.5 0 8.25 0.5 31.125 -1 80 LIG Y CL 4
             loop_rows(atom_site),
             [
                 vec![
-                    "ATOM", "1", "C", "CA", ".", "ALA", "A", ".", "7", "?", "11.104", "13.207",
-                    "9.9", "1", "20", "?", "70", "X", "4",
+                    "ATOM", "1", "C", "CA", ".", "ALA", "A", ".", "7", "?", "11.104", "13.207", "9.9", "1", "20", "?",
+                    "70", "X", "4",
                 ],
                 vec![
-                    "HETATM", "2", "CL", "CL", ".", "LIG", "B", ".", ".", "?", "-2.5", "0", "8.25",
-                    "0.5", "31.125", "-1", "80", "Y", "4",
+                    "HETATM", "2", "CL", "CL", ".", "LIG", "B", ".", ".", "?", "-2.5", "0", "8.25", "0.5", "31.125",
+                    "-1", "80", "Y", "4",
                 ],
             ]
         );
-        assert!(block.loops.iter().all(|loop_| {
-            !loop_
-                .tags
+        assert!(
+            block
+                .loops
                 .iter()
-                .any(|tag| tag.starts_with("_atom_site_anisotrop."))
-        }));
+                .all(|loop_| { !loop_.tags.iter().any(|tag| tag.starts_with("_atom_site_anisotrop.")) })
+        );
     }
 
     #[test]
@@ -4938,24 +4656,9 @@ _atom_site_anisotrop.U[2][3]
         add_cif_atoms(&structure, &mut block, false, true).unwrap();
 
         let atom_site = loop_with_tag(&block, "_atom_site.id");
-        assert!(
-            !atom_site
-                .tags
-                .iter()
-                .any(|tag| tag == "_atom_site.group_PDB")
-        );
-        assert!(
-            atom_site
-                .tags
-                .iter()
-                .any(|tag| tag == "_atom_site.auth_atom_id")
-        );
-        assert!(
-            atom_site
-                .tags
-                .iter()
-                .any(|tag| tag == "_atom_site.auth_comp_id")
-        );
+        assert!(!atom_site.tags.iter().any(|tag| tag == "_atom_site.group_PDB"));
+        assert!(atom_site.tags.iter().any(|tag| tag == "_atom_site.auth_atom_id"));
+        assert!(atom_site.tags.iter().any(|tag| tag == "_atom_site.auth_comp_id"));
         assert_eq!(
             &atom_site.tags[atom_site.tags.len() - 3..],
             [
@@ -4990,9 +4693,7 @@ _atom_site_anisotrop.U[2][3]
         );
         assert_eq!(
             loop_rows(anisotrop),
-            [vec![
-                "1", "C", "1.25", "2.5", "3.75", "4.5", "5.5", "6.5", "3"
-            ]]
+            [vec!["1", "C", "1.25", "2.5", "3.75", "4.5", "5.5", "6.5", "3"]]
         );
     }
 
@@ -5041,18 +4742,8 @@ _atom_site.pdbx_PDB_model_num
         add_cif_atoms(&structure, &mut block, false, false).unwrap();
 
         let atom_site = loop_with_tag(&block, "_atom_site.id");
-        assert!(
-            !atom_site
-                .tags
-                .iter()
-                .any(|tag| tag == "_atom_site.calc_flag")
-        );
-        assert!(
-            !atom_site
-                .tags
-                .iter()
-                .any(|tag| tag == "_atom_site.pdbx_tls_group_id")
-        );
+        assert!(!atom_site.tags.iter().any(|tag| tag == "_atom_site.calc_flag"));
+        assert!(!atom_site.tags.iter().any(|tag| tag == "_atom_site.pdbx_tls_group_id"));
         let rows = loop_rows(atom_site);
         assert_eq!(rows[0][5], ".");
         assert_eq!(rows[0][6], ".");
@@ -5156,19 +4847,13 @@ ATOM 1 C CA . ALA A 1 0 0 0 10 ALA X
             [vec!["1", "'ABSA (A^2)'", "12.5"]]
         );
         assert_eq!(
-            loop_rows(loop_with_tag(
-                &block,
-                "_pdbx_struct_assembly_gen.assembly_id"
-            )),
+            loop_rows(loop_with_tag(&block, "_pdbx_struct_assembly_gen.assembly_id")),
             [vec!["1", "1,1", "A,B"], vec!["1", "2", "A"]]
         );
         let operator_rows = loop_rows(loop_with_tag(&block, "_pdbx_struct_oper_list.id"));
         assert_eq!(operator_rows.len(), 2);
         assert_eq!(&operator_rows[0][..2], ["1", "'identity operation'"]);
-        assert_eq!(
-            &operator_rows[1][..2],
-            ["2", "'crystal symmetry operation'"]
-        );
+        assert_eq!(&operator_rows[1][..2], ["2", "'crystal symmetry operation'"]);
         assert_eq!(operator_rows[1][5], "10");
     }
 
@@ -5384,8 +5069,7 @@ ATOM 3 N N  . GLY A 11 1 0 0 11 GLY X 2
         assert_eq!(
             loop_rows(loop_with_tag(&block, "_struct_mon_prot_cis.pdbx_id")),
             [vec![
-                "1", "2", "A", "10", "ALA", "X", "10", "?", "A", "11", "GLY", "X", "11", "?", "B",
-                "?",
+                "1", "2", "A", "10", "ALA", "X", "10", "?", "A", "11", "GLY", "X", "11", "?", "B", "?",
             ]]
         );
 

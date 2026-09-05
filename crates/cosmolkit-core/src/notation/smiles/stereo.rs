@@ -1,9 +1,6 @@
 use super::*;
 
-pub(crate) fn assign_stereochemistry_cleanup_subset(
-    mol: &mut Molecule,
-    clean_it: bool,
-) -> Result<(), StereoError> {
+pub(crate) fn assign_stereochemistry_cleanup_subset(mol: &mut Molecule, clean_it: bool) -> Result<(), StereoError> {
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanup subset
     // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
     // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
@@ -13,8 +10,7 @@ pub(crate) fn assign_stereochemistry_cleanup_subset(
     // END RDKIT CPP FUNCTION assignStereochemistry cleanup subset
     ensure_valence_for_stereo(mol)?;
     assign_double_bond_stereo_after_smiles_parse(mol, clean_it)?;
-    mol.properties_mut()
-        .set_computed_prop("_StereochemDone", "1");
+    mol.properties_mut().set_computed_prop("_StereochemDone", "1");
     Ok(())
 }
 
@@ -178,19 +174,15 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     let mut has_stereo_atoms = false;
     let mut has_potential_stereo_atoms = false;
     for atom_id in atom_ids.iter().copied() {
-        if clean_it && let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_id.index())
-        {
+        if clean_it && let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_id.index()) {
             atom_mut.clear_prop("_CIPCode");
             atom_mut.clear_prop("_ChiralityPossible");
         }
         let atom = &mol.atoms()[atom_id.index()];
-        if !has_stereo_atoms
-            && !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
-        {
+        if !has_stereo_atoms && !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other) {
             has_stereo_atoms = true;
         } else if !has_potential_stereo_atoms {
-            has_potential_stereo_atoms =
-                crate::stereo::is_atom_potential_chiral_center(mol, atom_id.index(), &[]).0;
+            has_potential_stereo_atoms = crate::stereo::is_atom_potential_chiral_center(mol, atom_id.index(), &[]).0;
         }
     }
     let mut has_stereo_bonds = false;
@@ -234,8 +226,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     let flag_possible_stereo_centers = true;
     let mut keep_going = has_stereo_atoms || has_stereo_bonds;
     if !keep_going {
-        keep_going = flag_possible_stereo_centers
-            && (has_potential_stereo_atoms || has_potential_stereo_bonds);
+        keep_going = flag_possible_stereo_centers && (has_potential_stereo_atoms || has_potential_stereo_bonds);
     }
 
     // BEGIN RDKIT CPP FUNCTION legacyStereoPerception fixed-point assignment loop subset
@@ -265,10 +256,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     let mut ranks = Vec::new();
     while keep_going {
         if ranks.is_empty()
-            && (has_stereo_atoms
-                || has_potential_stereo_atoms
-                || has_stereo_bonds
-                || has_potential_stereo_bonds)
+            && (has_stereo_atoms || has_potential_stereo_atoms || has_stereo_bonds || has_potential_stereo_bonds)
         {
             ranks = crate::stereo::assign_atom_cip_ranks_in_place(mol)?;
         }
@@ -290,11 +278,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         // END RDKIT CPP FUNCTION assignAtomChiralCodes subset
         let atom_changed = if has_stereo_atoms || has_potential_stereo_atoms {
             let (unassigned_atoms, atom_assignments, possible_atoms, atom_changed) =
-                crate::stereo::assign_atom_chiral_codes_with_possible(
-                    mol,
-                    &ranks,
-                    flag_possible_stereo_centers,
-                )?;
+                crate::stereo::assign_atom_chiral_codes_with_possible(mol, &ranks, flag_possible_stereo_centers)?;
             for atom_idx in possible_atoms {
                 if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
                     atom_mut.set_prop("_ChiralityPossible", "1");
@@ -329,8 +313,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION assignBondStereoCodes subset
         let bond_changed = if has_stereo_bonds || has_potential_stereo_bonds {
-            let (unassigned_bonds, assignments, bond_changed) =
-                crate::stereo::assign_bond_stereo_codes(mol, &ranks);
+            let (unassigned_bonds, assignments, bond_changed) = crate::stereo::assign_bond_stereo_codes(mol, &ranks);
             for (bond_idx, stereo, begin_control, end_control) in assignments {
                 let Some(bond_mut) = mol.topology_block_mut().bonds.get_mut(bond_idx) else {
                     continue;
@@ -338,8 +321,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
                 if bond_mut.stereo() != BondStereo::None {
                     continue;
                 }
-                bond_mut
-                    .set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+                bond_mut.set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
                 bond_mut.set_stereo(match stereo {
                     crate::stereo::DoubleBondStereo::E => BondStereo::E,
                     crate::stereo::DoubleBondStereo::Z => BondStereo::Z,
@@ -403,11 +385,10 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     // Materialize that transition before the read-only shared helper so later
     // stereo and SMARTS consumers observe the same SymmSSSR state.
     ensure_symm_sssr_for_stereo(mol)?;
-    let special_case_atoms: BTreeSet<usize> =
-        crate::stereo::find_chiral_atom_special_cases(mol, &ranks)?
-            .into_iter()
-            .map(|case| case.atom_idx)
-            .collect();
+    let special_case_atoms: BTreeSet<usize> = crate::stereo::find_chiral_atom_special_cases(mol, &ranks)?
+        .into_iter()
+        .map(|case| case.atom_idx)
+        .collect();
     let atom_ids: Vec<AtomId> = mol.atoms().iter().map(|atom| atom.id()).collect();
     let mut explicit_h_to_implicit_updates = false;
     for atom_id in atom_ids {
@@ -427,10 +408,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         }
         let atom_mut = &mut mol.topology_block_mut().atoms[atom_id.index()];
         atom_mut.set_chiral_tag(ChiralTag::Unspecified);
-        if atom_mut.explicit_hydrogens() == 1
-            && atom_mut.formal_charge() == 0
-            && !atom_mut.is_aromatic()
-        {
+        if atom_mut.explicit_hydrogens() == 1 && atom_mut.formal_charge() == 0 && !atom_mut.is_aromatic() {
             atom_mut.set_explicit_hydrogens(0);
             atom_mut.set_no_implicit(false);
             explicit_h_to_implicit_updates = true;
@@ -440,13 +418,12 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         // RDKit✔️✔️:         atom->calcExplicitValence(false);
         // RDKit✔️✔️:         atom->calcImplicitValence(false);
         let valence =
-            crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
-                .map_err(|_error| {
-                    StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
-                        feature: "SMILES_STEREOCHEMISTRY_CLEANUP",
-                        reason: "valence assignment failed after explicit-H cleanup",
-                    })
-                })?;
+            crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false).map_err(|_error| {
+                StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+                    feature: "SMILES_STEREOCHEMISTRY_CLEANUP",
+                    reason: "valence assignment failed after explicit-H cleanup",
+                })
+            })?;
         mol.derived_cache_mut().valence = Some(valence);
     }
     // BEGIN RDKIT CPP FUNCTION legacyStereoPerception cleanIt terminal double-bond cleanup
@@ -471,21 +448,10 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
             let Some(bond) = mol.bonds().get(bond_id.index()).cloned() else {
                 continue;
             };
-            let has_terminal_endpoint = mol
-                .topology_block()
-                .adjacency
-                .neighbors_of(bond.begin().index())
-                .len()
-                == 1
-                || mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(bond.end().index())
-                    .len()
-                    == 1;
+            let has_terminal_endpoint = mol.topology_block().adjacency.neighbors_of(bond.begin().index()).len() == 1
+                || mol.topology_block().adjacency.neighbors_of(bond.end().index()).len() == 1;
             if bond.order() != BondOrder::Double
-                || !matches!(bond.direction(), BondDirection::EitherDouble)
-                    && bond.stereo() != BondStereo::Any
+                || !matches!(bond.direction(), BondDirection::EitherDouble) && bond.stereo() != BondStereo::Any
                 || !has_terminal_endpoint
             {
                 continue;
@@ -535,10 +501,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     let double_bond_ids: Vec<BondId> = mol
         .bonds()
         .iter()
-        .filter(|bond| {
-            bond.order() == BondOrder::Double
-                && matches!(bond.stereo(), BondStereo::Any | BondStereo::None)
-        })
+        .filter(|bond| bond.order() == BondOrder::Double && matches!(bond.stereo(), BondStereo::Any | BondStereo::None))
         .map(crate::Bond::id)
         .collect();
     for bond_id in double_bond_ids {
@@ -576,10 +539,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
                         break;
                     }
                 }
-                if ok_to_clear
-                    && let Some(nbr_bond_mut) =
-                        mol.topology_block_mut().bonds.get_mut(nbr_bond_id.index())
-                {
+                if ok_to_clear && let Some(nbr_bond_mut) = mol.topology_block_mut().bonds.get_mut(nbr_bond_id.index()) {
                     nbr_bond_mut.set_direction(BondDirection::None);
                 }
             }
@@ -632,10 +592,7 @@ pub(super) fn apply_coordinate_free_atropisomer_assignments(
     apply_atropisomer_stereo_assignments(mol, assignments);
 }
 
-pub(super) fn apply_atropisomer_stereo_assignments(
-    mol: &mut Molecule,
-    assignments: Vec<(BondId, BondStereo)>,
-) {
+pub(super) fn apply_atropisomer_stereo_assignments(mol: &mut Molecule, assignments: Vec<(BondId, BondStereo)>) {
     for (bond_id, stereo) in assignments {
         if let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
             bond.set_stereo(stereo);
@@ -743,23 +700,14 @@ pub(super) fn point_dot(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
 }
 
 pub(super) fn point_cross(a: (f64, f64, f64), b: (f64, f64, f64)) -> (f64, f64, f64) {
-    (
-        a.1 * b.2 - a.2 * b.1,
-        a.2 * b.0 - a.0 * b.2,
-        a.0 * b.1 - a.1 * b.0,
-    )
+    (a.1 * b.2 - a.2 * b.1, a.2 * b.0 - a.0 * b.2, a.0 * b.1 - a.1 * b.0)
 }
 
 pub(super) fn point_len_sq(v: (f64, f64, f64)) -> f64 {
     point_dot(v, v)
 }
 
-pub(super) fn compute_dihedral_angle_points(
-    p1: [f64; 3],
-    p2: [f64; 3],
-    p3: [f64; 3],
-    p4: [f64; 3],
-) -> f64 {
+pub(super) fn compute_dihedral_angle_points(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
     let r12 = point_sub(p2, p1);
     let r23 = point_sub(p3, p2);
     let r34 = point_sub(p4, p3);
@@ -775,11 +723,7 @@ pub(super) fn compute_dihedral_angle_points(
 }
 
 pub(super) fn bond_other_endpoint(bond: &crate::Bond, atom: AtomId) -> AtomId {
-    if bond.begin() == atom {
-        bond.end()
-    } else {
-        bond.begin()
-    }
+    if bond.begin() == atom { bond.end() } else { bond.begin() }
 }
 
 pub(super) fn controlling_bond_from_atom_for_smiles(
@@ -861,13 +805,12 @@ pub(super) fn ensure_valence_for_stereo(mol: &mut Molecule) -> Result<(), Stereo
     if mol.derived_cache().valence.is_some() {
         return Ok(());
     }
-    let valence = crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
-        .map_err(|_error| {
-            StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
-                feature: "CIP_RANKING",
-                reason: "valence assignment failed before stereo perception",
-            })
-        })?;
+    let valence = crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false).map_err(|_error| {
+        StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+            feature: "CIP_RANKING",
+            reason: "valence assignment failed before stereo perception",
+        })
+    })?;
     mol.derived_cache_mut().valence = Some(valence);
     Ok(())
 }
@@ -959,9 +902,7 @@ pub(super) fn set_double_bond_neighbor_directions_impl(
                         needs_dir[bond.id().index()] = true;
                         if matches!(
                             nbr_bond.direction(),
-                            BondDirection::None
-                                | BondDirection::EndDownRight
-                                | BondDirection::EndUpRight
+                            BondDirection::None | BondDirection::EndDownRight | BondDirection::EndUpRight
                         ) {
                             needs_dir[nbr_bond_id.index()] = true;
                             dbl_bond_nbrs[bond.id().index()].push(nbr_bond_id);
@@ -1060,9 +1001,7 @@ fn set_stereo_for_bond(
         // RDKit✔️✔️:   }
     }
     // RDKit✔️✔️:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
-    if adjacency.neighbors_of(begin_atom.index()).len() > 1
-        && adjacency.neighbors_of(end_atom.index()).len() > 1
-    {
+    if adjacency.neighbors_of(begin_atom.index()).len() > 1 && adjacency.neighbors_of(end_atom.index()).len() > 1 {
         // RDKit✔️✔️:     unsigned int begControl = mol.getNumAtoms();
         let mut begin_control = mol.num_atoms();
         // RDKit✔️✔️:     for (auto nbr : mol.atomNeighbors(begAtom)) {
@@ -1078,11 +1017,7 @@ fn set_stereo_for_bond(
             // RDKit✔️✔️:     }
         }
         // RDKit✔️✔️:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
-        let mut end_control = if use_cx_smiles_ordering {
-            mol.num_atoms()
-        } else {
-            0
-        };
+        let mut end_control = if use_cx_smiles_ordering { mol.num_atoms() } else { 0 };
         // RDKit✔️✔️:     for (auto nbr : mol.atomNeighbors(endAtom)) {
         for neighbor in adjacency.neighbors_of(end_atom.index()) {
             // RDKit✔️✔️:       if (nbr == begAtom) {
@@ -1183,14 +1118,8 @@ pub(super) fn update_double_bond_neighbors(
     let atom1 = dbl_bond.begin();
     let atom2 = dbl_bond.end();
 
-    let begin_result = controlling_bond_from_atom_for_smiles(
-        mol,
-        adjacency,
-        needs_dir,
-        single_bond_counts,
-        dbl_bond_id,
-        atom1,
-    );
+    let begin_result =
+        controlling_bond_from_atom_for_smiles(mol, adjacency, needs_dir, single_bond_counts, dbl_bond_id, atom1);
     if begin_result.squiggle_bond_seen {
         set_stereo_for_bond(mol, adjacency, dbl_bond_id, BondStereo::Any, false);
         return Ok(());
@@ -1200,14 +1129,8 @@ pub(super) fn update_double_bond_neighbors(
     };
     let mut obond1 = begin_result.obond;
 
-    let end_result = controlling_bond_from_atom_for_smiles(
-        mol,
-        adjacency,
-        needs_dir,
-        single_bond_counts,
-        dbl_bond_id,
-        atom2,
-    );
+    let end_result =
+        controlling_bond_from_atom_for_smiles(mol, adjacency, needs_dir, single_bond_counts, dbl_bond_id, atom2);
     if end_result.squiggle_bond_seen {
         set_stereo_for_bond(mol, adjacency, dbl_bond_id, BondStereo::Any, false);
         return Ok(());
@@ -1221,10 +1144,8 @@ pub(super) fn update_double_bond_neighbors(
         let coords = unsafe { &*coords_ptr };
         let begin_point = coords[atom1.index()];
         let end_point = coords[atom2.index()];
-        let mut bond1_point =
-            coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
-        let mut bond2_point =
-            coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
+        let mut bond1_point = coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
+        let mut bond2_point = coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
         let mut linear = false;
         let mut p1 = point_sub(bond1_point, begin_point);
         let mut p2 = point_sub(end_point, begin_point);
@@ -1233,8 +1154,7 @@ pub(super) fn update_double_bond_neighbors(
                 let swap = bond1;
                 bond1 = other_bond;
                 obond1 = Some(swap);
-                bond1_point =
-                    coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
+                bond1_point = coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
                 p1 = point_sub(bond1_point, begin_point);
                 if crate::stereo::is_linear_arrangement(p1, p2) {
                     linear = true;
@@ -1251,8 +1171,7 @@ pub(super) fn update_double_bond_neighbors(
                     let swap = bond2;
                     bond2 = other_bond;
                     obond2 = Some(swap);
-                    bond2_point =
-                        coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
+                    bond2_point = coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
                     p1 = point_sub(bond2_point, begin_point);
                     if crate::stereo::is_linear_arrangement(p1, p2) {
                         linear = true;
@@ -1319,13 +1238,7 @@ pub(super) fn update_double_bond_neighbors(
         set_bond_dir_relative_to_atom(mol, bond1, atom1, reference_dir, reverse_bond_dir);
     } else {
         set_bond_dir_relative_to_atom(mol, bond1, atom1, BondDirection::EndDownRight, false);
-        set_bond_dir_relative_to_atom(
-            mol,
-            bond2,
-            atom2,
-            BondDirection::EndDownRight,
-            reverse_bond_dir,
-        );
+        set_bond_dir_relative_to_atom(mol, bond2, atom2, BondDirection::EndDownRight, reverse_bond_dir);
     }
     needs_dir[bond1.index()] = false;
     needs_dir[bond2.index()] = false;
@@ -1359,10 +1272,7 @@ pub(super) fn update_double_bond_neighbors(
     Ok(())
 }
 
-pub(crate) fn set_double_bond_neighbor_directions(
-    mol: &mut Molecule,
-    conf_id: usize,
-) -> Result<(), StereoError> {
+pub(crate) fn set_double_bond_neighbor_directions(mol: &mut Molecule, conf_id: usize) -> Result<(), StereoError> {
     // BEGIN RDKIT CPP FUNCTION setDoubleBondNeighborDirections
     // RDKit✔️✔️: void setDoubleBondNeighborDirections(ROMol &mol, const Conformer *conf) {
     // RDKit✔️✔️:   // used to store the number of single bonds a given
@@ -1391,9 +1301,7 @@ pub(crate) fn set_double_bond_neighbor_directions(
     set_double_bond_neighbor_directions_impl(mol, Some(conf_id))
 }
 
-pub(crate) fn set_double_bond_neighbor_directions_from_stereo(
-    mol: &mut Molecule,
-) -> Result<(), StereoError> {
+pub(crate) fn set_double_bond_neighbor_directions_from_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
     set_double_bond_neighbor_directions_impl(mol, None)
 }
 
@@ -1415,10 +1323,7 @@ pub(crate) fn clear_dir_flags(mol: &mut Molecule, only_wedge_type_bond_dirs: boo
     // END RDKIT CPP FUNCTION clearDirFlags
     let topology = mol.topology_block_mut();
     for bond in &mut topology.bonds {
-        if matches!(
-            bond.direction(),
-            BondDirection::Unknown | BondDirection::EitherDouble
-        ) {
+        if matches!(bond.direction(), BondDirection::Unknown | BondDirection::EitherDouble) {
             bond.set_unknown_stereo(true);
         }
         if !only_wedge_type_bond_dirs
@@ -1440,10 +1345,7 @@ pub(crate) fn clear_all_bond_dir_flags(mol: &mut Molecule) {
 }
 
 pub(super) fn has_stereo_bond_dir(direction: BondDirection) -> bool {
-    matches!(
-        direction,
-        BondDirection::EndDownRight | BondDirection::EndUpRight
-    )
+    matches!(direction, BondDirection::EndDownRight | BondDirection::EndUpRight)
 }
 
 pub(super) fn neighboring_directed_bond(mol: &Molecule, atom: AtomId) -> Option<BondId> {
@@ -1560,11 +1462,7 @@ pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), 
         } else {
             BondStereo::Cis
         };
-        updates.push((
-            bond.id(),
-            [begin_side_stereo_atom, end_side_stereo_atom],
-            stereo,
-        ));
+        updates.push((bond.id(), [begin_side_stereo_atom, end_side_stereo_atom], stereo));
     }
     let topology = mol.topology_block_mut();
     for (bond_id, stereo_atoms, stereo) in updates {
@@ -1576,10 +1474,7 @@ pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), 
     Ok(())
 }
 
-pub(crate) fn assign_stereochemistry_from_3d(
-    mol: &mut Molecule,
-    conf_id: usize,
-) -> Result<(), StereoError> {
+pub(crate) fn assign_stereochemistry_from_3d(mol: &mut Molecule, conf_id: usize) -> Result<(), StereoError> {
     // BEGIN RDKIT CPP FUNCTION assignStereochemistryFrom3D
     // RDKit✔️✔️: void assignStereochemistryFrom3D(ROMol &mol, int confId,
     // RDKit✔️✔️:                                  bool replaceExistingTags) {
@@ -1660,11 +1555,7 @@ pub(super) fn atrop_other_atom(mol: &Molecule, bond_id: BondId, atom: AtomId) ->
     }
 }
 
-pub(super) fn atrop_neighbor_bonds(
-    mol: &Molecule,
-    focus_atom: AtomId,
-    atrop_bond: BondId,
-) -> Option<Vec<BondId>> {
+pub(super) fn atrop_neighbor_bonds(mol: &Molecule, focus_atom: AtomId, atrop_bond: BondId) -> Option<Vec<BondId>> {
     let mut nbr_bonds: Vec<BondId> = mol
         .bonds()
         .iter()
@@ -1684,10 +1575,7 @@ pub(super) fn atrop_neighbor_bonds(
     Some(nbr_bonds)
 }
 
-pub(super) fn atrop_end_wedge_direction(
-    mol: &Molecule,
-    nbr_bonds: &[BondId],
-) -> (bool, BondDirection) {
+pub(super) fn atrop_end_wedge_direction(mol: &Molecule, nbr_bonds: &[BondId]) -> (bool, BondDirection) {
     let Some(bond0) = mol.bonds().get(nbr_bonds[0].index()) else {
         return (false, BondDirection::None);
     };
@@ -1701,13 +1589,10 @@ pub(super) fn atrop_end_wedge_direction(
         BondDirection::BeginWedge | BondDirection::BeginDash => bond0.direction(),
         _ => BondDirection::None,
     };
-    let dir1 = match bond1
-        .map(|bond| bond.direction())
-        .unwrap_or(BondDirection::None)
-    {
-        BondDirection::BeginWedge | BondDirection::BeginDash => bond1
-            .map(|bond| bond.direction())
-            .unwrap_or(BondDirection::None),
+    let dir1 = match bond1.map(|bond| bond.direction()).unwrap_or(BondDirection::None) {
+        BondDirection::BeginWedge | BondDirection::BeginDash => {
+            bond1.map(|bond| bond.direction()).unwrap_or(BondDirection::None)
+        }
         _ => BondDirection::None,
     };
 
@@ -1751,12 +1636,11 @@ pub(super) fn atrop_bond_frame_of_reference(
         return Some((x_axis, y_axis, z_axis));
     }
 
-    let mut z_axis =
-        if x_axis[0].abs() > REALLY_SMALL_BOND_LEN || x_axis[1].abs() > REALLY_SMALL_BOND_LEN {
-            [0.0, 0.0, 1.0]
-        } else {
-            [1.0, 0.0, 0.0]
-        };
+    let mut z_axis = if x_axis[0].abs() > REALLY_SMALL_BOND_LEN || x_axis[1].abs() > REALLY_SMALL_BOND_LEN {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
     let mut y_axis = vec3_cross(z_axis, x_axis);
     let y_len = vec3_len(y_axis);
     if y_len < REALLY_SMALL_BOND_LEN {
@@ -1795,11 +1679,7 @@ pub(super) fn atrop_projected_end_vector(
             conformer.coordinates()[other1.index()],
             conformer.coordinates()[focus_atom.index()],
         );
-        other_vec = [
-            0.0,
-            vec3_dot(other_vec, y_axis),
-            vec3_dot(other_vec, z_axis),
-        ];
+        other_vec = [0.0, vec3_dot(other_vec, y_axis), vec3_dot(other_vec, z_axis)];
         if vec3_len(bond_vec) < REALLY_SMALL_BOND_LEN {
             bond_vec = [-other_vec[0], -other_vec[1], -other_vec[2]];
         } else if vec3_dot(bond_vec, other_vec) > REALLY_SMALL_BOND_LEN {
@@ -1828,10 +1708,7 @@ pub(super) fn atropisomer_stereo_without_conformer(mol: &Molecule) -> Vec<(BondI
         if !atrop_can_have_direction(bond.order()) {
             continue;
         }
-        if !matches!(
-            bond.direction(),
-            BondDirection::BeginWedge | BondDirection::BeginDash
-        ) {
+        if !matches!(bond.direction(), BondDirection::BeginWedge | BondDirection::BeginDash) {
             continue;
         }
         let begin = bond.begin();
@@ -1839,9 +1716,7 @@ pub(super) fn atropisomer_stereo_without_conformer(mol: &Molecule) -> Vec<(BondI
             if nbr_bond.id() == bond.id() {
                 continue;
             }
-            if (nbr_bond.begin() == begin || nbr_bond.end() == begin)
-                && !candidate_bonds.contains(&nbr_bond.id())
-            {
+            if (nbr_bond.begin() == begin || nbr_bond.end() == begin) && !candidate_bonds.contains(&nbr_bond.id()) {
                 candidate_bonds.push(nbr_bond.id());
             }
         }
@@ -1853,11 +1728,7 @@ pub(super) fn atropisomer_stereo_without_conformer(mol: &Molecule) -> Vec<(BondI
         degree[bond.begin().index()] += 1;
         degree[bond.end().index()] += 1;
     }
-    let hybridization: Vec<crate::Hybridization> = mol
-        .atoms()
-        .iter()
-        .map(|atom| atom.hybridization())
-        .collect();
+    let hybridization: Vec<crate::Hybridization> = mol.atoms().iter().map(|atom| atom.hybridization()).collect();
 
     let mut assignments = Vec::new();
     for candidate_id in candidate_bonds {
@@ -1914,8 +1785,7 @@ pub(super) fn atropisomer_stereo_without_conformer(mol: &Molecule) -> Vec<(BondI
 
         if wedge_dir0 == BondDirection::BeginWedge || wedge_dir1 == BondDirection::BeginDash {
             assignments.push((candidate_id, BondStereo::AtropCcw));
-        } else if wedge_dir0 == BondDirection::BeginDash || wedge_dir1 == BondDirection::BeginWedge
-        {
+        } else if wedge_dir0 == BondDirection::BeginDash || wedge_dir1 == BondDirection::BeginWedge {
             assignments.push((candidate_id, BondStereo::AtropCw));
         }
     }
@@ -1923,10 +1793,7 @@ pub(super) fn atropisomer_stereo_without_conformer(mol: &Molecule) -> Vec<(BondI
     assignments
 }
 
-pub(super) fn atropisomer_stereo_from_conformer(
-    mol: &Molecule,
-    conf_id: usize,
-) -> Vec<(BondId, BondStereo)> {
+pub(super) fn atropisomer_stereo_from_conformer(mol: &Molecule, conf_id: usize) -> Vec<(BondId, BondStereo)> {
     const REALLY_SMALL_BOND_LEN: f64 = 1e-7;
     let Some(conformer) = mol.conformers_3d().iter().find(|conf| conf.id() == conf_id) else {
         return Vec::new();
@@ -1940,10 +1807,7 @@ pub(super) fn atropisomer_stereo_from_conformer(
         if !atrop_can_have_direction(bond.order()) {
             continue;
         }
-        if !matches!(
-            bond.direction(),
-            BondDirection::BeginWedge | BondDirection::BeginDash
-        ) {
+        if !matches!(bond.direction(), BondDirection::BeginWedge | BondDirection::BeginDash) {
             continue;
         }
         let begin = bond.begin();
@@ -1951,9 +1815,7 @@ pub(super) fn atropisomer_stereo_from_conformer(
             if nbr_bond.id() == bond.id() {
                 continue;
             }
-            if (nbr_bond.begin() == begin || nbr_bond.end() == begin)
-                && !candidate_bonds.contains(&nbr_bond.id())
-            {
+            if (nbr_bond.begin() == begin || nbr_bond.end() == begin) && !candidate_bonds.contains(&nbr_bond.id()) {
                 candidate_bonds.push(nbr_bond.id());
             }
         }
@@ -1965,11 +1827,7 @@ pub(super) fn atropisomer_stereo_from_conformer(
         degree[bond.begin().index()] += 1;
         degree[bond.end().index()] += 1;
     }
-    let hybridization: Vec<crate::Hybridization> = mol
-        .atoms()
-        .iter()
-        .map(|atom| atom.hybridization())
-        .collect();
+    let hybridization: Vec<crate::Hybridization> = mol.atoms().iter().map(|atom| atom.hybridization()).collect();
 
     let mut assignments = Vec::new();
     'candidate: for candidate_id in candidate_bonds {
@@ -2018,25 +1876,22 @@ pub(super) fn atropisomer_stereo_from_conformer(
             }
         }
 
-        let Some((_x_axis, y_axis, z_axis)) =
-            atrop_bond_frame_of_reference(mol, candidate_id, conformer)
-        else {
+        let Some((_x_axis, y_axis, z_axis)) = atrop_bond_frame_of_reference(mol, candidate_id, conformer) else {
             continue;
         };
         let mut bond_vecs = [[0.0; 3]; 2];
-        for (bond_atom_index, (focus_atom, nbr_bonds)) in
-            [(candidate.begin(), &nbr0), (candidate.end(), &nbr1)]
-                .into_iter()
-                .enumerate()
+        for (bond_atom_index, (focus_atom, nbr_bonds)) in [(candidate.begin(), &nbr0), (candidate.end(), &nbr1)]
+            .into_iter()
+            .enumerate()
         {
             if !conformer.is_3d() {
                 let (has_dir, bond_dir) = atrop_end_wedge_direction(mol, nbr_bonds);
                 if !has_dir {
                     continue 'candidate;
                 }
-                let Some(mut bond_vec) = atrop_projected_end_vector(
-                    mol, conformer, focus_atom, nbr_bonds, y_axis, z_axis, true,
-                ) else {
+                let Some(mut bond_vec) =
+                    atrop_projected_end_vector(mol, conformer, focus_atom, nbr_bonds, y_axis, z_axis, true)
+                else {
                     continue 'candidate;
                 };
                 if bond_dir == BondDirection::BeginWedge {
@@ -2048,9 +1903,9 @@ pub(super) fn atropisomer_stereo_from_conformer(
                 }
                 bond_vecs[bond_atom_index] = bond_vec;
             } else {
-                let Some(bond_vec) = atrop_projected_end_vector(
-                    mol, conformer, focus_atom, nbr_bonds, y_axis, z_axis, false,
-                ) else {
+                let Some(bond_vec) =
+                    atrop_projected_end_vector(mol, conformer, focus_atom, nbr_bonds, y_axis, z_axis, false)
+                else {
                     continue 'candidate;
                 };
                 if vec3_len(bond_vec) < REALLY_SMALL_BOND_LEN {
@@ -2090,10 +1945,9 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
     let mut atoms_set = vec![false; n_atoms];
     let replace_existing_tags = true; // Called from MolFromSmiles with default true
     let bond_range = 0..mol.num_bonds();
-    let implicit_hydrogens =
-        crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
-            .ok()
-            .map(|valence| valence.implicit_hydrogens);
+    let implicit_hydrogens = crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
+        .ok()
+        .map(|valence| valence.implicit_hydrogens);
 
     // Phase 1: collect bonds that might need chiral assignment.
     // We collect indices first to avoid borrow conflicts between reading
@@ -2145,10 +1999,8 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
         // RDKit✔️✔️:             Chirality::atomChiralTypeFromBondDirPseudo3D(mol, bond, &conf)
         // RDKit✔️✔️:                 .value_or(Atom::ChiralType::CHI_UNSPECIFIED);
         let conformer = &mol.conformers_3d()[conf_idx];
-        let code = crate::chemistry::stereo::atom_chiral_type_from_bond_dir_pseudo_3d(
-            mol, bond_idx, conformer,
-        )
-        .unwrap_or(ChiralTag::Unspecified);
+        let code = crate::chemistry::stereo::atom_chiral_type_from_bond_dir_pseudo_3d(mol, bond_idx, conformer)
+            .unwrap_or(ChiralTag::Unspecified);
 
         // RDKit✔️✔️:         if (code != Atom::ChiralType::CHI_UNSPECIFIED) {
         // RDKit✔️✔️:           atomsSet.set(atom->getIdx());
@@ -2224,13 +2076,6 @@ pub(super) fn vec3_len(v: [f64; 3]) -> f64 {
     vec3_dot(v, v).sqrt()
 }
 
-pub(crate) fn assign_chiral_types_from_3d(
-    molecule: &mut Molecule,
-    conformer_id: usize,
-) -> Result<(), StereoError> {
-    crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(
-        molecule,
-        conformer_id as i32,
-        true,
-    )
+pub(crate) fn assign_chiral_types_from_3d(molecule: &mut Molecule, conformer_id: usize) -> Result<(), StereoError> {
+    crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(molecule, conformer_id as i32, true)
 }

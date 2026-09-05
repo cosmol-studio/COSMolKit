@@ -3,9 +3,8 @@
 use std::{collections::BTreeMap, sync::OnceLock};
 
 use crate::{
-    BondOrder, BondQueryPredicate, DerivedState, Molecule, QueryGraph, QueryNode,
-    SmartsParseParams, SubstructMatchParams, mol_from_smarts,
-    try_get_substruct_matches_with_params,
+    BondOrder, BondQueryPredicate, DerivedState, Molecule, QueryGraph, QueryNode, SmartsParseParams,
+    SubstructMatchParams, mol_from_smarts, try_get_substruct_matches_with_params,
 };
 
 fn terminal_atom_query() -> Result<&'static QueryGraph, &'static str> {
@@ -44,9 +43,8 @@ pub(crate) fn symmetrize_terminal_atoms(molecule: &Molecule) -> Result<Molecule,
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolAlign::details::symmetrizeTerminalAtoms
     let query = terminal_atom_query()?;
-    let matches =
-        try_get_substruct_matches_with_params(molecule, query, &SubstructMatchParams::default())
-            .map_err(|_| "terminal-group query matching is unsupported")?;
+    let matches = try_get_substruct_matches_with_params(molecule, query, &SubstructMatchParams::default())
+        .map_err(|_| "terminal-group query matching is unsupported")?;
     let matched_atoms_and_bonds: Vec<_> = matches
         .into_iter()
         .map(|matched| {
@@ -71,9 +69,10 @@ pub(crate) fn symmetrize_terminal_atoms(molecule: &Molecule) -> Result<Molecule,
         let topology = symmetrized.topology_block_mut();
         for (terminal, bond) in matched_atoms_and_bonds {
             topology.atoms[terminal].set_formal_charge(0);
-            topology.bonds[bond].set_query(Some(QueryNode::predicate(
-                BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
-            )));
+            topology.bonds[bond].set_query(Some(QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
+                BondOrder::Single,
+                BondOrder::Double,
+            ]))));
         }
     }
     symmetrized
@@ -106,11 +105,6 @@ mod tests {
         assert_eq!(molecule.bonds(), original_bonds);
         assert!(molecule.derived_cache().valence.is_some());
         assert!(symmetrized.derived_cache().valence.is_none());
-        assert!(
-            symmetrized
-                .bonds()
-                .iter()
-                .all(|bond| bond.query().is_some())
-        );
+        assert!(symmetrized.bonds().iter().all(|bond| bond.query().is_some()));
     }
 }

@@ -13,16 +13,13 @@ fn defaults_and_constructor_match_the_pinned_source_contract() {
     assert_eq!(common.d_fp_size, 2048);
     assert_eq!(common.d_num_bits_per_feature, 1);
 
-    let constructed = TopologicalTorsionArguments::new(true, 5, false, vec![2, 3, 7], 4096)
-        .expect("valid custom arguments");
+    let constructed =
+        TopologicalTorsionArguments::new(true, 5, false, vec![2, 3, 7], 4096).expect("valid custom arguments");
     assert_eq!(constructed.d_torsion_atom_count, 5);
     assert!(!constructed.df_only_shortest_paths);
     assert!(constructed.fingerprint_arguments.df_include_chirality);
     assert!(!constructed.fingerprint_arguments.df_count_simulation);
-    assert_eq!(
-        constructed.fingerprint_arguments.d_count_bounds,
-        vec![2, 3, 7]
-    );
+    assert_eq!(constructed.fingerprint_arguments.d_count_bounds, vec![2, 3, 7]);
     assert_eq!(constructed.fingerprint_arguments.d_fp_size, 4096);
     assert_eq!(constructed.fingerprint_arguments.d_num_bits_per_feature, 1);
 
@@ -100,10 +97,7 @@ fn partial_json_preserves_scalar_defaults_and_clears_missing_count_bounds_like_s
     arguments
         .from_json(r#"{"countBounds":[1,"4",8],"includeChirality":"true"}"#)
         .expect("property-tree-compatible string values");
-    assert_eq!(
-        arguments.fingerprint_arguments.d_count_bounds,
-        vec![1, 4, 8]
-    );
+    assert_eq!(arguments.fingerprint_arguments.d_count_bounds, vec![1, 4, 8]);
     assert!(arguments.fingerprint_arguments.df_include_chirality);
 }
 
@@ -136,9 +130,7 @@ fn malformed_json_and_invalid_field_types_return_structured_errors() {
 fn argument_unit_ignores_unknown_type_tags_and_fields_like_the_source_method() {
     let mut arguments = TopologicalTorsionArguments::default();
     arguments
-        .from_json(
-            r#"{"type":"UnknownArguments","unknownOption":17,"torsionAtomCount":2,"countBounds":[1]}"#,
-        )
+        .from_json(r#"{"type":"UnknownArguments","unknownOption":17,"torsionAtomCount":2,"countBounds":[1]}"#)
         .expect("the argument unit does not dispatch on type");
 
     assert_eq!(arguments.d_torsion_atom_count, 2);

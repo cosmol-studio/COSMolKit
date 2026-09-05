@@ -76,12 +76,7 @@ impl TopologyMapping {
             },
         }
     }
-    pub fn with_appended(
-        old_atoms: usize,
-        old_bonds: usize,
-        added_atoms: usize,
-        added_bonds: usize,
-    ) -> Self {
+    pub fn with_appended(old_atoms: usize, old_bonds: usize, added_atoms: usize, added_bonds: usize) -> Self {
         let mut atom_new_to_old: Vec<_> = (0..old_atoms).map(|i| Some(AtomId::new(i))).collect();
         atom_new_to_old.extend((0..added_atoms).map(|_| None));
         let mut bond_new_to_old: Vec<_> = (0..old_bonds).map(|i| Some(BondId::new(i))).collect();
@@ -195,8 +190,7 @@ impl<QA: Clone, QB: Clone> TopologyBlock<QA, QB> {
             .iter()
             .enumerate()
             .filter_map(|(idx, sg)| {
-                sgroup_map[idx]
-                    .and_then(|id| sg.remapped(id, &atom_old_to_new, &bond_old_to_new, &sgroup_map))
+                sgroup_map[idx].and_then(|id| sg.remapped(id, &atom_old_to_new, &bond_old_to_new, &sgroup_map))
             })
             .collect();
         self.stereo_groups = self

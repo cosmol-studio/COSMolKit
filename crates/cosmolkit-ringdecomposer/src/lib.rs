@@ -119,11 +119,7 @@ impl Graph {
         self.adjacency.get(node).map(Vec::as_slice)
     }
 
-    pub fn add_undirected_edge(
-        &mut self,
-        from: usize,
-        to: usize,
-    ) -> Result<EdgeId, RingDecomposerError> {
+    pub fn add_undirected_edge(&mut self, from: usize, to: usize) -> Result<EdgeId, RingDecomposerError> {
         // BEGIN RDL C FUNCTION RDL_addUEdge
         // RDL✔️✔️: unsigned RDL_addUEdge(RDL_graph *gra, RDL_node from, RDL_node to)
         // RDL✔️✔️: {
@@ -548,9 +544,7 @@ impl ShortestPathInfo {
                             // RDL✔️✔️:               {/*not element of Vr*/
                             // RDL✔️✔️:                 spi->reachable[i][j] = 0;
                             // RDL✔️✔️:               }
-                            if self.distance[source][neighbor]
-                                .is_none_or(|distance| candidate_distance < distance)
-                            {
+                            if self.distance[source][neighbor].is_none_or(|distance| candidate_distance < distance) {
                                 self.reachable[source][neighbor] = false;
                             }
                         }
@@ -559,8 +553,7 @@ impl ShortestPathInfo {
                         // RDL✔️✔️:             {/*if 2nd run and dist stays the same, pred shouldn't
                         // RDL✔️✔️:             change to keep the shortest path along ordering*/
                         if run == 1
-                            || self.distance[source][neighbor]
-                                .is_none_or(|distance| candidate_distance < distance)
+                            || self.distance[source][neighbor].is_none_or(|distance| candidate_distance < distance)
                         {
                             // RDL✔️✔️:               /*predecessor of j on a shortest path from i to j*/
                             // RDL✔️✔️:               spi->pred[i][j] = w;
@@ -571,9 +564,7 @@ impl ShortestPathInfo {
                         // RDL✔️✔️:             {
                         // RDL✔️✔️:               spi->dist[i][j] = spi->dist[i][w] + 1;
                         // RDL✔️✔️:             }
-                        if self.distance[source][neighbor]
-                            .is_none_or(|distance| candidate_distance < distance)
-                        {
+                        if self.distance[source][neighbor].is_none_or(|distance| candidate_distance < distance) {
                             self.distance[source][neighbor] = Some(candidate_distance);
                         }
                         // RDL✔️✔️:             color[j] = 'b';
@@ -613,11 +604,7 @@ impl ShortestPathInfo {
 
     #[must_use]
     pub fn distance(&self, from: usize, to: usize) -> Option<usize> {
-        self.distance
-            .get(from)
-            .and_then(|row| row.get(to))
-            .copied()
-            .flatten()
+        self.distance.get(from).and_then(|row| row.get(to)).copied().flatten()
     }
 
     #[must_use]
@@ -807,12 +794,7 @@ impl UrfInfo {
         self.nof_protos.iter().take(weight).sum::<usize>() + index
     }
 
-    fn find_relations(
-        &mut self,
-        cycle_families: &mut CycleFamilies,
-        graph: &Graph,
-        shortest_paths: &ShortestPathInfo,
-    ) {
+    fn find_relations(&mut self, cycle_families: &mut CycleFamilies, graph: &Graph, shortest_paths: &ShortestPathInfo) {
         // BEGIN RDL C FUNCTION RDL_findRelations
         // RDL✔️✔️: void RDL_findRelations(RDL_cfURF *RCFs, RDL_graph *graph,
         // RDL✔️✔️:     RDL_URFinfo *uInfo, RDL_sPathInfo* spi)
@@ -846,12 +828,8 @@ impl UrfInfo {
             return;
         }
         // RDL❗✔️:   }
-        let mut basis_cycles = Vec::<Vec<bool>>::with_capacity(
-            graph
-                .edge_count()
-                .saturating_sub(graph.node_count())
-                .saturating_add(1),
-        );
+        let mut basis_cycles =
+            Vec::<Vec<bool>>::with_capacity(graph.edge_count().saturating_sub(graph.node_count()).saturating_add(1));
         let mut relevant_cycles = Vec::<Vec<bool>>::new();
         let mut relevant_cycles_map = Vec::<usize>::new();
         let mut prototypes_for_gaussian = cycle_families
@@ -902,9 +880,7 @@ impl UrfInfo {
                 // RDL❗✔️:       if (RDL_bitset_empty(compressedCycleWithEqualAdded, empty_cycle, compressedSize)) {
                 if !cycle_with_equal_added.iter().any(|&bit| bit) {
                     // RDL❗✔️:         for (k = currentRelevantCyclesSmallerEnd; k < currentRelevantCyclesSize-1; ++k) {
-                    for relevant_index in
-                        current_relevant_cycles_smaller_end..relevant_cycles.len() - 1
-                    {
+                    for relevant_index in current_relevant_cycles_smaller_end..relevant_cycles.len() - 1 {
                         let mut comparison = cycle_with_smaller_added.clone();
                         xor_bool_slice(&mut comparison, &relevant_cycles[relevant_index]);
                         if !comparison.iter().any(|&bit| bit) {
@@ -924,16 +900,8 @@ impl UrfInfo {
                         for column in old_basis_cycles_size + 1..graph.edge_count() {
                             if basis_cycles[old_basis_cycles_size][column] {
                                 swap_bool_columns(&mut basis_cycles, old_basis_cycles_size, column);
-                                swap_bool_columns(
-                                    &mut relevant_cycles,
-                                    old_basis_cycles_size,
-                                    column,
-                                );
-                                swap_bool_columns(
-                                    &mut prototypes_for_gaussian,
-                                    old_basis_cycles_size,
-                                    column,
-                                );
+                                swap_bool_columns(&mut relevant_cycles, old_basis_cycles_size, column);
+                                swap_bool_columns(&mut prototypes_for_gaussian, old_basis_cycles_size, column);
                                 break;
                             }
                         }
@@ -945,12 +913,7 @@ impl UrfInfo {
         // END RDL C FUNCTION RDL_checkDependencies
     }
 
-    fn check_edges(
-        &mut self,
-        cycle_families: &CycleFamilies,
-        graph: &Graph,
-        shortest_paths: &ShortestPathInfo,
-    ) {
+    fn check_edges(&mut self, cycle_families: &CycleFamilies, graph: &Graph, shortest_paths: &ShortestPathInfo) {
         // BEGIN RDL C FUNCTION RDL_checkEdges
         // RDL❗✔️: void RDL_checkEdges(RDL_cfURF *RCFs, RDL_graph *graph, RDL_URFinfo *uInfo, RDL_sPathInfo* spi)
         // RDL❗✔️: {
@@ -979,9 +942,7 @@ impl UrfInfo {
                     }
                     let shared = sorted_edge_lists_share_edge(
                         edge_lists[left].as_deref().expect("left edge list exists"),
-                        edge_lists[right]
-                            .as_deref()
-                            .expect("right edge list exists"),
+                        edge_lists[right].as_deref().expect("right edge list exists"),
                     );
                     // RDL❗✔️:           /* if shared edge, relation is confirmed */
                     self.relations[weight][left][right] = shared;
@@ -1102,8 +1063,7 @@ impl RingDecomposition {
         if graph.node_count == 0 {
             return Err(RingDecomposerError::EmptyGraph);
         }
-        let cyclomatic_number =
-            graph.edge_count() + connected_component_count(&graph) - graph.node_count();
+        let cyclomatic_number = graph.edge_count() + connected_component_count(&graph) - graph.node_count();
         if cyclomatic_number == 0 {
             return Ok(Self {
                 graph,
@@ -1141,26 +1101,20 @@ impl RingDecomposition {
             let mut shortest_paths = ShortestPathInfo::calculate(&component_graph);
             // RDL❗✔️:     /* calculate RCFs with Vismara's algortihm */
             // RDL❗✔️:     data->CFsPerBCC[i] = RDL_findCycleFams(data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
-            let mut cycle_families =
-                CycleFamilies::calculate(&mut component_graph, &mut shortest_paths);
+            let mut cycle_families = CycleFamilies::calculate(&mut component_graph, &mut shortest_paths);
             if cycle_families.is_empty() {
                 continue;
             }
             // RDL❗✔️:       data->urfInfoPerBCC[i] = RDL_checkURFRelation(data->CFsPerBCC[i],
             // RDL❗✔️:           data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
-            let urf_info =
-                UrfInfo::check_urf_relation(&mut cycle_families, &component_graph, &shortest_paths);
+            let urf_info = UrfInfo::check_urf_relation(&mut cycle_families, &component_graph, &shortest_paths);
             relevant_cycle_count += cycle_families
                 .families()
                 .iter()
                 .filter(|family| family.is_relevant())
                 .count();
             for urf in &urf_info.urfs {
-                urfs.push(unique_ring_family_from_component_urf(
-                    urf,
-                    &cycle_families,
-                    component,
-                ));
+                urfs.push(unique_ring_family_from_component_urf(urf, &cycle_families, component));
             }
         }
         // RDL❗✔️:   ...
@@ -1274,11 +1228,7 @@ fn find_cycle_families(graph: &mut Graph, shortest_paths: &mut ShortestPathInfo)
     CycleFamilies { families }
 }
 
-fn vismara_cycle_families(
-    families: &mut Vec<CycleFamily>,
-    graph: &mut Graph,
-    shortest_paths: &mut ShortestPathInfo,
-) {
+fn vismara_cycle_families(families: &mut Vec<CycleFamily>, graph: &mut Graph, shortest_paths: &mut ShortestPathInfo) {
     // BEGIN RDL C FUNCTION RDL_vismara
     // RDL✔️✔️: static void RDL_vismara(RDL_cfURF *rc, RDL_graph *gra, RDL_sPathInfo *spi)
     // RDL✔️✔️: {
@@ -1307,12 +1257,8 @@ fn vismara_cycle_families(
                 if !shortest_paths.reachable_preceding(root, z) {
                     continue;
                 }
-                let root_to_z = shortest_paths
-                    .distance(root, z)
-                    .expect("reachable vertex has distance");
-                let root_to_y = shortest_paths
-                    .distance(root, y)
-                    .expect("reachable vertex has distance");
+                let root_to_z = shortest_paths.distance(root, z).expect("reachable vertex has distance");
+                let root_to_y = shortest_paths.distance(root, y).expect("reachable vertex has distance");
                 // RDL✔️✔️:             if(spi->dist[rv][zv] + 1 == spi->dist[rv][yv]) {
                 // RDL✔️✔️:               evenCand[nofCandidates] = zv;
                 // RDL✔️✔️:               ++nofCandidates;
@@ -1381,13 +1327,7 @@ fn vismara_cycle_families(
     // END RDL C FUNCTION RDL_vismara
 }
 
-fn paths_share_only_start(
-    root: usize,
-    y: usize,
-    z: usize,
-    graph: &Graph,
-    shortest_paths: &ShortestPathInfo,
-) -> bool {
+fn paths_share_only_start(root: usize, y: usize, z: usize, graph: &Graph, shortest_paths: &ShortestPathInfo) -> bool {
     // BEGIN RDL C FUNCTION RDL_pathsShareOnlyStart
     // RDL✔️✔️: static int RDL_pathsShareOnlyStart(unsigned r, unsigned y, unsigned z, RDL_graph *gra, RDL_sPathInfo *spi)
     // RDL✔️✔️: {
@@ -1515,10 +1455,7 @@ fn mark_path_edges(
         vertex_1 = shortest_paths
             .predecessor(root, vertex_1)
             .expect("reachable path has predecessor");
-        prototype[graph
-            .edge_id(vertex_1, vertex_2)
-            .expect("path edge exists")
-            .index()] = true;
+        prototype[graph.edge_id(vertex_1, vertex_2).expect("path edge exists").index()] = true;
         if vertex_1 == root {
             break;
         }
@@ -1686,11 +1623,7 @@ fn find_edges(
     // END RDL C FUNCTION RDL_giveEdges
 }
 
-fn make_edge_list(
-    family: &CycleFamily,
-    graph: &Graph,
-    shortest_paths: &ShortestPathInfo,
-) -> Vec<usize> {
+fn make_edge_list(family: &CycleFamily, graph: &Graph, shortest_paths: &ShortestPathInfo) -> Vec<usize> {
     // BEGIN RDL C FUNCTION make_edge_list
     // RDL❗✔️: static void make_edge_list(
     // RDL❗✔️:     unsigned** edge_list,
@@ -1718,49 +1651,24 @@ fn make_edge_list(
         .collect()
 }
 
-fn find_family_edges(
-    edges: &mut [bool],
-    family: &CycleFamily,
-    graph: &Graph,
-    shortest_paths: &ShortestPathInfo,
-) {
+fn find_family_edges(edges: &mut [bool], family: &CycleFamily, graph: &Graph, shortest_paths: &ShortestPathInfo) {
     // BEGIN RDL C FUNCTION RDL_findEdges
     // RDL❗✔️: void RDL_findEdges(char *edges, RDL_cfam *RCF, RDL_graph *gra, RDL_sPathInfo *spi)
     // RDL❗✔️: {
     // RDL❗✔️:   char* visited;
     let mut visited = vec![false; graph.node_count()];
     // RDL❗✔️:   RDL_giveEdges(RCF->r, RCF->p, edges, gra, spi, visited);
-    find_edges(
-        edges,
-        family.root(),
-        family.p(),
-        graph,
-        shortest_paths,
-        &mut visited,
-    );
+    find_edges(edges, family.root(), family.p(), graph, shortest_paths, &mut visited);
     // RDL❗✔️:   memset(visited, 0, gra->E * sizeof(*visited));
     visited.fill(false);
     // RDL❗✔️:   RDL_giveEdges(RCF->r, RCF->q, edges, gra, spi, visited);
-    find_edges(
-        edges,
-        family.root(),
-        family.q(),
-        graph,
-        shortest_paths,
-        &mut visited,
-    );
+    find_edges(edges, family.root(), family.q(), graph, shortest_paths, &mut visited);
     // RDL❗✔️:   if(RCF->x < UINT_MAX) /*even family*/
     if let Some(x) = family.x() {
         // RDL❗✔️:     edges[RDL_edgeId(gra, RCF->x, RCF->p)] = 1;
         // RDL❗✔️:     edges[RDL_edgeId(gra, RCF->x, RCF->q)] = 1;
-        edges[graph
-            .edge_id(x, family.p())
-            .expect("cycle edge exists")
-            .index()] = true;
-        edges[graph
-            .edge_id(x, family.q())
-            .expect("cycle edge exists")
-            .index()] = true;
+        edges[graph.edge_id(x, family.p()).expect("cycle edge exists").index()] = true;
+        edges[graph.edge_id(x, family.q()).expect("cycle edge exists").index()] = true;
     } else {
         // RDL❗✔️:     edges[RDL_edgeId(gra, RCF->p, RCF->q)] = 1;
         edges[graph
@@ -1807,11 +1715,7 @@ fn unique_ring_family_from_component_urf(
 ) -> UniqueRingFamily {
     let mut edge_membership = vec![false; component.graph().edge_count()];
     for &family_index in urf {
-        for (edge_index, &contains) in cycle_families.families()[family_index]
-            .prototype()
-            .iter()
-            .enumerate()
-        {
+        for (edge_index, &contains) in cycle_families.families()[family_index].prototype().iter().enumerate() {
             edge_membership[edge_index] |= contains;
         }
     }
@@ -1829,9 +1733,7 @@ fn unique_ring_family_from_component_urf(
     let nodes = node_membership
         .iter()
         .enumerate()
-        .filter_map(|(local_node, &contains)| {
-            contains.then_some(component.original_nodes()[local_node])
-        })
+        .filter_map(|(local_node, &contains)| contains.then_some(component.original_nodes()[local_node]))
         .collect();
     UniqueRingFamily { nodes, edges }
 }
@@ -1895,8 +1797,7 @@ fn tarjan_biconnected_components(graph: &Graph) -> BiconnectedComponents {
     // RDL❗✔️:   for (i = 0; i < graph->E; ++i) {
     for (edge_index, &raw_component) in edge_components.iter().enumerate() {
         // RDL❗✔️:     curr_bcc = bcc[i];
-        let Some(component_index) = non_trivial_mapping.get(raw_component).copied().flatten()
-        else {
+        let Some(component_index) = non_trivial_mapping.get(raw_component).copied().flatten() else {
             // RDL❗✔️:     /* skip trivial BCCs */
             // RDL❗✔️:     if (bcc_size[curr_bcc-1] <= 1) {
             // RDL❗✔️:       continue;
@@ -2124,8 +2025,7 @@ fn tarjan_visit(
 #[cfg(test)]
 mod tests {
     use super::{
-        BiconnectedComponents, CycleFamilies, EdgeId, Graph, RingDecomposerError,
-        RingDecomposition, ShortestPathInfo,
+        BiconnectedComponents, CycleFamilies, EdgeId, Graph, RingDecomposerError, RingDecomposition, ShortestPathInfo,
     };
 
     #[test]
@@ -2142,10 +2042,7 @@ mod tests {
 
         assert!(matches!(
             graph.add_undirected_edge(0, 3),
-            Err(RingDecomposerError::NodeOutOfRange {
-                node: 3,
-                node_count: 3
-            })
+            Err(RingDecomposerError::NodeOutOfRange { node: 3, node_count: 3 })
         ));
         assert!(matches!(
             graph.add_undirected_edge(1, 1),
@@ -2302,14 +2199,7 @@ mod tests {
         let family = &cycle_families.families()[0];
         assert_eq!(family.weight(), 3);
         assert_eq!(family.x(), None);
-        assert_eq!(
-            family
-                .prototype()
-                .iter()
-                .filter(|&&contains| contains)
-                .count(),
-            3
-        );
+        assert_eq!(family.prototype().iter().filter(|&&contains| contains).count(), 3);
     }
 
     #[test]

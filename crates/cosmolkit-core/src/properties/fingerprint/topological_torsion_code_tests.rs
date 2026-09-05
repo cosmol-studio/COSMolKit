@@ -21,10 +21,7 @@ fn palindrome_keeps_forward_packing_order() {
     let palindrome = [7, 3, 3, 7];
     let expected = 7u64 | (3u64 << 9) | (3u64 << 18) | (7u64 << 27);
 
-    assert_eq!(
-        get_topological_torsion_code(&palindrome, false).unwrap(),
-        expected
-    );
+    assert_eq!(get_topological_torsion_code(&palindrome, false).unwrap(), expected);
 }
 
 #[test]
@@ -33,10 +30,7 @@ fn first_difference_after_equal_endpoints_selects_canonical_direction() {
     let reversed = [4, 1, 9, 4];
     let expected = 4u64 | (1u64 << 9) | (9u64 << 18) | (4u64 << 27);
 
-    assert_eq!(
-        get_topological_torsion_code(&path, false).unwrap(),
-        expected
-    );
+    assert_eq!(get_topological_torsion_code(&path, false).unwrap(), expected);
     assert_eq!(
         get_topological_torsion_code(&path, false).unwrap(),
         get_topological_torsion_code(&reversed, false).unwrap()
@@ -107,8 +101,5 @@ fn source_undefined_empty_and_excessive_shifts_return_structured_errors() {
 
 #[test]
 fn boost_hash_combine_overflow_matches_the_pinned_u32_result() {
-    assert_eq!(
-        get_topological_torsion_hash(&[u32::MAX; 4]).unwrap(),
-        0x4841_0b19
-    );
+    assert_eq!(get_topological_torsion_hash(&[u32::MAX; 4]).unwrap(), 0x4841_0b19);
 }

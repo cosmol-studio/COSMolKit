@@ -1,7 +1,7 @@
 use crate::source::api::inchi_dll::parse_options_string;
 use crate::source::base::ichi_io::{
-    inchi_ios_close, inchi_ios_eprint, inchi_ios_gets, inchi_ios_getsTab, inchi_ios_getsTab1,
-    inchi_ios_init, inchi_strbuf_close, inchi_strbuf_init,
+    inchi_ios_close, inchi_ios_eprint, inchi_ios_gets, inchi_ios_getsTab, inchi_ios_getsTab1, inchi_ios_init,
+    inchi_strbuf_close, inchi_strbuf_init,
 };
 use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichierr::AddErrorMessage;
@@ -11,30 +11,25 @@ use crate::source::base::readinch::{FindToken, FreeInchi_Stereo0D, LoadLine};
 use crate::source::base::runichi4::FreeAllINChIArrays;
 use crate::source::base::util::{inchi_calloc, inchi_free, inchi_malloc, lrtrim, mystrncpy};
 use crate::source_types::{
-    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, CANON_GLOBALS, CHAR_MASK,
-    FLAG_INP_AT_CHIRAL, FLAG_INP_AT_NONCHIRAL, INCHI_INP_EOF_ERR, INCHI_INP_EOF_RET,
-    INCHI_INP_ERROR_ERR, INCHI_INP_ERROR_RET, INCHI_INP_FATAL_ERR, INCHI_INP_FATAL_RET,
-    INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_LINE_ADD, INCHI_LINE_LEN,
-    INCHI_MAX_NUM_ARG, INCHI_MODE, INCHI_NUM, INCHI_OUT_NO_AUX_INFO, INCHI_STRBUF_INITIAL_SIZE,
-    INCHI_STRBUF_SIZE_INCREMENT, INPUT_PARMS, INPUT_TYPE, MAX_INPUT_BOND_TYPE, MAX_NUM_PATHS,
-    MAX_SDF_HEADER, MAX_SDF_VALUE, MIN_INPUT_BOND_TYPE, MOL_COORD, MOL2INCHI_BAD_COMMAND_LINE,
-    MOL2INCHI_NO_RAM, NO_ATOM, ORIG_ATOM_DATA, PINChI_Aux2, PINChI2, S_SHORT, SB_PARITY_MASK,
-    SB_PARITY_SHFT, STRUCT_DATA, SourceArgvPointer, SourceConstPointer, SourceHeap,
-    SourceHeapError, SourceMutPointer, SourceVaList, bRELEASE_VERSION, inchi_Atom, inchi_Input,
-    inchi_Stereo0D, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP, tagINCHIBondType_INCHI_BOND_TYPE_ALTERN,
-    tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE, tagINCHIBondType_INCHI_BOND_TYPE_SINGLE,
-    tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE, tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
-    tagINCHIStereoParity0D_INCHI_PARITY_ODD, tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED,
-    tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN, tagINCHIStereoType0D_INCHI_StereoType_Allene,
-    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond, tagINCHIStereoType0D_INCHI_StereoType_None,
-    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagInputType_INPUT_INCHI_PLAIN,
-    tagInputType_INPUT_INCHI_XML, tagInputType_INPUT_MOLFILE,
+    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, CANON_GLOBALS, CHAR_MASK, FLAG_INP_AT_CHIRAL,
+    FLAG_INP_AT_NONCHIRAL, INCHI_INP_EOF_ERR, INCHI_INP_EOF_RET, INCHI_INP_ERROR_ERR, INCHI_INP_ERROR_RET,
+    INCHI_INP_FATAL_ERR, INCHI_INP_FATAL_RET, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_LINE_ADD,
+    INCHI_LINE_LEN, INCHI_MAX_NUM_ARG, INCHI_MODE, INCHI_NUM, INCHI_OUT_NO_AUX_INFO, INCHI_STRBUF_INITIAL_SIZE,
+    INCHI_STRBUF_SIZE_INCREMENT, INPUT_PARMS, INPUT_TYPE, MAX_INPUT_BOND_TYPE, MAX_NUM_PATHS, MAX_SDF_HEADER,
+    MAX_SDF_VALUE, MIN_INPUT_BOND_TYPE, MOL_COORD, MOL2INCHI_BAD_COMMAND_LINE, MOL2INCHI_NO_RAM, NO_ATOM,
+    ORIG_ATOM_DATA, PINChI_Aux2, PINChI2, S_SHORT, SB_PARITY_MASK, SB_PARITY_SHFT, STRUCT_DATA, SourceArgvPointer,
+    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, bRELEASE_VERSION, inchi_Atom,
+    inchi_Input, inchi_Stereo0D, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2EITHER, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP,
+    tagINCHIBondType_INCHI_BOND_TYPE_ALTERN, tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE,
+    tagINCHIBondType_INCHI_BOND_TYPE_SINGLE, tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE,
+    tagINCHIStereoParity0D_INCHI_PARITY_EVEN, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
+    tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN,
+    tagINCHIStereoType0D_INCHI_StereoType_Allene, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
+    tagINCHIStereoType0D_INCHI_StereoType_None, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
+    tagInputType_INPUT_INCHI_PLAIN, tagInputType_INPUT_INCHI_XML, tagInputType_INPUT_MOLFILE,
 };
 
 // `inchi_api.h` fields under the pinned LP64 ABI: three doubles, three
@@ -62,23 +57,12 @@ fn source_strtol_decimal(bytes: &[i8], start: usize) -> (i64, usize) {
         _ => false,
     };
     let digit_start = cursor;
-    let limit = if negative {
-        i64::MAX as u64 + 1
-    } else {
-        i64::MAX as u64
-    };
+    let limit = if negative { i64::MAX as u64 + 1 } else { i64::MAX as u64 };
     let mut magnitude = 0_u64;
     let mut overflowed = false;
-    while let Some(digit) = bytes
-        .get(cursor)
-        .map(|byte| *byte as u8)
-        .filter(u8::is_ascii_digit)
-    {
+    while let Some(digit) = bytes.get(cursor).map(|byte| *byte as u8).filter(u8::is_ascii_digit) {
         let digit = u64::from(digit - b'0');
-        match magnitude
-            .checked_mul(10)
-            .and_then(|value| value.checked_add(digit))
-        {
+        match magnitude.checked_mul(10).and_then(|value| value.checked_add(digit)) {
             Some(value) if value <= limit => magnitude = value,
             _ => overflowed = true,
         }
@@ -115,20 +99,14 @@ fn source_strtod_decimal(bytes: &[i8], start: usize) -> (f64, usize) {
         cursor += 1;
     }
     let integer_start = cursor;
-    while bytes
-        .get(cursor)
-        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-    {
+    while bytes.get(cursor).is_some_and(|byte| (*byte as u8).is_ascii_digit()) {
         cursor += 1;
     }
     let mut has_digits = cursor != integer_start;
     if bytes.get(cursor).map(|byte| *byte as u8) == Some(b'.') {
         cursor += 1;
         let fraction_start = cursor;
-        while bytes
-            .get(cursor)
-            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-        {
+        while bytes.get(cursor).is_some_and(|byte| (*byte as u8).is_ascii_digit()) {
             cursor += 1;
         }
         has_digits |= cursor != fraction_start;
@@ -143,10 +121,7 @@ fn source_strtod_decimal(bytes: &[i8], start: usize) -> (f64, usize) {
             cursor += 1;
         }
         let exponent_start = cursor;
-        while bytes
-            .get(cursor)
-            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-        {
+        while bytes.get(cursor).is_some_and(|byte| (*byte as u8).is_ascii_digit()) {
             cursor += 1;
         }
         if cursor == exponent_start {
@@ -164,12 +139,9 @@ fn source_find_bytes(haystack: &[i8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
     }
-    haystack.windows(needle.len()).position(|window| {
-        window
-            .iter()
-            .zip(needle)
-            .all(|(left, right)| *left as u8 == *right)
-    })
+    haystack
+        .windows(needle.len())
+        .position(|window| window.iter().zip(needle).all(|(left, right)| *left as u8 == *right))
 }
 
 fn source_starts_with(haystack: &[i8], needle: &[u8]) -> bool {
@@ -601,10 +573,7 @@ int PostMakeINCHICleanup( struct tagCANON_GLOBALS *pCG,
     Ok(0)
 }
 
-pub(crate) fn FreeInchi_Input(
-    heap: &mut SourceHeap,
-    input: &mut inchi_Input,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn FreeInchi_Input(heap: &mut SourceHeap, input: &mut inchi_Input) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:439 FreeInchi_Input
     // INCHI✔️❌: void FreeInchi_Input( inchi_Input *inp_at_data )
     // INCHI✔️❌: {
@@ -643,18 +612,14 @@ pub(crate) fn is_in_the_slist(
     let path_atom = path_atom.ok_or(SourceHeapError::NullPointer)?;
     let mut position = 0_usize;
     while path_length != 0 {
-        let current = *path_atom
-            .get(position)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let current = *path_atom.get(position).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if current == next_atom {
             return Ok(Some(position));
         }
         path_length = path_length
             .checked_sub(1)
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        position = position
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        position = position.checked_add(1).ok_or(SourceHeapError::PointerOffsetOverflow)?;
     }
     Ok(None)
 }
@@ -708,9 +673,9 @@ Bi;Po;Fr;Ra;Ac;Th;Pa;Np;Pu;Am;Cm;Bk;Cf;Es;Fm;Md;No;Lr;Rf;";
             .zip(&element[..length])
             .all(|(candidate, needle)| *candidate == *needle as u8)
     });
-    Ok(i32::from(position.is_some_and(|position| {
-        METALS.get(position + length) == Some(&b';')
-    })))
+    Ok(i32::from(
+        position.is_some_and(|position| METALS.get(position + length) == Some(&b';')),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3268,8 +3233,7 @@ pub(crate) fn InchiToInchiAtom(
         && !slot.is_null()
         && maximum_atom_count != 0
     {
-        let maximum = usize::try_from(maximum_atom_count)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let maximum = usize::try_from(maximum_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         heap.slice_mut(*slot)?
             .get_mut(..maximum)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3278,16 +3242,14 @@ pub(crate) fn InchiToInchiAtom(
 
     let mut initial_stereo_capacity = 0_i32;
     if atom_slot.is_some()
-        && let (Some(slot), Some(count)) =
-            (stereo0d_slot.as_deref_mut(), stereo0d_count.as_deref_mut())
+        && let (Some(slot), Some(count)) = (stereo0d_slot.as_deref_mut(), stereo0d_count.as_deref_mut())
     {
         if !slot.is_null() && *count != 0 {
             if *count < 0 {
                 return Err(SourceHeapError::SourceIntegerOverflow);
             }
             initial_stereo_capacity = *count;
-            let capacity =
-                usize::try_from(*count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let capacity = usize::try_from(*count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             heap.slice_mut(*slot)?
                 .get_mut(..capacity)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3297,8 +3259,7 @@ pub(crate) fn InchiToInchiAtom(
 
     let line = heap.allocate_model_storage(vec![0_i8; INCHI_LINE_LEN as usize])?;
     let next_line = heap.allocate_model_storage(vec![0_i8; INCHI_LINE_ADD as usize])?;
-    let atom_token =
-        heap.allocate_model_storage(b"/rA:\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
+    let atom_token = heap.allocate_model_storage(b"/rA:\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
 
     let operation = (|| -> Result<i32, SourceHeapError> {
         let mut working_atom = SourceMutPointer::<inchi_Atom>::null();
@@ -3312,13 +3273,7 @@ pub(crate) fn InchiToInchiAtom(
         macro_rules! drain_xml_structure {
             () => {{
                 while xml_structure_depth > 0 {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         break;
                     }
@@ -3339,8 +3294,7 @@ pub(crate) fn InchiToInchiAtom(
                 add_source_error(heap, error_text, $message)?;
                 let source_cleans_work = (input_type == tagInputType_INPUT_INCHI_PLAIN
                     && (status == INCHI_INP_ERROR_RET || status == INCHI_INP_FATAL_RET as i32))
-                    || (input_type == tagInputType_INPUT_INCHI_XML
-                        && status == INCHI_INP_ERROR_RET);
+                    || (input_type == tagInputType_INPUT_INCHI_XML && status == INCHI_INP_ERROR_RET);
                 if source_cleans_work {
                     if !working_stereo.is_null() {
                         if let Some(slot) = stereo0d_slot.as_deref_mut()
@@ -3390,13 +3344,7 @@ pub(crate) fn InchiToInchiAtom(
             if input_type == tagInputType_INPUT_INCHI_PLAIN {
                 let mut header_read = false;
                 loop {
-                    let mut result = inchi_ios_getsTab(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let mut result = inchi_ios_getsTab(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         if *error == INCHI_INP_ERROR_ERR as i32 {
                             return Ok(0);
@@ -3409,13 +3357,12 @@ pub(crate) fn InchiToInchiAtom(
                     if too_long == 0 && source_starts_with(&current, b"Structure:") {
                         let mut cursor = b"Structure:".len();
                         let (long_id, end) = source_strtol_decimal(&current, cursor);
-                        cursor = if current.get(end) == Some(&(b'.' as i8))
-                            && current.get(end + 1) == Some(&(b' ' as i8))
-                        {
-                            end + 2
-                        } else {
-                            cursor
-                        };
+                        cursor =
+                            if current.get(end) == Some(&(b'.' as i8)) && current.get(end + 1) == Some(&(b' ' as i8)) {
+                                end + 2
+                            } else {
+                                cursor
+                            };
                         while current
                             .get(cursor)
                             .is_some_and(|byte| matches!(*byte as u8, b' ' | b'\n' | b'\r'))
@@ -3435,22 +3382,14 @@ pub(crate) fn InchiToInchiAtom(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
                         }
                         if cursor < current.len() {
-                            if let Some(equal_relative) = current[cursor..]
-                                .iter()
-                                .position(|byte| *byte == b'=' as i8)
+                            if let Some(equal_relative) = current[cursor..].iter().position(|byte| *byte == b'=' as i8)
                             {
                                 let equal = cursor + equal_relative;
-                                let mut length =
-                                    (equal - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
+                                let mut length = (equal - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
                                 if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(cursor as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
-                                    let mut trimmed_length = i32::try_from(length)
-                                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                                    mystrncpy(heap, label, line.offset(cursor as i64)?.as_const(), length as u32)?;
+                                    let mut trimmed_length =
+                                        i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                                     lrtrim(heap, label, Some(&mut trimmed_length))?;
                                     length = usize::try_from(trimmed_length)
                                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
@@ -3458,8 +3397,7 @@ pub(crate) fn InchiToInchiAtom(
                                 }
                                 let value_start = equal + 1;
                                 if value_start < current.len() {
-                                    let length = (current.len() - value_start + 1)
-                                        .min(MAX_SDF_VALUE as usize - 1);
+                                    let length = (current.len() - value_start + 1).min(MAX_SDF_VALUE as usize - 1);
                                     if let Some(value) = sdf_value {
                                         mystrncpy(
                                             heap,
@@ -3469,19 +3407,12 @@ pub(crate) fn InchiToInchiAtom(
                                         )?;
                                     }
                                 }
-                            } else if let Some(missing_relative) =
-                                source_find_bytes(&current[cursor..], b" is missing")
+                            } else if let Some(missing_relative) = source_find_bytes(&current[cursor..], b" is missing")
                             {
                                 let missing = cursor + missing_relative;
-                                let length =
-                                    (missing - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
+                                let length = (missing - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
                                 if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(cursor as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                    mystrncpy(heap, label, line.offset(cursor as i64)?.as_const(), length as u32)?;
                                 }
                             }
                         }
@@ -3517,9 +3448,7 @@ pub(crate) fn InchiToInchiAtom(
                         .position(|byte| *byte == b'/' as i8)
                         .map(|position| position + b"AuxInfo=".len())
                         && current.get(slash + 1) == Some(&(b'/' as i8))
-                        && current
-                            .get(slash + 2)
-                            .is_none_or(|byte| *byte == b'\n' as i8)
+                        && current.get(slash + 2).is_none_or(|byte| *byte == b'\n' as i8)
                     {
                         return Ok(0);
                     }
@@ -3536,11 +3465,7 @@ pub(crate) fn InchiToInchiAtom(
                         &mut result,
                     )?;
                     if cursor.is_null() {
-                        fail_input!(
-                            INCHI_INP_ERROR_RET,
-                            INCHI_INP_ERROR_ERR,
-                            "Missing atom data"
-                        );
+                        fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Missing atom data");
                     }
 
                     let slash = {
@@ -3566,31 +3491,22 @@ pub(crate) fn InchiToInchiAtom(
                         cursor,
                         &mut result,
                     )?;
-                    atom_section
-                        .extend_from_slice(source_c_string(heap.slice(cursor.as_const())?)?);
+                    atom_section.extend_from_slice(source_c_string(heap.slice(cursor.as_const())?)?);
 
                     plain_spanned_buffers = too_long != 0;
                     while too_long != 0 {
-                        let loaded = inchi_ios_getsTab1(
-                            heap,
-                            next_line,
-                            INCHI_LINE_ADD as i32 - 1,
-                            input,
-                            &mut too_long,
-                        )?;
+                        let loaded =
+                            inchi_ios_getsTab1(heap, next_line, INCHI_LINE_ADD as i32 - 1, input, &mut too_long)?;
                         if loaded < 0 {
                             break;
                         }
-                        atom_section
-                            .extend_from_slice(source_c_string(heap.slice(next_line.as_const())?)?);
+                        atom_section.extend_from_slice(source_c_string(heap.slice(next_line.as_const())?)?);
                     }
 
                     if let Some(bond_marker) = source_find_bytes(&atom_section, b"/rB:") {
                         plain_after_atom_section = Some(atom_section[bond_marker + 4..].to_vec());
                         atom_section.truncate(bond_marker);
-                    } else if let Some(section_end) =
-                        atom_section.iter().position(|byte| *byte == b'/' as i8)
-                    {
+                    } else if let Some(section_end) = atom_section.iter().position(|byte| *byte == b'/' as i8) {
                         atom_section.truncate(section_end);
                     }
                     found_structure = true;
@@ -3600,18 +3516,11 @@ pub(crate) fn InchiToInchiAtom(
                 let mut header_read = false;
                 let mut in_aux_info = false;
                 loop {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         if !working_stereo.is_null() {
-                            let stereo_is_exposed = stereo0d_slot
-                                .as_deref()
-                                .is_some_and(|slot| *slot == working_stereo);
+                            let stereo_is_exposed =
+                                stereo0d_slot.as_deref().is_some_and(|slot| *slot == working_stereo);
                             if stereo_is_exposed {
                                 // C frees this allocation while leaving the caller's output pointer
                                 // dangling. Keep the SourceHeap snapshot readable for exact observation.
@@ -3644,50 +3553,30 @@ pub(crate) fn InchiToInchiAtom(
                         }
                         let mut cursor = b"<structure".len();
                         let mut long_id = 0_i64;
-                        if let Some(relative) = source_find_bytes(&current[cursor..], b"number=\"")
-                        {
+                        if let Some(relative) = source_find_bytes(&current[cursor..], b"number=\"") {
                             let start = cursor + relative + b"number=\"".len();
                             let (value, end) = source_strtol_decimal(&current, start);
                             long_id = value;
                             cursor = end + usize::from(current.get(end) == Some(&(b'\"' as i8)));
                         }
-                        if let Some(relative) = source_find_bytes(&current[cursor..], b"id.name=\"")
-                        {
+                        if let Some(relative) = source_find_bytes(&current[cursor..], b"id.name=\"") {
                             let start = cursor + relative + b"id.name=\"".len();
-                            if let Some(end_relative) = current[start..]
-                                .iter()
-                                .position(|byte| *byte == b'\"' as i8)
-                            {
+                            if let Some(end_relative) = current[start..].iter().position(|byte| *byte == b'\"' as i8) {
                                 let end = start + end_relative;
                                 let length = (end - start + 1).min(MAX_SDF_HEADER as usize - 1);
                                 if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(start as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                    mystrncpy(heap, label, line.offset(start as i64)?.as_const(), length as u32)?;
                                 }
                                 cursor = end + 1;
                             }
                         }
-                        if let Some(relative) =
-                            source_find_bytes(&current[cursor..], b"id.value=\"")
-                        {
+                        if let Some(relative) = source_find_bytes(&current[cursor..], b"id.value=\"") {
                             let start = cursor + relative + b"id.value=\"".len();
-                            if let Some(end_relative) = current[start..]
-                                .iter()
-                                .position(|byte| *byte == b'\"' as i8)
-                            {
+                            if let Some(end_relative) = current[start..].iter().position(|byte| *byte == b'\"' as i8) {
                                 let end = start + end_relative;
                                 let length = (end - start + 1).min(MAX_SDF_VALUE as usize - 1);
                                 if let Some(value) = sdf_value {
-                                    mystrncpy(
-                                        heap,
-                                        value,
-                                        line.offset(start as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                    mystrncpy(heap, value, line.offset(start as i64)?.as_const(), length as u32)?;
                                 }
                             }
                         }
@@ -3702,19 +3591,12 @@ pub(crate) fn InchiToInchiAtom(
                     let error_prefix = b"<message type=\"error (no InChI)\" value=\"";
                     let fatal_prefix = b"<message type=\"fatal (aborted)\" value=\"";
                     if header_read
-                        && (source_starts_with(&current, error_prefix)
-                            || source_starts_with(&current, fatal_prefix))
+                        && (source_starts_with(&current, error_prefix) || source_starts_with(&current, fatal_prefix))
                     {
                         let fatal = source_starts_with(&current, fatal_prefix);
-                        let prefix_length = if fatal {
-                            fatal_prefix.len()
-                        } else {
-                            error_prefix.len()
-                        };
+                        let prefix_length = if fatal { fatal_prefix.len() } else { error_prefix.len() };
                         if !find_next_only
-                            && let Some(end) = current[prefix_length..]
-                                .iter()
-                                .position(|byte| *byte == b'\"' as i8)
+                            && let Some(end) = current[prefix_length..].iter().position(|byte| *byte == b'\"' as i8)
                         {
                             if let Some(error_text) = error_text {
                                 *heap
@@ -3745,46 +3627,24 @@ pub(crate) fn InchiToInchiAtom(
                         continue;
                     }
                     if header_read && source_starts_with(&current, b"</identifier.auxiliary-info") {
-                        fail_input!(
-                            INCHI_INP_ERROR_RET,
-                            INCHI_INP_ERROR_ERR,
-                            "Missing reversibility info"
-                        );
+                        fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Missing reversibility info");
                     }
-                    if !(header_read
-                        && in_aux_info
-                        && source_starts_with(&current, b"<reversibility>"))
-                    {
+                    if !(header_read && in_aux_info && source_starts_with(&current, b"<reversibility>")) {
                         continue;
                     }
 
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         *error = INCHI_INP_EOF_ERR as i32;
                         return Ok(INCHI_INP_EOF_RET as i32);
                     }
-                    if !source_starts_with(
-                        source_c_string(heap.slice(line.as_const())?)?,
-                        b"<atoms>",
-                    ) {
+                    if !source_starts_with(source_c_string(heap.slice(line.as_const())?)?, b"<atoms>") {
                         header_read = false;
                         continue;
                     }
                     let mut read_atom_data = false;
                     loop {
-                        let result = inchi_ios_gets(
-                            heap,
-                            line,
-                            INCHI_LINE_LEN as i32 - 1,
-                            input,
-                            &mut too_long,
-                        )?;
+                        let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                         if result <= 0 {
                             if !read_atom_data {
                                 *error = INCHI_INP_EOF_ERR as i32;
@@ -3822,14 +3682,9 @@ pub(crate) fn InchiToInchiAtom(
                 return Ok(0);
             }
             if atom_count_i32 < 0 {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of atoms"
-                );
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong number of atoms");
             }
-            let atom_count = usize::try_from(atom_count_i32)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let atom_count = usize::try_from(atom_count_i32).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let reuse_caller_atoms = atom_slot
                 .as_deref()
                 .is_some_and(|slot| !slot.is_null() && atom_count_i32 <= maximum_atom_count);
@@ -3850,8 +3705,8 @@ pub(crate) fn InchiToInchiAtom(
                     working_atom = SourceMutPointer::null();
                     working_atom_is_caller = false;
                 } else {
-                    let maximum = usize::try_from(maximum_atom_count)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let maximum =
+                        usize::try_from(maximum_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     heap.slice_mut(*slot)?
                         .get_mut(..maximum)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3901,38 +3756,28 @@ pub(crate) fn InchiToInchiAtom(
                 working_stereo_capacity = atom_count_i32
                     .checked_add(1)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                working_stereo = match crate::source::base::readinch::CreateInchi_Stereo0D(
-                    heap,
-                    working_stereo_capacity,
-                ) {
-                    Ok(pointer) => pointer,
-                    Err(SourceHeapError::AllocationFailed) => {
-                        if !working_atom_is_caller {
-                            inchi_free(heap, working_atom)?;
-                            working_atom = SourceMutPointer::null();
+                working_stereo =
+                    match crate::source::base::readinch::CreateInchi_Stereo0D(heap, working_stereo_capacity) {
+                        Ok(pointer) => pointer,
+                        Err(SourceHeapError::AllocationFailed) => {
+                            if !working_atom_is_caller {
+                                inchi_free(heap, working_atom)?;
+                                working_atom = SourceMutPointer::null();
+                            }
+                            fail_input!(INCHI_INP_FATAL_RET, INCHI_INP_FATAL_ERR, "Out of RAM")
                         }
-                        fail_input!(INCHI_INP_FATAL_RET, INCHI_INP_FATAL_ERR, "Out of RAM")
-                    }
-                    Err(error) => return Err(error),
-                };
+                        Err(error) => return Err(error),
+                    };
             }
 
             let mut parsed_atoms = Vec::new();
             if parsed_atoms.try_reserve_exact(atom_count + 1).is_err() {
-                fail_input!(
-                    INCHI_INP_FATAL_RET as i32,
-                    INCHI_INP_FATAL_ERR,
-                    "Out of RAM"
-                );
+                fail_input!(INCHI_INP_FATAL_RET as i32, INCHI_INP_FATAL_ERR, "Out of RAM");
             }
             parsed_atoms.resize_with(atom_count + 1, inchi_Atom::default);
             let mut parsed_stereo = Vec::<inchi_Stereo0D>::new();
             if parsed_stereo.try_reserve_exact(atom_count + 1).is_err() {
-                fail_input!(
-                    INCHI_INP_FATAL_RET as i32,
-                    INCHI_INP_FATAL_ERR,
-                    "Out of RAM"
-                );
+                fail_input!(INCHI_INP_FATAL_RET as i32, INCHI_INP_FATAL_ERR, "Out of RAM");
             }
             let mut parsed_flags = 0_u64;
             match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
@@ -4005,8 +3850,7 @@ pub(crate) fn InchiToInchiAtom(
                     {
                         let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
                         let magnitude = (value & i64::from(CHAR_MASK)) as i8;
-                        parsed_atoms[atom_index].charge =
-                            (charge_sign * i32::from(magnitude)) as i8;
+                        parsed_atoms[atom_index].charge = (charge_sign * i32::from(magnitude)) as i8;
                         atom_cursor = end;
                     }
                 }
@@ -4048,8 +3892,7 @@ pub(crate) fn InchiToInchiAtom(
                         ..inchi_Stereo0D::default()
                     });
                     let stereo_index = parsed_stereo.len() - 1;
-                    heap.slice_mut(working_stereo)?[stereo_index] =
-                        parsed_stereo[stereo_index].clone();
+                    heap.slice_mut(working_stereo)?[stereo_index] = parsed_stereo[stereo_index].clone();
                 }
                 for (isotope, marker) in b"hdt".iter().enumerate() {
                     if atom_section.get(atom_cursor).map(|byte| *byte as u8) == Some(*marker) {
@@ -4068,28 +3911,19 @@ pub(crate) fn InchiToInchiAtom(
                 heap.slice_mut(working_atom)?[atom_index] = parsed_atoms[atom_index].clone();
             }
             if atom_cursor != atom_section.len() {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of atoms"
-                );
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong number of atoms");
             }
 
             if input_type == tagInputType_INPUT_INCHI_PLAIN {
                 let Some(remaining) = plain_after_atom_section.take() else {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        "Missing bonds data"
-                    );
+                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Missing bonds data");
                 };
                 if let Some(coordinate_marker) = source_find_bytes(&remaining, b"/rC:") {
                     bond_section.extend_from_slice(&remaining[..coordinate_marker]);
                     let coordinates = &remaining[coordinate_marker + 4..];
                     let coordinate_end = coordinates.iter().position(|byte| *byte == b'/' as i8);
                     plain_coordinate_section_ended = coordinate_end.is_some();
-                    coordinate_requires_exact_end =
-                        coordinate_end.is_some() || plain_spanned_buffers;
+                    coordinate_requires_exact_end = coordinate_end.is_some() || plain_spanned_buffers;
                     let coordinate_end = coordinate_end.unwrap_or(coordinates.len());
                     coordinate_section.extend_from_slice(&coordinates[..coordinate_end]);
                 } else {
@@ -4103,8 +3937,7 @@ pub(crate) fn InchiToInchiAtom(
             }
 
             if xml_sections_pending {
-                let result =
-                    inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
+                let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                 if result <= 0 {
                     return Ok(0);
                 }
@@ -4113,13 +3946,7 @@ pub(crate) fn InchiToInchiAtom(
                 }
                 let mut read_bond_data = false;
                 loop {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         if !read_bond_data {
                             fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "");
@@ -4192,11 +4019,7 @@ pub(crate) fn InchiToInchiAtom(
                 cursor = end;
                 let neighbor = (neighbor_number as i32).wrapping_sub(1);
                 if neighbor < 0 || neighbor as usize >= atom_count {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        "Bond to nonexistent atom"
-                    );
+                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Bond to nonexistent atom");
                 }
                 let neighbor = neighbor as usize;
                 let (bond_type, stereo1, stereo2) = match bond_character {
@@ -4269,10 +4092,8 @@ pub(crate) fn InchiToInchiAtom(
                         let new_capacity = working_stereo_capacity
                             .checked_add(atom_count_i32)
                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                        let replacement = match crate::source::base::readinch::CreateInchi_Stereo0D(
-                            heap,
-                            new_capacity,
-                        ) {
+                        let replacement = match crate::source::base::readinch::CreateInchi_Stereo0D(heap, new_capacity)
+                        {
                             Ok(pointer) => pointer,
                             Err(SourceHeapError::AllocationFailed) => {
                                 fail_input!(INCHI_INP_FATAL_RET, INCHI_INP_FATAL_ERR, "Out of RAM")
@@ -4295,16 +4116,11 @@ pub(crate) fn InchiToInchiAtom(
                         ..inchi_Stereo0D::default()
                     });
                     let stereo_index = parsed_stereo.len() - 1;
-                    heap.slice_mut(working_stereo)?[stereo_index] =
-                        parsed_stereo[stereo_index].clone();
+                    heap.slice_mut(working_stereo)?[stereo_index] = parsed_stereo[stereo_index].clone();
                 }
             }
             if current_atom != atom_count || cursor != bond_section.len() {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of bonds"
-                );
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong number of bonds");
             }
 
             if plain_coordinates_missing {
@@ -4316,11 +4132,8 @@ pub(crate) fn InchiToInchiAtom(
             }
 
             if xml_coordinates_pending {
-                let result =
-                    inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
-                if result <= 0
-                    || !source_starts_with(source_c_string(heap.slice(line.as_const())?)?, b"<xyz>")
-                {
+                let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
+                if result <= 0 || !source_starts_with(source_c_string(heap.slice(line.as_const())?)?, b"<xyz>") {
                     fail_input!(
                         INCHI_INP_ERROR_RET,
                         INCHI_INP_ERROR_ERR,
@@ -4329,13 +4142,7 @@ pub(crate) fn InchiToInchiAtom(
                 }
                 let mut read_coordinate_data = false;
                 loop {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
+                    let result = inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
                     if result <= 0 {
                         if !read_coordinate_data {
                             fail_input!(
@@ -4407,11 +4214,7 @@ pub(crate) fn InchiToInchiAtom(
                 }
                 heap.slice_mut(working_atom)?[atom_index] = atom.clone();
                 if coordinate_section.get(cursor) != Some(&(b';' as i8)) {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        "Wrong atom coordinates data"
-                    );
+                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong atom coordinates data");
                 }
                 cursor += 1;
                 parsed_coordinate_count += 1;
@@ -4419,11 +4222,7 @@ pub(crate) fn InchiToInchiAtom(
             if (plain_coordinate_section_ended && parsed_coordinate_count != atom_count)
                 || (coordinate_requires_exact_end && cursor != coordinate_section.len())
             {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of coordinates"
-                );
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong number of coordinates");
             }
 
             if !reuse_caller_atoms && !find_next_only {
@@ -4442,11 +4241,9 @@ pub(crate) fn InchiToInchiAtom(
                     let local_bond_count = usize::try_from(parsed_atoms[atom_index].num_bonds)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     for order in 0..local_bond_count {
-                        let mut index = i32::from(parsed_atoms[atom_index].bond_type[order])
-                            - MIN_INPUT_BOND_TYPE as i32;
-                        if index < 0
-                            || index > MAX_INPUT_BOND_TYPE as i32 - MIN_INPUT_BOND_TYPE as i32
-                        {
+                        let mut index =
+                            i32::from(parsed_atoms[atom_index].bond_type[order]) - MIN_INPUT_BOND_TYPE as i32;
+                        if index < 0 || index > MAX_INPUT_BOND_TYPE as i32 - MIN_INPUT_BOND_TYPE as i32 {
                             index = 0;
                             add_source_error(
                                 heap,
@@ -4457,30 +4254,19 @@ pub(crate) fn InchiToInchiAtom(
                         bond_type_counts[index as usize] += 1;
                         counted_bonds += 1;
                         if coordinates_present {
-                            let neighbor =
-                                usize::try_from(parsed_atoms[atom_index].neighbor[order])
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            last_x |= i32::from(
-                                (parsed_atoms[atom_index].x - parsed_atoms[neighbor].x).abs()
-                                    > 1.0e-6,
-                            );
-                            last_y |= i32::from(
-                                (parsed_atoms[atom_index].y - parsed_atoms[neighbor].y).abs()
-                                    > 1.0e-6,
-                            );
-                            last_z |= i32::from(
-                                (parsed_atoms[atom_index].z - parsed_atoms[neighbor].z).abs()
-                                    > 1.0e-6,
-                            );
+                            let neighbor = usize::try_from(parsed_atoms[atom_index].neighbor[order])
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            last_x |= i32::from((parsed_atoms[atom_index].x - parsed_atoms[neighbor].x).abs() > 1.0e-6);
+                            last_y |= i32::from((parsed_atoms[atom_index].y - parsed_atoms[neighbor].y).abs() > 1.0e-6);
+                            last_z |= i32::from((parsed_atoms[atom_index].z - parsed_atoms[neighbor].z).abs() > 1.0e-6);
                         }
                     }
                     let mut chemical_valence = 0_i32;
                     for bond_type in MIN_INPUT_BOND_TYPE..=3.min(MAX_INPUT_BOND_TYPE) {
-                        chemical_valence += bond_type as i32
-                            * bond_type_counts[(bond_type - MIN_INPUT_BOND_TYPE) as usize];
+                        chemical_valence +=
+                            bond_type as i32 * bond_type_counts[(bond_type - MIN_INPUT_BOND_TYPE) as usize];
                     }
-                    let aromatic_index =
-                        tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i32 - MIN_INPUT_BOND_TYPE as i32;
+                    let aromatic_index = tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i32 - MIN_INPUT_BOND_TYPE as i32;
                     if aromatic_index >= 0 && aromatic_index < bond_type_counts.len() as i32 {
                         let aromatic_count = bond_type_counts[aromatic_index as usize];
                         match aromatic_count {
@@ -4492,12 +4278,9 @@ pub(crate) fn InchiToInchiAtom(
                                     if parsed_atoms[atom_index].bond_type[order]
                                         == tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i8
                                     {
-                                        let neighbor = usize::try_from(
-                                            parsed_atoms[atom_index].neighbor[order],
-                                        )
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                        let neighbor_count =
-                                            parsed_atoms[neighbor].num_bonds as i32;
+                                        let neighbor = usize::try_from(parsed_atoms[atom_index].neighbor[order])
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        let neighbor_count = parsed_atoms[neighbor].num_bonds as i32;
                                         let reciprocal = is_in_the_slist(
                                             Some(&parsed_atoms[neighbor].neighbor),
                                             atom_index as i16,
@@ -4505,11 +4288,7 @@ pub(crate) fn InchiToInchiAtom(
                                         )?;
                                         let Some(reciprocal) = reciprocal else {
                                             *error = -2;
-                                            add_source_error(
-                                                heap,
-                                                error_text,
-                                                "Program error interpreting InChI aux",
-                                            )?;
+                                            add_source_error(heap, error_text, "Program error interpreting InChI aux")?;
                                             return Ok(INCHI_INP_FATAL_RET as i32);
                                         };
                                         parsed_atoms[atom_index].bond_type[order] =
@@ -4520,11 +4299,7 @@ pub(crate) fn InchiToInchiAtom(
                                 }
                                 chemical_valence += count;
                                 *error |= 32;
-                                add_source_error(
-                                    heap,
-                                    error_text,
-                                    "Atom has 1 or more than 3 aromatic bonds",
-                                )?;
+                                add_source_error(heap, error_text, "Atom has 1 or more than 3 aromatic bonds")?;
                             }
                         }
                     }
@@ -4563,18 +4338,17 @@ pub(crate) fn InchiToInchiAtom(
                                     stereo.neighbor[output] = center as i16;
                                     output += 1;
                                 }
-                                for neighbor in parsed_atoms[center].neighbor.iter().take(neighbors)
-                                {
+                                for neighbor in parsed_atoms[center].neighbor.iter().take(neighbors) {
                                     stereo.neighbor[output] = *neighbor;
                                     output += 1;
                                 }
                             }
                         }
                         tagINCHIStereoType0D_INCHI_StereoType_DoubleBond => {
-                            let mut first = usize::try_from(stereo.neighbor[1])
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let mut second = usize::try_from(stereo.neighbor[2])
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let mut first =
+                                usize::try_from(stereo.neighbor[1]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let mut second =
+                                usize::try_from(stereo.neighbor[2]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let first_order = is_in_the_slist(
                                 Some(&parsed_atoms[first].neighbor),
                                 second as i16,
@@ -4585,9 +4359,7 @@ pub(crate) fn InchiToInchiAtom(
                                 first as i16,
                                 parsed_atoms[second].num_bonds as i32,
                             )?;
-                            let (Some(mut first_order), Some(mut second_order)) =
-                                (first_order, second_order)
-                            else {
+                            let (Some(mut first_order), Some(mut second_order)) = (first_order, second_order) else {
                                 stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_None as i8;
                                 stereo.central_atom = NO_ATOM as i16;
                                 stereo.neighbor[0] = -1;
@@ -4598,10 +4370,7 @@ pub(crate) fn InchiToInchiAtom(
                             };
                             let inchi_num_h2 = |atom: &inchi_Atom| {
                                 i32::from(atom.num_iso_H[0].max(0))
-                                    + atom.num_iso_H[1..]
-                                        .iter()
-                                        .map(|value| i32::from(*value))
-                                        .sum::<i32>()
+                                    + atom.num_iso_H[1..].iter().map(|value| i32::from(*value)).sum::<i32>()
                             };
                             let first_middle = parsed_atoms[first].num_bonds == 2
                                 && i32::from(parsed_atoms[first].bond_type[0])
@@ -4644,9 +4413,7 @@ pub(crate) fn InchiToInchiAtom(
                                             == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
                                         && inchi_num_h2(&parsed_atoms[current]) == 0
                                     {
-                                        let order = usize::from(
-                                            parsed_atoms[current].neighbor[0] == previous as i16,
-                                        );
+                                        let order = usize::from(parsed_atoms[current].neighbor[0] == previous as i16);
                                         next = parsed_atoms[current].neighbor[order] as usize;
                                         chain[length] = next as i16;
                                         length += 1;
@@ -4666,16 +4433,13 @@ pub(crate) fn InchiToInchiAtom(
                                 if let Some(order) = final_order {
                                     second_order = order;
                                     second = current;
-                                    stereo.neighbor[0] =
-                                        parsed_atoms[first].neighbor[usize::from(first_order == 0)];
+                                    stereo.neighbor[0] = parsed_atoms[first].neighbor[usize::from(first_order == 0)];
                                     stereo.neighbor[1] = first as i16;
                                     stereo.neighbor[2] = second as i16;
-                                    stereo.neighbor[3] = parsed_atoms[second].neighbor
-                                        [usize::from(second_order == 0)];
+                                    stereo.neighbor[3] = parsed_atoms[second].neighbor[usize::from(second_order == 0)];
                                     if length % 2 == 1 {
                                         stereo.central_atom = chain[length / 2];
-                                        stereo.type_ =
-                                            tagINCHIStereoType0D_INCHI_StereoType_Allene as i8;
+                                        stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_Allene as i8;
                                     } else {
                                         stereo.central_atom = NO_ATOM as i16;
                                     }
@@ -4685,25 +4449,17 @@ pub(crate) fn InchiToInchiAtom(
                                     stereo.neighbor[0] = -1;
                                     stereo.neighbor[3] = -1;
                                     *error |= 64;
-                                    add_source_error(
-                                        heap,
-                                        error_text,
-                                        "Cumulene stereo not recognized (0D)",
-                                    )?;
+                                    add_source_error(heap, error_text, "Cumulene stereo not recognized (0D)")?;
                                 }
                             } else {
-                                stereo.neighbor[0] =
-                                    parsed_atoms[first].neighbor[usize::from(first_order == 0)];
-                                stereo.neighbor[3] =
-                                    parsed_atoms[second].neighbor[usize::from(second_order == 0)];
+                                stereo.neighbor[0] = parsed_atoms[first].neighbor[usize::from(first_order == 0)];
+                                stereo.neighbor[3] = parsed_atoms[second].neighbor[usize::from(second_order == 0)];
                                 stereo.central_atom = NO_ATOM as i16;
                             }
 
-                            let second_parity = (i32::from(stereo.parity) >> SB_PARITY_SHFT)
-                                & SB_PARITY_MASK as i32;
+                            let second_parity = (i32::from(stereo.parity) >> SB_PARITY_SHFT) & SB_PARITY_MASK as i32;
                             if stereo.type_ != tagINCHIStereoType0D_INCHI_StereoType_None as i8
-                                && (AB_MIN_WELL_DEFINED_PARITY as i32
-                                    ..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                                && (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
                                     .contains(&second_parity)
                             {
                                 for endpoint in 0..2 {
@@ -4712,25 +4468,18 @@ pub(crate) fn InchiToInchiAtom(
                                     } else {
                                         stereo.neighbor[2]
                                     } as usize;
-                                    let stereo_order = if endpoint == 0 {
-                                        first_order
-                                    } else {
-                                        second_order
-                                    };
+                                    let stereo_order = if endpoint == 0 { first_order } else { second_order };
                                     let mut minimum = atom_count;
                                     for order in 0..parsed_atoms[atom_index].num_bonds as usize {
-                                        let neighbor =
-                                            parsed_atoms[atom_index].neighbor[order] as usize;
+                                        let neighbor = parsed_atoms[atom_index].neighbor[order] as usize;
                                         if order != stereo_order
-                                            && is_element_a_metal(&parsed_atoms[neighbor].elname)?
-                                                == 0
+                                            && is_element_a_metal(&parsed_atoms[neighbor].elname)? == 0
                                         {
                                             minimum = minimum.min(neighbor);
                                         }
                                     }
                                     if minimum < atom_count {
-                                        stereo.neighbor[if endpoint == 0 { 0 } else { 3 }] =
-                                            minimum as i16;
+                                        stereo.neighbor[if endpoint == 0 { 0 } else { 3 }] = minimum as i16;
                                     } else {
                                         add_source_error(
                                             heap,
@@ -4813,10 +4562,7 @@ pub(crate) fn InchiToInchiAtom(
     let line_cleanup = inchi_free(heap, line);
     let next_line_cleanup = inchi_free(heap, next_line);
     let token_cleanup = inchi_free(heap, atom_token);
-    let cleanup = line_cleanup
-        .and(next_line_cleanup)
-        .and(token_cleanup)
-        .map(|_| ());
+    let cleanup = line_cleanup.and(next_line_cleanup).and(token_cleanup).map(|_| ());
     match operation {
         Ok(status) => cleanup.map(|_| status),
         Err(error) => Err(error),
@@ -4828,8 +4574,8 @@ pub(crate) fn InchiToInchiAtom(
 mod tests {
     use super::*;
     use crate::source_types::{
-        INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, STR_ERR_LEN, SourceFile,
-        bitWord, inchi_Stereo0D, inp_ATOM,
+        INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, STR_ERR_LEN, SourceFile, bitWord, inchi_Stereo0D,
+        inp_ATOM,
     };
     use crate::test_support::allocate_source_fixture;
     use serde_json::{Value, json};
@@ -4843,11 +4589,7 @@ mod tests {
         let atoms = CreateInchiAtom(&mut heap, 3).unwrap();
         assert_eq!(
             heap.slice(atoms.as_const()).unwrap(),
-            &[
-                inchi_Atom::default(),
-                inchi_Atom::default(),
-                inchi_Atom::default(),
-            ]
+            &[inchi_Atom::default(), inchi_Atom::default(), inchi_Atom::default(),]
         );
         assert_eq!(inchi_free(&mut heap, atoms), Ok(()));
 
@@ -4917,23 +4659,15 @@ mod tests {
                 options,
                 &mut strbuf,
             );
-            (
-                result, sd, ip, original, prepared, inchi, aux, streams, strbuf,
-            )
+            (result, sd, ip, original, prepared, inchi, aux, streams, strbuf)
         }
 
         let mut heap = SourceHeap::default();
         let moltext = allocate_source_fixture(
             &mut heap,
-            b"empty molfile text\n\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
+            b"empty molfile text\n\0".iter().map(|byte| *byte as i8).collect(),
         );
-        let options = allocate_source_fixture(
-            &mut heap,
-            b"-AuxNone\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let options = allocate_source_fixture(&mut heap, b"-AuxNone\0".iter().map(|byte| *byte as i8).collect());
         let (result, sd, ip, original, prepared, inchi, aux, streams, strbuf) =
             call_prepare(&mut heap, moltext.as_const(), options.as_const());
         assert_eq!(result, Ok(0));
@@ -4961,10 +4695,8 @@ mod tests {
         inchi_free(&mut heap, strbuf.pStr).unwrap();
 
         let mut fallback_heap = SourceHeap::default();
-        let fallback_moltext = allocate_source_fixture(
-            &mut fallback_heap,
-            b"x\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let fallback_moltext =
+            allocate_source_fixture(&mut fallback_heap, b"x\0".iter().map(|byte| *byte as i8).collect());
         let fallback_options = allocate_source_fixture(
             &mut fallback_heap,
             b"-AuxNone\0".iter().map(|byte| *byte as i8).collect(),
@@ -4977,44 +4709,26 @@ mod tests {
         );
         assert_eq!(fallback_result, Ok(0));
         assert_eq!(fallback_heap.source_allocation_calls(), 2);
-        assert_eq!(
-            fallback_ip.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32,
-            0
-        );
+        assert_eq!(fallback_ip.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32, 0);
         inchi_free(&mut fallback_heap, fallback_strbuf.pStr).unwrap();
 
         let mut no_ram_heap = SourceHeap::default();
-        let no_ram_moltext = allocate_source_fixture(
-            &mut no_ram_heap,
-            b"x\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let no_ram_moltext = allocate_source_fixture(&mut no_ram_heap, b"x\0".iter().map(|byte| *byte as i8).collect());
         no_ram_heap.fail_after_allocations(0);
-        let (no_ram_result, _, _, _, _, _, _, _, no_ram_strbuf) = call_prepare(
-            &mut no_ram_heap,
-            no_ram_moltext.as_const(),
-            SourceConstPointer::null(),
-        );
+        let (no_ram_result, _, _, _, _, _, _, _, no_ram_strbuf) =
+            call_prepare(&mut no_ram_heap, no_ram_moltext.as_const(), SourceConstPointer::null());
         assert_eq!(no_ram_result, Ok(MOL2INCHI_NO_RAM as i32));
         assert!(no_ram_strbuf.pStr.is_null());
 
         let mut bad_heap = SourceHeap::default();
-        let bad_moltext = allocate_source_fixture(
-            &mut bad_heap,
-            b"x\0".iter().map(|byte| *byte as i8).collect(),
-        );
+        let bad_moltext = allocate_source_fixture(&mut bad_heap, b"x\0".iter().map(|byte| *byte as i8).collect());
         let bad_options = allocate_source_fixture(
             &mut bad_heap,
-            b"-Key -OUTPUTSDF\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
+            b"-Key -OUTPUTSDF\0".iter().map(|byte| *byte as i8).collect(),
         );
         bad_heap.trace_source_allocations();
-        let (bad_result, _, _, _, _, _, _, _, bad_strbuf) = call_prepare(
-            &mut bad_heap,
-            bad_moltext.as_const(),
-            bad_options.as_const(),
-        );
+        let (bad_result, _, _, _, _, _, _, _, bad_strbuf) =
+            call_prepare(&mut bad_heap, bad_moltext.as_const(), bad_options.as_const());
         assert_eq!(bad_result, Ok(MOL2INCHI_BAD_COMMAND_LINE as i32));
         assert!(bad_strbuf.pStr.is_null());
         assert!(bad_heap.live_source_allocation_count() >= 1);
@@ -5170,18 +4884,9 @@ mod tests {
 
         assert_eq!(FreeInchi_Input(&mut heap, &mut input), Ok(()));
         assert_eq!(input, inchi_Input::default());
-        assert_eq!(
-            heap.slice(atom_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(stereo_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(options.as_const()).unwrap(),
-            &[b'-' as i8, b'S' as i8, 0]
-        );
+        assert_eq!(heap.slice(atom_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(stereo_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(options.as_const()).unwrap(), &[b'-' as i8, b'S' as i8, 0]);
         assert_eq!(inchi_free(&mut heap, options), Ok(()));
 
         let atom = allocate_source_fixture(&mut heap, vec![inchi_Atom::default()]);
@@ -5202,10 +4907,7 @@ mod tests {
         assert_eq!(partial_failure_input.stereo0D, stereo.offset(1).unwrap());
         assert_eq!(partial_failure_input.num_atoms, 1);
         assert_eq!(partial_failure_input.num_stereo0D, 2);
-        assert_eq!(
-            heap.slice(atom_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(atom_alias), Err(SourceHeapError::MissingAllocation));
         assert_eq!(heap.slice(stereo.as_const()).unwrap().len(), 2);
         assert_eq!(inchi_free(&mut heap, stereo), Ok(()));
     }
@@ -5219,10 +4921,7 @@ mod tests {
         assert_eq!(FreeInchi_Atom(&mut heap, Some(&mut null_slot)), Ok(()));
         assert!(null_slot.is_null());
 
-        let mut atom_slot = allocate_source_fixture(
-            &mut heap,
-            vec![inchi_Atom::default(), inchi_Atom::default()],
-        );
+        let mut atom_slot = allocate_source_fixture(&mut heap, vec![inchi_Atom::default(), inchi_Atom::default()]);
         let alias = atom_slot.as_const();
         assert_eq!(FreeInchi_Atom(&mut heap, Some(&mut atom_slot)), Ok(()));
         assert!(atom_slot.is_null());
@@ -5253,10 +4952,7 @@ mod tests {
             Ok(None),
             "the zero-length C branch does not dereference pathAtom"
         );
-        assert_eq!(
-            is_in_the_slist(None, 7, 1),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(is_in_the_slist(None, 7, 1), Err(SourceHeapError::NullPointer));
         assert_eq!(
             is_in_the_slist(Some(&path[1..]), 11, -1),
             Ok(Some(0)),
@@ -5276,20 +4972,19 @@ mod tests {
         }
 
         let source_metals = [
-            "K", "V", "Y", "W", "U", "Li", "Be", "Na", "Mg", "Al", "Ca", "Sc", "Ti", "Cr", "Mn",
-            "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Rb", "Sr", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh",
-            "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm",
-            "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "Re", "Os", "Ir",
-            "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "Fr", "Ra", "Ac", "Th", "Pa", "Np", "Pu",
-            "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf",
+            "K", "V", "Y", "W", "U", "Li", "Be", "Na", "Mg", "Al", "Ca", "Sc", "Ti", "Cr", "Mn", "Fe", "Co", "Ni",
+            "Cu", "Zn", "Ga", "Rb", "Sr", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Cs",
+            "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta",
+            "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "Fr", "Ra", "Ac", "Th", "Pa", "Np", "Pu", "Am",
+            "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf",
         ];
         for symbol in source_metals {
             assert_eq!(is_element_a_metal(&c_element(symbol)), Ok(1), "{symbol}");
         }
 
         for symbol in [
-            "H", "B", "C", "N", "O", "F", "Ne", "Si", "P", "S", "Cl", "Ar", "As", "Se", "Br", "Kr",
-            "Te", "I", "Xe", "At", "Rn", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
+            "H", "B", "C", "N", "O", "F", "Ne", "Si", "P", "S", "Cl", "Ar", "As", "Se", "Br", "Kr", "Te", "I", "Xe",
+            "At", "Rn", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
         ] {
             assert_eq!(is_element_a_metal(&c_element(symbol)), Ok(0), "{symbol}");
         }
@@ -5370,12 +5065,7 @@ mod tests {
         input_type: INPUT_TYPE,
         file_mode: bool,
     ) -> InchiToAtomFixtureOutput {
-        run_inchi_to_atom_fixture_with_config(
-            input_text,
-            input_type,
-            file_mode,
-            InchiToAtomFixtureConfig::default(),
-        )
+        run_inchi_to_atom_fixture_with_config(input_text, input_type, file_mode, InchiToAtomFixtureConfig::default())
     }
 
     fn run_inchi_to_atom_fixture_with_config(
@@ -5401,10 +5091,7 @@ mod tests {
                 ..INCHI_IOSTREAM::default()
             }
         } else {
-            string_allocation = allocate_source_fixture(
-                &mut heap,
-                input_text.iter().map(|byte| *byte as i8).collect(),
-            );
+            string_allocation = allocate_source_fixture(&mut heap, input_text.iter().map(|byte| *byte as i8).collect());
             INCHI_IOSTREAM {
                 s: INCHI_IOS_STRING {
                     pStr: string_allocation,
@@ -5477,23 +5164,21 @@ mod tests {
         )
         .unwrap();
 
-        let atom_storage_count =
-            if atoms == original_atoms && config.caller_atom_capacity > status.max(0) {
-                config.caller_atom_capacity
-            } else {
-                status.max(0)
-            };
+        let atom_storage_count = if atoms == original_atoms && config.caller_atom_capacity > status.max(0) {
+            config.caller_atom_capacity
+        } else {
+            status.max(0)
+        };
         let parsed_atoms = if atom_storage_count > 0 && !atoms.is_null() {
             heap.slice(atoms.as_const()).unwrap()[..atom_storage_count as usize].to_vec()
         } else {
             Vec::new()
         };
-        let stereo_storage_count =
-            if stereo == original_stereo && config.caller_stereo_capacity > stereo_count.max(0) {
-                config.caller_stereo_capacity
-            } else {
-                stereo_count.max(0)
-            };
+        let stereo_storage_count = if stereo == original_stereo && config.caller_stereo_capacity > stereo_count.max(0) {
+            config.caller_stereo_capacity
+        } else {
+            stereo_count.max(0)
+        };
         let parsed_stereo = if stereo_storage_count > 0 && !stereo.is_null() {
             heap.slice(stereo.as_const()).unwrap()[..stereo_storage_count as usize].to_vec()
         } else {
@@ -5584,8 +5269,7 @@ mod tests {
 
         let labeled = b"Structure: 42. LABEL =value\n\
 AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
-        let string_output =
-            run_inchi_to_atom_fixture(labeled, tagInputType_INPUT_INCHI_PLAIN, false);
+        let string_output = run_inchi_to_atom_fixture(labeled, tagInputType_INPUT_INCHI_PLAIN, false);
         let file_output = run_inchi_to_atom_fixture(labeled, tagInputType_INPUT_INCHI_PLAIN, true);
         for output in [&string_output, &file_output] {
             assert_eq!(output.status, 2);
@@ -5652,12 +5336,8 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             (b'N', 1, -6, 6),
         ];
         for (bond_character, expected_type, stereo1, stereo2) in bond_cases {
-            let text = format!(
-                "AuxInfo=1/rA:2CO/rB:{}1;/rC:0,0,0;1,0,0;\n",
-                bond_character as char
-            );
-            let output =
-                run_inchi_to_atom_fixture(text.as_bytes(), tagInputType_INPUT_INCHI_PLAIN, false);
+            let text = format!("AuxInfo=1/rA:2CO/rB:{}1;/rC:0,0,0;1,0,0;\n", bond_character as char);
+            let output = run_inchi_to_atom_fixture(text.as_bytes(), tagInputType_INPUT_INCHI_PLAIN, false);
             assert_eq!(output.status, 2, "{}", bond_character as char);
             assert_eq!(output.atoms[1].bond_type[0], expected_type);
             assert_eq!(output.atoms[1].bond_stereo[0], stereo1);
@@ -5669,10 +5349,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             false,
         );
         assert_eq!(aromatic_warning.error, 32);
-        assert_eq!(
-            aromatic_warning.error_text,
-            "Atom has 1 or more than 3 aromatic bonds"
-        );
+        assert_eq!(aromatic_warning.error_text, "Atom has 1 or more than 3 aromatic bonds");
         assert_eq!(aromatic_warning.atoms[0].bond_type[0], 1);
         assert_eq!(aromatic_warning.atoms[1].bond_type[0], 1);
 
@@ -5721,14 +5398,8 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         assert_eq!(xml_fatal.error_text, "source fatal");
 
         for (text, expected_message) in [
-            (
-                b"AuxInfo=1/no-reversibility\n".as_slice(),
-                "Missing atom data",
-            ),
-            (
-                b"AuxInfo=1/rA:2CO/rB:x/rC:;;\n".as_slice(),
-                "Wrong bonds data",
-            ),
+            (b"AuxInfo=1/no-reversibility\n".as_slice(), "Missing atom data"),
+            (b"AuxInfo=1/rA:2CO/rB:x/rC:;;\n".as_slice(), "Wrong bonds data"),
             (
                 b"AuxInfo=1/rA:2CO/rB:s1;/rC:0,0x;1,0,0;\n".as_slice(),
                 "Wrong atom coordinates data",
@@ -5748,11 +5419,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         let mut token_in_final_segment = b"AuxInfo=".to_vec();
         token_in_final_segment.extend(std::iter::repeat_n(b'X', INCHI_LINE_LEN as usize + 32));
         token_in_final_segment.extend_from_slice(b"/rA:1C/rB:/rC:;\n");
-        let final_segment = run_inchi_to_atom_fixture(
-            &token_in_final_segment,
-            tagInputType_INPUT_INCHI_PLAIN,
-            false,
-        );
+        let final_segment = run_inchi_to_atom_fixture(&token_in_final_segment, tagInputType_INPUT_INCHI_PLAIN, false);
         assert_eq!(final_segment.status, INCHI_INP_ERROR_RET);
         assert_eq!(final_segment.error, INCHI_INP_ERROR_ERR as i32);
         assert_eq!(final_segment.error_text, "Missing atom data");
@@ -5762,17 +5429,13 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         long_input.extend_from_slice(b"/rA:1C/rB:/rC:;/");
         long_input.extend(std::iter::repeat_n(b'X', INCHI_LINE_LEN as usize));
         long_input.push(b'\n');
-        let cross_buffer =
-            run_inchi_to_atom_fixture(&long_input, tagInputType_INPUT_INCHI_PLAIN, false);
+        let cross_buffer = run_inchi_to_atom_fixture(&long_input, tagInputType_INPUT_INCHI_PLAIN, false);
         assert_eq!(cross_buffer.status, 1);
         assert_eq!(&cross_buffer.atoms[0].elname[..2], &[b'C' as i8, 0]);
 
         let mut heap = SourceHeap::default();
         let input_bytes = b"AuxInfo=1/rA:2CO/rB:s1;/rC:0,0,0;1,0,0;\n";
-        let input_allocation = allocate_source_fixture(
-            &mut heap,
-            input_bytes.iter().map(|byte| *byte as i8).collect(),
-        );
+        let input_allocation = allocate_source_fixture(&mut heap, input_bytes.iter().map(|byte| *byte as i8).collect());
         let mut stream = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input_allocation,
@@ -5812,10 +5475,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             ),
             Ok(2)
         );
-        assert_eq!(
-            atoms, original_atoms,
-            "sufficient caller capacity is reused"
-        );
+        assert_eq!(atoms, original_atoms, "sufficient caller capacity is reused");
         assert_eq!(heap.slice(atoms.as_const()).unwrap().len(), 3);
         inchi_free(&mut heap, atoms).unwrap();
         inchi_free(&mut heap, input_allocation).unwrap();
@@ -5823,8 +5483,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         for allocations_before_failure in [0_u64, 1] {
             let mut heap = SourceHeap::default();
             let text = b"AuxInfo=1/rA:1Coe/rB:/rC:;\n";
-            let input_allocation =
-                allocate_source_fixture(&mut heap, text.iter().map(|byte| *byte as i8).collect());
+            let input_allocation = allocate_source_fixture(&mut heap, text.iter().map(|byte| *byte as i8).collect());
             let error_buffer = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
             let mut stream = INCHI_IOSTREAM {
                 s: INCHI_IOS_STRING {
@@ -5866,15 +5525,9 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
                 Ok(INCHI_INP_FATAL_RET as i32)
             );
             assert_eq!(error, INCHI_INP_FATAL_ERR as i32);
-            assert_eq!(
-                test_c_text(heap.slice(error_buffer.as_const()).unwrap()),
-                "Out of RAM"
-            );
+            assert_eq!(test_c_text(heap.slice(error_buffer.as_const()).unwrap()), "Out of RAM");
             assert!(atoms.is_null(), "partially allocated atoms must be cleaned");
-            assert!(
-                stereo.is_null(),
-                "partially allocated stereo must be cleaned"
-            );
+            assert!(stereo.is_null(), "partially allocated stereo must be cleaned");
             assert_eq!(stereo_count, 0);
             inchi_free(&mut heap, input_allocation).unwrap();
             inchi_free(&mut heap, error_buffer).unwrap();
@@ -5887,8 +5540,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             ('?', tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i8),
         ] {
             let text = format!("AuxInfo=1/rA:4CCCCl{marker}/rB:;;s1s2s3;/rC:;;;;\n");
-            let output =
-                run_inchi_to_atom_fixture(text.as_bytes(), tagInputType_INPUT_INCHI_PLAIN, false);
+            let output = run_inchi_to_atom_fixture(text.as_bytes(), tagInputType_INPUT_INCHI_PLAIN, false);
             assert_eq!(output.status, 4, "tetrahedral parity {marker}");
             assert_eq!(output.stereo.len(), 1, "tetrahedral parity {marker}");
             assert_eq!(output.stereo[0].parity, expected_parity);
@@ -5904,14 +5556,8 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         ];
         for (first_token, first_parity) in parity_tokens {
             for (second_token, second_parity) in parity_tokens {
-                let text = format!(
-                    "AuxInfo=1/rA:5FeOCCC/rB:;s1s2;d{first_token}{second_token}3;s4;/rC:;;;;;\n"
-                );
-                let output = run_inchi_to_atom_fixture(
-                    text.as_bytes(),
-                    tagInputType_INPUT_INCHI_PLAIN,
-                    false,
-                );
+                let text = format!("AuxInfo=1/rA:5FeOCCC/rB:;s1s2;d{first_token}{second_token}3;s4;/rC:;;;;;\n");
+                let output = run_inchi_to_atom_fixture(text.as_bytes(), tagInputType_INPUT_INCHI_PLAIN, false);
                 assert_eq!(output.status, 5, "bond parity {first_token}{second_token}");
                 assert_eq!(output.stereo.len(), 1);
                 assert_eq!(
@@ -5959,26 +5605,14 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
 
         for (text, expected_message) in [
             (b"AuxInfo=1/rA:1C/rC:;\n".as_slice(), "Missing bonds data"),
-            (
-                b"AuxInfo=1/rA:1C/rB:/\n".as_slice(),
-                "Missing atom coordinates data",
-            ),
-            (
-                b"AuxInfo=1/rA:2C/rB:;/rC:;;\n".as_slice(),
-                "Wrong number of atoms",
-            ),
-            (
-                b"AuxInfo=1/rA:2CO/rB:q1;/rC:;;\n".as_slice(),
-                "Wrong bond type",
-            ),
+            (b"AuxInfo=1/rA:1C/rB:/\n".as_slice(), "Missing atom coordinates data"),
+            (b"AuxInfo=1/rA:2C/rB:;/rC:;;\n".as_slice(), "Wrong number of atoms"),
+            (b"AuxInfo=1/rA:2CO/rB:q1;/rC:;;\n".as_slice(), "Wrong bond type"),
             (
                 b"AuxInfo=1/rA:2CO/rB:s3;/rC:;;\n".as_slice(),
                 "Bond to nonexistent atom",
             ),
-            (
-                b"AuxInfo=1/rA:3CCO/rB:s1/rC:;;;\n".as_slice(),
-                "Wrong number of bonds",
-            ),
+            (b"AuxInfo=1/rA:3CCO/rB:s1/rC:;;;\n".as_slice(), "Wrong number of bonds"),
             (
                 b"AuxInfo=1/rA:2CO/rB:s1;/rC:;;;/tail\n".as_slice(),
                 "Wrong number of coordinates",
@@ -6006,10 +5640,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             false,
         );
         assert_eq!(xml_missing_reversibility.status, INCHI_INP_ERROR_RET);
-        assert_eq!(
-            xml_missing_reversibility.error_text,
-            "Missing reversibility info"
-        );
+        assert_eq!(xml_missing_reversibility.error_text, "Missing reversibility info");
     }
 
     fn official_c_oracle_record(
@@ -6047,8 +5678,8 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             .take(atom_count)
             .enumerate()
             .flat_map(|(atom_index, atom)| {
-                let num_bonds = usize::try_from(atom.num_bonds)
-                    .expect("official oracle atom bond count must be nonnegative");
+                let num_bonds =
+                    usize::try_from(atom.num_bonds).expect("official oracle atom bond count must be nonnegative");
                 (0..num_bonds).map(move |slot| {
                     json!({
                         "atom_index": atom_index,
@@ -6362,23 +5993,16 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             let case_id = official["case_id"].as_str().expect("case_id must be text");
             let input = &official["input"];
             let text = input["text"].as_str().expect("input text must be text");
-            let input_type = input["input_type"]
-                .as_i64()
-                .expect("input_type must be signed integer")
-                as INPUT_TYPE;
+            let input_type = input["input_type"].as_i64().expect("input_type must be signed integer") as INPUT_TYPE;
             let file_mode = input["mode"].as_str() == Some("file");
             let config = InchiToAtomFixtureConfig {
-                do_not_add_h: input["do_not_add_h"]
-                    .as_i64()
-                    .expect("do_not_add_h must be integer") as i32,
+                do_not_add_h: input["do_not_add_h"].as_i64().expect("do_not_add_h must be integer") as i32,
                 caller_atom_capacity: input["caller_atom_capacity"]
                     .as_i64()
-                    .expect("caller_atom_capacity must be integer")
-                    as i32,
+                    .expect("caller_atom_capacity must be integer") as i32,
                 caller_stereo_capacity: input["caller_stereo_capacity"]
                     .as_i64()
-                    .expect("caller_stereo_capacity must be integer")
-                    as i32,
+                    .expect("caller_stereo_capacity must be integer") as i32,
                 allocation_failure_ordinal: input["allocation_failure_ordinal"]
                     .as_i64()
                     .expect("allocation_failure_ordinal must be integer")
@@ -6417,11 +6041,9 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
                     != 0,
                 initial_error_code: input["initial_error_code"]
                     .as_i64()
-                    .expect("initial_error_code must be integer")
-                    as i32,
+                    .expect("initial_error_code must be integer") as i32,
             };
-            let rust =
-                official_c_oracle_record(case_id, text.as_bytes(), input_type, file_mode, config);
+            let rust = official_c_oracle_record(case_id, text.as_bytes(), input_type, file_mode, config);
             assert_eq!(official, &rust, "exact field mismatch for {case_id}");
         }
     }

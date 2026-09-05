@@ -1,8 +1,7 @@
 use std::str::FromStr;
 
 use cosmolkit_core::{
-    AtomSpec, BondOrder, BondSpec, CipDescriptor, CipDescriptorError, Element, Molecule,
-    MoleculeBuilder,
+    AtomSpec, BondOrder, BondSpec, CipDescriptor, CipDescriptorError, Element, Molecule, MoleculeBuilder,
 };
 
 const DESCRIPTORS: [(CipDescriptor, &str); 10] = [
@@ -53,16 +52,10 @@ fn typed_modern_cip_descriptors_roundtrip_stable_source_spellings() {
 fn atom_and_bond_queries_return_every_supported_modern_descriptor() {
     for (descriptor, spelling) in DESCRIPTORS {
         let atom_molecule = molecule_with_atom_descriptor(Some(spelling));
-        assert_eq!(
-            atom_molecule.atoms()[0].cip_descriptor(),
-            Ok(Some(descriptor))
-        );
+        assert_eq!(atom_molecule.atoms()[0].cip_descriptor(), Ok(Some(descriptor)));
 
         let bond_molecule = molecule_with_bond_descriptor(Some(spelling));
-        assert_eq!(
-            bond_molecule.bonds()[0].cip_descriptor(),
-            Ok(Some(descriptor))
-        );
+        assert_eq!(bond_molecule.bonds()[0].cip_descriptor(), Ok(Some(descriptor)));
     }
 }
 

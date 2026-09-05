@@ -4,19 +4,15 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use cosmolkit_core::{
-    AtomId, BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo,
-    ChiralTag as OursChiralTag, Molecule, MoleculeBatch, ValenceModel, assign_valence,
-    rdkit_valence_list, symmetrize_sssr,
+    AtomId, BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule,
+    MoleculeBatch, ValenceModel, assign_valence, rdkit_valence_list, symmetrize_sssr,
 };
 use serde::{Deserialize, Deserializer};
 
 mod common;
 use common::parity_data;
 
-include!(concat!(
-    env!("OUT_DIR"),
-    "/rdkit_isotope_masses_generated.rs"
-));
+include!(concat!(env!("OUT_DIR"), "/rdkit_isotope_masses_generated.rs"));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChiralTag {
@@ -302,8 +298,8 @@ fn load_golden() -> Result<Vec<GoldenRecord>, TestDataError> {
         if line.trim().is_empty() {
             continue;
         }
-        let record = serde_json::from_str::<GoldenRecord>(&line)
-            .map_err(|source| TestDataError::Json { line_no, source })?;
+        let record =
+            serde_json::from_str::<GoldenRecord>(&line).map_err(|source| TestDataError::Json { line_no, source })?;
         rows.push(record);
     }
     Ok(rows)
@@ -641,8 +637,7 @@ fn count_atom_electrons_rdkit(
     let radicals = atom.radical_electrons() as i32;
     let mut res = (dv - degree) + nlp - radicals;
     if res > 1 {
-        let n_unsaturations =
-            assignment.explicit_valence[atom_index] as i32 - atom_degree[atom_index] as i32;
+        let n_unsaturations = assignment.explicit_valence[atom_index] as i32 - atom_degree[atom_index] as i32;
         if n_unsaturations > 1 {
             res = 1;
         }
@@ -662,19 +657,16 @@ fn is_atom_conjug_cand(
         && !vals.is_empty()
         && vals[0] >= 0
     {
-        let total_valence = assignment.explicit_valence[atom_index] as i32
-            + assignment.implicit_hydrogens[atom_index] as i32;
+        let total_valence =
+            assignment.explicit_valence[atom_index] as i32 + assignment.implicit_hydrogens[atom_index] as i32;
         if total_valence > vals[0] {
             return false;
         }
     }
     let nouter = rdkit_n_outer_electrons(at.atomic_number()).unwrap_or(0);
-    let total_degree = atom_degree[atom_index]
-        + at.explicit_hydrogens() as usize
-        + assignment.implicit_hydrogens[atom_index] as usize;
-    let row_ok = at.atomic_number() <= 10
-        || (nouter != 5 && nouter != 6)
-        || (nouter == 6 && total_degree < 2);
+    let total_degree =
+        atom_degree[atom_index] + at.explicit_hydrogens() as usize + assignment.implicit_hydrogens[atom_index] as usize;
+    let row_ok = at.atomic_number() <= 10 || (nouter != 5 && nouter != 6) || (nouter == 6 && total_degree < 2);
     row_ok && count_atom_electrons_rdkit(mol, assignment, atom_degree, atom_index) > 0
 }
 
@@ -798,8 +790,8 @@ fn compute_hybridization(
     }
     let norbs = if atom.atomic_number() < 89 {
         let nouter = rdkit_n_outer_electrons(atom.atomic_number()).unwrap_or(0);
-        let total_valence = assignment.explicit_valence[atom_index] as i32
-            + assignment.implicit_hydrogens[atom_index] as i32;
+        let total_valence =
+            assignment.explicit_valence[atom_index] as i32 + assignment.implicit_hydrogens[atom_index] as i32;
         let num_free = nouter - (total_valence + atom.formal_charge() as i32);
         if total_valence + nouter - (atom.formal_charge() as i32) < 8 {
             let radicals = atom.radical_electrons() as i32;
@@ -869,8 +861,7 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
         let degree = atom_degree[i] + num_hs;
         let total_valence = explicit_valence + implicit_hs;
         let _ = atom_has_multi[i];
-        let hybridization =
-            compute_hybridization(mol, &assignment, &atom_degree, &atom_has_conjugated_bond, i);
+        let hybridization = compute_hybridization(mol, &assignment, &atom_degree, &atom_has_conjugated_bond, i);
         atoms.push(OursAtomFeature {
             atomic_num: a.atomic_number(),
             isotope: a.isotope(),
@@ -901,15 +892,10 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
     (atoms, bonds)
 }
 
-fn extract_possible_stereo_features(
-    mol: &Molecule,
-) -> (Vec<OursPossibleStereoAtomFeature>, Vec<OursBondFeature>) {
+fn extract_possible_stereo_features(mol: &Molecule) -> (Vec<OursPossibleStereoAtomFeature>, Vec<OursBondFeature>) {
     let (atoms, bonds) = extract_ours_features(mol);
     let assignment = assign_valence(mol, ValenceModel::RdkitLike).unwrap_or_else(|e| {
-        panic!(
-            "assign_valence failed in possible-stereo test extraction: {:?}",
-            e
-        );
+        panic!("assign_valence failed in possible-stereo test extraction: {:?}", e);
     });
     let keep_cip_ranks = legacy_possible_stereo_presence_requires_rank_work(mol);
     let cip_ranks = if keep_cip_ranks {
@@ -950,13 +936,12 @@ fn extract_possible_stereo_features(
                     return false;
                 }
                 let tag = mol.atoms()[atom_idx].chiral_tag();
-                let assigned_this_atom = !*has_dupes
-                    && !matches!(tag, OursChiralTag::Unspecified | OursChiralTag::Other);
+                let assigned_this_atom =
+                    !*has_dupes && !matches!(tag, OursChiralTag::Unspecified | OursChiralTag::Other);
                 !assigned_this_atom
             });
     let should_rerank = assigned_stereo_atom
-        && (unassigned_stereo_atom_after_assignment
-            || legacy_assign_bond_stereo_would_leave_unassigned(mol));
+        && (unassigned_stereo_atom_after_assignment || legacy_assign_bond_stereo_would_leave_unassigned(mol));
     let cip_ranks = if should_rerank {
         // RDKit source, Chirality.cpp::findPotentialStereo():
         //   keepGoing = (hasStereoAtoms || hasStereoBonds) &&
@@ -964,12 +949,7 @@ fn extract_possible_stereo_features(
         //   if (keepGoing) {
         //     Chirality::rerankAtoms(mol, atomRanks);
         //   }
-        legacy_rdkit_cip_reranks_with_legacy_stereo_and_assignment(
-            mol,
-            &cip_ranks,
-            &cip_codes,
-            &assignment,
-        )
+        legacy_rdkit_cip_reranks_with_legacy_stereo_and_assignment(mol, &cip_ranks, &cip_codes, &assignment)
     } else {
         cip_ranks
     };
@@ -1008,11 +988,7 @@ fn extract_possible_stereo_features(
     (atoms, bonds)
 }
 
-fn atom_has_directional_bond_to_other_than(
-    mol: &Molecule,
-    atom_index: usize,
-    excluded_neighbor: usize,
-) -> bool {
+fn atom_has_directional_bond_to_other_than(mol: &Molecule, atom_index: usize, excluded_neighbor: usize) -> bool {
     mol.bonds().iter().any(|bond| {
         let other = if bond.begin().index() == atom_index {
             bond.end().index()
@@ -1068,11 +1044,8 @@ fn atom_nonzero_degree_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> u
         .iter()
         .filter(|bond| {
             (bond.begin().index() == atom_index || bond.end().index() == atom_index)
-                && !(matches!(
-                    bond.order(),
-                    BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero
-                ) || matches!(bond.order(), BondOrder::Dative)
-                    && bond.begin().index() == atom_index)
+                && !(matches!(bond.order(), BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero)
+                    || matches!(bond.order(), BondOrder::Dative) && bond.begin().index() == atom_index)
         })
         .count()
 }
@@ -1103,16 +1076,13 @@ fn bond_is_conjugated_for_legacy_stereo(mol: &Molecule, bond_index: usize) -> bo
     if !matches!(bond.order(), BondOrder::Single) {
         return false;
     }
-    [bond.begin().index(), bond.end().index()]
-        .into_iter()
-        .any(|center| {
-            mol.bonds().iter().enumerate().any(|(other_idx, other)| {
-                other_idx != bond_index
-                    && (other.begin().index() == center || other.end().index() == center)
-                    && (other.is_aromatic()
-                        || matches!(other.order(), BondOrder::Double | BondOrder::Triple))
-            })
+    [bond.begin().index(), bond.end().index()].into_iter().any(|center| {
+        mol.bonds().iter().enumerate().any(|(other_idx, other)| {
+            other_idx != bond_index
+                && (other.begin().index() == center || other.end().index() == center)
+                && (other.is_aromatic() || matches!(other.order(), BondOrder::Double | BondOrder::Triple))
         })
+    })
 }
 
 fn atom_has_conjugated_bond_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> bool {
@@ -1140,13 +1110,7 @@ fn legacy_rdkit_hybridization_for_stereo(
             atom_has_conjugated_bond[bond.end().index()] = true;
         }
     }
-    compute_hybridization(
-        mol,
-        assignment,
-        &atom_degree,
-        &atom_has_conjugated_bond,
-        atom_index,
-    )
+    compute_hybridization(mol, assignment, &atom_degree, &atom_has_conjugated_bond, atom_index)
 }
 
 fn is_atom_bridgehead_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> bool {
@@ -1200,10 +1164,7 @@ fn is_atom_bridgehead_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> bo
     }
 
     let atom_rings = ring_info.atom_members(AtomId::new(atom_index));
-    let atom_ring_set = atom_rings
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+    let atom_ring_set = atom_rings.iter().copied().collect::<std::collections::HashSet<_>>();
     let mut rings_overlap = vec![false; ring_info.bond_rings().len()];
     for ring_i in 0..ring_info.bond_rings().len() {
         if !atom_ring_set.contains(&ring_i) {
@@ -1254,17 +1215,13 @@ fn legacy_is_atom_potential_chiral_center(
 ) -> (bool, bool, Vec<(u32, usize)>) {
     let atom = &mol.atoms()[atom_index];
     let nz_degree = atom_nonzero_degree_for_legacy_stereo(mol, atom_index);
-    let total_num_hs = atom.explicit_hydrogens() as usize
-        + assignment.implicit_hydrogens[atom_index].max(0) as usize;
+    let total_num_hs = atom.explicit_hydrogens() as usize + assignment.implicit_hydrogens[atom_index].max(0) as usize;
     let tnz_degree = nz_degree + total_num_hs;
     let mut legal_center = true;
     let mut has_dupes = false;
     let mut nbrs = Vec::new();
 
-    if tnz_degree > 4
-        || tnz_degree < 3
-        || (nz_degree < 3 && !matches!(atom.atomic_number(), 15 | 33))
-    {
+    if tnz_degree > 4 || tnz_degree < 3 || (nz_degree < 3 && !matches!(atom.atomic_number(), 15 | 33)) {
         legal_center = false;
     } else if nz_degree == 3 {
         if total_num_hs == 1 {
@@ -1279,8 +1236,7 @@ fn legacy_is_atom_potential_chiral_center(
                         (bond.begin().index() == atom_index || bond.end().index() == atom_index)
                             && min_cycle_size_for_bond(mol, bond_index) == Some(3)
                     });
-                    if legacy_rdkit_hybridization_for_stereo(mol, assignment, atom_index)
-                        == Hybridization::Sp3
+                    if legacy_rdkit_hybridization_for_stereo(mol, assignment, atom_index) == Hybridization::Sp3
                         && !atom_has_conjugated_bond_for_legacy_stereo(mol, atom_index)
                         && (in_three_ring || is_atom_bridgehead_for_legacy_stereo(mol, atom_index))
                     {
@@ -1315,11 +1271,8 @@ fn legacy_is_atom_potential_chiral_center(
                 continue;
             };
             nbrs.push((ranks[other_idx] as u32, bond.id().index()));
-            if !(matches!(
-                bond.order(),
-                BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero
-            ) || matches!(bond.order(), BondOrder::Dative)
-                && bond.begin().index() == atom_index)
+            if !(matches!(bond.order(), BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero)
+                || matches!(bond.order(), BondOrder::Dative) && bond.begin().index() == atom_index)
                 && seen_ranks.insert(ranks[other_idx], ()).is_some()
             {
                 has_dupes = true;
@@ -1356,10 +1309,7 @@ fn legacy_rdkit_twice_bond_type(order: BondOrder) -> i64 {
         | BondOrder::Other
         | BondOrder::Zero
         | BondOrder::Unspecified => {
-            panic!(
-                "legacy RDKit depict CIP ranks do not support bond order {:?}",
-                order
-            )
+            panic!("legacy RDKit depict CIP ranks do not support bond order {:?}", order)
         }
     }
 }
@@ -1383,8 +1333,7 @@ fn legacy_rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
             let mut invariant = i64::from(atom.atomic_number() % 128);
             let mut mass = 0i64;
             if let Some(isotope) = atom.isotope() {
-                mass = i64::from(isotope)
-                    - legacy_most_common_isotope(atom.atomic_number()).unwrap_or(0);
+                mass = i64::from(isotope) - legacy_most_common_isotope(atom.atomic_number()).unwrap_or(0);
                 if mass >= 0 {
                     mass += 1;
                 }
@@ -1396,19 +1345,13 @@ fn legacy_rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
                 mass %= MAX_MASS;
             }
             invariant = (invariant << MASS_BITS) | mass;
-            let mapnum = atom
-                .atom_map()
-                .map(|m| ((m as i64) + 1) % 1024)
-                .unwrap_or(0);
+            let mapnum = atom.atom_map().map(|m| ((m as i64) + 1) % 1024).unwrap_or(0);
             (invariant << 10) | mapnum
         })
         .collect()
 }
 
-fn legacy_find_cip_segments(
-    sorted: &mut [(usize, i64)],
-    cip_entries: &[Vec<i64>],
-) -> (Vec<(usize, usize)>, usize) {
+fn legacy_find_cip_segments(sorted: &mut [(usize, i64)], cip_entries: &[Vec<i64>]) -> (Vec<(usize, usize)>, usize) {
     let mut segments = Vec::new();
     if sorted.is_empty() {
         return (segments, 0);
@@ -1526,9 +1469,7 @@ fn legacy_cip_code_for_atom(
                 } else {
                     None
                 };
-                other
-                    .map(|idx| mol.atoms()[idx].atomic_number() == 1)
-                    .unwrap_or(false)
+                other.map(|idx| mol.atoms()[idx].atomic_number() == 1).unwrap_or(false)
             })
             .count();
     if probe.len() == 3 && total_num_hs == 1 {
@@ -1564,10 +1505,7 @@ fn legacy_rdkit_cip_ranks_from_invariants_with_assignment(
 ) -> Vec<i64> {
     let n = mol.atoms().len();
     let coordinated_h_counts = (0..n)
-        .map(|index| {
-            mol.atoms()[index].explicit_hydrogens() as usize
-                + assignment.implicit_hydrogens[index] as usize
-        })
+        .map(|index| mol.atoms()[index].explicit_hydrogens() as usize + assignment.implicit_hydrogens[index] as usize)
         .collect::<Vec<_>>();
     let mut cip_entries: Vec<Vec<i64>> = invars
         .iter()
@@ -1645,10 +1583,7 @@ fn legacy_rdkit_cip_ranks_from_invariants_with_assignment(
     let mut num_its = 0usize;
     let mut last_num_ranks: Option<usize> = None;
 
-    while !needs_sorting.is_empty()
-        && num_its < max_its
-        && last_num_ranks.is_none_or(|last| last < num_ranks)
-    {
+    while !needs_sorting.is_empty() && num_its < max_its && last_num_ranks.is_none_or(|last| last < num_ranks) {
         for index in 0..n {
             let index_offset = K_MAX_BONDS * index;
             // RDKit source, Chirality.cpp::iterateCIPRanks:
@@ -1659,8 +1594,7 @@ fn legacy_rdkit_cip_ranks_from_invariants_with_assignment(
             // The trailing zero-count sentinel participates in sorting and iteration.
             let feature_len = (num_neighbors[index] + 1).min(K_MAX_BONDS);
             if num_neighbors[index] > 1 {
-                bond_features[index_offset..index_offset + feature_len]
-                    .sort_by(|a, b| ranks[b.1].cmp(&ranks[a.1]));
+                bond_features[index_offset..index_offset + feature_len].sort_by(|a, b| ranks[b.1].cmp(&ranks[a.1]));
             }
             for &(count, nbr_idx) in &bond_features[index_offset..index_offset + feature_len] {
                 for _ in 0..count {
@@ -1696,12 +1630,7 @@ fn legacy_rdkit_cip_ranks_for_depict_with_assignment(
     mol: &Molecule,
     assignment: &cosmolkit_core::ValenceAssignment,
 ) -> Vec<i64> {
-    legacy_rdkit_cip_ranks_from_invariants_with_assignment(
-        mol,
-        legacy_rdkit_cip_invariants(mol),
-        false,
-        assignment,
-    )
+    legacy_rdkit_cip_ranks_from_invariants_with_assignment(mol, legacy_rdkit_cip_invariants(mol), false, assignment)
 }
 
 fn existing_cip_rank_props(mol: &Molecule) -> Option<Vec<i64>> {
@@ -1783,18 +1712,17 @@ fn legacy_assign_bond_stereo_would_leave_unassigned(mol: &Molecule) -> bool {
 
 fn legacy_possible_stereo_presence_requires_rank_work(mol: &Molecule) -> bool {
     let assignment = assign_valence(mol, ValenceModel::RdkitLike).unwrap_or_else(|e| {
-        panic!(
-            "assign_valence failed in possible-stereo presence scan: {:?}",
-            e
-        );
+        panic!("assign_valence failed in possible-stereo presence scan: {:?}", e);
     });
     let has_stereo_atoms = mol
         .atoms()
         .iter()
         .any(|atom| !matches!(atom.chiral_tag(), OursChiralTag::Unspecified));
-    let has_potential_stereo_atoms = mol.atoms().iter().enumerate().any(|(atom_idx, _)| {
-        legacy_is_atom_potential_chiral_center(mol, &assignment, atom_idx, &[]).0
-    });
+    let has_potential_stereo_atoms = mol
+        .atoms()
+        .iter()
+        .enumerate()
+        .any(|(atom_idx, _)| legacy_is_atom_potential_chiral_center(mol, &assignment, atom_idx, &[]).0);
 
     let mut has_stereo_bonds = false;
     let mut has_potential_stereo_bonds = false;
@@ -1809,8 +1737,7 @@ fn legacy_possible_stereo_presence_requires_rank_work(mol: &Molecule) -> bool {
         if is_specified {
             has_stereo_bonds = true;
         } else if !has_potential_stereo_bonds
-            && cosmolkit_core::stereo::should_detect_double_bond_stereo(mol, bond.id())
-                .unwrap_or(false)
+            && cosmolkit_core::stereo::should_detect_double_bond_stereo(mol, bond.id()).unwrap_or(false)
         {
             has_potential_stereo_bonds = true;
         }
@@ -1924,23 +1851,15 @@ fn compare_features(
         }
         b
     };
-    let mut ours_bonds_sorted: Vec<OursBondFeature> =
-        ours_bonds.iter().cloned().map(normalize).collect();
+    let mut ours_bonds_sorted: Vec<OursBondFeature> = ours_bonds.iter().cloned().map(normalize).collect();
     ours_bonds_sorted.sort_by(|l, r| {
-        (
-            l.begin_atom,
-            l.end_atom,
-            &l.bond_type,
-            &l.stereo,
-            l.is_conjugated,
-        )
-            .cmp(&(
-                r.begin_atom,
-                r.end_atom,
-                &r.bond_type,
-                &r.stereo,
-                r.is_conjugated,
-            ))
+        (l.begin_atom, l.end_atom, &l.bond_type, &l.stereo, l.is_conjugated).cmp(&(
+            r.begin_atom,
+            r.end_atom,
+            &r.bond_type,
+            &r.stereo,
+            r.is_conjugated,
+        ))
     });
     let mut expected_bonds_sorted: Vec<OursBondFeature> = expected
         .bond_features
@@ -1955,20 +1874,13 @@ fn compare_features(
         .map(normalize)
         .collect();
     expected_bonds_sorted.sort_by(|l, r| {
-        (
-            l.begin_atom,
-            l.end_atom,
-            &l.bond_type,
-            &l.stereo,
-            l.is_conjugated,
-        )
-            .cmp(&(
-                r.begin_atom,
-                r.end_atom,
-                &r.bond_type,
-                &r.stereo,
-                r.is_conjugated,
-            ))
+        (l.begin_atom, l.end_atom, &l.bond_type, &l.stereo, l.is_conjugated).cmp(&(
+            r.begin_atom,
+            r.end_atom,
+            &r.bond_type,
+            &r.stereo,
+            r.is_conjugated,
+        ))
     });
 
     for i in 0..ours_bonds_sorted.len() {
@@ -2011,20 +1923,9 @@ fn compare_possible_stereo_features(
     smiles: &str,
 ) {
     let base_atoms: Vec<OursAtomFeature> = ours_atoms.iter().map(|a| a.base.clone()).collect();
-    compare_features(
-        &base_atoms,
-        ours_bonds,
-        expected,
-        row_idx,
-        smiles,
-        "possible_stereo",
-    );
+    compare_features(&base_atoms, ours_bonds, expected, row_idx, smiles, "possible_stereo");
 
-    for (i, (a, e)) in ours_atoms
-        .iter()
-        .zip(expected.atom_features.iter())
-        .enumerate()
-    {
+    for (i, (a, e)) in ours_atoms.iter().zip(expected.atom_features.iter()).enumerate() {
         assert_eq!(
             a.cip_code, e.cip_code,
             "cip_code mismatch row {} atom {} ({}) [possible_stereo]",
@@ -2047,19 +1948,10 @@ fn compare_possible_stereo_features(
 fn graph_feature_golden_has_one_record_per_smiles() {
     let smiles = load_smiles().expect("should read active parity smiles corpus");
     let golden = load_golden().expect("should read active graph feature golden");
-    assert_eq!(
-        golden.len(),
-        smiles.len(),
-        "golden rows must match input smiles rows"
-    );
+    assert_eq!(golden.len(), smiles.len(), "golden rows must match input smiles rows");
 
     for (idx, (record, raw_smiles)) in golden.iter().zip(smiles.iter()).enumerate() {
-        assert_eq!(
-            record.smiles,
-            *raw_smiles,
-            "smiles mismatch at row {}",
-            idx + 1
-        );
+        assert_eq!(record.smiles, *raw_smiles, "smiles mismatch at row {}", idx + 1);
 
         if record.rdkit_ok {
             assert!(
@@ -2188,10 +2080,7 @@ fn graph_feature_golden_records_isotopes_from_smiles() {
         isotopes.contains(&13),
         "SMILES corpus should include a carbon-13 isotope"
     );
-    assert!(
-        isotopes.contains(&2),
-        "SMILES corpus should include deuterium"
-    );
+    assert!(isotopes.contains(&2), "SMILES corpus should include deuterium");
 }
 
 #[test]
@@ -2216,10 +2105,7 @@ fn graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms() {
             }
             if let Some(code) = &atom.cip_code {
                 assert!(
-                    matches!(
-                        code,
-                        CipCode::R | CipCode::S | CipCode::LowerR | CipCode::LowerS
-                    ),
+                    matches!(code, CipCode::R | CipCode::S | CipCode::LowerR | CipCode::LowerS),
                     "RDKit _CIPCode must be a known CIP label at row {} atom {} ({})",
                     idx + 1,
                     atom_idx,
@@ -2271,14 +2157,9 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules(
                 );
 
                 let with_h_expected = record.with_hs.as_ref().expect("with_hs missing");
-                let mol_with_h = mol_direct.with_hydrogens().unwrap_or_else(|e| {
-                    panic!(
-                        "add_hydrogens failed at row {} ({}): {:?}",
-                        idx + 1,
-                        record.smiles,
-                        e
-                    )
-                });
+                let mol_with_h = mol_direct
+                    .with_hydrogens()
+                    .unwrap_or_else(|e| panic!("add_hydrogens failed at row {} ({}): {:?}", idx + 1, record.smiles, e));
                 let (ours_atoms_h, ours_bonds_h) = extract_ours_features(&mol_with_h);
                 compare_features(
                     &ours_atoms_h,
@@ -2336,19 +2217,10 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules(
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {
-                panic!(
-                    "unexpected parse error at row {} ({}): {}",
-                    idx + 1,
-                    record.smiles,
-                    err
-                );
+                panic!("unexpected parse error at row {} ({}): {}", idx + 1, record.smiles, err);
             }
             (false, Ok(_)) => {
-                panic!(
-                    "expected parse failure at row {} ({})",
-                    idx + 1,
-                    record.smiles
-                );
+                panic!("expected parse failure at row {} ({})", idx + 1, record.smiles);
             }
         }
     }
@@ -2362,14 +2234,9 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
         let ours = Molecule::from_smiles(&record.smiles);
         match (record.rdkit_ok, ours) {
             (true, Ok(mol)) => {
-                let mol = mol.with_hydrogens().unwrap_or_else(|e| {
-                    panic!(
-                        "add_hydrogens failed at row {} ({}): {:?}",
-                        idx + 1,
-                        record.smiles,
-                        e
-                    )
-                });
+                let mol = mol
+                    .with_hydrogens()
+                    .unwrap_or_else(|e| panic!("add_hydrogens failed at row {} ({}): {:?}", idx + 1, record.smiles, e));
                 let mol = mol.without_hydrogens().unwrap_or_else(|e| {
                     panic!(
                         "remove_hydrogens failed at row {} ({}): {:?}",
@@ -2379,10 +2246,7 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
                     )
                 });
 
-                let expected = record
-                    .addhs_removehs
-                    .as_ref()
-                    .expect("addhs_removehs missing");
+                let expected = record.addhs_removehs.as_ref().expect("addhs_removehs missing");
                 let (ours_atoms, ours_bonds) = extract_ours_features(&mol);
                 compare_features(
                     &ours_atoms,
@@ -2421,19 +2285,10 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {
-                panic!(
-                    "unexpected parse error at row {} ({}): {}",
-                    idx + 1,
-                    record.smiles,
-                    err
-                );
+                panic!("unexpected parse error at row {} ({}): {}", idx + 1, record.smiles, err);
             }
             (false, Ok(_)) => {
-                panic!(
-                    "expected parse failure at row {} ({})",
-                    idx + 1,
-                    record.smiles
-                );
+                panic!("expected parse failure at row {} ({})", idx + 1, record.smiles);
             }
         }
     }
@@ -2447,18 +2302,9 @@ fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
         let ours = Molecule::from_smiles(&record.smiles);
         match (record.rdkit_ok, ours) {
             (true, Ok(mol)) => {
-                let expected = record
-                    .possible_stereo
-                    .as_ref()
-                    .expect("possible_stereo missing");
+                let expected = record.possible_stereo.as_ref().expect("possible_stereo missing");
                 let (ours_atoms, ours_bonds) = extract_possible_stereo_features(&mol);
-                compare_possible_stereo_features(
-                    &ours_atoms,
-                    &ours_bonds,
-                    expected,
-                    idx + 1,
-                    &record.smiles,
-                );
+                compare_possible_stereo_features(&ours_atoms, &ours_bonds, expected, idx + 1, &record.smiles);
 
                 let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
                 let batch = MoleculeBatch::from_smiles_list(&batch_smiles);
@@ -2483,42 +2329,26 @@ fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {
-                panic!(
-                    "unexpected parse error at row {} ({}): {}",
-                    idx + 1,
-                    record.smiles,
-                    err
-                );
+                panic!("unexpected parse error at row {} ({}): {}", idx + 1, record.smiles, err);
             }
             (false, Ok(_)) => {
-                panic!(
-                    "expected parse failure at row {} ({})",
-                    idx + 1,
-                    record.smiles
-                );
+                panic!("expected parse failure at row {} ({})", idx + 1, record.smiles);
             }
         }
     }
 }
 
 #[test]
-fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_in_parallel_batch()
-{
+fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_in_parallel_batch() {
     let golden = load_golden().expect("should read generated graph_features.jsonl");
-    let smiles = golden
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = golden.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let batch_with_h = batch
         .with_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
         .expect("parallel batch add_hydrogens should keep row errors");
 
-    for (idx, ((record, batch_record), batch_with_h_record)) in golden
-        .iter()
-        .zip(batch.iter())
-        .zip(batch_with_h.iter())
-        .enumerate()
+    for (idx, ((record, batch_record), batch_with_h_record)) in
+        golden.iter().zip(batch.iter()).zip(batch_with_h.iter()).enumerate()
     {
         match (record.rdkit_ok, batch_record) {
             (true, BatchRecord::Molecule(batch_mol)) => {
@@ -2574,10 +2404,7 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_
 #[test]
 fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_parallel_batch() {
     let golden = load_golden().expect("should read generated graph_features.jsonl");
-    let smiles = golden
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = golden.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles)
         .with_parallel_jobs(Some(4))
         .with_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
@@ -2588,10 +2415,7 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_para
     for (idx, (record, batch_record)) in golden.iter().zip(batch.iter()).enumerate() {
         match (record.rdkit_ok, batch_record) {
             (true, BatchRecord::Molecule(batch_mol)) => {
-                let expected = record
-                    .addhs_removehs
-                    .as_ref()
-                    .expect("addhs_removehs missing");
+                let expected = record.addhs_removehs.as_ref().expect("addhs_removehs missing");
                 let (batch_atoms, batch_bonds) = extract_ours_features(&batch_mol);
                 compare_features(
                     &batch_atoms,
@@ -2625,27 +2449,15 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_para
 #[test]
 fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch_in_parallel_batch() {
     let golden = load_golden().expect("should read generated graph_features.jsonl");
-    let smiles = golden
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = golden.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
 
     for (idx, (record, batch_record)) in golden.iter().zip(batch.iter()).enumerate() {
         match (record.rdkit_ok, batch_record) {
             (true, BatchRecord::Molecule(batch_mol)) => {
-                let expected = record
-                    .possible_stereo
-                    .as_ref()
-                    .expect("possible_stereo missing");
+                let expected = record.possible_stereo.as_ref().expect("possible_stereo missing");
                 let (batch_atoms, batch_bonds) = extract_possible_stereo_features(batch_mol);
-                compare_possible_stereo_features(
-                    &batch_atoms,
-                    &batch_bonds,
-                    expected,
-                    idx + 1,
-                    &record.smiles,
-                );
+                compare_possible_stereo_features(&batch_atoms, &batch_bonds, expected, idx + 1, &record.smiles);
             }
             (false, BatchRecord::Error(_)) => {}
             (true, BatchRecord::Error(err)) => {

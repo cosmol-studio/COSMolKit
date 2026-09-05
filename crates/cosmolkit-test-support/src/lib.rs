@@ -72,8 +72,7 @@ type ValidationResult = Result<(), String>;
 type ValidationCell = Arc<OnceLock<ValidationResult>>;
 
 static OUTPUT_VALIDATIONS: OnceLock<Mutex<HashMap<PathBuf, ValidationCell>>> = OnceLock::new();
-static FILE_CHECKSUMS: OnceLock<Mutex<HashMap<PathBuf, Arc<OnceLock<Result<String, String>>>>>> =
-    OnceLock::new();
+static FILE_CHECKSUMS: OnceLock<Mutex<HashMap<PathBuf, Arc<OnceLock<Result<String, String>>>>>> = OnceLock::new();
 #[cfg(test)]
 static OUTPUT_SCAN_COUNTS: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
 
@@ -85,9 +84,7 @@ pub fn profile_name() -> String {
     match std::env::var("COSMOLKIT_PARITY_PROFILE").as_deref() {
         Ok("small" | "smiles_small") | Err(_) => "smiles_small".to_string(),
         Ok("strict" | "5000" | "smiles_5000") => "smiles_5000".to_string(),
-        Ok(other) => panic!(
-            "unknown COSMOLKIT_PARITY_PROFILE '{other}'; expected smiles_small or smiles_5000"
-        ),
+        Ok(other) => panic!("unknown COSMOLKIT_PARITY_PROFILE '{other}'; expected smiles_small or smiles_5000"),
     }
 }
 
@@ -97,12 +94,8 @@ pub fn smiles_path() -> PathBuf {
     }
     match profile_name().as_str() {
         "small" | "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
-        "strict" | "5000" | "smiles_5000" => {
-            repo_root().join("testdata/smiles/corpus/smiles_5000.smi")
-        }
-        other => panic!(
-            "unknown COSMOLKIT_PARITY_PROFILE '{other}'; expected smiles_small or smiles_5000"
-        ),
+        "strict" | "5000" | "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
+        other => panic!("unknown COSMOLKIT_PARITY_PROFILE '{other}'; expected smiles_small or smiles_5000"),
     }
 }
 
@@ -119,9 +112,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
     match file_name {
         "molalign.jsonl" => "alignment",
         "inchi.jsonl" => "inchi",
-        "molblock_v2000_kekulized.jsonl"
-        | "molblock_v2000_minimal.jsonl"
-        | "molfile_read.jsonl" => "molblock",
+        "molblock_v2000_kekulized.jsonl" | "molblock_v2000_minimal.jsonl" | "molfile_read.jsonl" => "molblock",
         "sdf_read.jsonl" | "sdf_write.jsonl" => "sdf",
         "morgan_fingerprint.jsonl"
         | "atom_pair_fingerprint.jsonl"
@@ -131,9 +122,9 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         | "layered_fingerprint.jsonl"
         | "topological_torsion_fingerprint.jsonl"
         | "avalon_fingerprint.jsonl" => "fingerprint",
-        "conformer_generation.jsonl"
-        | "conformer_generation_library.jsonl"
-        | "confseq_embed_template.jsonl" => "conformer",
+        "conformer_generation.jsonl" | "conformer_generation_library.jsonl" | "confseq_embed_template.jsonl" => {
+            "conformer"
+        }
         "forcefield_params.jsonl" | "mmff_builtin.jsonl" => "forcefield",
         "forcefield_coverage.jsonl" => "forcefield_coverage",
         "smiles_writer.jsonl" | "isomeric_smiles.jsonl" => "smiles",
@@ -150,9 +141,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "delete_substructs.jsonl" | "delete_substructs_onlyfrags_chirality.jsonl" => "substructure",
         "smarts.jsonl" => "smarts",
         "rdkit_builtin_fixture_migration.jsonl" => "rdkit_builtin",
-        other => panic!(
-            "unknown RDKit expected output '{other}'; add an explicit domain mapping before use"
-        ),
+        other => panic!("unknown RDKit expected output '{other}'; add an explicit domain mapping before use"),
     }
 }
 
@@ -164,26 +153,19 @@ pub fn expected_path(domain: &str, reference: &str, file_name: &str) -> PathBuf 
     expected_path_for_profile(domain, reference, &profile_name(), file_name)
 }
 
-pub fn expected_path_for_profile(
-    domain: &str,
-    reference: &str,
-    profile: &str,
-    file_name: &str,
-) -> PathBuf {
+pub fn expected_path_for_profile(domain: &str, reference: &str, profile: &str, file_name: &str) -> PathBuf {
     let family_dir = repo_root()
         .join("testdata")
         .join(domain)
         .join("expected")
         .join(reference)
         .join(profile);
-    validate_expected_output_cached(&family_dir, domain, reference, file_name).unwrap_or_else(
-        |error| {
-            panic!(
-                "invalid {reference} {domain} expected data: {error}; prepare it with `{}`",
-                prepare_command(reference, domain, profile)
-            )
-        },
-    );
+    validate_expected_output_cached(&family_dir, domain, reference, file_name).unwrap_or_else(|error| {
+        panic!(
+            "invalid {reference} {domain} expected data: {error}; prepare it with `{}`",
+            prepare_command(reference, domain, profile)
+        )
+    });
     family_dir.join(file_name)
 }
 
@@ -206,9 +188,9 @@ fn prepare_command(reference: &str, domain: &str, profile: &str) -> String {
         "gemmi" => format!(
             ".venv/bin/python tools/testdata/gemmi/generate_all.py --profile {profile} --suite mmcif_writer --jobs 4"
         ),
-        other => format!(
-            ".venv/bin/python tools/testdata/{other}/generate_all.py --profile {profile} --suite {domain}"
-        ),
+        other => {
+            format!(".venv/bin/python tools/testdata/{other}/generate_all.py --profile {profile} --suite {domain}")
+        }
     }
 }
 
@@ -227,12 +209,7 @@ pub fn validate_expected_family(
     let expected_profile = family_dir
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            format!(
-                "expected-data directory has no profile name: {}",
-                family_dir.display()
-            )
-        })?;
+        .ok_or_else(|| format!("expected-data directory has no profile name: {}", family_dir.display()))?;
     let manifest_path = family_dir.join("manifest.json");
     let manifest_bytes = std::fs::read(&manifest_path)
         .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
@@ -272,10 +249,8 @@ fn validate_expected_output_cached(
             .or_insert_with(|| Arc::new(OnceLock::new()))
             .clone()
     };
-    cell.get_or_init(|| {
-        validate_expected_output(family_dir, expected_domain, expected_reference, file_name)
-    })
-    .clone()
+    cell.get_or_init(|| validate_expected_output(family_dir, expected_domain, expected_reference, file_name))
+        .clone()
 }
 
 fn validate_expected_output(
@@ -287,12 +262,7 @@ fn validate_expected_output(
     let expected_profile = family_dir
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            format!(
-                "expected-data directory has no profile name: {}",
-                family_dir.display()
-            )
-        })?;
+        .ok_or_else(|| format!("expected-data directory has no profile name: {}", family_dir.display()))?;
     let manifest_path = family_dir.join("manifest.json");
     let manifest_bytes = std::fs::read(&manifest_path)
         .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
@@ -366,45 +336,31 @@ fn validate_manifest_identity(
 }
 
 fn reference_identity(reference: &str) -> Result<ReferenceIdentity, String> {
-    let path = repo_root()
-        .join("testdata/reference")
-        .join(format!("{reference}.json"));
-    let bytes = std::fs::read(&path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("failed to parse {}: {error}", path.display()))
+    let path = repo_root().join("testdata/reference").join(format!("{reference}.json"));
+    let bytes = std::fs::read(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("failed to parse {}: {error}", path.display()))
 }
 
 fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Result<(), String> {
     let current_path = match expected_profile {
         "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
         profile if profile == profile_name() => smiles_path(),
-        "atom_pair_focused" => repo_root()
-            .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
-        "descriptors_focused" => repo_root()
-            .join("testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi"),
-        "layered_focused" => {
-            repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi")
+        "atom_pair_focused" => {
+            repo_root().join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi")
         }
-        "pattern_focused" => {
-            repo_root().join("testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi")
+        "descriptors_focused" => {
+            repo_root().join("testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi")
         }
+        "layered_focused" => repo_root().join("testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi"),
+        "pattern_focused" => repo_root().join("testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi"),
         "molalign_focused" => repo_root().join("testdata/alignment/fixtures/molalign_focused.json"),
-        "ciplabeler_focused" => {
-            repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
-        }
+        "ciplabeler_focused" => repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json"),
         "python_stereoisomer_focused" => {
             repo_root().join("testdata/stereo/fixtures/rdkit_python_stereoisomer_cases.json")
         }
-        "tautomer_focused" => {
-            repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json")
-        }
-        "tautomer_pcs_1k" => {
-            repo_root().join("testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz")
-        }
-        "tautomer_pcs_100k" => {
-            repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz")
-        }
+        "tautomer_focused" => repo_root().join("testdata/tautomer/fixtures/rdkit/tautomer_focused_cases.json"),
+        "tautomer_pcs_1k" => repo_root().join("testdata/tautomer/corpus/rdkit/1kPCS_tautomer.csv.gz"),
+        "tautomer_pcs_100k" => repo_root().join("testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz"),
         "python_stereoisomer_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
         "python_stereoisomer_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
         "smarts_source" => repo_root().join("testdata/smarts/corpus/rdkit_source_cases.json"),
@@ -457,10 +413,7 @@ fn validate_output_identity(
         .iter()
         .any(|input| input.path == primary_input.path && input.sha256 == primary_input.sha256)
     {
-        return Err(format!(
-            "{} does not include the active corpus identity",
-            output.path
-        ));
+        return Err(format!("{} does not include the active corpus identity", output.path));
     }
     let expected_argument_prefix = [
         "--input".to_string(),
@@ -578,10 +531,7 @@ fn verify_checksum_cached(path: &Path, expected: &str) -> Result<(), String> {
     };
     let actual = cell.get_or_init(|| sha256_file(path)).clone()?;
     if actual != expected {
-        return Err(format!(
-            "{} checksum is {actual}, expected {expected}",
-            path.display()
-        ));
+        return Err(format!("{} checksum is {actual}, expected {expected}", path.display()));
     }
     Ok(())
 }
@@ -597,8 +547,7 @@ fn lowercase_hex(bytes: &[u8]) -> String {
 }
 
 fn checksum_and_data_rows(path: &Path) -> Result<(String, usize), String> {
-    let file =
-        File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+    let file = File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
     let mut reader = BufReader::new(file);
     let mut digest = Sha256::new();
     let mut records = 0;
@@ -612,10 +561,7 @@ fn checksum_and_data_rows(path: &Path) -> Result<(String, usize), String> {
             break;
         }
         digest.update(&line);
-        let first_content = line
-            .iter()
-            .copied()
-            .find(|byte| !byte.is_ascii_whitespace());
+        let first_content = line.iter().copied().find(|byte| !byte.is_ascii_whitespace());
         if first_content.is_some_and(|byte| byte != b'#') {
             records += 1;
         }
@@ -624,8 +570,7 @@ fn checksum_and_data_rows(path: &Path) -> Result<(String, usize), String> {
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file =
-        File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+    let mut file = File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -641,8 +586,7 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 }
 
 fn count_data_rows(path: &Path) -> Result<usize, String> {
-    let file =
-        File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+    let file = File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
     let mut count = 0;
     for line in BufReader::new(file).lines() {
         let line = line.map_err(|error| format!("failed to read {}: {error}", path.display()))?;
@@ -660,10 +604,7 @@ mod tests {
 
     #[test]
     fn sha256_file_uses_the_standard_lowercase_hex_representation() {
-        let path = std::env::temp_dir().join(format!(
-            "cosmolkit-test-support-sha256-{}",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("cosmolkit-test-support-sha256-{}", std::process::id()));
         std::fs::write(&path, b"abc").expect("checksum fixture should be written");
         assert_eq!(
             sha256_file(&path).expect("fixture checksum should be available"),
@@ -683,8 +624,7 @@ mod tests {
             let standard = literal
                 .parse::<f64>()
                 .expect("fixture float should parse with the standard library");
-            let json =
-                serde_json::from_str::<f64>(literal).expect("fixture float should parse as JSON");
+            let json = serde_json::from_str::<f64>(literal).expect("fixture float should parse as JSON");
 
             assert_eq!(standard.to_bits(), expected_bits, "literal {literal}");
             assert_eq!(json.to_bits(), expected_bits, "literal {literal}");
@@ -773,11 +713,9 @@ mod tests {
         let (temporary_root, family_dir) = temporary_family_dir("unrelated-output");
 
         let requested_path = family_dir.join("requested.jsonl");
-        std::fs::write(&requested_path, b"{\"case\":1}\n")
-            .expect("requested output should be written");
+        std::fs::write(&requested_path, b"{\"case\":1}\n").expect("requested output should be written");
         let unrelated_path = family_dir.join("unrelated.jsonl");
-        std::fs::write(&unrelated_path, b"{\"case\":2}\n")
-            .expect("unrelated output should be written");
+        std::fs::write(&unrelated_path, b"{\"case\":2}\n").expect("unrelated output should be written");
         let corpus = repo_root().join("testdata/smiles/corpus/smiles_small.smi");
         let mut manifest = test_manifest(
             "test_domain",
@@ -828,9 +766,8 @@ mod tests {
         )
         .expect("manifest should be written");
 
-        let error =
-            validate_expected_output(&family_dir, "test_domain", "rdkit", "requested.jsonl")
-                .expect_err("stale generator identity must be rejected");
+        let error = validate_expected_output(&family_dir, "test_domain", "rdkit", "requested.jsonl")
+            .expect_err("stale generator identity must be rejected");
         assert!(error.contains("checksum"), "unexpected error: {error}");
         std::fs::remove_dir_all(temporary_root).expect("temporary family should be removed");
     }
@@ -839,8 +776,7 @@ mod tests {
     fn cached_output_lookup_scans_requested_output_once() {
         let (temporary_root, family_dir) = temporary_family_dir("cached-output");
         let output_path = family_dir.join("requested.jsonl");
-        std::fs::write(&output_path, b"{\"case\":1}\n\n# comment\n")
-            .expect("output should be written");
+        std::fs::write(&output_path, b"{\"case\":1}\n\n# comment\n").expect("output should be written");
         let corpus = repo_root().join("testdata/smiles/corpus/smiles_small.smi");
         let manifest = test_manifest(
             "test_domain",

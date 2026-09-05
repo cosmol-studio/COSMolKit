@@ -9,8 +9,7 @@ use crate::{AtomSpec, BondOrder, BondSpec, Element, Molecule};
 fn bond_membership(molecule: &Molecule, atom_path: &[usize]) -> Vec<bool> {
     let mut membership = vec![false; molecule.num_bonds()];
     for pair in atom_path.windows(2) {
-        let bond = rdkit_fp_bond_between_atoms(molecule, pair[0], pair[1])
-            .expect("enumerated path edge must exist");
+        let bond = rdkit_fp_bond_between_atoms(molecule, pair[0], pair[1]).expect("enumerated path edge must exist");
         membership[bond] = true;
     }
     membership
@@ -54,10 +53,7 @@ fn ring_paths_allow_only_the_final_closure_and_deduplicate_by_bond_set() {
     assert_eq!(open_paths[0], vec![0, 1, 2, 3]);
     assert_eq!(closed_paths, vec![vec![0, 1, 2, 3, 0]]);
     for path in &open_paths {
-        assert_eq!(
-            path.iter().copied().collect::<BTreeSet<_>>().len(),
-            path.len()
-        );
+        assert_eq!(path.iter().copied().collect::<BTreeSet<_>>().len(), path.len());
     }
     assert_eq!(
         closed_paths[0][..closed_paths[0].len() - 1]
@@ -74,11 +70,7 @@ fn extend_paths_rejects_internal_repeats_but_accepts_a_final_ring_closure() {
     let triangle_adjacency = [0, 1, 1, 1, 0, 1, 1, 1, 0];
     let path = vec![vec![0, 1, 2]];
 
-    assert!(
-        extend_paths(&triangle_adjacency, 3, &path, 5, None)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(extend_paths(&triangle_adjacency, 3, &path, 5, None).unwrap().is_empty());
     assert_eq!(
         extend_paths(&triangle_adjacency, 3, &path, 4, None).unwrap(),
         vec![vec![0, 1, 2, 0]]
@@ -105,10 +97,11 @@ fn explicit_hydrogens_are_included_only_when_requested() {
     );
     let with_hydrogens = find_all_paths_of_length_n(&molecule, 2, false, true, -1, false).unwrap();
     assert_eq!(with_hydrogens.len(), 4);
-    assert!(with_hydrogens.iter().all(|path| {
-        path.iter()
-            .any(|atom| molecule.atoms()[*atom].atomic_number() == 1)
-    }));
+    assert!(
+        with_hydrogens
+            .iter()
+            .all(|path| { path.iter().any(|atom| molecule.atoms()[*atom].atomic_number() == 1) })
+    );
 }
 
 #[test]

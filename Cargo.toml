@@ -7,11 +7,14 @@ members = [
     "crates/cosmolkit-ringdecomposer",
     "crates/cosmolkit-test-support",
     "crates/cosmolkit",
+    "wasm",
     "crates/cosmolkit-macros",
     "python",
     "dev/tools/chembl_parity/tautomer_oracle",
 ]
 resolver = "2"
+# Alef's generated WASM crate is an ephemeral standalone package under tmp/.
+exclude = ["tmp/alef/wasm"]
 
 [workspace.package]
 edition = "2024"

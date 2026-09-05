@@ -28,26 +28,15 @@ struct CatalogRecord {
 
 fn read_jsonl<T: for<'de> Deserialize<'de>>(output: &str) -> Vec<T> {
     let path = parity_data::expected_path_for_profile("tautomer", "rdkit", PROFILE, output);
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(index, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            })
+            let line =
+                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), index + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1))
         })
         .collect()
 }
@@ -61,22 +50,14 @@ fn focused_tautomer_profiles_match_every_pinned_rdkit_observation() {
         match parse_record(&record) {
             Ok(molecule) => {
                 assert!(expected_parse, "row {} unexpectedly parsed", record.row);
-                assert_eq!(
-                    record.branches.len(),
-                    8,
-                    "row {} profile coverage",
-                    record.row
-                );
+                assert_eq!(record.branches.len(), 8, "row {} profile coverage", record.row);
                 for (name, branch) in &record.branches {
                     assert_branch(&record, name, branch, &molecule);
                 }
             }
             Err(error) => {
                 assert!(!expected_parse, "row {} parse failed: {error}", record.row);
-                assert!(
-                    record.branches.is_empty(),
-                    "failed parse must have no branches"
-                );
+                assert!(record.branches.is_empty(), "failed parse must have no branches");
             }
         }
     }
@@ -124,11 +105,7 @@ fn current_and_v1_catalogs_match_every_pinned_rdkit_transform() {
             .filter(|record| record.catalog == name)
             .collect::<Vec<_>>();
         assert_eq!(expected.len(), expected_len, "{name} golden count");
-        assert_eq!(
-            catalog.transforms().len(),
-            expected_len,
-            "{name} compiled count"
-        );
+        assert_eq!(catalog.transforms().len(), expected_len, "{name} compiled count");
         for (index, (actual, expected)) in catalog.transforms().iter().zip(expected).enumerate() {
             let context = format!(
                 "{name} transform {index} at {}:{} ({})",

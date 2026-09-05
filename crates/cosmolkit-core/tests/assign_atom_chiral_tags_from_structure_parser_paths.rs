@@ -1,6 +1,5 @@
 use cosmolkit_core::{
-    ChiralTag, Mol2ReadParams, Molecule, SdfReadParams, StructureMoleculeOptions,
-    mol_from_mol2_block_like_rdkit,
+    ChiralTag, Mol2ReadParams, Molecule, SdfReadParams, StructureMoleculeOptions, mol_from_mol2_block_like_rdkit,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,17 +180,11 @@ END
 
 #[test]
 fn cxsmiles_3d_path_uses_completed_chiral_assignment_kernel() {
-    let molecule =
-        Molecule::from_smiles_with_sanitize("C(F)(Cl)Br |(0,0,0;1,0,0;0,1,0;0,0,1)|", false)
-            .expect("3D CXSMILES parser path must succeed");
+    let molecule = Molecule::from_smiles_with_sanitize("C(F)(Cl)Br |(0,0,0;1,0,0;0,1,0;0,0,1)|", false)
+        .expect("3D CXSMILES parser path must succeed");
 
     assert_tetrahedral_parser_result(
         &molecule,
-        &[
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ],
+        &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
     );
 }

@@ -2,12 +2,11 @@ use std::thread;
 
 use cosmolkit_core::{
     Molecule, calc_chi_0, calc_chi_0n, calc_chi_0v, calc_chi_1, calc_chi_nv, calc_hall_kier_alpha,
-    calc_hall_kier_alpha_with_contributions, calc_kappa_1, calc_kappa_2, calc_kappa_3,
-    calc_labute_asa, calc_labute_asa_contributions, calc_lipinski_hba, calc_lipinski_hbd,
-    calc_mqns, calc_num_atom_stereo_centers, calc_num_bridgehead_atoms, calc_num_heteroatoms,
-    calc_num_rings, calc_num_spiro_atoms, calc_num_unspecified_atom_stereo_centers, calc_phi,
-    calc_slogp_vsa, calc_slogp_vsa_1, calc_slogp_vsa_12, calc_slogp_vsa_with_bins, calc_smr_vsa,
-    calc_smr_vsa_1, calc_smr_vsa_10, calc_smr_vsa_with_bins,
+    calc_hall_kier_alpha_with_contributions, calc_kappa_1, calc_kappa_2, calc_kappa_3, calc_labute_asa,
+    calc_labute_asa_contributions, calc_lipinski_hba, calc_lipinski_hbd, calc_mqns, calc_num_atom_stereo_centers,
+    calc_num_bridgehead_atoms, calc_num_heteroatoms, calc_num_rings, calc_num_spiro_atoms,
+    calc_num_unspecified_atom_stereo_centers, calc_phi, calc_slogp_vsa, calc_slogp_vsa_1, calc_slogp_vsa_12,
+    calc_slogp_vsa_with_bins, calc_smr_vsa, calc_smr_vsa_1, calc_smr_vsa_10, calc_smr_vsa_with_bins,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,34 +63,18 @@ fn rust_descriptor_facade_composes_vectors_contributions_clones_and_custom_bins(
     let structural_snapshot = molecule.clone();
 
     let expected = snapshot(&molecule);
-    assert_eq!(
-        calc_slogp_vsa_1(&molecule).unwrap().to_bits(),
-        expected.slogp_vsa[0]
-    );
-    assert_eq!(
-        calc_slogp_vsa_12(&molecule).unwrap().to_bits(),
-        expected.slogp_vsa[11]
-    );
-    assert_eq!(
-        calc_smr_vsa_1(&molecule).unwrap().to_bits(),
-        expected.smr_vsa[0]
-    );
-    assert_eq!(
-        calc_smr_vsa_10(&molecule).unwrap().to_bits(),
-        expected.smr_vsa[9]
-    );
+    assert_eq!(calc_slogp_vsa_1(&molecule).unwrap().to_bits(), expected.slogp_vsa[0]);
+    assert_eq!(calc_slogp_vsa_12(&molecule).unwrap().to_bits(), expected.slogp_vsa[11]);
+    assert_eq!(calc_smr_vsa_1(&molecule).unwrap().to_bits(), expected.smr_vsa[0]);
+    assert_eq!(calc_smr_vsa_10(&molecule).unwrap().to_bits(), expected.smr_vsa[9]);
 
     let custom_bins = [-0.2, 0.0, 0.25, 0.25, 0.8];
     assert_eq!(
-        calc_slogp_vsa_with_bins(&molecule, &custom_bins, true)
-            .unwrap()
-            .len(),
+        calc_slogp_vsa_with_bins(&molecule, &custom_bins, true).unwrap().len(),
         custom_bins.len() + 1
     );
     assert_eq!(
-        calc_smr_vsa_with_bins(&molecule, &custom_bins, true)
-            .unwrap()
-            .len(),
+        calc_smr_vsa_with_bins(&molecule, &custom_bins, true).unwrap().len(),
         custom_bins.len() + 1
     );
 
@@ -137,9 +120,7 @@ fn rust_descriptor_facade_is_deterministic_for_repeated_mixed_and_parallel_reads
     }
 
     thread::scope(|scope| {
-        let handles = (0..8)
-            .map(|_| scope.spawn(|| snapshot(&molecule)))
-            .collect::<Vec<_>>();
+        let handles = (0..8).map(|_| scope.spawn(|| snapshot(&molecule))).collect::<Vec<_>>();
         for handle in handles {
             assert_eq!(handle.join().unwrap(), expected);
         }

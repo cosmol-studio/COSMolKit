@@ -1,45 +1,35 @@
 use crate::source::api::inchi_dll::{
     ExtractOneStructure, input_erroneously_contains_pseudoatoms, parse_options_string,
 };
-use crate::source::api::inchi_dll_a2::{
-    CanonOneStructureINChI, NormOneStructureINChI, make_norm_atoms_from_inp_atoms,
-};
+use crate::source::api::inchi_dll_a2::{CanonOneStructureINChI, NormOneStructureINChI, make_norm_atoms_from_inp_atoms};
 use crate::source::base::ichi_io::{
     inchi_ios_close, inchi_ios_init, inchi_strbuf_close, inchi_strbuf_init, inchi_strbuf_reset,
 };
 use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichinorm::FreeInpAtomData;
-use crate::source::base::ichiparm::{
-    HelpCommandLineParms, InchiBuildMetadata, PrintInputParms, ReadCommandLineParms,
-};
+use crate::source::base::ichiparm::{HelpCommandLineParms, InchiBuildMetadata, PrintInputParms, ReadCommandLineParms};
 use crate::source::base::ichiprt1::{OrigStruct_FillOut, OrigStruct_Free};
 use crate::source::base::ichitaut::free_t_group_info;
 use crate::source::base::mol_fmt4::OrigAtData_WriteToSDfile;
 use crate::source::base::mol2atom::{FreeCompAtomData, FreeOrigAtData};
-use crate::source::base::runichi4::{
-    FreeAllINChIArrays, SortAndPrintINChI, TreatCreateINChIWarning, bIsStructChiral,
-};
+use crate::source::base::runichi4::{FreeAllINChIArrays, SortAndPrintINChI, TreatCreateINChIWarning, bIsStructChiral};
 use crate::source::base::util::{inchi_free, inchi_malloc, inchi_stricmp};
 use crate::source_types::{
-    _IS_EOF, _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_SKIP, _IS_UNKNOWN, _IS_WARNING, CANON_GLOBALS,
-    FILE, FLAG_INP_AT_CHIRAL, FLAG_NORM_CONSIDER_TAUT, FLAG_PROTON_CHARGE_CANCEL, INCHI_BAS,
-    INCHI_CLOCK, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, INCHI_MAX_NUM_ARG, INCHI_NUM,
-    INCHI_OPTION_PREFX, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_SAVEOPT,
-    INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY, INCHI_OUT_SHORT_AUX_INFO, INCHI_OUT_STDINCHI,
-    INCHI_REC, INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, INCHIGEN_CONTROL,
-    INCHIGEN_DATA, INCHIGEN_HANDLE, INP_ATOM_DATA, INPUT_PARMS, MAX_NUM_PATHS, MAX_SDF_VALUE,
+    _IS_EOF, _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_SKIP, _IS_UNKNOWN, _IS_WARNING, CANON_GLOBALS, FILE,
+    FLAG_INP_AT_CHIRAL, FLAG_NORM_CONSIDER_TAUT, FLAG_PROTON_CHARGE_CANCEL, INCHI_BAS, INCHI_CLOCK,
+    INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, INCHI_MAX_NUM_ARG, INCHI_NUM, INCHI_OPTION_PREFX,
+    INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY,
+    INCHI_OUT_SHORT_AUX_INFO, INCHI_OUT_STDINCHI, INCHI_REC, INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT,
+    INCHIGEN_CONTROL, INCHIGEN_DATA, INCHIGEN_HANDLE, INP_ATOM_DATA, INPUT_PARMS, MAX_NUM_PATHS, MAX_SDF_VALUE,
     ORIG_ATOM_DATA, ORIG_STRUCT, REQ_MODE_BASIC, REQ_MODE_CHIR_FLG_STEREO, REQ_MODE_DIFF_UU_STEREO,
-    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU,
-    REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, SAVE_OPT_15T, SAVE_OPT_FIXEDH, SAVE_OPT_KET,
-    SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU, STRUCT_DATA, SourceArgvPointer,
-    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, TAUT_NON, TAUT_NUM,
-    TAUT_YES, TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_KETO_ENOL_TAUT,
-    TG_FLAG_RECONNECT_COORD, bRELEASE_VERSION, inchi_Input, inchi_InputEx, inchi_Output,
-    tagRetValGetINCHI_inchi_Ret_EOF, tagRetValGetINCHI_inchi_Ret_ERROR,
-    tagRetValGetINCHI_inchi_Ret_FATAL, tagRetValGetINCHI_inchi_Ret_OKAY,
-    tagRetValGetINCHI_inchi_Ret_SKIP, tagRetValGetINCHI_inchi_Ret_UNKNOWN,
-    tagRetValGetINCHI_inchi_Ret_WARNING,
+    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO,
+    SAVE_OPT_15T, SAVE_OPT_FIXEDH, SAVE_OPT_KET, SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU, STRUCT_DATA,
+    SourceArgvPointer, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, TAUT_NON, TAUT_NUM, TAUT_YES,
+    TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_RECONNECT_COORD, bRELEASE_VERSION,
+    inchi_Input, inchi_InputEx, inchi_Output, tagRetValGetINCHI_inchi_Ret_EOF, tagRetValGetINCHI_inchi_Ret_ERROR,
+    tagRetValGetINCHI_inchi_Ret_FATAL, tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_SKIP,
+    tagRetValGetINCHI_inchi_Ret_UNKNOWN, tagRetValGetINCHI_inchi_Ret_WARNING,
 };
 
 fn free_inp_atom_data_array(
@@ -2563,8 +2553,7 @@ void INCHI_DECL INCHIGEN_Reset( INCHIGEN_HANDLE _HGen,
 mod tests {
     use super::*;
     use crate::source_types::{
-        INCHI_IOS_STRING, NORM_ATOMS, PINChI_Aux2, PINChI2, SourceVoid, inchi_Atom, inp_ATOM,
-        sp_ATOM,
+        INCHI_IOS_STRING, NORM_ATOMS, PINChI_Aux2, PINChI2, SourceVoid, inchi_Atom, inp_ATOM, sp_ATOM,
     };
 
     fn assert_freed<T: 'static>(heap: &SourceHeap, pointer: SourceMutPointer<T>) {
@@ -2594,11 +2583,7 @@ mod tests {
         atom
     }
 
-    fn setup_input(
-        heap: &mut SourceHeap,
-        atom: Option<inchi_Atom>,
-        options: Option<&str>,
-    ) -> inchi_Input {
+    fn setup_input(heap: &mut SourceHeap, atom: Option<inchi_Atom>, options: Option<&str>) -> inchi_Input {
         let atom = atom
             .map(|atom| heap.allocate_model_storage(vec![atom]).unwrap())
             .unwrap_or_else(SourceMutPointer::null);
@@ -2665,10 +2650,7 @@ mod tests {
         let pseudo_message = b"Pseudoatoms are not supported in current API mode\0";
         assert_eq!(
             &pseudo_data.pStrErrStruct[..pseudo_message.len()],
-            &pseudo_message
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect::<Vec<_>>()
+            &pseudo_message.iter().map(|byte| *byte as i8).collect::<Vec<_>>()
         );
         assert_eq!(pseudo_data.pStrErrStruct[pseudo_message.len()], 77);
         assert_eq!(pseudo_data.num_components, [0, 0]);
@@ -2684,8 +2666,7 @@ mod tests {
 
         let mut missing_data_heap = SourceHeap::default();
         let missing_data_handle = INCHIGEN_Create(&mut missing_data_heap).unwrap();
-        let missing_data_input =
-            setup_input(&mut missing_data_heap, Some(setup_atom(b"C\0")), None);
+        let missing_data_input = setup_input(&mut missing_data_heap, Some(setup_atom(b"C\0")), None);
         assert_eq!(
             INCHIGEN_Setup(
                 &mut missing_data_heap,
@@ -2706,11 +2687,7 @@ mod tests {
 
         let mut allocation_heap = SourceHeap::default();
         let allocation_handle = INCHIGEN_Create(&mut allocation_heap).unwrap();
-        let allocation_input = setup_input(
-            &mut allocation_heap,
-            Some(setup_atom(b"C\0")),
-            Some("-AuxNone"),
-        );
+        let allocation_input = setup_input(&mut allocation_heap, Some(setup_atom(b"C\0")), Some("-AuxNone"));
         let mut allocation_data = INCHIGEN_DATA {
             pStrErrStruct: [41; 256],
             num_components: [3, 4],
@@ -2791,10 +2768,7 @@ mod tests {
         let help_live_before_destroy = help_heap.live_source_allocation_count();
         assert!(help_live_before_destroy >= 4);
         INCHIGEN_Destroy(&mut help_heap, help_handle).unwrap();
-        assert_eq!(
-            help_heap.live_source_allocation_count(),
-            help_live_before_destroy - 2
-        );
+        assert_eq!(help_heap.live_source_allocation_count(), help_live_before_destroy - 2);
 
         let mut empty_heap = SourceHeap::default();
         let empty_handle = INCHIGEN_Create(&mut empty_heap).unwrap();
@@ -2847,10 +2821,7 @@ mod tests {
         assert_eq!(success_control.num_err, 0);
         assert_eq!(success_control.num_inp, 1);
         assert_eq!(success_control.OrigInpData.num_inp_atoms, 1);
-        assert_eq!(
-            success_data.num_components,
-            success_control.StructData.num_components
-        );
+        assert_eq!(success_data.num_components, success_control.StructData.num_components);
         assert_eq!(success_data.pStrErrStruct[0], 0);
         assert!(success_control.InpParms.bNoStructLabels != 0);
         assert!(success_control.InpParms.pSdfLabel.is_null());
@@ -2887,31 +2858,16 @@ mod tests {
                 ..INCHIGEN_DATA::default()
             };
             assert_eq!(
-                STDINCHIGEN_Setup(
-                    &mut heap,
-                    handle,
-                    Some(&mut data),
-                    Some(&input),
-                    stdout,
-                    setup_build(),
-                ),
+                STDINCHIGEN_Setup(&mut heap, handle, Some(&mut data), Some(&input), stdout, setup_build(),),
                 Ok(_IS_WARNING as i32),
                 "output={output_options} taut={taut_flags} mode={mode}"
             );
             let control = heap.slice(pointer.as_const()).unwrap()[0].clone();
-            assert_eq!(
-                control.InpParms.bINChIOutputOptions & INCHI_OUT_SAVEOPT as i32,
-                0
-            );
-            assert_ne!(
-                control.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32,
-                0
-            );
+            assert_eq!(control.InpParms.bINChIOutputOptions & INCHI_OUT_SAVEOPT as i32, 0);
+            assert_ne!(control.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32, 0);
             assert_eq!(
                 control.InpParms.bTautFlags
-                    & u64::from(
-                        TG_FLAG_RECONNECT_COORD | TG_FLAG_KETO_ENOL_TAUT | TG_FLAG_1_5_TAUT
-                    ),
+                    & u64::from(TG_FLAG_RECONNECT_COORD | TG_FLAG_KETO_ENOL_TAUT | TG_FLAG_1_5_TAUT),
                 0
             );
             assert_eq!(
@@ -2939,9 +2895,7 @@ mod tests {
         let mut unchanged_heap = SourceHeap::default();
         let unchanged_handle = INCHIGEN_Create(&mut unchanged_heap).unwrap();
         let unchanged_pointer = unchanged_handle.cast::<INCHIGEN_CONTROL>();
-        unchanged_heap.slice_mut(unchanged_pointer).unwrap()[0]
-            .InpParms
-            .nMode = ignore_unknown;
+        unchanged_heap.slice_mut(unchanged_pointer).unwrap()[0].InpParms.nMode = ignore_unknown;
         let unchanged_input = setup_input(&mut unchanged_heap, Some(setup_atom(b"Zz\0")), None);
         let mut unchanged_data = INCHIGEN_DATA::default();
         assert_eq!(
@@ -2957,10 +2911,7 @@ mod tests {
         );
         let unchanged = &unchanged_heap.slice(unchanged_pointer.as_const()).unwrap()[0];
         assert_eq!(unchanged.InpParms.nMode, ignore_unknown);
-        assert_eq!(
-            unchanged.InpParms.bINChIOutputOptions,
-            INCHI_OUT_STDINCHI as i32
-        );
+        assert_eq!(unchanged.InpParms.bINChIOutputOptions, INCHI_OUT_STDINCHI as i32);
 
         let mut missing_heap = SourceHeap::default();
         let missing_handle = INCHIGEN_Create(&mut missing_heap).unwrap();
@@ -2981,14 +2932,8 @@ mod tests {
             Err(SourceHeapError::NullPointer)
         );
         let missing = &missing_heap.slice(missing_pointer.as_const()).unwrap()[0];
-        assert_eq!(
-            missing.InpParms.bINChIOutputOptions & INCHI_OUT_SAVEOPT as i32,
-            0
-        );
-        assert_ne!(
-            missing.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32,
-            0
-        );
+        assert_eq!(missing.InpParms.bINChIOutputOptions & INCHI_OUT_SAVEOPT as i32, 0);
+        assert_ne!(missing.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32, 0);
 
         let mut success_heap = SourceHeap::default();
         let success_handle = INCHIGEN_Create(&mut success_heap).unwrap();
@@ -3009,10 +2954,7 @@ mod tests {
             .slice(success_handle.cast::<INCHIGEN_CONTROL>().as_const())
             .unwrap()[0];
         assert_eq!(success.init_passed, 1);
-        assert_ne!(
-            success.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32,
-            0
-        );
+        assert_ne!(success.InpParms.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32, 0);
     }
 
     #[test]
@@ -3020,11 +2962,7 @@ mod tests {
         let mut null_heap = SourceHeap::default();
         let mut null_data = INCHIGEN_DATA::default();
         assert_eq!(
-            STDINCHIGEN_DoNormalization(
-                &mut null_heap,
-                SourceMutPointer::null(),
-                Some(&mut null_data),
-            ),
+            STDINCHIGEN_DoNormalization(&mut null_heap, SourceMutPointer::null(), Some(&mut null_data),),
             Err(SourceHeapError::NullPointer)
         );
 
@@ -3035,9 +2973,7 @@ mod tests {
             STDINCHIGEN_DoNormalization(&mut heap, handle, Some(&mut data)),
             Ok(_IS_ERROR as i32)
         );
-        let control = &heap
-            .slice(handle.cast::<INCHIGEN_CONTROL>().as_const())
-            .unwrap()[0];
+        let control = &heap.slice(handle.cast::<INCHIGEN_CONTROL>().as_const()).unwrap()[0];
         assert_eq!(control.StructData.nStructReadError, 99);
         let message = b"InChI generator not initialized\0";
         assert_eq!(
@@ -3051,11 +2987,7 @@ mod tests {
         let mut null_heap = SourceHeap::default();
         let mut null_data = INCHIGEN_DATA::default();
         assert_eq!(
-            INCHIGEN_DoNormalization(
-                &mut null_heap,
-                SourceMutPointer::null(),
-                Some(&mut null_data),
-            ),
+            INCHIGEN_DoNormalization(&mut null_heap, SourceMutPointer::null(), Some(&mut null_data),),
             Err(SourceHeapError::NullPointer)
         );
 
@@ -3082,10 +3014,7 @@ mod tests {
         let init_message = b"InChI generator not initialized\0";
         assert_eq!(
             &uninitialized_data.pStrErrStruct[..init_message.len()],
-            &init_message
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect::<Vec<_>>()
+            &init_message.iter().map(|byte| *byte as i8).collect::<Vec<_>>()
         );
         assert_eq!(uninitialized_data.pStrErrStruct[init_message.len()], 77);
 
@@ -3099,12 +3028,8 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let base_lengths = normalization_heap
-            .allocate_model_storage(vec![1_u16])
-            .unwrap();
-        let reconnected_lengths = normalization_heap
-            .allocate_model_storage(vec![1_u16])
-            .unwrap();
+        let base_lengths = normalization_heap.allocate_model_storage(vec![1_u16]).unwrap();
+        let reconnected_lengths = normalization_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let original = ORIG_ATOM_DATA {
             at: atoms,
             num_inp_atoms: 1,
@@ -3128,8 +3053,7 @@ mod tests {
             u64::from(crate::source_types::TG_FLAG_H_ALREADY_REMOVED | TG_FLAG_RECONNECT_COORD);
         normalization_control.OrigInpData = original;
         normalization_control.PrepInpData = [prepared_base, prepared_reconnected];
-        normalization_control.StructData.bTautFlagsDone[INCHI_BAS as usize] =
-            u64::from(TG_FLAG_DISCONNECT_COORD_DONE);
+        normalization_control.StructData.bTautFlagsDone[INCHI_BAS as usize] = u64::from(TG_FLAG_DISCONNECT_COORD_DONE);
         let normalization_pointer = normalization_heap
             .allocate_model_storage(vec![normalization_control])
             .unwrap();
@@ -3143,9 +3067,7 @@ mod tests {
             ),
             Ok(0)
         );
-        let normalized = &normalization_heap
-            .slice(normalization_pointer.as_const())
-            .unwrap()[0];
+        let normalized = &normalization_heap.slice(normalization_pointer.as_const()).unwrap()[0];
         assert_eq!(normalized.norm_passed, 1);
         assert_eq!(normalization_data.num_components, [1, 1]);
         for representation in 0..INCHI_NUM as usize {
@@ -3223,25 +3145,16 @@ mod tests {
         let warning_message = b"Proton(s) added/removed; Charges neutralized\0";
         assert_eq!(
             &warning_data.pStrErrStruct[..warning_message.len()],
-            &warning_message
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect::<Vec<_>>()
+            &warning_message.iter().map(|byte| *byte as i8).collect::<Vec<_>>()
         );
         assert_eq!(warning_data.pStrErrStruct[warning_message.len()], 93);
         assert_eq!(warning_data.num_components, [2, 0]);
         assert_eq!(
-            warning_heap
-                .slice(warning_data.NormAtomsNontaut[0].as_const())
-                .unwrap()[0]
-                .num_at,
+            warning_heap.slice(warning_data.NormAtomsNontaut[0].as_const()).unwrap()[0].num_at,
             31
         );
         assert_eq!(
-            warning_heap
-                .slice(warning_data.NormAtomsTaut[0].as_const())
-                .unwrap()[1]
-                .bNormalizationFlags,
+            warning_heap.slice(warning_data.NormAtomsTaut[0].as_const()).unwrap()[1].bNormalizationFlags,
             warning_entry.bNormalizationFlags
         );
     }
@@ -3251,11 +3164,7 @@ mod tests {
         let mut null_heap = SourceHeap::default();
         let mut null_data = INCHIGEN_DATA::default();
         assert_eq!(
-            STDINCHIGEN_DoCanonicalization(
-                &mut null_heap,
-                SourceMutPointer::null(),
-                Some(&mut null_data),
-            ),
+            STDINCHIGEN_DoCanonicalization(&mut null_heap, SourceMutPointer::null(), Some(&mut null_data),),
             Err(SourceHeapError::NullPointer)
         );
 
@@ -3265,11 +3174,7 @@ mod tests {
             pStrErrStruct: [77; 256],
             ..INCHIGEN_DATA::default()
         };
-        let wrapper_result = STDINCHIGEN_DoCanonicalization(
-            &mut wrapper_heap,
-            wrapper_handle,
-            Some(&mut wrapper_data),
-        );
+        let wrapper_result = STDINCHIGEN_DoCanonicalization(&mut wrapper_heap, wrapper_handle, Some(&mut wrapper_data));
 
         let mut direct_heap = SourceHeap::default();
         let direct_handle = INCHIGEN_Create(&mut direct_heap).unwrap();
@@ -3277,8 +3182,7 @@ mod tests {
             pStrErrStruct: [77; 256],
             ..INCHIGEN_DATA::default()
         };
-        let direct_result =
-            INCHIGEN_DoCanonicalization(&mut direct_heap, direct_handle, Some(&mut direct_data));
+        let direct_result = INCHIGEN_DoCanonicalization(&mut direct_heap, direct_handle, Some(&mut direct_data));
 
         assert_eq!(wrapper_result, direct_result);
         assert_eq!(wrapper_data, direct_data);
@@ -3301,11 +3205,7 @@ mod tests {
             ..INCHIGEN_DATA::default()
         };
         assert_eq!(
-            INCHIGEN_DoCanonicalization(
-                &mut unnormalized_heap,
-                unnormalized,
-                Some(&mut unnormalized_data),
-            ),
+            INCHIGEN_DoCanonicalization(&mut unnormalized_heap, unnormalized, Some(&mut unnormalized_data),),
             Ok(tagRetValGetINCHI_inchi_Ret_ERROR)
         );
         let message = b"Got non-normalized structure\0";
@@ -3356,9 +3256,7 @@ mod tests {
         let canonicalized = &heap.slice(control_pointer.as_const()).unwrap()[0];
         assert_eq!(canonicalized.canon_passed, 1);
         assert_eq!(data.num_components, [1, 0]);
-        let row = heap
-            .slice(canonicalized.pINChI[INCHI_BAS as usize].as_const())
-            .unwrap()[0];
+        let row = heap.slice(canonicalized.pINChI[INCHI_BAS as usize].as_const()).unwrap()[0];
         let inchi = &heap.slice(row[TAUT_NON as usize].as_const()).unwrap()[0];
         assert_eq!((inchi.nErrorCode, inchi.nNumberOfAtoms), (0, 1));
         assert_eq!(heap.slice(inchi.nAtom.as_const()).unwrap(), &[6]);
@@ -3415,9 +3313,7 @@ mod tests {
         let retained_log = rejected_heap
             .allocate_model_storage(vec![b'l' as i8, b'o' as i8, b'g' as i8, 0])
             .unwrap();
-        let released_path = rejected_heap
-            .allocate_model_storage(vec![b'p' as i8, 0])
-            .unwrap();
+        let released_path = rejected_heap.allocate_model_storage(vec![b'p' as i8, 0]).unwrap();
         {
             let rejected_control = &mut rejected_heap
                 .slice_mut(rejected_handle.cast::<INCHIGEN_CONTROL>())
@@ -3432,9 +3328,7 @@ mod tests {
             num_components: [3, 4],
             ..INCHIGEN_DATA::default()
         };
-        let sentinel = rejected_heap
-            .allocate_model_storage(vec![b's' as i8, 0])
-            .unwrap();
+        let sentinel = rejected_heap.allocate_model_storage(vec![b's' as i8, 0]).unwrap();
         let mut rejected_results = inchi_Output {
             szInChI: sentinel,
             szAuxInfo: sentinel,
@@ -3467,10 +3361,7 @@ mod tests {
             .unwrap()[0];
         assert_eq!(rejected_control.StructData.nStructReadError, 99);
         assert_eq!(rejected_control.StructData.nErrorType, _IS_ERROR as i32);
-        assert_eq!(
-            rejected_control.InpParms.path[0],
-            SourceConstPointer::null()
-        );
+        assert_eq!(rejected_control.InpParms.path[0], SourceConstPointer::null());
 
         let mut heap = SourceHeap::default();
         let handle = INCHIGEN_Create(&mut heap).unwrap();
@@ -3519,14 +3410,9 @@ mod tests {
             .map(|byte| *byte as u8)
             .collect::<Vec<_>>();
         assert_eq!(inchi, b"InChI=1S/CH4/h1H4");
-        let serialized_control = &heap
-            .slice(handle.cast::<INCHIGEN_CONTROL>().as_const())
-            .unwrap()[0];
+        let serialized_control = &heap.slice(handle.cast::<INCHIGEN_CONTROL>().as_const()).unwrap()[0];
         assert!(serialized_control.inchi_file[0].s.pStr.is_null());
-        assert_eq!(
-            serialized_control.StructData.num_components,
-            data.num_components
-        );
+        assert_eq!(serialized_control.StructData.num_components, data.num_components);
     }
 
     #[test]
@@ -3541,9 +3427,7 @@ mod tests {
         let aux = null_heap.allocate_model_storage(vec![2_i8, 0]).unwrap();
         let log = null_heap.allocate_model_storage(vec![3_i8, 0]).unwrap();
         let message = null_heap.allocate_model_storage(vec![4_i8, 0]).unwrap();
-        let normalized = null_heap
-            .allocate_model_storage(vec![NORM_ATOMS::default()])
-            .unwrap();
+        let normalized = null_heap.allocate_model_storage(vec![NORM_ATOMS::default()]).unwrap();
         let mut results = inchi_Output {
             szInChI: inchi,
             szAuxInfo: aux,
@@ -3584,10 +3468,8 @@ mod tests {
         control.szTitle[0] = b'A' as i8;
         control.szTitle[1] = b'B' as i8;
 
-        let stream_buffers: [SourceMutPointer<i8>; 3] = std::array::from_fn(|index| {
-            heap.allocate_model_storage(vec![index as i8 + 1, 0])
-                .unwrap()
-        });
+        let stream_buffers: [SourceMutPointer<i8>; 3] =
+            std::array::from_fn(|index| heap.allocate_model_storage(vec![index as i8 + 1, 0]).unwrap());
         for (stream, buffer) in control.inchi_file.iter_mut().zip(stream_buffers) {
             stream.type_ = 99;
             stream.s = INCHI_IOS_STRING {
@@ -3597,9 +3479,7 @@ mod tests {
                 nPtr: 7,
             };
         }
-        let retained_buffer = heap
-            .allocate_model_storage(vec![b'x' as i8, b'y' as i8, 0])
-            .unwrap();
+        let retained_buffer = heap.allocate_model_storage(vec![b'x' as i8, b'y' as i8, 0]).unwrap();
         control.strbuf_container = INCHI_IOS_STRING {
             pStr: retained_buffer,
             nUsedLength: 2,
@@ -3612,31 +3492,23 @@ mod tests {
         control.InpParms.num_paths = 1;
         control.InpParms.nMode = u64::MAX;
 
-        let original_atom = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
+        let original_atom = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
         control.OrigInpData.at = original_atom;
         control.OrigInpData.num_inp_atoms = 1;
-        let prepared_atoms: [SourceMutPointer<inp_ATOM>; 2] = std::array::from_fn(|_| {
-            heap.allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap()
-        });
+        let prepared_atoms: [SourceMutPointer<inp_ATOM>; 2] =
+            std::array::from_fn(|_| heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap());
         for (prepared, atoms) in control.PrepInpData.iter_mut().zip(prepared_atoms) {
             prepared.at = atoms;
             prepared.num_inp_atoms = 1;
         }
-        let original_texts: [SourceMutPointer<i8>; 3] = std::array::from_fn(|index| {
-            heap.allocate_model_storage(vec![index as i8 + 40, 0])
-                .unwrap()
-        });
+        let original_texts: [SourceMutPointer<i8>; 3] =
+            std::array::from_fn(|index| heap.allocate_model_storage(vec![index as i8 + 40, 0]).unwrap());
         control.OrigStruct.szAtoms = original_texts[0];
         control.OrigStruct.szBonds = original_texts[1];
         control.OrigStruct.szCoord = original_texts[2];
         control.OrigStruct.num_atoms = 1;
 
-        let composite_atoms = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
+        let composite_atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
         let composite_offsets = heap.allocate_model_storage(vec![1_u16]).unwrap();
         control.composite_norm_data[0][0].at = composite_atoms;
         control.composite_norm_data[0][0].nOffsetAtAndH = composite_offsets;
@@ -3649,12 +3521,8 @@ mod tests {
             SourceMutPointer<inp_ATOM>,
             SourceMutPointer<inp_ATOM>,
         ) {
-            let at = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
-            let fixed = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
+            let at = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+            let fixed = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
             (
                 crate::source_types::INP_ATOM_DATA {
                     at,
@@ -3677,12 +3545,8 @@ mod tests {
         let taut = heap.allocate_model_storage(vec![taut_data]).unwrap();
         control.InpNormTautData[0] = taut;
 
-        let cti_taut = heap
-            .allocate_model_storage(vec![sp_ATOM::default()])
-            .unwrap();
-        let cti_nontaut = heap
-            .allocate_model_storage(vec![sp_ATOM::default()])
-            .unwrap();
+        let cti_taut = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let cti_nontaut = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
         let cti = heap
             .allocate_model_storage(vec![crate::source_types::COMPONENT_TREAT_INFO {
                 at: [cti_nontaut, cti_taut],
@@ -3691,15 +3555,9 @@ mod tests {
             .unwrap();
         control.cti[0] = cti;
 
-        let inchi_array = heap
-            .allocate_model_storage(vec![PINChI2::default()])
-            .unwrap();
-        let aux_array = heap
-            .allocate_model_storage(vec![PINChI_Aux2::default()])
-            .unwrap();
-        let leaked_zero_count_inchi = heap
-            .allocate_model_storage(vec![PINChI2::default()])
-            .unwrap();
+        let inchi_array = heap.allocate_model_storage(vec![PINChI2::default()]).unwrap();
+        let aux_array = heap.allocate_model_storage(vec![PINChI_Aux2::default()]).unwrap();
+        let leaked_zero_count_inchi = heap.allocate_model_storage(vec![PINChI2::default()]).unwrap();
         control.pINChI[0] = inchi_array;
         control.pINChI_Aux[0] = aux_array;
         control.pINChI[1] = leaked_zero_count_inchi;
@@ -3707,12 +3565,8 @@ mod tests {
 
         let control_pointer = heap.allocate_model_storage(vec![control]).unwrap();
         let handle: SourceMutPointer<SourceVoid> = control_pointer.cast();
-        let normal_taut = heap
-            .allocate_model_storage(vec![NORM_ATOMS::default()])
-            .unwrap();
-        let normal_nontaut = heap
-            .allocate_model_storage(vec![NORM_ATOMS::default()])
-            .unwrap();
+        let normal_taut = heap.allocate_model_storage(vec![NORM_ATOMS::default()]).unwrap();
+        let normal_nontaut = heap.allocate_model_storage(vec![NORM_ATOMS::default()]).unwrap();
         let mut data = INCHIGEN_DATA {
             pStrErrStruct: [33; 256],
             num_components: [1, 0],
@@ -3792,10 +3646,7 @@ mod tests {
         assert_eq!(reset.num_inp, 31);
         assert_eq!(reset.InpParms, INPUT_PARMS::default());
         assert_eq!(reset.OrigInpData, ORIG_ATOM_DATA::default());
-        assert_eq!(
-            reset.PrepInpData,
-            std::array::from_fn(|_| ORIG_ATOM_DATA::default())
-        );
+        assert_eq!(reset.PrepInpData, std::array::from_fn(|_| ORIG_ATOM_DATA::default()));
         assert_eq!(reset.OrigStruct, ORIG_STRUCT::default());
         assert!(
             reset
@@ -3806,12 +3657,7 @@ mod tests {
         );
         assert!(reset.InpCurAtData.iter().all(|pointer| pointer.is_null()));
         assert!(reset.InpNormAtData.iter().all(|pointer| pointer.is_null()));
-        assert!(
-            reset
-                .InpNormTautData
-                .iter()
-                .all(|pointer| pointer.is_null())
-        );
+        assert!(reset.InpNormTautData.iter().all(|pointer| pointer.is_null()));
         assert!(reset.cti.iter().all(|pointer| pointer.is_null()));
         assert!(reset.pINChI.iter().all(|pointer| pointer.is_null()));
         assert!(reset.pINChI_Aux.iter().all(|pointer| pointer.is_null()));
@@ -3853,10 +3699,7 @@ mod tests {
         assert_eq!(control.InpParms, INPUT_PARMS::default());
         assert_eq!(control.StructData, STRUCT_DATA::default());
         assert_eq!(control.OrigInpData, ORIG_ATOM_DATA::default());
-        assert_eq!(
-            control.PrepInpData,
-            std::array::from_fn(|_| ORIG_ATOM_DATA::default())
-        );
+        assert_eq!(control.PrepInpData, std::array::from_fn(|_| ORIG_ATOM_DATA::default()));
         assert!(control.pINChI.iter().all(|pointer| pointer.is_null()));
         assert!(control.pINChI_Aux.iter().all(|pointer| pointer.is_null()));
         assert_eq!(control.ulTotalProcessingTime, 0);
@@ -3873,10 +3716,7 @@ mod tests {
             control.strbuf_container.nAllocatedLength,
             INCHI_STRBUF_INITIAL_SIZE as i32
         );
-        assert_eq!(
-            control.strbuf_container.nPtr,
-            INCHI_STRBUF_SIZE_INCREMENT as i32
-        );
+        assert_eq!(control.strbuf_container.nPtr, INCHI_STRBUF_SIZE_INCREMENT as i32);
         assert_eq!(control.strbuf_container.nUsedLength, 0);
         assert!(
             heap.slice(control.strbuf_container.pStr.as_const())
@@ -3893,10 +3733,7 @@ mod tests {
     #[test]
     fn source_port__inchi_dll_a__inchigen_destroy__line_1315() {
         let mut null_heap = SourceHeap::default();
-        assert_eq!(
-            INCHIGEN_Destroy(&mut null_heap, SourceMutPointer::null()),
-            Ok(())
-        );
+        assert_eq!(INCHIGEN_Destroy(&mut null_heap, SourceMutPointer::null()), Ok(()));
 
         let mut created_heap = SourceHeap::default();
         created_heap.trace_source_allocations();
@@ -3907,10 +3744,8 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let strbuf = heap.allocate_model_storage(vec![1_i8, 0]).unwrap();
-        let stream_buffers: [SourceMutPointer<i8>; 3] = std::array::from_fn(|index| {
-            heap.allocate_model_storage(vec![index as i8 + 2, 0])
-                .unwrap()
-        });
+        let stream_buffers: [SourceMutPointer<i8>; 3] =
+            std::array::from_fn(|index| heap.allocate_model_storage(vec![index as i8 + 2, 0]).unwrap());
         let retained_path = heap.allocate_model_storage(vec![b'p' as i8, 0]).unwrap();
         let mut control = INCHIGEN_CONTROL::default();
         control.strbuf_container = INCHI_IOS_STRING {
@@ -3942,10 +3777,7 @@ mod tests {
     #[test]
     fn source_port__inchi_dll_a__stdinchigen_destroy__line_1308() {
         let mut null_heap = SourceHeap::default();
-        assert_eq!(
-            STDINCHIGEN_Destroy(&mut null_heap, SourceMutPointer::null()),
-            Ok(())
-        );
+        assert_eq!(STDINCHIGEN_Destroy(&mut null_heap, SourceMutPointer::null()), Ok(()));
         assert_eq!(null_heap.live_source_allocation_count(), 0);
 
         let mut heap = SourceHeap::default();
@@ -3976,9 +3808,7 @@ mod tests {
         assert_eq!(heap.source_allocation_calls(), 2);
         assert_eq!(heap.live_source_allocation_count(), 2);
         let control_pointer = handle.cast::<INCHIGEN_CONTROL>();
-        let buffer = heap.slice(control_pointer.as_const()).unwrap()[0]
-            .strbuf_container
-            .pStr;
+        let buffer = heap.slice(control_pointer.as_const()).unwrap()[0].strbuf_container.pStr;
         assert!(!buffer.is_null());
         inchi_free(&mut heap, buffer).unwrap();
         inchi_free(&mut heap, control_pointer).unwrap();
@@ -4003,12 +3833,7 @@ mod tests {
             ..INCHIGEN_DATA::default()
         };
         assert_eq!(
-            STDINCHIGEN_Reset(
-                &mut heap,
-                SourceMutPointer::null(),
-                Some(&mut data),
-                Some(&mut results),
-            ),
+            STDINCHIGEN_Reset(&mut heap, SourceMutPointer::null(), Some(&mut data), Some(&mut results),),
             Ok(())
         );
         assert_eq!(results, inchi_Output::default());
@@ -4022,12 +3847,7 @@ mod tests {
             ..INCHIGEN_DATA::default()
         };
         assert_eq!(
-            STDINCHIGEN_Reset(
-                &mut heap,
-                SourceMutPointer::null(),
-                Some(&mut untouched_data),
-                None,
-            ),
+            STDINCHIGEN_Reset(&mut heap, SourceMutPointer::null(), Some(&mut untouched_data), None,),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(untouched_data.num_components, [4, 5]);

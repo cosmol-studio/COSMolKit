@@ -31,12 +31,9 @@ fn load_golden() -> Vec<SvgDrawRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -64,15 +61,10 @@ fn maybe_dump_svg_debug(row_idx: usize, expected_svg: &str, actual_svg: &str) {
     if row_idx + 1 != target_row {
         return;
     }
-    let dump_dir =
-        std::env::var("COSMOLKIT_SVG_DEBUG_DUMP_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    let dump_dir = std::env::var("COSMOLKIT_SVG_DEBUG_DUMP_DIR").unwrap_or_else(|_| "/tmp".to_string());
     let dump_dir = PathBuf::from(dump_dir);
-    std::fs::create_dir_all(&dump_dir).unwrap_or_else(|err| {
-        panic!(
-            "failed to create svg debug dump dir {}: {err}",
-            dump_dir.display()
-        )
-    });
+    std::fs::create_dir_all(&dump_dir)
+        .unwrap_or_else(|err| panic!("failed to create svg debug dump dir {}: {err}", dump_dir.display()));
     let expected_path = dump_dir.join(format!("row{}_expected.svg", target_row));
     let actual_path = dump_dir.join(format!("row{}_actual.svg", target_row));
     std::fs::write(&expected_path, expected_svg)
@@ -122,15 +114,13 @@ fn svg_drawer_matches_rdkit_golden_except_tool_identifiers() {
                 record.smiles
             )
         });
-        let actual_svg = mol
-            .to_svg(record.width, record.height)
-            .unwrap_or_else(|err| {
-                panic!(
-                    "cosmolkit failed to draw row {} ({}): {err}",
-                    row_idx + 1,
-                    record.smiles
-                )
-            });
+        let actual_svg = mol.to_svg(record.width, record.height).unwrap_or_else(|err| {
+            panic!(
+                "cosmolkit failed to draw row {} ({}): {err}",
+                row_idx + 1,
+                record.smiles
+            )
+        });
         let expected_svg = record.svg.as_ref().unwrap_or_else(|| {
             panic!(
                 "row {} ({}) is rdkit ok but has no svg payload",
@@ -155,10 +145,7 @@ fn svg_drawer_matches_rdkit_golden_except_tool_identifiers() {
 #[test]
 fn svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch() {
     let records = load_golden();
-    let smiles = records
-        .iter()
-        .map(|record| record.smiles.clone())
-        .collect::<Vec<_>>();
+    let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let actual_svgs = batch
         .to_svg_list_with_options(300, 300, Some(4), Some(false))
@@ -189,13 +176,9 @@ fn svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch() {
             row_idx + 1,
             record.smiles
         );
-        let actual_svg = actual_svg.as_ref().unwrap_or_else(|| {
-            panic!(
-                "parallel batch SVG missing row {} ({})",
-                row_idx + 1,
-                record.smiles
-            )
-        });
+        let actual_svg = actual_svg
+            .as_ref()
+            .unwrap_or_else(|| panic!("parallel batch SVG missing row {} ({})", row_idx + 1, record.smiles));
         let expected_svg = record.svg.as_ref().unwrap_or_else(|| {
             panic!(
                 "row {} ({}) is rdkit ok but has no svg payload",
@@ -221,9 +204,7 @@ fn svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch() {
 fn svg_drawer_handles_dense_mapped_polycyclic_regression() {
     let smiles = "[C:12]12([CH:62]([CH3:65])[c:61]3[cH:64][cH:67][cH:68][cH:66][cH:63]3)[CH:20]4[c:30]5[c:40]6[c:49]7[c:57]8[c:60]([c:59]9[c:55]([c:47]([c:44]([c:52]9[c:51]([c:43]%10[c:35]%11[c:25]%12[c:19]%13%14)[c:53]8[c:45]%11[c:39]6[c:29]4%13)[c:34]([c:24]%15[c:15]%16[c:7]%17[c:3]%18%19)[c:33]%10[c:23]%16[c:16]%12[c:8]%18[c:11]%14[c:5]1%20)[c:37]([c:36]%21[c:26]%22[c:18]%23[c:10]%24[c:13]%25[c:6]%26%27)[c:27]%15[c:17]%22[c:9]%17[c:4]%24[c:1]%19[c:2]%20%26)[c:54]([c:46]%21[c:38]%28[c:28]%23[c:21]%25%29)[c:56]%30[c:48]%28[c:41]%31[c:31]%29[c:22]%32[c:14]2%27)[c:58]%30[c:50]7[c:42]%31[c:32]5%32";
     let molecule = Molecule::from_smiles(smiles).expect("parse dense mapped polycyclic SMILES");
-    let svg = molecule
-        .to_svg(300, 300)
-        .expect("draw dense mapped polycyclic SVG");
+    let svg = molecule.to_svg(300, 300).expect("draw dense mapped polycyclic SVG");
 
     assert!(svg.contains("<svg"));
     assert!(svg.contains("width='300px'"));

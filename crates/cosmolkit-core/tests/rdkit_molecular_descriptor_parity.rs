@@ -4,10 +4,9 @@ use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::Molecule;
 use cosmolkit_core::properties::descriptors::{
-    CrippenDescriptorValues, DescriptorError, DescriptorResult, NumRotatableBondsOptions,
-    calc_crippen_descriptors, calc_exact_mol_wt, calc_fraction_csp3, calc_mol_formula, calc_mol_wt,
-    calc_num_aromatic_rings, calc_num_hba, calc_num_hbd, calc_num_rotatable_bonds, calc_qed,
-    calc_tpsa,
+    CrippenDescriptorValues, DescriptorError, DescriptorResult, NumRotatableBondsOptions, calc_crippen_descriptors,
+    calc_exact_mol_wt, calc_fraction_csp3, calc_mol_formula, calc_mol_wt, calc_num_aromatic_rings, calc_num_hba,
+    calc_num_hbd, calc_num_rotatable_bonds, calc_qed, calc_tpsa,
 };
 use serde::Deserialize;
 
@@ -102,12 +101,9 @@ fn load_golden() -> Vec<DescriptorRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -130,14 +126,8 @@ fn molecular_descriptor_golden_has_one_record_per_smiles() {
 fn split_source_isotope_mass_row_matches_rdkit_descriptors() {
     let molecule = Molecule::from_smiles("[47Ca+2].[Cl-].[Cl-]").unwrap();
 
-    assert_eq!(
-        calc_mol_wt(&molecule, false).unwrap().to_bits(),
-        0x405d_7713_2f87_ad08
-    );
-    assert_eq!(
-        calc_mol_wt(&molecule, true).unwrap().to_bits(),
-        0x405d_7713_2f87_ad08
-    );
+    assert_eq!(calc_mol_wt(&molecule, false).unwrap().to_bits(), 0x405d_7713_2f87_ad08);
+    assert_eq!(calc_mol_wt(&molecule, true).unwrap().to_bits(), 0x405d_7713_2f87_ad08);
     assert_eq!(
         calc_exact_mol_wt(&molecule, false).unwrap().to_bits(),
         0x405d_391a_a572_c0bd
@@ -146,10 +136,7 @@ fn split_source_isotope_mass_row_matches_rdkit_descriptors() {
         calc_exact_mol_wt(&molecule, true).unwrap().to_bits(),
         0x405d_391a_a572_c0bd
     );
-    assert_eq!(
-        calc_qed(&molecule).unwrap().to_bits(),
-        0x3fd1_bfb4_805a_d56c
-    );
+    assert_eq!(calc_qed(&molecule).unwrap().to_bits(), 0x3fd1_bfb4_805a_d56c);
 }
 
 #[test]
@@ -159,20 +146,14 @@ fn crippen_force_and_include_hs_follow_rdkit_computed_property_cache() {
 
     let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
     assert_eq!(without_hs.logp.to_bits(), 0xbfd6_5119_ce07_5f70);
-    assert_eq!(
-        without_hs.molar_refractivity.to_bits(),
-        0x4018_51b7_1758_e21a
-    );
+    assert_eq!(without_hs.molar_refractivity.to_bits(), 0x4018_51b7_1758_e21a);
 
     let cached = calc_crippen_descriptors(&molecule, true, false).unwrap();
     assert_eq!(cached, without_hs);
 
     let forced_with_hs = calc_crippen_descriptors(&molecule, true, true).unwrap();
     assert_eq!(forced_with_hs.logp.to_bits(), 0xbf56_f006_8db8_bb00);
-    assert_eq!(
-        forced_with_hs.molar_refractivity.to_bits(),
-        0x4029_8504_816f_006a
-    );
+    assert_eq!(forced_with_hs.molar_refractivity.to_bits(), 0x4029_8504_816f_006a);
     assert_eq!(molecule, structural_snapshot);
 }
 
@@ -184,14 +165,8 @@ fn crippen_computed_property_cache_is_copied_but_not_shared() {
 
     let clone_with_hs = calc_crippen_descriptors(&clone, true, true).unwrap();
     assert_ne!(clone_with_hs, without_hs);
-    assert_eq!(
-        calc_crippen_descriptors(&molecule, true, false).unwrap(),
-        without_hs
-    );
-    assert_eq!(
-        calc_crippen_descriptors(&clone, false, false).unwrap(),
-        clone_with_hs
-    );
+    assert_eq!(calc_crippen_descriptors(&molecule, true, false).unwrap(), without_hs);
+    assert_eq!(calc_crippen_descriptors(&clone, false, false).unwrap(), clone_with_hs);
 }
 
 #[test]
@@ -204,21 +179,14 @@ fn rdkit_computed_property_clearing_operations_invalidate_the_crippen_cache() {
 
     assert_ne!(explicit_h_result, without_hs);
     assert_eq!(explicit_h_result.logp.to_bits(), 0xbf56_f006_8db8_bb00);
-    assert_eq!(
-        explicit_h_result.molar_refractivity.to_bits(),
-        0x4029_8504_816f_006a
-    );
+    assert_eq!(explicit_h_result.molar_refractivity.to_bits(), 0x4029_8504_816f_006a);
 
-    let sanitized = molecule
-        .sanitize_with_ops(cosmolkit_core::SanitizeOps::NONE)
-        .unwrap();
+    let sanitized = molecule.sanitize_with_ops(cosmolkit_core::SanitizeOps::NONE).unwrap();
     let sanitized_result = calc_crippen_descriptors(&sanitized, true, false).unwrap();
     assert_ne!(sanitized_result, without_hs);
     assert_eq!(sanitized_result.logp.to_bits(), 0xbf56_f006_8db8_bb00);
 
-    let without_hydrogens = with_hydrogens
-        .without_hydrogens_with_sanitize(false)
-        .unwrap();
+    let without_hydrogens = with_hydrogens.without_hydrogens_with_sanitize(false).unwrap();
     let removed_h_result = calc_crippen_descriptors(&without_hydrogens, false, false).unwrap();
     assert_ne!(removed_h_result, explicit_h_result);
     // RemoveHs clears molecule computed properties but, with sanitize=false,
@@ -226,10 +194,7 @@ fn rdkit_computed_property_clearing_operations_invalidate_the_crippen_cache() {
     // explicit H atoms are removed. Crippen therefore observes that retained
     // valence state instead of the state of freshly parsed, sanitized CCO.
     assert_eq!(removed_h_result.logp.to_bits(), 0x3fa6_6a55_0870_110a);
-    assert_eq!(
-        removed_h_result.molar_refractivity.to_bits(),
-        0x401c_b0a3_d70a_3d70
-    );
+    assert_eq!(removed_h_result.molar_refractivity.to_bits(), 0x401c_b0a3_d70a_3d70);
 }
 
 #[test]
@@ -238,10 +203,7 @@ fn rdkit_topology_state_operations_preserve_the_crippen_cache() {
     let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
 
     let kekulized = molecule.with_kekulized_bonds(false).unwrap();
-    assert_eq!(
-        calc_crippen_descriptors(&kekulized, true, false).unwrap(),
-        without_hs
-    );
+    assert_eq!(calc_crippen_descriptors(&kekulized, true, false).unwrap(), without_hs);
 
     let with_radicals = molecule.with_assigned_radicals().unwrap();
     assert_eq!(
@@ -282,21 +244,24 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
             );
             continue;
         }
-        let expected = record.descriptors.as_ref().unwrap_or_else(|| {
-            panic!("RDKit-ok molecular descriptor record missing descriptor set in {context}")
-        });
+        let expected = record
+            .descriptors
+            .as_ref()
+            .unwrap_or_else(|| panic!("RDKit-ok molecular descriptor record missing descriptor set in {context}"));
         let expected_bits = record.descriptor_bits.as_ref().unwrap_or_else(|| {
             panic!(
                 "RDKit-ok molecular descriptor record missing descriptor_bits in {context}; regenerate goldens with {}",
                 parity_data::regenerate_command()
             )
         });
-        let expected_options = record.descriptor_options.as_ref().unwrap_or_else(|| {
-            panic!("RDKit-ok molecular descriptor record missing option matrix in {context}")
-        });
-        let expected_option_bits = record.descriptor_option_bits.as_ref().unwrap_or_else(|| {
-            panic!("RDKit-ok molecular descriptor record missing option bits in {context}")
-        });
+        let expected_options = record
+            .descriptor_options
+            .as_ref()
+            .unwrap_or_else(|| panic!("RDKit-ok molecular descriptor record missing option matrix in {context}"));
+        let expected_option_bits = record
+            .descriptor_option_bits
+            .as_ref()
+            .unwrap_or_else(|| panic!("RDKit-ok molecular descriptor record missing option bits in {context}"));
         let mol = Molecule::from_smiles(&record.smiles)
             .unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}"));
 
@@ -334,9 +299,8 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
                 // RDKit molecule so one branch's computed-property cache cannot
                 // mask the next branch's includeHs argument. Keep that branch
                 // isolation here; cache-order parity has separate focused tests.
-                let branch_mol = Molecule::from_smiles(&record.smiles).unwrap_or_else(|err| {
-                    panic!("COSMolKit failed to parse Crippen branch {context}: {err}")
-                });
+                let branch_mol = Molecule::from_smiles(&record.smiles)
+                    .unwrap_or_else(|err| panic!("COSMolKit failed to parse Crippen branch {context}: {err}"));
                 match calc_crippen_descriptors(&branch_mol, include_hs, force) {
                     Ok(CrippenDescriptorValues {
                         logp,
@@ -496,13 +460,7 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
                 );
             }
             Err(err) => {
-                record_error(
-                    "crippen_logp",
-                    &context,
-                    err.clone(),
-                    &mut failures,
-                    &mut by_field,
-                );
+                record_error("crippen_logp", &context, err.clone(), &mut failures, &mut by_field);
                 record_error("crippen_mr", &context, err, &mut failures, &mut by_field);
             }
         }
@@ -581,12 +539,7 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
             .map(|(field, count)| format!("{field}: {count}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let sample = failures
-            .iter()
-            .take(24)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
+        let sample = failures.iter().take(24).cloned().collect::<Vec<_>>().join("\n");
         panic!(
             "molecular descriptor strict parity failed with {} field failures; by field: {field_summary}\nfirst failures:\n{sample}",
             failures.len()
@@ -642,15 +595,7 @@ fn check_f64(
     by_field: &mut BTreeMap<&'static str, usize>,
 ) {
     match actual {
-        Ok(actual) => compare_f64(
-            field,
-            context,
-            actual,
-            expected,
-            expected_bits,
-            failures,
-            by_field,
-        ),
+        Ok(actual) => compare_f64(field, context, actual, expected, expected_bits, failures, by_field),
         Err(err) => record_error(field, context, err, failures, by_field),
     }
 }
@@ -721,9 +666,8 @@ fn compare_f64(
 }
 
 fn parse_expected_f64_bits(field: &'static str, context: &str, bits: &str) -> u64 {
-    u64::from_str_radix(bits, 16).unwrap_or_else(|err| {
-        panic!("{context}: invalid {field} descriptor_bits value {bits:?}: {err}")
-    })
+    u64::from_str_radix(bits, 16)
+        .unwrap_or_else(|err| panic!("{context}: invalid {field} descriptor_bits value {bits:?}: {err}"))
 }
 
 fn record_error(

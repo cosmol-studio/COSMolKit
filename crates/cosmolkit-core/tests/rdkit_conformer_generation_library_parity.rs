@@ -43,12 +43,9 @@ fn load_golden() -> Vec<ConformerGenerationLibraryRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -188,11 +185,8 @@ fn conformer_generation_library_matches_rdkit_golden_under_fixed_iteration_budge
                     row_idx + 1,
                     record.smiles
                 );
-                for (atom_idx, (actual_xyz, expected_xyz)) in actual_conf
-                    .coordinates()
-                    .iter()
-                    .zip(expected_coords)
-                    .enumerate()
+                for (atom_idx, (actual_xyz, expected_xyz)) in
+                    actual_conf.coordinates().iter().zip(expected_coords).enumerate()
                 {
                     for axis in 0..3 {
                         let a = actual_xyz[axis];

@@ -26,8 +26,8 @@ use super::query_graph::QueryGraph;
 
 use crate::chemistry::valence::rdkit_atomic_mass;
 use crate::{
-    AdjacencyList, Atom, AtomId, Bond, BondOrder, BondSpec, BondStereo, ChiralTag, Hybridization,
-    Molecule, RingInfo, ValenceAssignment, ValenceModel, assign_valence,
+    AdjacencyList, Atom, AtomId, Bond, BondOrder, BondSpec, BondStereo, ChiralTag, Hybridization, Molecule, RingInfo,
+    ValenceAssignment, ValenceModel, assign_valence,
 };
 
 #[derive(Clone)]
@@ -115,11 +115,7 @@ impl<T> QueryNode<T> {
     }
 }
 
-fn merge_both_null_q<T>(
-    return_query: &mut QueryNode<T>,
-    other_null_q: &QueryNode<T>,
-    how: CompositeQueryType,
-) {
+fn merge_both_null_q<T>(return_query: &mut QueryNode<T>, other_null_q: &QueryNode<T>, how: CompositeQueryType) {
     // RDKit✔️✔️: void mergeBothNullQ(T *&returnQuery, T *&otherNullQ,
     // RDKit✔️✔️:                     Queries::CompositeQueryType how) {
     // RDKit✔️✔️:   bool negatedQ = returnQuery->getNegation();
@@ -168,11 +164,7 @@ fn merge_both_null_q<T>(
     }
 }
 
-fn merge_null_q_first<T>(
-    return_query: &mut QueryNode<T>,
-    other_q: &mut QueryNode<T>,
-    how: CompositeQueryType,
-) {
+fn merge_null_q_first<T>(return_query: &mut QueryNode<T>, other_q: &mut QueryNode<T>, how: CompositeQueryType) {
     // RDKit✔️✔️: void mergeNullQFirst(T *&returnQuery, T *&otherQ,
     // RDKit✔️✔️:                      Queries::CompositeQueryType how) {
     // RDKit✔️✔️:   bool negatedQ = returnQuery->getNegation();
@@ -262,15 +254,11 @@ fn is_typed_null_query<T>(query: &QueryNode<T>, is_null_predicate: impl Fn(&T) -
 }
 
 fn is_atom_null_query(query: &QueryNode<AtomQueryPredicate>) -> bool {
-    is_typed_null_query(query, |predicate| {
-        matches!(predicate, AtomQueryPredicate::Any)
-    })
+    is_typed_null_query(query, |predicate| matches!(predicate, AtomQueryPredicate::Any))
 }
 
 fn is_bond_null_query(query: &QueryNode<BondQueryPredicate>) -> bool {
-    is_typed_null_query(query, |predicate| {
-        matches!(predicate, BondQueryPredicate::Any)
-    })
+    is_typed_null_query(query, |predicate| matches!(predicate, BondQueryPredicate::Any))
 }
 
 pub(crate) fn query_atom_expand_query(
@@ -467,19 +455,14 @@ impl AtomRangeQuery {
 
     fn matches(&self, atom: &Atom, mol: &Molecule, context: &QueryMatchContext) -> bool {
         let value = match self.data_function {
-            AtomRangeDataFunction::ExplicitDegree => {
-                Some(query_atom_explicit_degree(atom, &context.adj) as i32)
-            }
+            AtomRangeDataFunction::ExplicitDegree => Some(query_atom_explicit_degree(atom, &context.adj) as i32),
             AtomRangeDataFunction::NonHydrogenDegree => {
                 Some(query_atom_non_hydrogen_degree(atom, &context.adj, mol) as i32)
             }
             AtomRangeDataFunction::TotalDegree => {
-                query_atom_total_degree(&context.adj, context.valence.as_ref(), atom)
-                    .map(|value| value as i32)
+                query_atom_total_degree(&context.adj, context.valence.as_ref(), atom).map(|value| value as i32)
             }
-            AtomRangeDataFunction::TotalValence => {
-                query_atom_total_valence(context.valence.as_ref(), atom)
-            }
+            AtomRangeDataFunction::TotalValence => query_atom_total_valence(context.valence.as_ref(), atom),
             AtomRangeDataFunction::NumAtomRings => context
                 .ring_info
                 .as_ref()
@@ -487,9 +470,9 @@ impl AtomRangeQuery {
             AtomRangeDataFunction::NumHeteroatomNeighbors => {
                 Some(query_atom_num_heteroatom_nbrs(atom, &context.adj, mol))
             }
-            AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors => Some(
-                query_atom_num_aliphatic_heteroatom_nbrs(atom, &context.adj, mol),
-            ),
+            AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors => {
+                Some(query_atom_num_aliphatic_heteroatom_nbrs(atom, &context.adj, mol))
+            }
             AtomRangeDataFunction::MinRingSize => context
                 .ring_info
                 .as_ref()
@@ -499,13 +482,10 @@ impl AtomRangeQuery {
                 .as_ref()
                 .map(|ring_info| query_atom_ring_bond_count(atom, &context.adj, mol, ring_info)),
             AtomRangeDataFunction::ImplicitHydrogenCount => {
-                query_atom_implicit_h_count(context.valence.as_ref(), atom)
-                    .map(|value| value as i32)
+                query_atom_implicit_h_count(context.valence.as_ref(), atom).map(|value| value as i32)
             }
             AtomRangeDataFunction::FormalCharge => Some(query_atom_formal_charge(atom)),
-            AtomRangeDataFunction::NegativeFormalCharge => {
-                Some(query_atom_negative_formal_charge(atom))
-            }
+            AtomRangeDataFunction::NegativeFormalCharge => Some(query_atom_negative_formal_charge(atom)),
             AtomRangeDataFunction::AtomRingSize {
                 lower,
                 upper,
@@ -521,38 +501,23 @@ impl AtomRangeQuery {
                         0
                     }
                 },
-                |ring_info| {
-                    query_atom_is_in_ring_size_range(
-                        atom, lower, upper, lower_open, upper_open, ring_info,
-                    )
-                },
+                |ring_info| query_atom_is_in_ring_size_range(atom, lower, upper, lower_open, upper_open, ring_info),
             )),
         };
         let Some(value) = value else {
             return false;
         };
         match self.bounds {
-            AtomRangeBounds::LessEqual(upper) => {
-                greater_equal_query_match(upper, value, 0, false, |observed| observed)
-            }
-            AtomRangeBounds::GreaterEqual(lower) => {
-                less_equal_query_match(lower, value, 0, false, |observed| observed)
-            }
+            AtomRangeBounds::LessEqual(upper) => greater_equal_query_match(upper, value, 0, false, |observed| observed),
+            AtomRangeBounds::GreaterEqual(lower) => less_equal_query_match(lower, value, 0, false, |observed| observed),
             AtomRangeBounds::Inclusive {
                 lower,
                 upper,
                 lower_open,
                 upper_open,
-            } => range_query_match(
-                lower,
-                upper,
-                value,
-                0,
-                lower_open,
-                upper_open,
-                false,
-                |observed| observed,
-            ),
+            } => range_query_match(lower, upper, value, 0, lower_open, upper_open, false, |observed| {
+                observed
+            }),
         }
     }
 }
@@ -678,11 +643,7 @@ impl RecursiveStructureQuery {
         }
     }
 
-    pub(crate) fn from_smarts(
-        smarts: impl Into<String>,
-        query_mol: QueryGraph,
-        serial_number: u32,
-    ) -> Self {
+    pub(crate) fn from_smarts(smarts: impl Into<String>, query_mol: QueryGraph, serial_number: u32) -> Self {
         let mut query = Self::from_molecule(query_mol, serial_number);
         query.source_smarts = Some(smarts.into());
         query
@@ -814,24 +775,14 @@ fn finalize_atom_ring_size_query(
     // classification/construction. The range branch retains its existing
     // four scalars without allocation, traversal, lookup, or cloning.
     match (query_type, query) {
-        (
-            RangeQueryType::Equal,
-            query @ QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(_)),
-        )
-        | (RangeQueryType::Range, query @ QueryNode::Predicate(AtomQueryPredicate::Range(_))) => {
-            Ok(query)
-        }
+        (RangeQueryType::Equal, query @ QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(_)))
+        | (RangeQueryType::Range, query @ QueryNode::Predicate(AtomQueryPredicate::Range(_))) => Ok(query),
         (RangeQueryType::Less, QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value))) => {
-            Ok(QueryNode::predicate(
-                AtomQueryPredicate::InRingOfSizeLessEqual(value),
-            ))
+            Ok(QueryNode::predicate(AtomQueryPredicate::InRingOfSizeLessEqual(value)))
         }
-        (
-            RangeQueryType::Greater,
-            QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value)),
-        ) => Ok(QueryNode::predicate(
-            AtomQueryPredicate::InRingOfSizeGreaterEqual(value),
-        )),
+        (RangeQueryType::Greater, QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value))) => Ok(
+            QueryNode::predicate(AtomQueryPredicate::InRingOfSizeGreaterEqual(value)),
+        ),
         _ => Err(QueryFinalizationError::BadRangeQueryType),
     }
 }
@@ -952,10 +903,7 @@ fn make_atom_has_prop_query(property: impl Into<String>) -> QueryNode<AtomQueryP
     QueryNode::predicate(AtomQueryPredicate::HasProperty(property.into()))
 }
 
-fn make_atom_prop_query(
-    property: impl Into<String>,
-    value: impl Into<String>,
-) -> QueryNode<AtomQueryPredicate> {
+fn make_atom_prop_query(property: impl Into<String>, value: impl Into<String>) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class Target, class T>
     // RDKit✔️🔝: Queries::EqualityQuery<int, const Target *, true> *makePropQuery(
     // RDKit✔️🔝:     const std::string &propname, const T &val, double tolerance = 0.0) {
@@ -971,10 +919,7 @@ fn make_atom_prop_query(
     })
 }
 
-pub(crate) fn complex_atom_query_helper(
-    query: &QueryNode<AtomQueryPredicate>,
-    has_atomic_number: &mut bool,
-) -> bool {
+pub(crate) fn complex_atom_query_helper(query: &QueryNode<AtomQueryPredicate>, has_atomic_number: &mut bool) -> bool {
     // RDKit✔️✔️: bool _complexQueryHelper(Atom::QUERYATOM_QUERY const *query, bool &hasAtNum) {
     // RDKit✔️✔️:   if (!query) {
     // RDKit✔️✔️:     return false;
@@ -1014,12 +959,10 @@ pub(crate) fn complex_atom_query_helper(
         QueryNode::Not(_)
         | QueryNode::Or(_)
         | QueryNode::Xor(_)
-        | QueryNode::Predicate(
-            AtomQueryPredicate::AtomicNumberIn(_) | AtomQueryPredicate::AtomicNumberNotIn(_),
-        ) => true,
-        QueryNode::Predicate(
-            AtomQueryPredicate::AtomicNumber(_) | AtomQueryPredicate::AtomType { .. },
-        ) => {
+        | QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(_) | AtomQueryPredicate::AtomicNumberNotIn(_)) => {
+            true
+        }
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_) | AtomQueryPredicate::AtomType { .. }) => {
             *has_atomic_number = true;
             false
         }
@@ -1072,9 +1015,7 @@ pub(crate) fn is_complex_atom_query(atom: &Atom) -> bool {
     match query {
         QueryNode::Not(_) | QueryNode::Or(_) | QueryNode::Xor(_) => true,
         QueryNode::Predicate(
-            AtomQueryPredicate::Any
-            | AtomQueryPredicate::AtomicNumber(_)
-            | AtomQueryPredicate::AtomType { .. },
+            AtomQueryPredicate::Any | AtomQueryPredicate::AtomicNumber(_) | AtomQueryPredicate::AtomType { .. },
         ) => false,
         QueryNode::And(_) => {
             let mut has_atomic_number = false;
@@ -1155,11 +1096,7 @@ pub(crate) fn is_atom_aromatic(atom: &Atom, molecule: &Molecule) -> bool {
         if atom.is_aromatic() {
             return true;
         }
-        for neighbor in molecule
-            .topology_block()
-            .adjacency
-            .neighbors_of(atom.id().index())
-        {
+        for neighbor in molecule.topology_block().adjacency.neighbors_of(atom.id().index()) {
             let bond = &molecule.bonds()[neighbor.bond.index()];
             if bond.is_aromatic() || bond.order() == BondOrder::Aromatic {
                 return true;
@@ -1195,9 +1132,7 @@ pub(crate) fn is_atom_aromatic(atom: &Atom, molecule: &Molecule) -> bool {
             QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))
             | QueryNode::Predicate(AtomQueryPredicate::AtomType { aromatic, .. }) => !*aromatic,
             QueryNode::And(_) => false,
-            QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => {
-                false
-            }
+            QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => false,
         },
         QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) => false,
     }
@@ -1233,9 +1168,7 @@ fn atom_list_query_helper(query: &QueryNode<AtomQueryPredicate>, ignore_negation
     // clones, performs keyed lookup, or creates a temporary collection.
     match query {
         QueryNode::Not(child) => ignore_negation && atom_list_query_helper(child, ignore_negation),
-        QueryNode::Predicate(
-            AtomQueryPredicate::AtomicNumber(_) | AtomQueryPredicate::AtomType { .. },
-        ) => true,
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_) | AtomQueryPredicate::AtomType { .. }) => true,
         QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(_)) => true,
         QueryNode::Predicate(AtomQueryPredicate::AtomicNumberNotIn(_)) => ignore_negation,
         QueryNode::Or(children) => children
@@ -1285,23 +1218,15 @@ fn is_atom_list_query(atom: &Atom) -> bool {
     };
 
     match query {
-        QueryNode::Or(children) => children
-            .iter()
-            .all(|child| atom_list_query_helper(child, false)),
-        QueryNode::Predicate(
-            AtomQueryPredicate::AtomicNumberIn(_) | AtomQueryPredicate::AtomicNumberNotIn(_),
-        ) => true,
+        QueryNode::Or(children) => children.iter().all(|child| atom_list_query_helper(child, false)),
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(_) | AtomQueryPredicate::AtomicNumberNotIn(_)) => true,
         QueryNode::Not(_) => atom_list_query_helper(query, true),
-        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(value)) => {
-            *value != atom.atomic_number()
-        }
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(value)) => *value != atom.atomic_number(),
         QueryNode::And(_) | QueryNode::Xor(_) | QueryNode::Predicate(_) => false,
     }
 }
 
-fn get_atom_list_query_values(
-    query: &QueryNode<AtomQueryPredicate>,
-) -> Result<Vec<i32>, &'static str> {
+fn get_atom_list_query_values(query: &QueryNode<AtomQueryPredicate>) -> Result<Vec<i32>, &'static str> {
     // RDKit✔️✔️: void getAtomListQueryVals(const Atom::QUERYATOM_QUERY *q,
     // RDKit✔️✔️:                           std::vector<int> &vals) {
     // RDKit✔️✔️:   // list queries are series of nested ors of AtomAtomicNum queries
@@ -1352,11 +1277,7 @@ fn get_atom_list_query_values(
     // using O(n) time/output storage and O(h) recursion. Rust adds no clones,
     // keyed lookups, molecule scans, or temporary collections beyond the one
     // returned vector corresponding to RDKit's caller-owned output vector.
-    fn append(
-        query: &QueryNode<AtomQueryPredicate>,
-        values: &mut Vec<i32>,
-        child: bool,
-    ) -> Result<(), &'static str> {
+    fn append(query: &QueryNode<AtomQueryPredicate>, values: &mut Vec<i32>, child: bool) -> Result<(), &'static str> {
         match query {
             QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(value)) => {
                 values.push(i32::from(*value));
@@ -1385,11 +1306,7 @@ fn get_atom_list_query_values(
             }
             QueryNode::Not(inner) if !child => append(inner, values, false),
             QueryNode::Not(_) | QueryNode::And(_) | QueryNode::Xor(_) | QueryNode::Predicate(_) => {
-                Err(if child {
-                    "bad query type1"
-                } else {
-                    "bad query type"
-                })
+                Err(if child { "bad query type1" } else { "bad query type" })
             }
         }
     }
@@ -1469,22 +1386,14 @@ pub(crate) fn make_atom_possible_range_query(
         (None, Some(upper)) => AtomRangeBounds::LessEqual(upper),
         (Some(lower), None) => AtomRangeBounds::GreaterEqual(lower),
         (Some(lower), Some(upper)) => {
-            return Some(make_atom_range_query(
-                lower,
-                upper,
-                false,
-                false,
-                data_function,
-            ));
+            return Some(make_atom_range_query(lower, upper, false, false, data_function));
         }
         (None, None) => return None,
     };
-    Some(make_atom_simple_query(AtomQueryPredicate::Range(
-        AtomRangeQuery {
-            bounds,
-            data_function,
-        },
-    )))
+    Some(make_atom_simple_query(AtomQueryPredicate::Range(AtomRangeQuery {
+        bounds,
+        data_function,
+    })))
 }
 
 #[inline]
@@ -1996,9 +1905,7 @@ pub(crate) fn complete_query_and_children(
         QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value)) if *value == magic_value => {
             *value = values.ring_bond_count;
         }
-        QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value))
-            if *value == magic_value =>
-        {
+        QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) if *value == magic_value => {
             *value = values.non_hydrogen_degree;
         }
         QueryNode::Predicate(_) => {}
@@ -2011,15 +1918,10 @@ pub(crate) fn complete_query_and_children(
     }
 }
 
-pub(crate) fn atom_query_has_magic_value(
-    query: &QueryNode<AtomQueryPredicate>,
-    magic_value: u32,
-) -> bool {
+pub(crate) fn atom_query_has_magic_value(query: &QueryNode<AtomQueryPredicate>, magic_value: u32) -> bool {
     match query {
         QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value))
-        | QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) => {
-            *value == magic_value
-        }
+        | QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) => *value == magic_value,
         QueryNode::Predicate(_) => false,
         QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => children
             .iter()
@@ -2065,9 +1967,7 @@ pub(crate) fn complete_mol_queries(molecule: &mut Molecule, magic_value: u32) {
                 ring_bond_count += 1;
             }
             let neighbor_atom = &topology.atoms[neighbor.atom_index];
-            if neighbor_atom.atomic_number() != 1
-                || neighbor_atom.isotope().is_some_and(|isotope| isotope > 1)
-            {
+            if neighbor_atom.atomic_number() != 1 || neighbor_atom.isotope().is_some_and(|isotope| isotope > 1) {
                 non_hydrogen_degree += 1;
             }
         }
@@ -2160,12 +2060,7 @@ pub(crate) fn replace_atom_with_query_atom(atom: &mut Atom) {
     }
     if atom.prop("_hasMassQuery").is_some() {
         let mass = rdkit_atomic_mass(atom.atomic_number(), atom.isotope()) as u16;
-        query_atom_expand_query(
-            &mut query,
-            make_atom_mass_query(mass),
-            CompositeQueryType::And,
-            true,
-        );
+        query_atom_expand_query(&mut query, make_atom_mass_query(mass), CompositeQueryType::And, true);
     }
     atom.set_query(Some(query));
 }
@@ -2224,9 +2119,7 @@ pub(crate) fn make_atom_has_heteroatom_nbrs_query() -> QueryNode<AtomQueryPredic
 }
 
 #[inline]
-pub(crate) fn make_atom_num_aliphatic_heteroatom_nbrs_query(
-    what: u8,
-) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_num_aliphatic_heteroatom_nbrs_query(what: u8) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomNumAliphaticHeteroatomNbrsQuery(int what) {
     // RDKit✔️🔝:   auto *res = makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(
     // RDKit✔️🔝:       what, queryAtomNumAliphaticHeteroatomNbrs);
@@ -2318,10 +2211,7 @@ pub(crate) fn make_q_atom_query() -> QueryNode<AtomQueryPredicate> {
     // fixed two-child tree in O(1), with constant allocation and no molecule
     // traversal, lookup, or cloning. Match-time behavior short-circuits after
     // at most two O(1) atomic-number comparisons in the same child order.
-    QueryNode::not(QueryNode::or(vec![
-        make_atom_num_query(6),
-        make_atom_num_query(1),
-    ]))
+    QueryNode::not(QueryNode::or(vec![make_atom_num_query(6), make_atom_num_query(1)]))
 }
 
 #[inline]
@@ -2838,10 +2728,7 @@ fn make_bond_has_prop_query(property: impl Into<String>) -> QueryNode<BondQueryP
     QueryNode::predicate(BondQueryPredicate::HasProperty(property.into()))
 }
 
-fn make_bond_prop_query(
-    property: impl Into<String>,
-    value: impl Into<String>,
-) -> QueryNode<BondQueryPredicate> {
+fn make_bond_prop_query(property: impl Into<String>, value: impl Into<String>) -> QueryNode<BondQueryPredicate> {
     // RDKit✔️🔝: template <class Target, class T>
     // RDKit✔️🔝: Queries::EqualityQuery<int, const Target *, true> *makePropQuery(
     // RDKit✔️🔝:     const std::string &propname, const T &val, double tolerance = 0.0) {
@@ -2980,9 +2867,7 @@ fn make_bond_in_n_rings_query(what: i32) -> QueryNode<BondQueryPredicate> {
 }
 
 #[inline]
-fn make_bond_in_ring_of_size_query(
-    target: i32,
-) -> Result<QueryNode<BondQueryPredicate>, QueryConstructionError> {
+fn make_bond_in_ring_of_size_query(target: i32) -> Result<QueryNode<BondQueryPredicate>, QueryConstructionError> {
     // RDKit✔️✔️: BOND_EQUALS_QUERY *makeBondInRingOfSizeQuery(int tgt) {
     // RDKit✔️✔️:   RANGE_CHECK(3, tgt, 20);
     // RDKit✔️✔️:   auto *res = new BOND_EQUALS_QUERY;
@@ -3056,9 +2941,7 @@ fn make_bond_in_ring_of_size_query(
     if !(3..=20).contains(&target) {
         return Err(QueryConstructionError::BondRingSizeOutOfRange { target });
     }
-    Ok(QueryNode::predicate(BondQueryPredicate::InRingOfSize(
-        target,
-    )))
+    Ok(QueryNode::predicate(BondQueryPredicate::InRingOfSize(target)))
 }
 
 #[inline]
@@ -3208,9 +3091,7 @@ pub(crate) fn is_complex_bond_query(bond: &Bond) -> bool {
         QueryNode::Or(children) if children.len() == 2 => !children.iter().all(|child| {
             matches!(
                 child,
-                QueryNode::Predicate(BondQueryPredicate::Order(
-                    BondOrder::Single | BondOrder::Aromatic
-                ))
+                QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single | BondOrder::Aromatic))
             )
         }),
         QueryNode::Or(_) | QueryNode::Predicate(_) => true,
@@ -3255,10 +3136,7 @@ fn make_single_or_double_bond_query() -> QueryNode<BondQueryPredicate> {
     // factories are O(1) with one constant-size allocation and no traversal,
     // lookup, or clone; matching makes the same ordered, short-circuit pair
     // of O(1) bond-order comparisons.
-    QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-        BondOrder::Single,
-        BondOrder::Double,
-    ]))
+    QueryNode::predicate(BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]))
 }
 
 #[inline]
@@ -3571,11 +3449,7 @@ fn query_atom_h_count(
 }
 
 #[inline]
-fn query_atom_total_degree(
-    adj: &AdjacencyList,
-    valence: Option<&ValenceAssignment>,
-    atom: &Atom,
-) -> Option<usize> {
+fn query_atom_total_degree(adj: &AdjacencyList, valence: Option<&ValenceAssignment>, atom: &Atom) -> Option<usize> {
     // RDKit✔️✔️: static inline int queryAtomTotalDegree(Atom const *at) {
     // RDKit✔️✔️:   return at->getTotalDegree();
     // RDKit✔️✔️: };
@@ -3599,8 +3473,7 @@ fn query_atom_total_degree(
     // allocates, clones, or creates a temporary collection. Rust returns
     // `None` only outside the modeled valid query context when valence state
     // could not be assigned; supported matching builds that state up front.
-    total_hydrogen_count(valence, atom)
-        .map(|total_hs| total_hs + query_atom_explicit_degree(atom, adj))
+    total_hydrogen_count(valence, atom).map(|total_hs| total_hs + query_atom_explicit_degree(atom, adj))
 }
 
 #[inline]
@@ -3622,11 +3495,7 @@ fn query_atom_total_valence(valence: Option<&ValenceAssignment>, at: &Atom) -> O
 }
 
 #[inline]
-fn query_atom_unsaturated(
-    adj: &AdjacencyList,
-    valence: Option<&ValenceAssignment>,
-    at: &Atom,
-) -> Option<bool> {
+fn query_atom_unsaturated(adj: &AdjacencyList, valence: Option<&ValenceAssignment>, at: &Atom) -> Option<bool> {
     // RDKit✔️✔️: static inline int queryAtomUnsaturated(Atom const *at) {
     // RDKit✔️✔️:   return at->getTotalDegree() < at->getTotalValence();
     // RDKit✔️✔️: };
@@ -3839,11 +3708,7 @@ fn parse_atom_type(val: i32) -> (i32, bool) {
     // comparison and at most one subtraction, with no traversal, lookup,
     // allocation, cloning, or temporary collection. Returning two scalar
     // values replaces C++ output references without changing the cost class.
-    if val > 1000 {
-        (val - 1000, true)
-    } else {
-        (val, false)
-    }
+    if val > 1000 { (val - 1000, true) } else { (val, false) }
 }
 
 #[inline]
@@ -3912,9 +3777,7 @@ fn query_atom_mass(at: &Atom) -> i32 {
     // `Atom::getMass` fallback port in `rdkit_atomic_mass`; its sorted-table
     // binary search and RDKit's isotope map lookup have the same asymptotic
     // complexity.
-    (f64::from(MASS_INTEGER_CONVERSION_FACTOR)
-        * rdkit_atomic_mass(at.atomic_number(), at.isotope()))
-    .round() as i32
+    (f64::from(MASS_INTEGER_CONVERSION_FACTOR) * rdkit_atomic_mass(at.atomic_number(), at.isotope())).round() as i32
 }
 
 #[inline]
@@ -4205,12 +4068,7 @@ fn query_is_atom_in_ring(atom: &Atom, ring_info: &RingInfo) -> i32 {
 }
 
 #[inline]
-fn query_atom_has_ring_bond(
-    atom: &Atom,
-    adj: &AdjacencyList,
-    mol: &Molecule,
-    ring_info: &RingInfo,
-) -> i32 {
+fn query_atom_has_ring_bond(atom: &Atom, adj: &AdjacencyList, mol: &Molecule, ring_info: &RingInfo) -> i32 {
     // RDKit✔️✔️: static inline int queryAtomHasRingBond(Atom const *at) {
     // RDKit✔️✔️:   ROMol::OBOND_ITER_PAIR atomBonds = at->getOwningMol().getAtomBonds(at);
     // RDKit✔️✔️:   while (atomBonds.first != atomBonds.second) {
@@ -4280,12 +4138,7 @@ pub(crate) fn query_bond_min_ring_size(bond: &Bond, ring_info: &RingInfo) -> usi
 }
 
 #[inline]
-fn query_atom_ring_bond_count(
-    atom: &Atom,
-    adj: &AdjacencyList,
-    mol: &Molecule,
-    ring_info: &RingInfo,
-) -> i32 {
+fn query_atom_ring_bond_count(atom: &Atom, adj: &AdjacencyList, mol: &Molecule, ring_info: &RingInfo) -> i32 {
     // RDKit✔️✔️: static inline int queryAtomRingBondCount(Atom const *at) {
     // RDKit✔️✔️:   // EFF: cache this result
     // RDKit✔️✔️:   int res = 0;
@@ -4582,9 +4435,7 @@ pub fn atom_predicate_matches_with_context(
         AtomQueryPredicate::Any => true,
 
         AtomQueryPredicate::AtomicNumber(n) => {
-            equality_query_match(i32::from(*n), atom, 0, false, |atom| {
-                i32::from(query_atom_num(atom))
-            })
+            equality_query_match(i32::from(*n), atom, 0, false, |atom| i32::from(query_atom_num(atom)))
         }
 
         // RDKit✔️✔️: return makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(
@@ -4603,13 +4454,9 @@ pub fn atom_predicate_matches_with_context(
         // RDKit✔️✔️: `[+N]` / `[-N]` — queryAtomFormalCharge matches charge.
         AtomQueryPredicate::FormalCharge(c) => query_atom_formal_charge(atom) == i32::from(*c),
 
-        AtomQueryPredicate::NegativeFormalCharge(c) => {
-            query_atom_negative_formal_charge(atom) == i32::from(*c)
-        }
+        AtomQueryPredicate::NegativeFormalCharge(c) => query_atom_negative_formal_charge(atom) == i32::from(*c),
 
-        AtomQueryPredicate::NumRadicalElectrons(n) => {
-            query_atom_num_radical_electrons(atom) == i32::from(*n)
-        }
+        AtomQueryPredicate::NumRadicalElectrons(n) => query_atom_num_radical_electrons(atom) == i32::from(*n),
 
         AtomQueryPredicate::HasChiralTag => query_atom_has_chiral_tag(atom) != 0,
 
@@ -4622,54 +4469,33 @@ pub fn atom_predicate_matches_with_context(
             query_atom_h_count(adj, valence.as_ref(), atom, mol) == Some(usize::from(*n))
         }
 
-        AtomQueryPredicate::HasImplicitHydrogen => {
-            query_atom_has_implicit_h(valence.as_ref(), atom)
-        }
+        AtomQueryPredicate::HasImplicitHydrogen => query_atom_has_implicit_h(valence.as_ref(), atom),
 
-        AtomQueryPredicate::ImplicitValence(n) => {
-            query_atom_implicit_valence(valence.as_ref(), atom) == Some(*n)
-        }
+        AtomQueryPredicate::ImplicitValence(n) => query_atom_implicit_valence(valence.as_ref(), atom) == Some(*n),
 
-        AtomQueryPredicate::ExplicitValence(n) => {
-            query_atom_explicit_valence(valence.as_ref(), atom) == Some(*n)
-        }
+        AtomQueryPredicate::ExplicitValence(n) => query_atom_explicit_valence(valence.as_ref(), atom) == Some(*n),
 
         AtomQueryPredicate::ImplicitHydrogenCount(n) => {
             query_atom_implicit_h_count(valence.as_ref(), atom) == Some(usize::from(*n))
         }
 
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(n) => {
-            query_atom_implicit_h_count(valence.as_ref(), atom)
-                .is_some_and(|count| count <= usize::from(*n))
+            query_atom_implicit_h_count(valence.as_ref(), atom).is_some_and(|count| count <= usize::from(*n))
         }
 
-        AtomQueryPredicate::ExplicitDegree(n) => {
-            query_atom_explicit_degree(atom, adj) == usize::from(*n)
-        }
+        AtomQueryPredicate::ExplicitDegree(n) => query_atom_explicit_degree(atom, adj) == usize::from(*n),
 
         // RDKit✔️✔️: explicit degree ≤ N.
-        AtomQueryPredicate::ExplicitDegreeLessEqual(n) => {
-            query_atom_explicit_degree(atom, adj) <= usize::from(*n)
-        }
+        AtomQueryPredicate::ExplicitDegreeLessEqual(n) => query_atom_explicit_degree(atom, adj) <= usize::from(*n),
 
-        AtomQueryPredicate::NonHydrogenDegree(n) => {
-            query_atom_non_hydrogen_degree(atom, adj, mol) == *n
-        }
-        AtomQueryPredicate::NonHydrogenDegreeLessEqual(n) => {
-            query_atom_non_hydrogen_degree(atom, adj, mol) <= *n
-        }
-        AtomQueryPredicate::NonHydrogenDegreeGreaterEqual(n) => {
-            query_atom_non_hydrogen_degree(atom, adj, mol) >= *n
-        }
-        AtomQueryPredicate::HeavyAtomDegree(n) => {
-            query_atom_heavy_atom_degree(atom, adj, mol) == *n
-        }
+        AtomQueryPredicate::NonHydrogenDegree(n) => query_atom_non_hydrogen_degree(atom, adj, mol) == *n,
+        AtomQueryPredicate::NonHydrogenDegreeLessEqual(n) => query_atom_non_hydrogen_degree(atom, adj, mol) <= *n,
+        AtomQueryPredicate::NonHydrogenDegreeGreaterEqual(n) => query_atom_non_hydrogen_degree(atom, adj, mol) >= *n,
+        AtomQueryPredicate::HeavyAtomDegree(n) => query_atom_heavy_atom_degree(atom, adj, mol) == *n,
         AtomQueryPredicate::NumHeteroatomNeighbors(n) => {
             query_atom_num_heteroatom_nbrs(atom, adj, mol) == i32::from(*n)
         }
-        AtomQueryPredicate::HasHeteroatomNeighbors => {
-            query_atom_has_heteroatom_nbrs(atom, adj, mol) != 0
-        }
+        AtomQueryPredicate::HasHeteroatomNeighbors => query_atom_has_heteroatom_nbrs(atom, adj, mol) != 0,
         AtomQueryPredicate::NumAliphaticHeteroatomNeighbors(n) => {
             query_atom_num_aliphatic_heteroatom_nbrs(atom, adj, mol) == i32::from(*n)
         }
@@ -4710,9 +4536,9 @@ pub fn atom_predicate_matches_with_context(
             }
         }
 
-        AtomQueryPredicate::IsBridgehead => ring_info.as_ref().is_some_and(|ri| {
-            crate::chemistry::stereo::query_is_atom_bridgehead(mol, aidx, ri) != 0
-        }),
+        AtomQueryPredicate::IsBridgehead => ring_info
+            .as_ref()
+            .is_some_and(|ri| crate::chemistry::stereo::query_is_atom_bridgehead(mol, aidx, ri) != 0),
 
         AtomQueryPredicate::IsAromatic(desired) => {
             if *desired {
@@ -4722,9 +4548,7 @@ pub fn atom_predicate_matches_with_context(
             }
         }
 
-        AtomQueryPredicate::IsUnsaturated => {
-            query_atom_unsaturated(adj, valence.as_ref(), atom).unwrap_or(false)
-        }
+        AtomQueryPredicate::IsUnsaturated => query_atom_unsaturated(adj, valence.as_ref(), atom).unwrap_or(false),
 
         // RDKit✔️✔️: hybridization match — queryAtomHybridization.
         AtomQueryPredicate::HybridizationMatch(h) => query_atom_hybridization(atom) == *h as i32,
@@ -4733,24 +4557,18 @@ pub fn atom_predicate_matches_with_context(
             query_atom_total_degree(adj, valence.as_ref(), atom) == Some(usize::from(*n))
         }
         AtomQueryPredicate::TotalDegreeLessEqual(n) => {
-            query_atom_total_degree(adj, valence.as_ref(), atom)
-                .is_some_and(|total| total <= usize::from(*n))
+            query_atom_total_degree(adj, valence.as_ref(), atom).is_some_and(|total| total <= usize::from(*n))
         }
         AtomQueryPredicate::TotalDegreeGreaterEqual(n) => {
-            query_atom_total_degree(adj, valence.as_ref(), atom)
-                .is_some_and(|total| total >= usize::from(*n))
+            query_atom_total_degree(adj, valence.as_ref(), atom).is_some_and(|total| total >= usize::from(*n))
         }
 
-        AtomQueryPredicate::TotalValence(n) => {
-            query_atom_total_valence(valence.as_ref(), atom) == Some(i32::from(*n))
-        }
+        AtomQueryPredicate::TotalValence(n) => query_atom_total_valence(valence.as_ref(), atom) == Some(i32::from(*n)),
         AtomQueryPredicate::TotalValenceLessEqual(n) => {
-            query_atom_total_valence(valence.as_ref(), atom)
-                .is_some_and(|total| total <= i32::from(*n))
+            query_atom_total_valence(valence.as_ref(), atom).is_some_and(|total| total <= i32::from(*n))
         }
         AtomQueryPredicate::TotalValenceGreaterEqual(n) => {
-            query_atom_total_valence(valence.as_ref(), atom)
-                .is_some_and(|total| total >= i32::from(*n))
+            query_atom_total_valence(valence.as_ref(), atom).is_some_and(|total| total >= i32::from(*n))
         }
 
         // RDKit✔️✔️: in ring — queryIsAtomInRing.
@@ -4771,11 +4589,7 @@ pub fn atom_predicate_matches_with_context(
         AtomQueryPredicate::NumAtomRings(n) => {
             if let Some(ri) = &ring_info {
                 let membership = query_atom_ring_membership(atom, ri);
-                if *n < 0 {
-                    membership != 0
-                } else {
-                    membership == *n
-                }
+                if *n < 0 { membership != 0 } else { membership == *n }
             } else {
                 false
             }
@@ -4791,16 +4605,14 @@ pub fn atom_predicate_matches_with_context(
         }
         AtomQueryPredicate::InRingOfSizeLessEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_size_range(atom, i32::from(*n), -1, false, false, ri)
-                    <= i32::from(*n)
+                query_atom_is_in_ring_size_range(atom, i32::from(*n), -1, false, false, ri) <= i32::from(*n)
             } else {
                 false
             }
         }
         AtomQueryPredicate::InRingOfSizeGreaterEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_size_range(atom, -1, i32::from(*n), false, false, ri)
-                    >= i32::from(*n)
+                query_atom_is_in_ring_size_range(atom, -1, i32::from(*n), false, false, ri) >= i32::from(*n)
             } else {
                 false
             }
@@ -4834,9 +4646,7 @@ pub fn atom_predicate_matches_with_context(
 
         // RDKit✔️✔️: mass match — queryAtomMass. `Mass` retains the unscaled
         // integer query value accepted by RDKit's makeAtomMassQuery.
-        AtomQueryPredicate::Mass(m) => {
-            query_atom_mass(atom) == i32::from(*m) * MASS_INTEGER_CONVERSION_FACTOR
-        }
+        AtomQueryPredicate::Mass(m) => query_atom_mass(atom) == i32::from(*m) * MASS_INTEGER_CONVERSION_FACTOR,
 
         // RDKit✔️✔️: chiral tag match.
         AtomQueryPredicate::ChiralTagMatch(tag) => atom.chiral_tag() == *tag,
@@ -4845,12 +4655,8 @@ pub fn atom_predicate_matches_with_context(
         }
 
         // RDKit✔️✔️: comparison forms of degree use the same explicit-degree data function.
-        AtomQueryPredicate::DegreeLessEqual(n) => {
-            query_atom_explicit_degree(atom, adj) <= usize::from(*n)
-        }
-        AtomQueryPredicate::DegreeGreaterEqual(n) => {
-            query_atom_explicit_degree(atom, adj) >= usize::from(*n)
-        }
+        AtomQueryPredicate::DegreeLessEqual(n) => query_atom_explicit_degree(atom, adj) <= usize::from(*n),
+        AtomQueryPredicate::DegreeGreaterEqual(n) => query_atom_explicit_degree(atom, adj) >= usize::from(*n),
 
         AtomQueryPredicate::Range(range) => range.matches(atom, mol, ctx),
 
@@ -4863,9 +4669,7 @@ pub fn atom_predicate_matches_with_context(
         }
 
         AtomQueryPredicate::HasProperty(name) => atom.prop(name).is_some(),
-        AtomQueryPredicate::PropertyValue { name, value } => {
-            atom.prop(name) == Some(value.as_str())
-        }
+        AtomQueryPredicate::PropertyValue { name, value } => atom.prop(name) == Some(value.as_str()),
 
         // RDKit✔️✔️: R-group label.
         AtomQueryPredicate::RGroupLabel(_label) => {
@@ -4966,10 +4770,7 @@ fn query_bond_is_single_or_double_or_aromatic(bond: &Bond) -> i32 {
     // lookup, allocation, cloning, or temporary collection. Rust reuses the
     // canonical query_bond_order helper, and converting the result to i32
     // preserves the source function's exact 0/1 return values.
-    query_bond_order_in(
-        bond,
-        &[BondOrder::Single, BondOrder::Double, BondOrder::Aromatic],
-    ) as i32
+    query_bond_order_in(bond, &[BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]) as i32
 }
 
 #[inline]
@@ -5080,8 +4881,7 @@ pub fn bond_predicate_matches_with_context(
         }
         BondQueryPredicate::MinRingSize(target) => {
             if let Some(ri) = &ring_info {
-                usize::try_from(*target)
-                    .is_ok_and(|target| query_bond_min_ring_size(bond, ri) == target)
+                usize::try_from(*target).is_ok_and(|target| query_bond_min_ring_size(bond, ri) == target)
             } else {
                 false
             }
@@ -5102,9 +4902,7 @@ pub fn bond_predicate_matches_with_context(
         }
 
         BondQueryPredicate::HasProperty(name) => bond.prop(name).is_some(),
-        BondQueryPredicate::PropertyValue { name, value } => {
-            bond.prop(name) == Some(value.as_str())
-        }
+        BondQueryPredicate::PropertyValue { name, value } => bond.prop(name) == Some(value.as_str()),
 
         // RDKit✔️✔️: MolFile query code — preserved but not interpreted.
         BondQueryPredicate::MolFileQueryCode(_code) => {
@@ -5338,25 +5136,12 @@ fn range_query_match<T>(
     let match_arg = type_convert(what);
     let lower_cmp = query_cmp(lower, match_arg, tolerance);
     let upper_cmp = query_cmp(upper, match_arg, tolerance);
-    let lower_matches = if lower_open {
-        lower_cmp < 0
-    } else {
-        lower_cmp <= 0
-    };
-    let upper_matches = if upper_open {
-        upper_cmp > 0
-    } else {
-        upper_cmp >= 0
-    };
+    let lower_matches = if lower_open { lower_cmp < 0 } else { lower_cmp <= 0 };
+    let upper_matches = if upper_open { upper_cmp > 0 } else { upper_cmp >= 0 };
     (lower_matches && upper_matches) != negated
 }
 
-fn set_query_match<T, U: Ord>(
-    values: &BTreeSet<U>,
-    what: T,
-    negated: bool,
-    type_convert: impl FnOnce(T) -> U,
-) -> bool {
+fn set_query_match<T, U: Ord>(values: &BTreeSet<U>, what: T, negated: bool, type_convert: impl FnOnce(T) -> U) -> bool {
     // RDKit✔️✔️: bool Match(const DataFuncArgType what) const override {
     // RDKit✔️✔️:   MatchFuncArgType mfArg =
     // RDKit✔️✔️:       this->TypeConvert(what, Int2Type<needsConversion>());
@@ -5540,9 +5325,7 @@ fn atom_equality_query_kind(predicate: &AtomQueryPredicate) -> Option<AtomEquali
     })
 }
 
-fn atom_query_base(
-    mut query: &QueryNode<AtomQueryPredicate>,
-) -> (&QueryNode<AtomQueryPredicate>, bool) {
+fn atom_query_base(mut query: &QueryNode<AtomQueryPredicate>) -> (&QueryNode<AtomQueryPredicate>, bool) {
     let mut negated = false;
     while let QueryNode::Not(child) = query {
         negated = !negated;
@@ -5696,9 +5479,7 @@ pub(crate) fn atom_queries_match(
             .iter()
             .all(|second_child| atom_queries_match(first, second_child));
     }
-    let (QueryNode::Predicate(first_predicate), QueryNode::Predicate(second_predicate)) =
-        (first, second)
-    else {
+    let (QueryNode::Predicate(first_predicate), QueryNode::Predicate(second_predicate)) = (first, second) else {
         return false;
     };
     let Some(first_kind) = atom_equality_query_kind(first_predicate) else {
@@ -5707,12 +5488,7 @@ pub(crate) fn atom_queries_match(
     if atom_equality_query_kind(second_predicate) != Some(first_kind) {
         return false;
     }
-    atom_query_local_match(
-        first_predicate,
-        first_negated,
-        second_predicate,
-        second_negated,
-    )
+    atom_query_local_match(first_predicate, first_negated, second_predicate, second_negated)
 }
 
 fn rdkit_bond_order_value(order: BondOrder) -> i32 {
@@ -5766,9 +5542,7 @@ fn bond_equality_query_value(predicate: &BondQueryPredicate) -> Option<i32> {
     }
 }
 
-fn bond_query_base(
-    mut query: &QueryNode<BondQueryPredicate>,
-) -> (&QueryNode<BondQueryPredicate>, bool) {
+fn bond_query_base(mut query: &QueryNode<BondQueryPredicate>) -> (&QueryNode<BondQueryPredicate>, bool) {
     let mut negated = false;
     while let QueryNode::Not(child) = query {
         negated = !negated;
@@ -5902,9 +5676,7 @@ pub(crate) fn bond_queries_match(
             .iter()
             .any(|second_child| bond_queries_match(first, second_child));
     }
-    let (QueryNode::Predicate(first_predicate), QueryNode::Predicate(second_predicate)) =
-        (first, second)
-    else {
+    let (QueryNode::Predicate(first_predicate), QueryNode::Predicate(second_predicate)) = (first, second) else {
         return false;
     };
     let (Some(first_value), Some(second_value)) = (
@@ -5916,11 +5688,7 @@ pub(crate) fn bond_queries_match(
     bond_query_local_match(&first_value, first_negated, &second_value, second_negated)
 }
 
-fn query_atom_query_match(
-    query: &QueryNode<AtomQueryPredicate>,
-    what: &Atom,
-    mol: &Molecule,
-) -> bool {
+fn query_atom_query_match(query: &QueryNode<AtomQueryPredicate>, what: &Atom, mol: &Molecule) -> bool {
     // RDKit✔️❌: bool QueryAtom::QueryMatch(QueryAtom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -5943,11 +5711,7 @@ fn query_atom_query_match(
     }
 }
 
-fn query_bond_query_match(
-    query: &QueryNode<BondQueryPredicate>,
-    what: &Bond,
-    mol: &Molecule,
-) -> bool {
+fn query_bond_query_match(query: &QueryNode<BondQueryPredicate>, what: &Bond, mol: &Molecule) -> bool {
     // RDKit✔️❌: bool QueryBond::QueryMatch(QueryBond const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query bond");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -6101,11 +5865,7 @@ pub(crate) fn xor_query_match<T>(
 ///   An `AtomOr`/`BondOr` node matches iff any child matches.
 ///   A negation inverts match.
 ///   A leaf Predicate matches iff `atom_predicate_matches` returns true.
-pub fn atom_matches_query(
-    atom: &Atom,
-    query: &QueryNode<AtomQueryPredicate>,
-    mol: &Molecule,
-) -> bool {
+pub fn atom_matches_query(atom: &Atom, query: &QueryNode<AtomQueryPredicate>, mol: &Molecule) -> bool {
     // RDKit✔️❌: bool QueryAtom::Match(Atom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -6150,11 +5910,7 @@ pub fn atom_matches_query_with_context(
 }
 
 /// RDKit✔️✔️: Evaluate a `QueryNode<BondQueryPredicate>` tree against `bond`.
-pub fn bond_matches_query(
-    bond: &Bond,
-    query: &QueryNode<BondQueryPredicate>,
-    mol: &Molecule,
-) -> bool {
+pub fn bond_matches_query(bond: &Bond, query: &QueryNode<BondQueryPredicate>, mol: &Molecule) -> bool {
     // RDKit✔️❌: bool QueryBond::Match(Bond const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query bond");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -6269,10 +6025,7 @@ mod tests {
         test_atom_with_query_and_aromatic(query, false)
     }
 
-    fn test_atom_with_query_and_aromatic(
-        query: Option<QueryNode<AtomQueryPredicate>>,
-        aromatic: bool,
-    ) -> Atom {
+    fn test_atom_with_query_and_aromatic(query: Option<QueryNode<AtomQueryPredicate>>, aromatic: bool) -> Atom {
         let spec = crate::AtomSpec::new(crate::Element::C).with_aromatic(aromatic);
         let spec = match query {
             Some(query) => spec.with_query(query),
@@ -6298,15 +6051,9 @@ mod tests {
                 aromatic: false,
             },
         ))));
-        assert!(is_complex_atom_query(&atom(
-            QueryNode::not(atomic_number())
-        )));
-        assert!(is_complex_atom_query(&atom(QueryNode::or(vec![
-            atomic_number()
-        ]))));
-        assert!(is_complex_atom_query(&atom(QueryNode::xor(vec![
-            atomic_number()
-        ]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::not(atomic_number()))));
+        assert!(is_complex_atom_query(&atom(QueryNode::or(vec![atomic_number()]))));
+        assert!(is_complex_atom_query(&atom(QueryNode::xor(vec![atomic_number()]))));
         assert!(!is_complex_atom_query(&atom(QueryNode::and(vec![
             atomic_number(),
             charge(),
@@ -6403,9 +6150,7 @@ mod tests {
         assert!(is_complex_bond_query(&bond(QueryNode::predicate(
             BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
         ))));
-        assert!(is_complex_bond_query(&bond(QueryNode::not(order(
-            BondOrder::Single,
-        )))));
+        assert!(is_complex_bond_query(&bond(QueryNode::not(order(BondOrder::Single,)))));
         assert!(is_complex_bond_query(&bond(QueryNode::and(vec![order(
             BondOrder::Single,
         )]))));
@@ -6421,8 +6166,7 @@ mod tests {
     fn layered_query_aromaticity_matches_source() {
         let mut builder = Molecule::builder();
         let plain = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let aromatic_by_flag =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let aromatic_by_flag = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
         let aromatic_by_bond = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let aromatic_neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
@@ -6434,18 +6178,9 @@ mod tests {
             .expect("aromaticity fixture bond is valid");
         let molecule = builder.build().expect("aromaticity fixture is valid");
 
-        assert!(!is_atom_aromatic(
-            &molecule.atoms()[plain.index()],
-            &molecule
-        ));
-        assert!(is_atom_aromatic(
-            &molecule.atoms()[aromatic_by_flag.index()],
-            &molecule,
-        ));
-        assert!(is_atom_aromatic(
-            &molecule.atoms()[aromatic_by_bond.index()],
-            &molecule,
-        ));
+        assert!(!is_atom_aromatic(&molecule.atoms()[plain.index()], &molecule));
+        assert!(is_atom_aromatic(&molecule.atoms()[aromatic_by_flag.index()], &molecule,));
+        assert!(is_atom_aromatic(&molecule.atoms()[aromatic_by_bond.index()], &molecule,));
 
         let query_molecule = Molecule::new();
         let query_atom = |query, aromatic| test_atom_with_query_and_aromatic(Some(query), aromatic);
@@ -6459,38 +6194,23 @@ mod tests {
             })
         };
 
-        assert!(!is_atom_aromatic(
-            &query_atom(number(), false),
-            &query_molecule,
-        ));
-        assert!(is_atom_aromatic(
-            &query_atom(number(), true),
-            &query_molecule,
-        ));
+        assert!(!is_atom_aromatic(&query_atom(number(), false), &query_molecule,));
+        assert!(is_atom_aromatic(&query_atom(number(), true), &query_molecule,));
         assert!(is_atom_aromatic(
             &query_atom(QueryNode::not(number()), true),
             &query_molecule,
         ));
-        assert!(is_atom_aromatic(
-            &query_atom(aromatic(), false),
-            &query_molecule,
-        ));
+        assert!(is_atom_aromatic(&query_atom(aromatic(), false), &query_molecule,));
         assert!(!is_atom_aromatic(
             &query_atom(QueryNode::not(aromatic()), false),
             &query_molecule,
         ));
-        assert!(!is_atom_aromatic(
-            &query_atom(aliphatic(), true),
-            &query_molecule,
-        ));
+        assert!(!is_atom_aromatic(&query_atom(aliphatic(), true), &query_molecule,));
         assert!(is_atom_aromatic(
             &query_atom(QueryNode::not(aliphatic()), false),
             &query_molecule,
         ));
-        assert!(is_atom_aromatic(
-            &query_atom(atom_type(true), false),
-            &query_molecule,
-        ));
+        assert!(is_atom_aromatic(&query_atom(atom_type(true), false), &query_molecule,));
         assert!(is_atom_aromatic(
             &query_atom(QueryNode::not(atom_type(false)), false),
             &query_molecule,
@@ -6504,10 +6224,7 @@ mod tests {
             &query_molecule,
         ));
         assert!(is_atom_aromatic(
-            &query_atom(
-                QueryNode::and(vec![number(), QueryNode::not(aromatic())]),
-                false,
-            ),
+            &query_atom(QueryNode::and(vec![number(), QueryNode::not(aromatic())]), false,),
             &query_molecule,
         ));
         assert!(!is_atom_aromatic(
@@ -6515,17 +6232,11 @@ mod tests {
             &query_molecule,
         ));
         assert!(!is_atom_aromatic(
-            &query_atom(
-                QueryNode::not(QueryNode::and(vec![number(), aromatic()])),
-                true,
-            ),
+            &query_atom(QueryNode::not(QueryNode::and(vec![number(), aromatic()])), true,),
             &query_molecule,
         ));
         assert!(!is_atom_aromatic(
-            &query_atom(
-                QueryNode::predicate(AtomQueryPredicate::FormalCharge(0)),
-                true,
-            ),
+            &query_atom(QueryNode::predicate(AtomQueryPredicate::FormalCharge(0)), true,),
             &query_molecule,
         ));
     }
@@ -6545,9 +6256,10 @@ mod tests {
             QueryNode::not(atomic_number(7)),
         ]))));
         assert!(is_atom_list_query(&atom(QueryNode::not(atomic_number(7)))));
-        assert!(is_atom_list_query(&atom(QueryNode::not(QueryNode::or(
-            vec![atomic_number(6), QueryNode::not(atomic_number(7))],
-        )))));
+        assert!(is_atom_list_query(&atom(QueryNode::not(QueryNode::or(vec![
+            atomic_number(6),
+            QueryNode::not(atomic_number(7))
+        ],)))));
         assert!(!is_atom_list_query(&atom(atomic_number(6))));
         assert!(is_atom_list_query(&atom(atomic_number(8))));
         assert!(is_atom_list_query(&atom(QueryNode::predicate(
@@ -6582,15 +6294,10 @@ mod tests {
         ]);
         assert_eq!(get_atom_list_query_values(&query), Ok(vec![6, 7, 8]));
         assert_eq!(
-            get_atom_list_query_values(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
-                vec![9, 17]
-            ),)),
+            get_atom_list_query_values(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![9, 17]),)),
             Ok(vec![9, 17])
         );
-        assert_eq!(
-            get_atom_list_query_values(&QueryNode::not(number(6))),
-            Ok(vec![6])
-        );
+        assert_eq!(get_atom_list_query_values(&QueryNode::not(number(6))), Ok(vec![6]));
         assert_eq!(
             get_atom_list_query_values(&QueryNode::or(vec![QueryNode::not(number(6))])),
             Err("bad query type1")
@@ -6606,9 +6313,7 @@ mod tests {
         let mut query = QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::RingBondCount(QUERY_SCAN_MAGIC_VALUE)),
             QueryNode::or(vec![
-                QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(
-                    QUERY_SCAN_MAGIC_VALUE,
-                )),
+                QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(QUERY_SCAN_MAGIC_VALUE)),
                 QueryNode::predicate(AtomQueryPredicate::RingBondCount(2)),
                 QueryNode::predicate(AtomQueryPredicate::HasRingBond),
             ]),
@@ -6640,9 +6345,7 @@ mod tests {
     fn smarts_complete_mol_queries() {
         let query = QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::RingBondCount(QUERY_SCAN_MAGIC_VALUE)),
-            QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(
-                QUERY_SCAN_MAGIC_VALUE,
-            )),
+            QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(QUERY_SCAN_MAGIC_VALUE)),
             QueryNode::predicate(AtomQueryPredicate::HasRingBond),
         ]);
         let mut builder = Molecule::builder();
@@ -6716,26 +6419,16 @@ mod tests {
     #[test]
     fn smarts_finalize_ring_size() {
         assert_eq!(
-            finalize_atom_ring_size_query(
-                make_atom_in_ring_of_size_query(5),
-                RangeQueryType::Equal,
-            ),
+            finalize_atom_ring_size_query(make_atom_in_ring_of_size_query(5), RangeQueryType::Equal,),
             Ok(QueryNode::predicate(AtomQueryPredicate::InRingOfSize(5)))
         );
         assert_eq!(
             finalize_atom_ring_size_query(make_atom_in_ring_of_size_query(5), RangeQueryType::Less,),
-            Ok(QueryNode::predicate(
-                AtomQueryPredicate::InRingOfSizeLessEqual(5)
-            ))
+            Ok(QueryNode::predicate(AtomQueryPredicate::InRingOfSizeLessEqual(5)))
         );
         assert_eq!(
-            finalize_atom_ring_size_query(
-                make_atom_in_ring_of_size_query(5),
-                RangeQueryType::Greater,
-            ),
-            Ok(QueryNode::predicate(
-                AtomQueryPredicate::InRingOfSizeGreaterEqual(5)
-            ))
+            finalize_atom_ring_size_query(make_atom_in_ring_of_size_query(5), RangeQueryType::Greater,),
+            Ok(QueryNode::predicate(AtomQueryPredicate::InRingOfSizeGreaterEqual(5)))
         );
         let range = make_atom_in_ring_of_size_range_query(3, 6, true, false);
         assert_eq!(
@@ -6747,13 +6440,8 @@ mod tests {
     #[test]
     fn smarts_finalize_atom_description() {
         assert_eq!(
-            finalize_atom_query_from_description(
-                "less_AtomRingSize",
-                make_atom_in_ring_of_size_query(6),
-            ),
-            Ok(QueryNode::predicate(
-                AtomQueryPredicate::InRingOfSizeLessEqual(6)
-            ))
+            finalize_atom_query_from_description("less_AtomRingSize", make_atom_in_ring_of_size_query(6),),
+            Ok(QueryNode::predicate(AtomQueryPredicate::InRingOfSizeLessEqual(6)))
         );
         let atomic_number = make_atom_num_query(6);
         assert_eq!(
@@ -6793,22 +6481,13 @@ mod tests {
         let mut builder = Molecule::builder();
         builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let molecule = builder.build().unwrap();
-        assert!(atom_matches_query(
-            &atom,
-            &make_atom_has_prop_query("role"),
-            &molecule,
-        ));
+        assert!(atom_matches_query(&atom, &make_atom_has_prop_query("role"), &molecule,));
 
         let bond = Bond::from_spec(
             crate::BondId::new(0),
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-                .with_prop("kind", "kept"),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single).with_prop("kind", "kept"),
         );
-        assert!(bond_matches_query(
-            &bond,
-            &make_bond_has_prop_query("kind"),
-            &molecule,
-        ));
+        assert!(bond_matches_query(&bond, &make_bond_has_prop_query("kind"), &molecule,));
     }
 
     #[test]
@@ -6833,8 +6512,7 @@ mod tests {
 
         let bond = Bond::from_spec(
             crate::BondId::new(0),
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-                .with_prop("kind", "kept"),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single).with_prop("kind", "kept"),
         );
         assert!(bond_matches_query(
             &bond,
@@ -6847,26 +6525,14 @@ mod tests {
     fn smarts_atom_ring_query() {
         let ring = Molecule::from_smiles("C1CC1").unwrap();
         let chain = Molecule::from_smiles("CCC").unwrap();
-        assert!(atom_matches_query(
-            &ring.atoms()[0],
-            &make_atom_ring_query(-1),
-            &ring,
-        ));
+        assert!(atom_matches_query(&ring.atoms()[0], &make_atom_ring_query(-1), &ring,));
         assert!(!atom_matches_query(
             &chain.atoms()[0],
             &make_atom_ring_query(-1),
             &chain,
         ));
-        assert!(atom_matches_query(
-            &chain.atoms()[0],
-            &make_atom_ring_query(0),
-            &chain,
-        ));
-        assert!(atom_matches_query(
-            &ring.atoms()[0],
-            &make_atom_ring_query(1),
-            &ring,
-        ));
+        assert!(atom_matches_query(&chain.atoms()[0], &make_atom_ring_query(0), &chain,));
+        assert!(atom_matches_query(&ring.atoms()[0], &make_atom_ring_query(1), &ring,));
     }
 
     #[test]
@@ -6905,20 +6571,15 @@ mod tests {
     #[test]
     fn smarts_recursive_structure_get_molecule() {
         let molecule = Molecule::from_smiles("C=C").unwrap();
-        let query = RecursiveStructureQuery::from_molecule(
-            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
-            0,
-        );
+        let query = RecursiveStructureQuery::from_molecule(QueryGraph::from_concrete_molecule(&molecule).unwrap(), 0);
         assert_eq!(query.query_mol().unwrap().num_bonds(), 1);
     }
 
     #[test]
     fn smarts_recursive_structure_copy() {
         let molecule = Molecule::from_smiles("CO").unwrap();
-        let mut query = RecursiveStructureQuery::from_molecule(
-            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
-            23,
-        );
+        let mut query =
+            RecursiveStructureQuery::from_molecule(QueryGraph::from_concrete_molecule(&molecule).unwrap(), 23);
         query.insert_atom_index(3);
         let copied = query.copy_query();
         assert_eq!(copied, query);
@@ -6929,10 +6590,7 @@ mod tests {
     #[test]
     fn smarts_recursive_structure_serial() {
         let molecule = Molecule::new();
-        let query = RecursiveStructureQuery::from_molecule(
-            QueryGraph::from_concrete_molecule(&molecule).unwrap(),
-            101,
-        );
+        let query = RecursiveStructureQuery::from_molecule(QueryGraph::from_concrete_molecule(&molecule).unwrap(), 101);
         assert_eq!(query.serial_number(), 101);
     }
 
@@ -6952,12 +6610,8 @@ mod tests {
 
         assert!(!is_complex_bond_query(&test_bond_with_query(None)));
         assert!(!is_complex_bond_query(&bond(order(BondOrder::Double))));
-        assert!(!is_complex_bond_query(&bond(
-            make_single_or_aromatic_bond_query()
-        )));
-        assert!(is_complex_bond_query(&bond(QueryNode::not(order(
-            BondOrder::Single
-        )))));
+        assert!(!is_complex_bond_query(&bond(make_single_or_aromatic_bond_query())));
+        assert!(is_complex_bond_query(&bond(QueryNode::not(order(BondOrder::Single)))));
         assert!(is_complex_bond_query(&bond(QueryNode::and(vec![order(
             BondOrder::Single
         )]))));
@@ -7075,11 +6729,7 @@ mod tests {
 
         let mut unchanged = QueryNode::not(any());
         let mut unchanged_other = carbon();
-        merge_null_q_first(
-            &mut unchanged,
-            &mut unchanged_other,
-            CompositeQueryType::And,
-        );
+        merge_null_q_first(&mut unchanged, &mut unchanged_other, CompositeQueryType::And);
         assert_eq!(unchanged, QueryNode::not(any()));
         assert_eq!(unchanged_other, carbon());
     }
@@ -7092,24 +6742,12 @@ mod tests {
 
         let mut both_left = any();
         let mut both_right = QueryNode::not(any());
-        merge_null_queries(
-            &mut both_left,
-            true,
-            &mut both_right,
-            true,
-            CompositeQueryType::And,
-        );
+        merge_null_queries(&mut both_left, true, &mut both_right, true, CompositeQueryType::And);
         assert!(both_left.is_negated());
 
         let mut first_null = any();
         let mut first_other = carbon();
-        merge_null_queries(
-            &mut first_null,
-            true,
-            &mut first_other,
-            false,
-            CompositeQueryType::And,
-        );
+        merge_null_queries(&mut first_null, true, &mut first_other, false, CompositeQueryType::And);
         assert_eq!(first_null, carbon());
 
         let mut second_other = carbon();
@@ -7147,9 +6785,7 @@ mod tests {
         assert_eq!(single.order(), BondOrder::Single);
         assert_eq!(
             single.query(),
-            Some(&QueryNode::predicate(BondQueryPredicate::Order(
-                BondOrder::Single
-            )))
+            Some(&QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)))
         );
 
         let unspecified = make_query_bond_spec(begin, end, BondOrder::Unspecified);
@@ -7257,16 +6893,8 @@ mod tests {
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
         ]);
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[oxygen.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
+        assert!(atom_matches_query(&molecule.atoms()[oxygen.index()], &query, &molecule,));
     }
 
     #[test]
@@ -7288,11 +6916,7 @@ mod tests {
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let molecule = builder.build().expect("equality atom fixture is valid");
         let query = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[oxygen.index()],
             &query,
@@ -7375,19 +6999,10 @@ mod tests {
     #[test]
     fn smarts_query_range_match() {
         let conversions = std::cell::Cell::new(0);
-        assert!(range_query_match(
-            3,
-            7,
-            5,
-            0,
-            true,
-            true,
-            false,
-            |observed| {
-                conversions.set(conversions.get() + 1);
-                observed
-            }
-        ));
+        assert!(range_query_match(3, 7, 5, 0, true, true, false, |observed| {
+            conversions.set(conversions.get() + 1);
+            observed
+        }));
         assert_eq!(conversions.get(), 1, "TypeConvert must run exactly once");
 
         assert!(!range_query_match(3, 7, 3, 0, true, true, false, |v| v));
@@ -7414,12 +7029,7 @@ mod tests {
         assert!(!set_query_match(&values, 3, false, |value| value));
         assert!(set_query_match(&values, 3, true, |value| value));
         assert!(!set_query_match(&values, 8, true, |value| value));
-        assert!(!set_query_match(
-            &BTreeSet::<i32>::new(),
-            1,
-            false,
-            |value| value
-        ));
+        assert!(!set_query_match(&BTreeSet::<i32>::new(), 1, false, |value| value));
     }
 
     #[test]
@@ -7440,10 +7050,7 @@ mod tests {
         let mut copied = query_atom_copy(source);
 
         assert_eq!(&copied, source);
-        copied
-            .query_mut()
-            .expect("copied query exists")
-            .set_negation(true);
+        copied.query_mut().expect("copied query exists").set_negation(true);
         assert_ne!(copied.query(), source.query());
         assert_eq!(source.prop("label"), Some("source"));
     }
@@ -7468,9 +7075,7 @@ mod tests {
         let mut copied = query_bond_copy(source);
 
         assert_eq!(&copied, source);
-        copied.set_query(Some(QueryNode::predicate(BondQueryPredicate::Order(
-            BondOrder::Single,
-        ))));
+        copied.set_query(Some(QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single))));
         assert_ne!(copied.query(), source.query());
         assert_eq!(source.prop("label"), Some("source"));
     }
@@ -7482,35 +7087,27 @@ mod tests {
         let end = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let bond_id = builder
             .add_bond(
-                crate::BondSpec::new(begin, end, BondOrder::Single).with_query(QueryNode::and(
-                    vec![
-                        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
-                        QueryNode::predicate(BondQueryPredicate::IsInRing(true)),
-                    ],
-                )),
+                crate::BondSpec::new(begin, end, BondOrder::Single).with_query(QueryNode::and(vec![
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                    QueryNode::predicate(BondQueryPredicate::IsInRing(true)),
+                ])),
             )
             .expect("query bond set-type fixture is valid");
-        let molecule = builder
-            .build()
-            .expect("query bond set-type fixture is valid");
+        let molecule = builder.build().expect("query bond set-type fixture is valid");
         let mut bond = query_bond_copy(&molecule.bonds()[bond_id.index()]);
 
         query_bond_set_type(&mut bond, BondOrder::Triple);
         assert_eq!(bond.order(), BondOrder::Triple);
         assert_eq!(
             bond.query(),
-            Some(&QueryNode::predicate(BondQueryPredicate::Order(
-                BondOrder::Triple
-            )))
+            Some(&QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Triple)))
         );
 
         query_bond_set_type(&mut bond, BondOrder::Unspecified);
         assert_eq!(bond.order(), BondOrder::Unspecified);
         assert_eq!(
             bond.query(),
-            Some(&QueryNode::predicate(BondQueryPredicate::Order(
-                BondOrder::Unspecified
-            )))
+            Some(&QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Unspecified)))
         );
         assert_ne!(bond.query(), Some(&make_bond_null_query()));
     }
@@ -7522,14 +7119,9 @@ mod tests {
         let end = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let original_query = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double));
         let bond_id = builder
-            .add_bond(
-                crate::BondSpec::new(begin, end, BondOrder::Double)
-                    .with_query(original_query.clone()),
-            )
+            .add_bond(crate::BondSpec::new(begin, end, BondOrder::Double).with_query(original_query.clone()))
             .expect("query bond set-direction fixture is valid");
-        let molecule = builder
-            .build()
-            .expect("query bond set-direction fixture is valid");
+        let molecule = builder.build().expect("query bond set-direction fixture is valid");
         let mut bond = query_bond_copy(&molecule.bonds()[bond_id.index()]);
 
         query_bond_set_dir(&mut bond, crate::BondDirection::BeginWedge);
@@ -7547,36 +7139,15 @@ mod tests {
         let charged = QueryNode::predicate(AtomQueryPredicate::FormalCharge(1));
 
         let mut maintained = carbon.clone();
-        query_atom_expand_query(
-            &mut maintained,
-            charged.clone(),
-            CompositeQueryType::And,
-            true,
-        );
-        assert_eq!(
-            maintained,
-            QueryNode::and(vec![carbon.clone(), charged.clone()])
-        );
+        query_atom_expand_query(&mut maintained, charged.clone(), CompositeQueryType::And, true);
+        assert_eq!(maintained, QueryNode::and(vec![carbon.clone(), charged.clone()]));
 
         let mut reversed = carbon.clone();
-        query_atom_expand_query(
-            &mut reversed,
-            charged.clone(),
-            CompositeQueryType::Or,
-            false,
-        );
-        assert_eq!(
-            reversed,
-            QueryNode::or(vec![charged.clone(), carbon.clone()])
-        );
+        query_atom_expand_query(&mut reversed, charged.clone(), CompositeQueryType::Or, false);
+        assert_eq!(reversed, QueryNode::or(vec![charged.clone(), carbon.clone()]));
 
         let mut null_and = make_atom_null_query();
-        query_atom_expand_query(
-            &mut null_and,
-            charged.clone(),
-            CompositeQueryType::And,
-            true,
-        );
+        query_atom_expand_query(&mut null_and, charged.clone(), CompositeQueryType::And, true);
         assert_eq!(null_and, charged);
 
         let mut null_xor = make_atom_null_query();
@@ -7590,36 +7161,15 @@ mod tests {
         let in_ring = QueryNode::predicate(BondQueryPredicate::IsInRing(true));
 
         let mut maintained = single.clone();
-        query_bond_expand_query(
-            &mut maintained,
-            in_ring.clone(),
-            CompositeQueryType::And,
-            true,
-        );
-        assert_eq!(
-            maintained,
-            QueryNode::and(vec![single.clone(), in_ring.clone()])
-        );
+        query_bond_expand_query(&mut maintained, in_ring.clone(), CompositeQueryType::And, true);
+        assert_eq!(maintained, QueryNode::and(vec![single.clone(), in_ring.clone()]));
 
         let mut reversed = single.clone();
-        query_bond_expand_query(
-            &mut reversed,
-            in_ring.clone(),
-            CompositeQueryType::Or,
-            false,
-        );
-        assert_eq!(
-            reversed,
-            QueryNode::or(vec![in_ring.clone(), single.clone()])
-        );
+        query_bond_expand_query(&mut reversed, in_ring.clone(), CompositeQueryType::Or, false);
+        assert_eq!(reversed, QueryNode::or(vec![in_ring.clone(), single.clone()]));
 
         let mut null_and = make_bond_null_query();
-        query_bond_expand_query(
-            &mut null_and,
-            in_ring.clone(),
-            CompositeQueryType::And,
-            true,
-        );
+        query_bond_expand_query(&mut null_and, in_ring.clone(), CompositeQueryType::And, true);
         assert_eq!(null_and, in_ring);
 
         let mut null_xor = make_bond_null_query();
@@ -7753,11 +7303,7 @@ mod tests {
             QueryNode::not(QueryNode::predicate(AtomQueryPredicate::FormalCharge(1))),
         ]);
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule));
         assert!(!atom_matches_query(
             &molecule.atoms()[oxygen.index()],
             &query,
@@ -7783,11 +7329,7 @@ mod tests {
             QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
         ]);
 
-        assert!(bond_matches_query(
-            &molecule.bonds()[single.index()],
-            &query,
-            &molecule
-        ));
+        assert!(bond_matches_query(&molecule.bonds()[single.index()], &query, &molecule));
         assert!(!bond_matches_query(
             &molecule.bonds()[double.index()],
             &query,
@@ -7809,21 +7351,17 @@ mod tests {
             .expect("ordinary double bond is valid");
         let query_single = builder
             .add_bond(
-                crate::BondSpec::new(atoms[4], atoms[5], BondOrder::Single).with_query(
-                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
-                ),
+                crate::BondSpec::new(atoms[4], atoms[5], BondOrder::Single)
+                    .with_query(QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single))),
             )
             .expect("query single bond is valid");
         let query_double = builder
             .add_bond(
-                crate::BondSpec::new(atoms[6], atoms[7], BondOrder::Double).with_query(
-                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
-                ),
+                crate::BondSpec::new(atoms[6], atoms[7], BondOrder::Double)
+                    .with_query(QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double))),
             )
             .expect("query double bond is valid");
-        let molecule = builder
-            .build()
-            .expect("query bond QueryMatch fixture is valid");
+        let molecule = builder.build().expect("query bond QueryMatch fixture is valid");
         let single_query = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single));
 
         assert!(query_bond_query_match(
@@ -7861,9 +7399,7 @@ mod tests {
             crate::AtomSpec::new(crate::Element::O)
                 .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8))),
         );
-        let molecule = builder
-            .build()
-            .expect("query atom QueryMatch fixture is valid");
+        let molecule = builder.build().expect("query atom QueryMatch fixture is valid");
         let carbon_query = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
 
         assert!(query_atom_query_match(
@@ -7915,9 +7451,7 @@ mod tests {
                     .expect("single-double-aromatic fixture bond is valid"),
             );
         }
-        let molecule = builder
-            .build()
-            .expect("single-double-aromatic fixture is valid");
+        let molecule = builder.build().expect("single-double-aromatic fixture is valid");
         let query = make_single_or_double_or_aromatic_bond_query();
 
         for bond_id in &bonds[..3] {
@@ -7938,10 +7472,7 @@ mod tests {
     fn smarts_make_single_or_double_bond_query() {
         assert_eq!(
             make_single_or_double_bond_query(),
-            QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-                BondOrder::Single,
-                BondOrder::Double,
-            ]))
+            QueryNode::predicate(BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double,]))
         );
 
         let mut builder = Molecule::builder();
@@ -7993,9 +7524,7 @@ mod tests {
                     .expect("double-or-aromatic fixture bond is valid"),
             );
         }
-        let molecule = builder
-            .build()
-            .expect("double-or-aromatic fixture is valid");
+        let molecule = builder.build().expect("double-or-aromatic fixture is valid");
         let query = make_double_or_aromatic_bond_query();
 
         for bond_id in &bonds[..2] {
@@ -8033,9 +7562,7 @@ mod tests {
                     .expect("single-or-aromatic fixture bond is valid"),
             );
         }
-        let molecule = builder
-            .build()
-            .expect("single-or-aromatic fixture is valid");
+        let molecule = builder.build().expect("single-or-aromatic fixture is valid");
         let query = make_single_or_aromatic_bond_query();
 
         assert!(bond_matches_query(
@@ -8080,11 +7607,7 @@ mod tests {
             &query,
             &molecule,
         ));
-        assert!(bond_matches_query(
-            &molecule.bonds()[double.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(bond_matches_query(&molecule.bonds()[double.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8101,32 +7624,16 @@ mod tests {
         let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let a2 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let wedge = builder
-            .add_bond(
-                crate::BondSpec::new(a0, a1, BondOrder::Single)
-                    .with_direction(BondDirection::BeginWedge),
-            )
+            .add_bond(crate::BondSpec::new(a0, a1, BondOrder::Single).with_direction(BondDirection::BeginWedge))
             .expect("bond-direction query wedge bond is valid");
         let dash = builder
-            .add_bond(
-                crate::BondSpec::new(a1, a2, BondOrder::Single)
-                    .with_direction(BondDirection::BeginDash),
-            )
+            .add_bond(crate::BondSpec::new(a1, a2, BondOrder::Single).with_direction(BondDirection::BeginDash))
             .expect("bond-direction query dash bond is valid");
-        let molecule = builder
-            .build()
-            .expect("bond-direction query fixture is valid");
+        let molecule = builder.build().expect("bond-direction query fixture is valid");
         let query = make_bond_dir_equals_query(BondDirection::BeginWedge);
 
-        assert!(bond_matches_query(
-            &molecule.bonds()[wedge.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(!bond_matches_query(
-            &molecule.bonds()[dash.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(bond_matches_query(&molecule.bonds()[wedge.index()], &query, &molecule,));
+        assert!(!bond_matches_query(&molecule.bonds()[dash.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8309,9 +7816,7 @@ mod tests {
         let chain_bond = builder
             .add_bond(crate::BondSpec::new(a2, a3, BondOrder::Single))
             .expect("minimum-ring-size query chain edge is valid");
-        let molecule = builder
-            .build()
-            .expect("minimum-ring-size query fixture is valid");
+        let molecule = builder.build().expect("minimum-ring-size query fixture is valid");
 
         assert!(bond_matches_query(
             &molecule.bonds()[ring_bond.index()],
@@ -8332,10 +7837,7 @@ mod tests {
 
     #[test]
     fn smarts_make_bond_null_query() {
-        assert_eq!(
-            make_bond_null_query(),
-            QueryNode::predicate(BondQueryPredicate::Any)
-        );
+        assert_eq!(make_bond_null_query(), QueryNode::predicate(BondQueryPredicate::Any));
 
         let mut builder = Molecule::builder();
         let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
@@ -8350,16 +7852,8 @@ mod tests {
         let molecule = builder.build().expect("null-bond query fixture is valid");
         let query = make_bond_null_query();
 
-        assert!(bond_matches_query(
-            &molecule.bonds()[single.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(bond_matches_query(
-            &molecule.bonds()[triple.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(bond_matches_query(&molecule.bonds()[single.index()], &query, &molecule,));
+        assert!(bond_matches_query(&molecule.bonds()[triple.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8367,10 +7861,7 @@ mod tests {
         let expected = MH_EXCLUDED_ATOMIC_NUMBERS
             .map(|number| QueryNode::predicate(AtomQueryPredicate::AtomicNumber(number)))
             .to_vec();
-        assert_eq!(
-            make_m_h_atom_query(),
-            QueryNode::not(QueryNode::or(expected))
-        );
+        assert_eq!(make_m_h_atom_query(), QueryNode::not(QueryNode::or(expected)));
 
         let mut builder = Molecule::builder();
         let iron = builder.add_atom(crate::AtomSpec::new(crate::Element::FE));
@@ -8379,11 +7870,7 @@ mod tests {
         let molecule = builder.build().expect("MH atom query fixture is valid");
         let query = make_m_h_atom_query();
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[iron.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[iron.index()], &query, &molecule,));
         assert!(atom_matches_query(
             &molecule.atoms()[hydrogen.index()],
             &query,
@@ -8417,9 +7904,7 @@ mod tests {
 
         assert_eq!(
             convert_complex_name_to_query("R"),
-            Err(QueryConstructionError::InvalidComplexAtomSymbol {
-                symbol: "R".to_owned(),
-            })
+            Err(QueryConstructionError::InvalidComplexAtomSymbol { symbol: "R".to_owned() })
         );
     }
 
@@ -8438,11 +7923,7 @@ mod tests {
         let molecule = builder.build().expect("M atom query fixture is valid");
         let query = make_m_atom_query();
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[iron.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[iron.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[carbon.index()],
             &query,
@@ -8527,10 +8008,7 @@ mod tests {
 
     #[test]
     fn smarts_make_a_h_atom_query() {
-        assert_eq!(
-            make_a_h_atom_query(),
-            QueryNode::predicate(AtomQueryPredicate::Any)
-        );
+        assert_eq!(make_a_h_atom_query(), QueryNode::predicate(AtomQueryPredicate::Any));
 
         let mut builder = Molecule::builder();
         let hydrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
@@ -8550,10 +8028,7 @@ mod tests {
 
     #[test]
     fn smarts_make_atom_null_query() {
-        assert_eq!(
-            make_atom_null_query(),
-            QueryNode::predicate(AtomQueryPredicate::Any)
-        );
+        assert_eq!(make_atom_null_query(), QueryNode::predicate(AtomQueryPredicate::Any));
 
         let mut builder = Molecule::builder();
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
@@ -8561,11 +8036,7 @@ mod tests {
         let molecule = builder.build().expect("null-atom query fixture is valid");
         let query = make_atom_null_query();
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
         assert!(atom_matches_query(
             &molecule.atoms()[hydrogen.index()],
             &query,
@@ -8592,16 +8063,8 @@ mod tests {
             &query,
             &molecule,
         ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[oxygen.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
+        assert!(atom_matches_query(&molecule.atoms()[oxygen.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8628,11 +8091,7 @@ mod tests {
             &query,
             &molecule,
         ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[oxygen.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[oxygen.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8662,11 +8121,7 @@ mod tests {
             &query,
             &molecule,
         ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[oxygen.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[oxygen.index()], &query, &molecule,));
     }
 
     #[test]
@@ -8723,9 +8178,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(center, neighbor, BondOrder::Single))
                 .expect("non-hydrogen-degree fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("non-hydrogen-degree fixture is valid");
+        let molecule = builder.build().expect("non-hydrogen-degree fixture is valid");
 
         assert!(atom_matches_query(
             &molecule.atoms()[center.index()],
@@ -8750,11 +8203,7 @@ mod tests {
         let with_aliphatic = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                with_aliphatic,
-                oxygen,
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(with_aliphatic, oxygen, BondOrder::Single))
             .expect("aliphatic-heteroatom fixture bond is valid");
         let with_aromatic_only = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let aromatic_nitrogen = builder.add_atom(
@@ -8807,9 +8256,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(center, neighbor, BondOrder::Single))
                 .expect("aliphatic-heteroatom-neighbor fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("aliphatic-heteroatom-neighbor fixture is valid");
+        let molecule = builder.build().expect("aliphatic-heteroatom-neighbor fixture is valid");
 
         assert!(atom_matches_query(
             &molecule.atoms()[center.index()],
@@ -8834,24 +8281,14 @@ mod tests {
         let with_heteroatom = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                with_heteroatom,
-                oxygen,
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(with_heteroatom, oxygen, BondOrder::Single))
             .expect("heteroatom-neighbor fixture bond is valid");
         let carbon_only = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let carbon_neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon_only,
-                carbon_neighbor,
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon_only, carbon_neighbor, BondOrder::Single))
             .expect("carbon-only fixture bond is valid");
-        let molecule = builder
-            .build()
-            .expect("has-heteroatom-neighbor fixture is valid");
+        let molecule = builder.build().expect("has-heteroatom-neighbor fixture is valid");
         let query = make_atom_has_heteroatom_nbrs_query();
 
         assert!(atom_matches_query(
@@ -8884,9 +8321,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(center, neighbor, BondOrder::Single))
                 .expect("heteroatom-neighbor fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("heteroatom-neighbor fixture molecule is valid");
+        let molecule = builder.build().expect("heteroatom-neighbor fixture molecule is valid");
 
         assert!(atom_matches_query(
             &molecule.atoms()[center.index()],
@@ -8935,11 +8370,7 @@ mod tests {
             &query,
             &molecule,
         ));
-        assert!(!atom_matches_query(
-            &molecule.atoms()[tail.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(!atom_matches_query(&molecule.atoms()[tail.index()], &query, &molecule,));
     }
 
     #[test]
@@ -9176,11 +8607,7 @@ mod tests {
         let molecule = builder.build().expect("atom-in-ring fixture is valid");
         let query = make_atom_in_ring_query();
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[a0.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[a0.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[isolated.index()],
             &query,
@@ -9208,11 +8635,7 @@ mod tests {
         let left_id = unsaturated_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let right_id = unsaturated_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         unsaturated_builder
-            .add_bond(crate::BondSpec::new(
-                left_id,
-                right_id,
-                crate::BondOrder::Double,
-            ))
+            .add_bond(crate::BondSpec::new(left_id, right_id, crate::BondOrder::Double))
             .expect("carbon-to-carbon double bond is valid");
         let ethene = unsaturated_builder.build().expect("ethene is valid");
         assert!(atom_matches_query(
@@ -9231,16 +8654,14 @@ mod tests {
 
         let mut builder = Molecule::builder();
         let unspecified_without_prop = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let unspecified_with_prop = builder
-            .add_atom(crate::AtomSpec::new(crate::Element::C).with_prop("_ChiralityPossible", "0"));
+        let unspecified_with_prop =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_prop("_ChiralityPossible", "0"));
         let tagged_with_prop = builder.add_atom(
             crate::AtomSpec::new(crate::Element::C)
                 .with_chiral_tag(ChiralTag::TetrahedralCw)
                 .with_prop("_ChiralityPossible", "1"),
         );
-        let molecule = builder
-            .build()
-            .expect("missing-chiral-tag fixture is valid");
+        let molecule = builder.build().expect("missing-chiral-tag fixture is valid");
         let query = make_atom_missing_chiral_tag_query();
 
         assert!(!atom_matches_query(
@@ -9269,12 +8690,10 @@ mod tests {
 
         let mut builder = Molecule::builder();
         let unspecified = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let clockwise = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCw),
-        );
-        let counterclockwise = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw),
-        );
+        let clockwise =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let counterclockwise =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
         let molecule = builder.build().expect("chiral-tag fixture is valid");
         let query = make_atom_has_chiral_tag_query();
 
@@ -9304,28 +8723,14 @@ mod tests {
 
         let mut builder = Molecule::builder();
         let zero = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let one =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(1));
-        let two =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(2));
+        let one = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(1));
+        let two = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(2));
         let molecule = builder.build().expect("radical-electron fixture is valid");
         let query = make_atom_num_radical_electrons_query(2);
 
-        assert!(!atom_matches_query(
-            &molecule.atoms()[zero.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(!atom_matches_query(
-            &molecule.atoms()[one.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(atom_matches_query(
-            &molecule.atoms()[two.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(!atom_matches_query(&molecule.atoms()[zero.index()], &query, &molecule,));
+        assert!(!atom_matches_query(&molecule.atoms()[one.index()], &query, &molecule,));
+        assert!(atom_matches_query(&molecule.atoms()[two.index()], &query, &molecule,));
     }
 
     #[test]
@@ -9336,25 +8741,13 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let sp2 = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C).with_hybridization(Hybridization::Sp2),
-        );
-        let sp3 = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C).with_hybridization(Hybridization::Sp3),
-        );
+        let sp2 = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_hybridization(Hybridization::Sp2));
+        let sp3 = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_hybridization(Hybridization::Sp3));
         let molecule = builder.build().expect("hybridization fixture is valid");
         let query = make_atom_hybridization_query(Hybridization::Sp2);
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[sp2.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(!atom_matches_query(
-            &molecule.atoms()[sp3.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[sp2.index()], &query, &molecule,));
+        assert!(!atom_matches_query(&molecule.atoms()[sp3.index()], &query, &molecule,));
     }
 
     #[test]
@@ -9365,21 +8758,13 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let anion =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-2));
+        let anion = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-2));
         let neutral = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let cation =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(1));
-        let molecule = builder
-            .build()
-            .expect("negative-formal-charge fixture is valid");
+        let cation = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(1));
+        let molecule = builder.build().expect("negative-formal-charge fixture is valid");
         let query = make_atom_negative_formal_charge_query(2);
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[anion.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[anion.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[neutral.index()],
             &query,
@@ -9400,11 +8785,9 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let negative =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-1));
+        let negative = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-1));
         let neutral = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
-        let positive =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(2));
+        let positive = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(2));
         let molecule = builder.build().expect("formal-charge fixture is valid");
 
         assert!(atom_matches_query(
@@ -9560,8 +8943,7 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let carbon =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
         let deuterium = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         for neighbor in [deuterium, oxygen] {
@@ -9596,24 +8978,13 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let has_h =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(4));
+        let has_h = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(4));
         let no_h = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
-        let molecule = builder
-            .build()
-            .expect("implicit-h-presence fixture is valid");
+        let molecule = builder.build().expect("implicit-h-presence fixture is valid");
         let query = make_atom_has_implicit_h_query();
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[has_h.index()],
-            &query,
-            &molecule,
-        ));
-        assert!(!atom_matches_query(
-            &molecule.atoms()[no_h.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[has_h.index()], &query, &molecule,));
+        assert!(!atom_matches_query(&molecule.atoms()[no_h.index()], &query, &molecule,));
     }
 
     #[test]
@@ -9685,14 +9056,8 @@ mod tests {
         let context = build_query_match_context(&molecule);
         let center_atom = &molecule.atoms()[center.index()];
 
-        assert_eq!(
-            query_atom_heavy_atom_degree(center_atom, &context.adj, &molecule),
-            2
-        );
-        assert_eq!(
-            query_atom_non_hydrogen_degree(center_atom, &context.adj, &molecule),
-            3
-        );
+        assert_eq!(query_atom_heavy_atom_degree(center_atom, &context.adj, &molecule), 2);
+        assert_eq!(query_atom_non_hydrogen_degree(center_atom, &context.adj, &molecule), 3);
         assert!(atom_matches_query(
             center_atom,
             &make_atom_heavy_atom_degree_query(2),
@@ -9780,11 +9145,7 @@ mod tests {
         }
         let substituent = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
-            .add_bond(crate::BondSpec::new(
-                ring_atoms[5],
-                substituent,
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(ring_atoms[5], substituent, BondOrder::Single))
             .expect("substituent bond is valid");
         let molecule = builder.build().expect("explicit-degree fixture is valid");
         let degree_three = make_atom_explicit_degree_query(3);
@@ -9903,18 +9264,10 @@ mod tests {
                 .with_explicit_hydrogens(0),
         );
         builder
-            .add_bond(crate::BondSpec::new(
-                triple_bonded_carbon,
-                nitrogen,
-                BondOrder::Triple,
-            ))
+            .add_bond(crate::BondSpec::new(triple_bonded_carbon, nitrogen, BondOrder::Triple))
             .expect("nitrile bond is valid");
         builder
-            .add_bond(crate::BondSpec::new(
-                double_bonded_carbon,
-                oxygen,
-                BondOrder::Double,
-            ))
+            .add_bond(crate::BondSpec::new(double_bonded_carbon, oxygen, BondOrder::Double))
             .expect("carbonyl bond is valid");
         let molecule = builder.build().expect("explicit-valence fixture is valid");
 
@@ -9963,11 +9316,7 @@ mod tests {
             ))
             .expect("carbon-carbon bond is valid");
         builder
-            .add_bond(crate::BondSpec::new(
-                carbonyl_carbon,
-                oxygen,
-                BondOrder::Double,
-            ))
+            .add_bond(crate::BondSpec::new(carbonyl_carbon, oxygen, BondOrder::Double))
             .expect("carbonyl bond is valid");
         let molecule = builder.build().expect("implicit-valence fixture is valid");
         let query = make_atom_implicit_valence_query(3);
@@ -10017,8 +9366,7 @@ mod tests {
         // RDKit✔️✔️: TEST_ASSERT(!qA3.Match(m->getAtomWithIdx(2)));
         let mut builder = Molecule::builder();
         let aliphatic_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let aromatic_carbon =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let aromatic_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
         let molecule = builder.build().expect("atom-type fixture is valid");
 
         assert!(!atom_matches_query(
@@ -10069,11 +9417,7 @@ mod tests {
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
         let molecule = builder.build().expect("atom-number fixture is valid");
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[nitrogen.index()],
             &query,
@@ -10100,11 +9444,7 @@ mod tests {
         }
         let molecule = builder.build().expect("range-query fixture is valid");
 
-        let cases = [
-            (0, 3, true, true),
-            (1, 2, false, false),
-            (0, 2, true, false),
-        ];
+        let cases = [(0, 3, true, true), (1, 2, false, false), (0, 2, true, false)];
         for (lower, upper, lower_open, upper_open) in cases {
             let query = make_atom_range_query(
                 lower,
@@ -10124,21 +9464,14 @@ mod tests {
     #[test]
     fn smarts_make_atom_simple_query() {
         let query = make_atom_simple_query(AtomQueryPredicate::AtomicNumber(6));
-        assert_eq!(
-            query,
-            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6))
-        );
+        assert_eq!(query, QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6)));
 
         let mut builder = Molecule::builder();
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
         let molecule = builder.build().expect("simple-query fixture is valid");
 
-        assert!(atom_matches_query(
-            &molecule.atoms()[carbon.index()],
-            &query,
-            &molecule,
-        ));
+        assert!(atom_matches_query(&molecule.atoms()[carbon.index()], &query, &molecule,));
         assert!(!atom_matches_query(
             &molecule.atoms()[nitrogen.index()],
             &query,
@@ -10174,19 +9507,18 @@ mod tests {
         let plain_dummy = builder.add_atom(crate::AtomSpec::new(crate::Element::DUMMY));
         let plain_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let atom_null = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::DUMMY)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
+            crate::AtomSpec::new(crate::Element::DUMMY).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
         );
-        let negated_atom_null =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::DUMMY).with_query(
-                QueryNode::not(QueryNode::predicate(AtomQueryPredicate::Any)),
-            ));
-        let composite_or = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::DUMMY).with_query(QueryNode::or(vec![
+        let negated_atom_null = builder.add_atom(
+            crate::AtomSpec::new(crate::Element::DUMMY)
+                .with_query(QueryNode::not(QueryNode::predicate(AtomQueryPredicate::Any))),
+        );
+        let composite_or = builder.add_atom(crate::AtomSpec::new(crate::Element::DUMMY).with_query(QueryNode::or(
+            vec![
                 QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
                 QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
-            ])),
-        );
+            ],
+        )));
         let molecule = builder.build().expect("atom-dummy fixture is valid");
 
         assert!(is_atom_dummy(&molecule.atoms()[plain_dummy.index()]));
@@ -10228,12 +9560,9 @@ mod tests {
     #[test]
     fn smarts_query_atom_aromatic() {
         let mut builder = Molecule::builder();
-        let aromatic_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let aromatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
         let aliphatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let molecule = builder
-            .build()
-            .expect("two isolated atoms form a valid molecule");
+        let molecule = builder.build().expect("two isolated atoms form a valid molecule");
         let aromatic = &molecule.atoms()[aromatic_id.index()];
         let aliphatic = &molecule.atoms()[aliphatic_id.index()];
 
@@ -10254,12 +9583,9 @@ mod tests {
     #[test]
     fn smarts_query_atom_aliphatic() {
         let mut builder = Molecule::builder();
-        let aromatic_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let aromatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
         let aliphatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let molecule = builder
-            .build()
-            .expect("two isolated atoms form a valid molecule");
+        let molecule = builder.build().expect("two isolated atoms form a valid molecule");
         let aromatic = &molecule.atoms()[aromatic_id.index()];
         let aliphatic = &molecule.atoms()[aliphatic_id.index()];
 
@@ -10284,18 +9610,10 @@ mod tests {
         let hydrogen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                center_id,
-                hydrogen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(center_id, hydrogen_id, crate::BondOrder::Single))
             .expect("center-to-hydrogen bond is valid");
         builder
-            .add_bond(crate::BondSpec::new(
-                center_id,
-                oxygen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(center_id, oxygen_id, crate::BondOrder::Single))
             .expect("center-to-oxygen bond is valid");
         let molecule = builder.build().expect("branched molecule is valid");
         let context = build_query_match_context(&molecule);
@@ -10330,11 +9648,7 @@ mod tests {
         let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon_id,
-                oxygen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon_id, oxygen_id, crate::BondOrder::Single))
             .expect("carbon-to-oxygen bond is valid");
         let molecule = builder.build().expect("methanol skeleton is valid");
         let context = build_query_match_context(&molecule);
@@ -10369,17 +9683,12 @@ mod tests {
         let mut builder = Molecule::builder();
         let center_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let protium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
-        let deuterium_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
+        let deuterium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         let tritium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(3));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         for neighbor_id in [protium_id, deuterium_id, tritium_id, oxygen_id] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    center_id,
-                    neighbor_id,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(center_id, neighbor_id, crate::BondOrder::Single))
                 .expect("center-to-neighbor bond is valid");
         }
         let molecule = builder.build().expect("isotopic star molecule is valid");
@@ -10387,10 +9696,7 @@ mod tests {
         let center = &molecule.atoms()[center_id.index()];
 
         assert_eq!(query_atom_explicit_degree(center, &context.adj), 4);
-        assert_eq!(
-            query_atom_non_hydrogen_degree(center, &context.adj, &molecule),
-            3
-        );
+        assert_eq!(query_atom_non_hydrogen_degree(center, &context.adj, &molecule), 3);
         assert!(atom_predicate_matches_with_context(
             center,
             &AtomQueryPredicate::NonHydrogenDegree(3),
@@ -10416,31 +9722,20 @@ mod tests {
         let mut builder = Molecule::builder();
         let center_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let protium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
-        let deuterium_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
+        let deuterium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         let tritium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(3));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         for neighbor_id in [protium_id, deuterium_id, tritium_id, oxygen_id] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    center_id,
-                    neighbor_id,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(center_id, neighbor_id, crate::BondOrder::Single))
                 .expect("center-to-neighbor bond is valid");
         }
         let molecule = builder.build().expect("isotopic star molecule is valid");
         let context = build_query_match_context(&molecule);
         let center = &molecule.atoms()[center_id.index()];
 
-        assert_eq!(
-            query_atom_non_hydrogen_degree(center, &context.adj, &molecule),
-            3
-        );
-        assert_eq!(
-            query_atom_heavy_atom_degree(center, &context.adj, &molecule),
-            1
-        );
+        assert_eq!(query_atom_non_hydrogen_degree(center, &context.adj, &molecule), 3);
+        assert_eq!(query_atom_heavy_atom_degree(center, &context.adj, &molecule), 1);
         assert!(atom_predicate_matches_with_context(
             center,
             &AtomQueryPredicate::HeavyAtomDegree(1),
@@ -10458,30 +9753,19 @@ mod tests {
     #[test]
     fn smarts_query_atom_h_count() {
         let mut builder = Molecule::builder();
-        let carbon_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
-        let deuterium_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
+        let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
+        let deuterium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         for neighbor_id in [deuterium_id, oxygen_id] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    carbon_id,
-                    neighbor_id,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(carbon_id, neighbor_id, crate::BondOrder::Single))
                 .expect("carbon-to-neighbor bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("isotopic methanol skeleton is valid");
+        let molecule = builder.build().expect("isotopic methanol skeleton is valid");
         let context = build_query_match_context(&molecule);
         let carbon = &molecule.atoms()[carbon_id.index()];
 
-        assert_eq!(
-            implicit_hydrogen_count(context.valence.as_ref(), carbon),
-            Some(1)
-        );
+        assert_eq!(implicit_hydrogen_count(context.valence.as_ref(), carbon), Some(1));
         assert_eq!(
             query_atom_h_count(&context.adj, context.valence.as_ref(), carbon, &molecule),
             Some(3)
@@ -10503,30 +9787,19 @@ mod tests {
     #[test]
     fn smarts_query_atom_implicit_h_count() {
         let mut builder = Molecule::builder();
-        let carbon_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
-        let deuterium_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
+        let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
+        let deuterium_id = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         for neighbor_id in [deuterium_id, oxygen_id] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    carbon_id,
-                    neighbor_id,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(carbon_id, neighbor_id, crate::BondOrder::Single))
                 .expect("carbon-to-neighbor bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("isotopic methanol skeleton is valid");
+        let molecule = builder.build().expect("isotopic methanol skeleton is valid");
         let context = build_query_match_context(&molecule);
         let carbon = &molecule.atoms()[carbon_id.index()];
 
-        assert_eq!(
-            query_atom_implicit_h_count(context.valence.as_ref(), carbon),
-            Some(2)
-        );
+        assert_eq!(query_atom_implicit_h_count(context.valence.as_ref(), carbon), Some(2));
         assert_eq!(
             query_atom_h_count(&context.adj, context.valence.as_ref(), carbon, &molecule),
             Some(3)
@@ -10554,13 +9827,9 @@ mod tests {
     #[test]
     fn smarts_query_atom_has_implicit_h() {
         let mut builder = Molecule::builder();
-        let explicit_h_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(4));
-        let no_h_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
-        let molecule = builder
-            .build()
-            .expect("two isolated valence-complete atoms are valid");
+        let explicit_h_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(4));
+        let no_h_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
+        let molecule = builder.build().expect("two isolated valence-complete atoms are valid");
         let context = build_query_match_context(&molecule);
         let explicit_h_atom = &molecule.atoms()[explicit_h_id.index()];
         let no_h_atom = &molecule.atoms()[no_h_id.index()];
@@ -10573,14 +9842,8 @@ mod tests {
             query_atom_implicit_h_count(context.valence.as_ref(), explicit_h_atom),
             Some(4)
         );
-        assert!(query_atom_has_implicit_h(
-            context.valence.as_ref(),
-            explicit_h_atom
-        ));
-        assert!(!query_atom_has_implicit_h(
-            context.valence.as_ref(),
-            no_h_atom
-        ));
+        assert!(query_atom_has_implicit_h(context.valence.as_ref(), explicit_h_atom));
+        assert!(!query_atom_has_implicit_h(context.valence.as_ref(), no_h_atom));
         assert!(atom_predicate_matches_with_context(
             explicit_h_atom,
             &AtomQueryPredicate::HasImplicitHydrogen,
@@ -10600,31 +9863,18 @@ mod tests {
         let mut builder = Molecule::builder();
         let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
-        let no_implicit_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
+        let no_implicit_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon_id,
-                oxygen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon_id, oxygen_id, crate::BondOrder::Single))
             .expect("carbon-to-oxygen bond is valid");
-        let molecule = builder
-            .build()
-            .expect("methanol skeleton plus capped carbon is valid");
+        let molecule = builder.build().expect("methanol skeleton plus capped carbon is valid");
         let context = build_query_match_context(&molecule);
         let carbon = &molecule.atoms()[carbon_id.index()];
         let oxygen = &molecule.atoms()[oxygen_id.index()];
         let no_implicit = &molecule.atoms()[no_implicit_id.index()];
 
-        assert_eq!(
-            query_atom_implicit_valence(context.valence.as_ref(), carbon),
-            Some(3)
-        );
-        assert_eq!(
-            query_atom_implicit_valence(context.valence.as_ref(), oxygen),
-            Some(1)
-        );
+        assert_eq!(query_atom_implicit_valence(context.valence.as_ref(), carbon), Some(3));
+        assert_eq!(query_atom_implicit_valence(context.valence.as_ref(), oxygen), Some(1));
         assert_eq!(
             query_atom_implicit_valence(context.valence.as_ref(), no_implicit),
             Some(0)
@@ -10646,28 +9896,17 @@ mod tests {
     #[test]
     fn smarts_query_atom_explicit_valence() {
         let mut builder = Molecule::builder();
-        let carbon_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
+        let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon_id,
-                oxygen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon_id, oxygen_id, crate::BondOrder::Single))
             .expect("carbon-to-oxygen bond is valid");
         let molecule = builder.build().expect("methanol skeleton is valid");
         let context = build_query_match_context(&molecule);
         let carbon = &molecule.atoms()[carbon_id.index()];
 
-        assert_eq!(
-            atom_explicit_valence(context.valence.as_ref(), carbon),
-            Some(2)
-        );
-        assert_eq!(
-            query_atom_explicit_valence(context.valence.as_ref(), carbon),
-            Some(1)
-        );
+        assert_eq!(atom_explicit_valence(context.valence.as_ref(), carbon), Some(2));
+        assert_eq!(query_atom_explicit_valence(context.valence.as_ref(), carbon), Some(1));
         assert!(atom_predicate_matches_with_context(
             carbon,
             &AtomQueryPredicate::ExplicitValence(1),
@@ -10685,29 +9924,18 @@ mod tests {
     #[test]
     fn smarts_query_atom_total_valence() {
         let mut builder = Molecule::builder();
-        let carbon_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
+        let carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_explicit_hydrogens(1));
         let oxygen_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon_id,
-                oxygen_id,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon_id, oxygen_id, crate::BondOrder::Single))
             .expect("carbon-to-oxygen bond is valid");
         let molecule = builder.build().expect("methanol skeleton is valid");
         let context = build_query_match_context(&molecule);
         let carbon = &molecule.atoms()[carbon_id.index()];
         let oxygen = &molecule.atoms()[oxygen_id.index()];
 
-        assert_eq!(
-            query_atom_total_valence(context.valence.as_ref(), carbon),
-            Some(4)
-        );
-        assert_eq!(
-            query_atom_total_valence(context.valence.as_ref(), oxygen),
-            Some(2)
-        );
+        assert_eq!(query_atom_total_valence(context.valence.as_ref(), carbon), Some(4));
+        assert_eq!(query_atom_total_valence(context.valence.as_ref(), oxygen), Some(2));
         assert!(atom_predicate_matches_with_context(
             carbon,
             &AtomQueryPredicate::TotalValence(4),
@@ -10731,11 +9959,7 @@ mod tests {
         let methane_carbon = &methane.atoms()[methane_id.index()];
 
         assert_eq!(
-            query_atom_unsaturated(
-                &methane_context.adj,
-                methane_context.valence.as_ref(),
-                methane_carbon,
-            ),
+            query_atom_unsaturated(&methane_context.adj, methane_context.valence.as_ref(), methane_carbon,),
             Some(false)
         );
         assert!(!atom_predicate_matches_with_context(
@@ -10749,22 +9973,14 @@ mod tests {
         let left_id = unsaturated_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let right_id = unsaturated_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         unsaturated_builder
-            .add_bond(crate::BondSpec::new(
-                left_id,
-                right_id,
-                crate::BondOrder::Double,
-            ))
+            .add_bond(crate::BondSpec::new(left_id, right_id, crate::BondOrder::Double))
             .expect("carbon-to-carbon double bond is valid");
         let ethene = unsaturated_builder.build().expect("ethene is valid");
         let ethene_context = build_query_match_context(&ethene);
         let ethene_carbon = &ethene.atoms()[left_id.index()];
 
         assert_eq!(
-            query_atom_unsaturated(
-                &ethene_context.adj,
-                ethene_context.valence.as_ref(),
-                ethene_carbon,
-            ),
+            query_atom_unsaturated(&ethene_context.adj, ethene_context.valence.as_ref(), ethene_carbon,),
             Some(true)
         );
         assert!(atom_predicate_matches_with_context(
@@ -10843,11 +10059,8 @@ mod tests {
     fn smarts_query_atom_type() {
         let mut builder = Molecule::builder();
         let aliphatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let aromatic_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
-        let molecule = builder
-            .build()
-            .expect("two isolated carbons form a valid molecule");
+        let aromatic_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_aromatic(true));
+        let molecule = builder.build().expect("two isolated carbons form a valid molecule");
         let context = build_query_match_context(&molecule);
         let aliphatic = &molecule.atoms()[aliphatic_id.index()];
         let aromatic = &molecule.atoms()[aromatic_id.index()];
@@ -10887,15 +10100,10 @@ mod tests {
     fn smarts_query_atom_mass() {
         let mut builder = Molecule::builder();
         let natural_carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let carbon_12_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(12));
-        let carbon_13_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(13));
-        let unknown_isotope_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(999));
-        let molecule = builder
-            .build()
-            .expect("four isolated carbons form a valid molecule");
+        let carbon_12_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(12));
+        let carbon_13_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(13));
+        let unknown_isotope_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(999));
+        let molecule = builder.build().expect("four isolated carbons form a valid molecule");
         let context = build_query_match_context(&molecule);
         let natural_carbon = &molecule.atoms()[natural_carbon_id.index()];
         let carbon_12 = &molecule.atoms()[carbon_12_id.index()];
@@ -10930,13 +10138,9 @@ mod tests {
     fn smarts_query_atom_isotope() {
         let mut builder = Molecule::builder();
         let natural_carbon_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let carbon_13_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(13));
-        let unknown_isotope_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(999));
-        let molecule = builder
-            .build()
-            .expect("three isolated carbons form a valid molecule");
+        let carbon_13_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(13));
+        let unknown_isotope_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_isotope(999));
+        let molecule = builder.build().expect("three isolated carbons form a valid molecule");
         let context = build_query_match_context(&molecule);
         let natural_carbon = &molecule.atoms()[natural_carbon_id.index()];
         let carbon_13 = &molecule.atoms()[carbon_13_id.index()];
@@ -10968,11 +10172,9 @@ mod tests {
     #[test]
     fn smarts_query_atom_formal_charge() {
         let mut builder = Molecule::builder();
-        let anion_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-1));
+        let anion_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-1));
         let neutral_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let cation_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(2));
+        let cation_id = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(2));
         let molecule = builder
             .build()
             .expect("three isolated charged atoms form a valid molecule");
@@ -11013,11 +10215,9 @@ mod tests {
     #[test]
     fn smarts_query_atom_negative_formal_charge() {
         let mut builder = Molecule::builder();
-        let anion_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-2));
+        let anion_id = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-2));
         let neutral_id = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let cation_id =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(1));
+        let cation_id = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_formal_charge(1));
         let molecule = builder
             .build()
             .expect("three isolated charged atoms form a valid molecule");
@@ -11047,19 +10247,13 @@ mod tests {
         let atom_ids: Vec<_> = hybridizations
             .iter()
             .map(|&hybridization| {
-                builder.add_atom(
-                    crate::AtomSpec::new(crate::Element::C).with_hybridization(hybridization),
-                )
+                builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_hybridization(hybridization))
             })
             .collect();
-        let molecule = builder
-            .build()
-            .expect("nine isolated carbons form a valid molecule");
+        let molecule = builder.build().expect("nine isolated carbons form a valid molecule");
         let context = build_query_match_context(&molecule);
 
-        for (expected, (&atom_id, &hybridization)) in
-            atom_ids.iter().zip(hybridizations.iter()).enumerate()
-        {
+        for (expected, (&atom_id, &hybridization)) in atom_ids.iter().zip(hybridizations.iter()).enumerate() {
             let atom = &molecule.atoms()[atom_id.index()];
             assert_eq!(query_atom_hybridization(atom), expected as i32);
             assert!(atom_predicate_matches_with_context(
@@ -11083,10 +10277,7 @@ mod tests {
         let mut builder = Molecule::builder();
         let atom_ids: Vec<_> = radical_counts
             .iter()
-            .map(|&count| {
-                builder
-                    .add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(count))
-            })
+            .map(|&count| builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_radical_electrons(count)))
             .collect();
         let molecule = builder
             .build()
@@ -11114,9 +10305,7 @@ mod tests {
         let mut builder = Molecule::builder();
         let atom_ids: Vec<_> = chiral_tags
             .iter()
-            .map(|&tag| {
-                builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(tag))
-            })
+            .map(|&tag| builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(tag)))
             .collect();
         let molecule = builder
             .build()
@@ -11133,11 +10322,10 @@ mod tests {
     fn smarts_query_atom_missing_chiral_tag() {
         let mut builder = Molecule::builder();
         let unspecified_without_prop = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let unspecified_with_prop = builder
-            .add_atom(crate::AtomSpec::new(crate::Element::C).with_prop("_ChiralityPossible", "0"));
-        let tagged_without_prop = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCw),
-        );
+        let unspecified_with_prop =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_prop("_ChiralityPossible", "0"));
+        let tagged_without_prop =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
         let tagged_with_prop = builder.add_atom(
             crate::AtomSpec::new(crate::Element::C)
                 .with_chiral_tag(ChiralTag::Other)
@@ -11187,50 +10375,28 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, crate::BondOrder::Single))
                 .expect("heteroatom-neighbor fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("heteroatom-neighbor fixture molecule is valid");
+        let molecule = builder.build().expect("heteroatom-neighbor fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         assert_eq!(
-            query_atom_has_heteroatom_nbrs(
-                &molecule.atoms()[isolated.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_has_heteroatom_nbrs(&molecule.atoms()[isolated.index()], &context.adj, &molecule,),
             0
         );
         assert_eq!(
-            query_atom_has_heteroatom_nbrs(
-                &molecule.atoms()[carbon_center.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_has_heteroatom_nbrs(&molecule.atoms()[carbon_center.index()], &context.adj, &molecule,),
             0
         );
         assert_eq!(
-            query_atom_has_heteroatom_nbrs(
-                &molecule.atoms()[nitrogen_center.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_has_heteroatom_nbrs(&molecule.atoms()[nitrogen_center.index()], &context.adj, &molecule,),
             1
         );
         assert_eq!(
-            query_atom_has_heteroatom_nbrs(
-                &molecule.atoms()[dummy_center.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_has_heteroatom_nbrs(&molecule.atoms()[dummy_center.index()], &context.adj, &molecule,),
             1,
             "RDKit classifies atomic number zero as a heteroatom neighbor here"
         );
         assert_eq!(
-            query_atom_has_heteroatom_nbrs(
-                &molecule.atoms()[nitrogen_neighbor.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_has_heteroatom_nbrs(&molecule.atoms()[nitrogen_neighbor.index()], &context.adj, &molecule,),
             0,
             "the predicate classifies neighbors, not the queried atom itself"
         );
@@ -11248,41 +10414,23 @@ mod tests {
         let isolated = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         for neighbor in [carbon, hydrogen, nitrogen, oxygen, dummy] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    center,
-                    neighbor,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
                 .expect("heteroatom-count fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("heteroatom-count fixture molecule is valid");
+        let molecule = builder.build().expect("heteroatom-count fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         assert_eq!(
-            query_atom_num_heteroatom_nbrs(
-                &molecule.atoms()[center.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_num_heteroatom_nbrs(&molecule.atoms()[center.index()], &context.adj, &molecule,),
             3,
             "nitrogen, oxygen, and dummy neighbors are counted; carbon and hydrogen are not"
         );
         assert_eq!(
-            query_atom_num_heteroatom_nbrs(
-                &molecule.atoms()[isolated.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_num_heteroatom_nbrs(&molecule.atoms()[isolated.index()], &context.adj, &molecule,),
             0
         );
         assert_eq!(
-            query_atom_num_heteroatom_nbrs(
-                &molecule.atoms()[nitrogen.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_num_heteroatom_nbrs(&molecule.atoms()[nitrogen.index()], &context.adj, &molecule,),
             0,
             "the carbon neighbor of nitrogen is not a heteroatom neighbor"
         );
@@ -11316,9 +10464,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, crate::BondOrder::Single))
                 .expect("aliphatic-heteroatom fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("aliphatic-heteroatom fixture molecule is valid");
+        let molecule = builder.build().expect("aliphatic-heteroatom fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         for (atom_id, expected) in [
@@ -11329,11 +10475,7 @@ mod tests {
             (isolated, 0),
         ] {
             assert_eq!(
-                query_atom_has_aliphatic_heteroatom_nbrs(
-                    &molecule.atoms()[atom_id.index()],
-                    &context.adj,
-                    &molecule,
-                ),
+                query_atom_has_aliphatic_heteroatom_nbrs(&molecule.atoms()[atom_id.index()], &context.adj, &molecule,),
                 expected
             );
         }
@@ -11378,11 +10520,7 @@ mod tests {
             hydrogen,
         ] {
             builder
-                .add_bond(crate::BondSpec::new(
-                    center,
-                    neighbor,
-                    crate::BondOrder::Single,
-                ))
+                .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
                 .expect("aliphatic-heteroatom-count fixture bond is valid");
         }
         let molecule = builder
@@ -11391,20 +10529,12 @@ mod tests {
         let context = build_query_match_context(&molecule);
 
         assert_eq!(
-            query_atom_num_aliphatic_heteroatom_nbrs(
-                &molecule.atoms()[center.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_num_aliphatic_heteroatom_nbrs(&molecule.atoms()[center.index()], &context.adj, &molecule,),
             3,
             "aliphatic nitrogen, oxygen, and dummy neighbors are counted"
         );
         assert_eq!(
-            query_atom_num_aliphatic_heteroatom_nbrs(
-                &molecule.atoms()[isolated.index()],
-                &context.adj,
-                &molecule,
-            ),
+            query_atom_num_aliphatic_heteroatom_nbrs(&molecule.atoms()[isolated.index()], &context.adj, &molecule,),
             0
         );
         assert_eq!(
@@ -11453,9 +10583,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, order))
                 .expect("bond-order fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("bond-order fixture molecule is valid");
+        let molecule = builder.build().expect("bond-order fixture molecule is valid");
 
         for (bond, expected) in molecule.bonds().iter().zip(orders) {
             assert_eq!(query_bond_order(bond), expected);
@@ -11484,9 +10612,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, order).with_aromatic(is_aromatic))
                 .expect("single-or-aromatic fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("single-or-aromatic fixture molecule is valid");
+        let molecule = builder.build().expect("single-or-aromatic fixture molecule is valid");
 
         for (bond, (_, _, expected)) in molecule.bonds().iter().zip(cases) {
             assert_eq!(query_bond_is_single_or_aromatic(bond), expected);
@@ -11509,9 +10635,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, order).with_aromatic(is_aromatic))
                 .expect("double-or-aromatic fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("double-or-aromatic fixture molecule is valid");
+        let molecule = builder.build().expect("double-or-aromatic fixture molecule is valid");
 
         for (bond, (_, _, expected)) in molecule.bonds().iter().zip(cases) {
             assert_eq!(query_bond_is_double_or_aromatic(bond), expected);
@@ -11534,9 +10658,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, order).with_aromatic(is_aromatic))
                 .expect("single-or-double fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("single-or-double fixture molecule is valid");
+        let molecule = builder.build().expect("single-or-double fixture molecule is valid");
 
         for (bond, (_, _, expected)) in molecule.bonds().iter().zip(cases) {
             assert_eq!(query_bond_is_single_or_double(bond), expected);
@@ -11584,14 +10706,10 @@ mod tests {
             let begin = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             let end = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             builder
-                .add_bond(
-                    crate::BondSpec::new(begin, end, BondOrder::Single).with_direction(direction),
-                )
+                .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single).with_direction(direction))
                 .expect("bond-direction fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("bond-direction fixture molecule is valid");
+        let molecule = builder.build().expect("bond-direction fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         for (bond, expected) in molecule.bonds().iter().zip(directions) {
@@ -11627,9 +10745,7 @@ mod tests {
         let non_ring = builder
             .add_bond(crate::BondSpec::new(a0, isolated, BondOrder::Single))
             .expect("non-ring fixture bond is valid");
-        let molecule = builder
-            .build()
-            .expect("fused-ring fixture molecule is valid");
+        let molecule = builder.build().expect("fused-ring fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -11694,9 +10810,7 @@ mod tests {
                 )
                 .expect("bond-stereo fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("bond-stereo fixture molecule is valid");
+        let molecule = builder.build().expect("bond-stereo fixture molecule is valid");
 
         for (bond, (_, expected)) in molecule.bonds().iter().zip(cases) {
             assert_eq!(query_bond_has_stereo(bond), expected);
@@ -11716,23 +10830,15 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("fused-ring atom fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("fused-ring atom fixture molecule is valid");
+        let molecule = builder.build().expect("fused-ring atom fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
             .as_ref()
             .expect("ring information is perceived for the fused-ring fixture");
 
-        assert_eq!(
-            query_atom_ring_membership(&molecule.atoms()[a1.index()], ring_info),
-            2
-        );
-        assert_eq!(
-            query_atom_ring_membership(&molecule.atoms()[a0.index()], ring_info),
-            1
-        );
+        assert_eq!(query_atom_ring_membership(&molecule.atoms()[a1.index()], ring_info), 2);
+        assert_eq!(query_atom_ring_membership(&molecule.atoms()[a0.index()], ring_info), 1);
         assert_eq!(
             query_atom_ring_membership(&molecule.atoms()[isolated.index()], ring_info),
             0
@@ -11757,23 +10863,15 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("atom-in-ring fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("atom-in-ring fixture molecule is valid");
+        let molecule = builder.build().expect("atom-in-ring fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
             .as_ref()
             .expect("ring information is perceived for the ring fixture");
 
-        assert_eq!(
-            query_is_atom_in_ring(&molecule.atoms()[a0.index()], ring_info),
-            1
-        );
-        assert_eq!(
-            query_is_atom_in_ring(&molecule.atoms()[isolated.index()], ring_info),
-            0
-        );
+        assert_eq!(query_is_atom_in_ring(&molecule.atoms()[a0.index()], ring_info), 1);
+        assert_eq!(query_is_atom_in_ring(&molecule.atoms()[isolated.index()], ring_info), 0);
         assert!(atom_predicate_matches_with_context(
             &molecule.atoms()[a0.index()],
             &AtomQueryPredicate::InRing,
@@ -11806,9 +10904,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("atom-has-ring-bond fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("atom-has-ring-bond fixture molecule is valid");
+        let molecule = builder.build().expect("atom-has-ring-bond fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -11816,30 +10912,15 @@ mod tests {
             .expect("ring information is perceived for the ring fixture");
 
         assert_eq!(
-            query_atom_has_ring_bond(
-                &molecule.atoms()[ring_atom.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_has_ring_bond(&molecule.atoms()[ring_atom.index()], &context.adj, &molecule, ring_info,),
             1
         );
         assert_eq!(
-            query_atom_has_ring_bond(
-                &molecule.atoms()[external.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_has_ring_bond(&molecule.atoms()[external.index()], &context.adj, &molecule, ring_info,),
             0
         );
         assert_eq!(
-            query_atom_has_ring_bond(
-                &molecule.atoms()[isolated.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_has_ring_bond(&molecule.atoms()[isolated.index()], &context.adj, &molecule, ring_info,),
             0
         );
         assert!(atom_predicate_matches_with_context(
@@ -11874,9 +10955,7 @@ mod tests {
         let non_ring_bond = builder
             .add_bond(crate::BondSpec::new(a0, external, BondOrder::Single))
             .expect("bond-in-ring fixture non-ring bond is valid");
-        let molecule = builder
-            .build()
-            .expect("bond-in-ring fixture molecule is valid");
+        let molecule = builder.build().expect("bond-in-ring fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -11939,9 +11018,7 @@ mod tests {
                 .expect("atom-min-ring-size square bond is valid");
         }
         let isolated = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
-        let molecule = builder
-            .build()
-            .expect("atom-min-ring-size fixture molecule is valid");
+        let molecule = builder.build().expect("atom-min-ring-size fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -11998,9 +11075,7 @@ mod tests {
         let non_ring_bond = builder
             .add_bond(crate::BondSpec::new(a0, external, BondOrder::Single))
             .expect("bond-min-ring-size non-ring bond is valid");
-        let molecule = builder
-            .build()
-            .expect("bond-min-ring-size fixture molecule is valid");
+        let molecule = builder.build().expect("bond-min-ring-size fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -12026,11 +11101,7 @@ mod tests {
             builder.add_atom(crate::AtomSpec::new(crate::Element::C)),
         ];
         let ring_bond = builder
-            .add_bond(crate::BondSpec::new(
-                triangle[0],
-                triangle[1],
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(triangle[0], triangle[1], BondOrder::Single))
             .expect("Layered ring accessor fixture bond is valid");
         for (begin, end) in [(triangle[1], triangle[2]), (triangle[2], triangle[0])] {
             builder
@@ -12039,15 +11110,9 @@ mod tests {
         }
         let external = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let non_ring_bond = builder
-            .add_bond(crate::BondSpec::new(
-                triangle[0],
-                external,
-                BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(triangle[0], external, BondOrder::Single))
             .expect("Layered non-ring accessor fixture bond is valid");
-        let molecule = builder
-            .build()
-            .expect("Layered ring accessor fixture is valid");
+        let molecule = builder.build().expect("Layered ring accessor fixture is valid");
         let ring_info = crate::find_sssr(&molecule).expect("exact SSSR succeeds");
 
         assert_eq!(
@@ -12088,9 +11153,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("atom-ring-bond-count fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("atom-ring-bond-count fixture molecule is valid");
+        let molecule = builder.build().expect("atom-ring-bond-count fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -12098,30 +11161,15 @@ mod tests {
             .expect("ring information is perceived for the fused-ring fixture");
 
         assert_eq!(
-            query_atom_ring_bond_count(
-                &molecule.atoms()[shared.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_ring_bond_count(&molecule.atoms()[shared.index()], &context.adj, &molecule, ring_info,),
             3
         );
         assert_eq!(
-            query_atom_ring_bond_count(
-                &molecule.atoms()[a0.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_ring_bond_count(&molecule.atoms()[a0.index()], &context.adj, &molecule, ring_info,),
             2
         );
         assert_eq!(
-            query_atom_ring_bond_count(
-                &molecule.atoms()[external.index()],
-                &context.adj,
-                &molecule,
-                ring_info,
-            ),
+            query_atom_ring_bond_count(&molecule.atoms()[external.index()], &context.adj, &molecule, ring_info,),
             0
         );
         assert!(atom_predicate_matches_with_context(
@@ -12150,9 +11198,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("atom-in-ring-of-size fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("atom-in-ring-of-size fixture molecule is valid");
+        let molecule = builder.build().expect("atom-in-ring-of-size fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -12163,10 +11209,7 @@ mod tests {
 
         assert_eq!(query_atom_is_in_ring_of_size(ring_atom, 3, ring_info), 3);
         assert_eq!(query_atom_is_in_ring_of_size(ring_atom, 4, ring_info), 0);
-        assert_eq!(
-            query_atom_is_in_ring_of_size(isolated_atom, 3, ring_info),
-            0
-        );
+        assert_eq!(query_atom_is_in_ring_of_size(isolated_atom, 3, ring_info), 0);
         assert_eq!(
             query_atom_is_in_ring_size_range(ring_atom, 3, 4, false, true, ring_info),
             3
@@ -12215,9 +11258,7 @@ mod tests {
         let non_ring_bond = builder
             .add_bond(crate::BondSpec::new(a0, external, BondOrder::Single))
             .expect("bond-in-ring-of-size non-ring bond is valid");
-        let molecule = builder
-            .build()
-            .expect("bond-in-ring-of-size fixture molecule is valid");
+        let molecule = builder.build().expect("bond-in-ring-of-size fixture molecule is valid");
         let context = build_query_match_context(&molecule);
         let ring_info = context
             .ring_info
@@ -12255,28 +11296,18 @@ mod tests {
                     .expect("bridgehead theta-graph bond is valid");
             }
         }
-        let bridge_molecule = bridge_builder
-            .build()
-            .expect("bridgehead theta graph is valid");
+        let bridge_molecule = bridge_builder.build().expect("bridgehead theta graph is valid");
         let bridge_context = build_query_match_context(&bridge_molecule);
         let bridge_rings = bridge_context
             .ring_info
             .as_ref()
             .expect("ring information is perceived for the theta graph");
         assert_eq!(
-            crate::chemistry::stereo::query_is_atom_bridgehead(
-                &bridge_molecule,
-                bridgehead.index(),
-                bridge_rings,
-            ),
+            crate::chemistry::stereo::query_is_atom_bridgehead(&bridge_molecule, bridgehead.index(), bridge_rings,),
             1
         );
         assert_eq!(
-            crate::chemistry::stereo::query_is_atom_bridgehead(
-                &bridge_molecule,
-                path_atoms[0].index(),
-                bridge_rings,
-            ),
+            crate::chemistry::stereo::query_is_atom_bridgehead(&bridge_molecule, path_atoms[0].index(), bridge_rings,),
             0
         );
 
@@ -12296,20 +11327,14 @@ mod tests {
                 .add_bond(crate::BondSpec::new(begin, end, BondOrder::Single))
                 .expect("fused-ring non-bridgehead bond is valid");
         }
-        let fused_molecule = fused_builder
-            .build()
-            .expect("fused-ring non-bridgehead graph is valid");
+        let fused_molecule = fused_builder.build().expect("fused-ring non-bridgehead graph is valid");
         let fused_context = build_query_match_context(&fused_molecule);
         let fused_rings = fused_context
             .ring_info
             .as_ref()
             .expect("ring information is perceived for the fused-ring graph");
         assert_eq!(
-            crate::chemistry::stereo::query_is_atom_bridgehead(
-                &fused_molecule,
-                shared_left.index(),
-                fused_rings,
-            ),
+            crate::chemistry::stereo::query_is_atom_bridgehead(&fused_molecule, shared_left.index(), fused_rings,),
             0
         );
     }
@@ -12333,9 +11358,7 @@ mod tests {
                 .add_bond(crate::BondSpec::new(center, end, order))
                 .expect("atom-bond-product fixture bond is valid");
         }
-        let molecule = builder
-            .build()
-            .expect("atom-bond-product fixture molecule is valid");
+        let molecule = builder.build().expect("atom-bond-product fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         assert_eq!(
@@ -12369,9 +11392,7 @@ mod tests {
                 .with_explicit_hydrogens(2)
                 .with_no_implicit(true),
         );
-        let molecule = builder
-            .build()
-            .expect("all-bond-product fixture molecule is valid");
+        let molecule = builder.build().expect("all-bond-product fixture molecule is valid");
         let context = build_query_match_context(&molecule);
 
         assert_eq!(

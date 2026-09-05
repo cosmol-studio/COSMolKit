@@ -5,13 +5,11 @@ use crate::FingerprintError;
 use super::AvalonFingerprintFlags;
 use super::fingerprint_state::{FingerprintPreprocessingState, with_prepared_fingerprint_state};
 use super::hash::next_hash;
-use super::low_flags::{
-    prepare_atom_class_state, prepare_bond_path_state, prepare_ring_path_state,
-};
+use super::low_flags::{prepare_atom_class_state, prepare_bond_path_state, prepare_ring_path_state};
 use super::reaccs::MoleculeState;
 use super::traversal::{
-    AUGMENTED_ATOM_SEED, AUGMENTED_BOND_SEED, BOND_PATH_SEED, HCOUNT_CLASS_PATH_SEED,
-    HCOUNT_PAIR_SEED, HCOUNT_PATH_SEED, PathFlags, add_bit, set_path_bits_rec,
+    AUGMENTED_ATOM_SEED, AUGMENTED_BOND_SEED, BOND_PATH_SEED, HCOUNT_CLASS_PATH_SEED, HCOUNT_PAIR_SEED,
+    HCOUNT_PATH_SEED, PathFlags, add_bit, set_path_bits_rec,
 };
 
 const SUB_AS_IS: i32 = -2;
@@ -130,9 +128,7 @@ fn count_augmented_atoms(
         // Avalon❗✔️:          // Add some bits for hydrogen counted or hetero central atoms with
         // Avalon❗✔️:          // hetero neighbours
         // Avalon❗✔️:          if ((H_count[i+1] > 0 || ap->color != 6)  && degree[i] >= 2)
-        if (state.hydrogen_counts[atom_index + 1] > 0 || atom.color != 6)
-            && state.degree[atom_index] >= 2
-        {
+        if (state.hydrogen_counts[atom_index + 1] > 0 || atom.color != 6) && state.degree[atom_index] >= 2 {
             // Avalon❗✔️:             for (i1=0; i1<nbp[i].n_ligands; i1++)
             // Avalon❗✔️: 	    {
             let neighbourhood = &state.neighbours[atom_index];
@@ -168,9 +164,7 @@ fn count_augmented_atoms(
                     }
                     // Avalon❗✔️:                   if (mp->atom_array[nbp[i].atoms[i1]].color == 6  &&
                     // Avalon❗✔️:                       mp->atom_array[nbp[i].atoms[i2]].color == 6) continue;
-                    if molecule.atoms[first_atom].color == 6
-                        && molecule.atoms[second_atom].color == 6
-                    {
+                    if molecule.atoms[first_atom].color == 6 && molecule.atoms[second_atom].color == 6 {
                         continue;
                     }
                     // Avalon❗✔️:                   sum = 0;
@@ -439,19 +433,15 @@ fn count_augmented_bonds(
                 // Avalon❗✔️:                        mp->bond_array[nbp[ai1].bonds[i1]].color;
                 // Avalon❗✔️:                sumi += mp->atom_array[nbp[ai1].atoms[i2]].color*
                 // Avalon❗✔️:                        mp->bond_array[nbp[ai1].bonds[i2]].color;
-                let mut first_sum = molecule.atoms[first_atom].color
-                    * molecule.bonds[first_bond].color
+                let mut first_sum = molecule.atoms[first_atom].color * molecule.bonds[first_bond].color
                     + molecule.atoms[second_atom].color * molecule.bonds[second_bond].color;
                 // Avalon❗✔️:                prodi = 1;
                 // Avalon❗✔️:                prodi *= mp->atom_array[nbp[ai1].atoms[i1]].color+
                 // Avalon❗✔️:                         mp->bond_array[nbp[ai1].bonds[i1]].color;
                 // Avalon❗✔️:                prodi *= mp->atom_array[nbp[ai1].atoms[i2]].color+
                 // Avalon❗✔️:                         mp->bond_array[nbp[ai1].bonds[i2]].color;
-                let mut first_product = (molecule.atoms[first_atom].color
-                    + molecule.bonds[first_bond].color)
-                    .wrapping_mul(
-                        molecule.atoms[second_atom].color + molecule.bonds[second_bond].color,
-                    );
+                let mut first_product = (molecule.atoms[first_atom].color + molecule.bonds[first_bond].color)
+                    .wrapping_mul(molecule.atoms[second_atom].color + molecule.bonds[second_bond].color);
                 // Avalon❗✔️:                sumi  &= 0x0FFF;
                 // Avalon❗✔️:                prodi &= 0x0FFF;
                 first_sum &= 0x0fff;
@@ -473,9 +463,7 @@ fn count_augmented_bonds(
                         }
                         // Avalon❗✔️:                      if (nbp[ai2].atoms[j1]+1 == exclude_atom) continue;
                         // Avalon❗✔️:                      if (nbp[ai2].atoms[j2]+1 == exclude_atom) continue;
-                        if third_atom as i32 + 1 == exclude_atom
-                            || fourth_atom as i32 + 1 == exclude_atom
-                        {
+                        if third_atom as i32 + 1 == exclude_atom || fourth_atom as i32 + 1 == exclude_atom {
                             continue;
                         }
                         // Avalon❗✔️:                      /* don't use masked atoms/bonds */
@@ -495,20 +483,15 @@ fn count_augmented_bonds(
                         // Avalon❗✔️:                              mp->bond_array[nbp[ai2].bonds[j1]].color;
                         // Avalon❗✔️:                      sumj += mp->atom_array[nbp[ai2].atoms[j2]].color*
                         // Avalon❗✔️:                              mp->bond_array[nbp[ai2].bonds[j2]].color;
-                        let mut second_sum = molecule.atoms[third_atom].color
-                            * molecule.bonds[third_bond].color
+                        let mut second_sum = molecule.atoms[third_atom].color * molecule.bonds[third_bond].color
                             + molecule.atoms[fourth_atom].color * molecule.bonds[fourth_bond].color;
                         // Avalon❗✔️:                      prodj = 1;
                         // Avalon❗✔️:                      prodj *= mp->atom_array[nbp[ai2].atoms[j1]].color+
                         // Avalon❗✔️:                               mp->bond_array[nbp[ai2].bonds[j1]].color;
                         // Avalon❗✔️:                      prodj *= mp->atom_array[nbp[ai2].atoms[j2]].color+
                         // Avalon❗✔️:                               mp->bond_array[nbp[ai2].bonds[j2]].color;
-                        let mut second_product = (molecule.atoms[third_atom].color
-                            + molecule.bonds[third_bond].color)
-                            .wrapping_mul(
-                                molecule.atoms[fourth_atom].color
-                                    + molecule.bonds[fourth_bond].color,
-                            );
+                        let mut second_product = (molecule.atoms[third_atom].color + molecule.bonds[third_bond].color)
+                            .wrapping_mul(molecule.atoms[fourth_atom].color + molecule.bonds[fourth_bond].color);
                         // Avalon❗✔️:                      sumj  &= 0x0FFF;
                         // Avalon❗✔️:                      prodj &= 0x0FFF;
                         second_sum &= 0x0fff;
@@ -569,8 +552,7 @@ fn count_hydrogen_pairs(
         // Avalon❗✔️:          if (mp->atom_array[bp->atoms[0]-1].color == 6  &&
         // Avalon❗✔️:              mp->atom_array[bp->atoms[1]-1].color == 6  &&
         // Avalon❗✔️:              bp->color == 1) continue;
-        if molecule.atoms[first].color == 6 && molecule.atoms[second].color == 6 && bond.color == 1
-        {
+        if molecule.atoms[first].color == 6 && molecule.atoms[second].color == 6 && bond.color == 1 {
             continue;
         }
         // Avalon❗✔️:          /* Don't consider explicit AH bonds */
@@ -604,10 +586,7 @@ fn count_hydrogen_pairs(
                 }
                 // Avalon❗✔️:                // seed = HCOUNT_PAIR_SEED + 53*(j1+j2) + 7*(j1+1)*(j2+1);
                 // Avalon❗✔️:                seed = NEXT_SEED(HCOUNT_PAIR_SEED, 7*(j1+1)*(j2+1));
-                let mut seed = next_hash(
-                    HCOUNT_PAIR_SEED,
-                    (7 * (first_count + 1) * (second_count + 1)) as u64,
-                );
+                let mut seed = next_hash(HCOUNT_PAIR_SEED, (7 * (first_count + 1) * (second_count + 1)) as u64);
                 // Avalon❗✔️:                seed = NEXT_SEED(seed, 53*(j1+j2));
                 seed = next_hash(seed, (53 * (first_count + second_count)) as u64);
                 // Avalon❗✔️:                seed = NEXT_SEED(seed, bp->color);
@@ -622,9 +601,7 @@ fn count_hydrogen_pairs(
                 // Avalon❗✔️:                                       mp->atom_array[bp->atoms[1]-1].color);
                 seed = next_hash(
                     seed,
-                    molecule.atoms[first]
-                        .color
-                        .wrapping_mul(molecule.atoms[second].color) as u64,
+                    molecule.atoms[first].color.wrapping_mul(molecule.atoms[second].color) as u64,
                 );
                 // Avalon❗✔️:                ADD_BIT(fp_counts, ncounts, seed);
                 add_bit(counts, seed);
@@ -697,18 +674,12 @@ fn count_hydrogen_paths(
         // Avalon❗✔️:          if (ap->color <= 0) continue;
         // Avalon❗✔️:          if (i+1 == exclude_atom) continue;
         // Avalon❗✔️:          if (H_count[i+1] == 0) continue;
-        if atom.color <= 0
-            || atom_index as i32 + 1 == exclude_atom
-            || state.hydrogen_counts[atom_index + 1] == 0
-        {
+        if atom.color <= 0 || atom_index as i32 + 1 == exclude_atom || state.hydrogen_counts[atom_index + 1] == 0 {
             continue;
         }
         // Avalon❗✔️:          /* don't consider non methyl carbon atoms */
         // Avalon❗✔️:          if (ap->color == 6  &&  H_count[i+1] < 3  && degree[i] < 3) continue;
-        if atom.color == 6
-            && state.hydrogen_counts[atom_index + 1] < 3
-            && state.degree[atom_index] < 3
-        {
+        if atom.color == 6 && state.hydrogen_counts[atom_index + 1] < 3 && state.degree[atom_index] < 3 {
             continue;
         }
 
@@ -787,9 +758,7 @@ fn count_hydrogen_paths(
                     atom_index,
                     0,
                     -1,
-                    PathFlags::IGNORE_PATH_SYMBOL
-                        | PathFlags::FORCED_HETERO_END
-                        | PathFlags::PROCESS_CHAINS,
+                    PathFlags::IGNORE_PATH_SYMBOL | PathFlags::FORCED_HETERO_END | PathFlags::PROCESS_CHAINS,
                     exclude_atom,
                 );
                 // Avalon❗✔️:             }
@@ -832,9 +801,7 @@ fn count_hydrogen_paths(
                     atom_index,
                     0,
                     -1,
-                    PathFlags::IGNORE_PATH_SYMBOL
-                        | PathFlags::FORCED_HETERO_END
-                        | PathFlags::PROCESS_CHAINS,
+                    PathFlags::IGNORE_PATH_SYMBOL | PathFlags::FORCED_HETERO_END | PathFlags::PROCESS_CHAINS,
                     exclude_atom,
                 );
                 // Avalon❗✔️:             }
@@ -1024,9 +991,7 @@ fn count_bond_paths(
             atom_index,
             0,
             -1,
-            PathFlags::FORCED_RING_PATH
-                | PathFlags::IGNORE_PATH_SYMBOL
-                | PathFlags::PROCESS_RING_CLOSURES,
+            PathFlags::FORCED_RING_PATH | PathFlags::IGNORE_PATH_SYMBOL | PathFlags::PROCESS_RING_CLOSURES,
             exclude_atom,
         );
         // Avalon❗✔️:          /* Add bits for paths starting with rare bond orders */
@@ -1084,9 +1049,7 @@ fn count_bond_paths(
                 neighbour_atom,
                 0,
                 atom_index as i32,
-                PathFlags::IGNORE_PATH_SYMBOL
-                    | PathFlags::PROCESS_RING_CLOSURES
-                    | PathFlags::PROCESS_CHAINS,
+                PathFlags::IGNORE_PATH_SYMBOL | PathFlags::PROCESS_RING_CLOSURES | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
             // Avalon❗✔️:             touched_indices[ai] = 0;    /* down-dating */
@@ -1189,9 +1152,7 @@ fn count_hydrogen_class_paths(
                 atom_index,
                 0,
                 -1,
-                PathFlags::IGNORE_PATH_SYMBOL
-                    | PathFlags::FORCED_HETERO_END
-                    | PathFlags::PROCESS_CHAINS,
+                PathFlags::IGNORE_PATH_SYMBOL | PathFlags::FORCED_HETERO_END | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
         }
@@ -1211,8 +1172,8 @@ mod tests {
     use super::*;
 
     const MIDDLE_MASKS: &[u32] = &[
-        0x020, 0x040, 0x080, 0x100, 0x200, 0x400, 0x060, 0x0a0, 0x120, 0x220, 0x420, 0x0c0, 0x140,
-        0x240, 0x440, 0x180, 0x280, 0x480, 0x300, 0x500, 0x600,
+        0x020, 0x040, 0x080, 0x100, 0x200, 0x400, 0x060, 0x0a0, 0x120, 0x220, 0x420, 0x0c0, 0x140, 0x240, 0x440, 0x180,
+        0x280, 0x480, 0x300, 0x500, 0x600,
     ];
     const QUERY_MASKS: &[u32] = &[0x020, 0x040, 0x080, 0x100, 0x200, 0x400, 0x7e0];
     const HYDROGEN_MASKS: &[u32] = &[0x040, 0x080, 0x100, 0x1c0];
@@ -1464,18 +1425,10 @@ middle_h=explicit_mask_1c0_dy1 result=4 counts=6:1,30:1,42:2, bits=4000004000040
                 bytes[index / 8] |= 1 << (index % 8);
             }
         }
-        bytes
-            .into_iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+        bytes.into_iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
-    fn run_case(
-        mut molecule: MoleculeState,
-        mask: u32,
-        as_query: bool,
-        daylight: bool,
-    ) -> (i32, String, String) {
+    fn run_case(mut molecule: MoleculeState, mask: u32, as_query: bool, daylight: bool) -> (i32, String, String) {
         let mut counts = vec![0_i32; 64];
         let result = count_middle_flag_families(
             &mut molecule,
@@ -1490,34 +1443,19 @@ middle_h=explicit_mask_1c0_dy1 result=4 counts=6:1,30:1,42:2, bits=4000004000040
     }
 
     fn expected_lines(prefix: &str) -> impl Iterator<Item = &'static str> + '_ {
-        NATIVE_GOLDENS
-            .lines()
-            .filter(move |line| line.starts_with(prefix))
+        NATIVE_GOLDENS.lines().filter(move |line| line.starts_with(prefix))
     }
 
     #[test]
     fn middle_single_and_pairwise_matrix_matches_native_counts_and_bits() {
         assert_eq!(MIDDLE_MASKS.len(), 21);
-        assert_eq!(
-            MIDDLE_MASKS
-                .iter()
-                .filter(|mask| mask.count_ones() == 1)
-                .count(),
-            6
-        );
-        assert_eq!(
-            MIDDLE_MASKS
-                .iter()
-                .filter(|mask| mask.count_ones() == 2)
-                .count(),
-            15
-        );
+        assert_eq!(MIDDLE_MASKS.iter().filter(|mask| mask.count_ones() == 1).count(), 6);
+        assert_eq!(MIDDLE_MASKS.iter().filter(|mask| mask.count_ones() == 2).count(), 15);
         let mut expected = expected_lines("middle_matrix=");
         for daylight in [false, true] {
             for as_query in [false, true] {
                 for &mask in MIDDLE_MASKS {
-                    let (result, counts, bits) =
-                        run_case(matrix_fixture(), mask, as_query, daylight);
+                    let (result, counts, bits) = run_case(matrix_fixture(), mask, as_query, daylight);
                     let actual = format!(
                         "middle_matrix=mask_{mask:03x}_q{}_dy{} result={result} counts={counts} bits={bits}",
                         u8::from(as_query),
@@ -1536,8 +1474,7 @@ middle_h=explicit_mask_1c0_dy1 result=4 counts=6:1,30:1,42:2, bits=4000004000040
         for daylight in [false, true] {
             for as_query in [false, true] {
                 for &mask in QUERY_MASKS {
-                    let (result, counts, bits) =
-                        run_case(query_fixture(), mask, as_query, daylight);
+                    let (result, counts, bits) = run_case(query_fixture(), mask, as_query, daylight);
                     let actual = format!(
                         "middle_query=mask_{mask:03x}_q{}_dy{} result={result} counts={counts} bits={bits}",
                         u8::from(as_query),
@@ -1556,13 +1493,8 @@ middle_h=explicit_mask_1c0_dy1 result=4 counts=6:1,30:1,42:2, bits=4000004000040
         for daylight in [false, true] {
             for explicit_hydrogen in [false, true] {
                 for &mask in HYDROGEN_MASKS {
-                    let (result, counts, bits) =
-                        run_case(hydrogen_fixture(explicit_hydrogen), mask, false, daylight);
-                    let fixture = if explicit_hydrogen {
-                        "explicit"
-                    } else {
-                        "implicit"
-                    };
+                    let (result, counts, bits) = run_case(hydrogen_fixture(explicit_hydrogen), mask, false, daylight);
+                    let fixture = if explicit_hydrogen { "explicit" } else { "implicit" };
                     let actual = format!(
                         "middle_h={fixture}_mask_{mask:03x}_dy{} result={result} counts={counts} bits={bits}",
                         u8::from(daylight),

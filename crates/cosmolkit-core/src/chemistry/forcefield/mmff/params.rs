@@ -235,10 +235,7 @@ impl fmt::Display for MmffParamError {
                 write!(f, "missing RDKit MMFF default data symbol {symbol}")
             }
             Self::MalformedDefaultData { symbol, line } => {
-                write!(
-                    f,
-                    "malformed RDKit MMFF default data string line for {symbol}: {line}"
-                )
+                write!(f, "malformed RDKit MMFF default data string line for {symbol}: {line}")
             }
             Self::MalformedMmffDefLine {
                 line_number,
@@ -486,10 +483,7 @@ impl MmffPropCollection {
             MmffPropStorage::Static(DEFAULT_MMFF_PROP_ROWS)
         } else {
             let (params, i_atom_type) = parse_mmff_prop(source_mmff_prop.as_ref())?;
-            MmffPropStorage::Owned {
-                params,
-                i_atom_type,
-            }
+            MmffPropStorage::Owned { params, i_atom_type }
         };
         Ok(Self {
             source_mmff_prop,
@@ -533,17 +527,10 @@ impl MmffPropCollection {
                 .binary_search_by_key(&(atom_type as u8), |(key, _)| *key)
                 .ok()
                 .map(|idx| &params[idx].1),
-            MmffPropStorage::Owned {
-                params,
-                i_atom_type,
-            } => {
+            MmffPropStorage::Owned { params, i_atom_type } => {
                 let lower = i_atom_type.partition_point(|&probe| u32::from(probe) < atom_type);
                 let upper = i_atom_type.partition_point(|&probe| u32::from(probe) <= atom_type);
-                if lower != upper {
-                    params.get(lower)
-                } else {
-                    None
-                }
+                if lower != upper { params.get(lower) } else { None }
             }
         }
     }
@@ -696,12 +683,7 @@ impl MmffChgCollection {
         }
     }
 
-    pub fn get_mmff_chg_params(
-        &self,
-        bond_type: u32,
-        i_atom_type: u32,
-        j_atom_type: u32,
-    ) -> (i32, Option<&MmffChg>) {
+    pub fn get_mmff_chg_params(&self, bond_type: u32, i_atom_type: u32, j_atom_type: u32) -> (i32, Option<&MmffChg>) {
         // RDKit✔️✔️:   const std::pair<int, const MMFFChg *> getMMFFChgParams(
         // RDKit✔️✔️:       const unsigned int bondType, const unsigned int iAtomType,
         // RDKit✔️✔️:       const unsigned int jAtomType) const {
@@ -724,11 +706,7 @@ impl MmffChgCollection {
         }
 
         if let MmffChgStorage::Static(params) = &self.params {
-            let key = (
-                bond_type as u8,
-                can_i_atom_type as u8,
-                can_j_atom_type as u8,
-            );
+            let key = (bond_type as u8, can_i_atom_type as u8, can_j_atom_type as u8);
             let param = params
                 .binary_search_by_key(&key, |(bond, i_atom, j_atom, _)| (*bond, *i_atom, *j_atom))
                 .ok()
@@ -757,9 +735,7 @@ impl MmffChgCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto bounds =
         // RDKit✔️✔️:         std::equal_range(d_iAtomType.begin(), d_iAtomType.end(), canIAtomType);
-        let Some((i_begin, i_end)) =
-            equal_range_u8(i_atom_types, 0, i_atom_types.len(), can_i_atom_type)
-        else {
+        let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, 0, i_atom_types.len(), can_i_atom_type) else {
             // RDKit✔️✔️:     return std::make_pair(sign, mmffChgParams);
             return (sign, None);
         };
@@ -769,8 +745,7 @@ impl MmffChgCollection {
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.first - d_iAtomType.begin()),
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.second - d_iAtomType.begin()),
         // RDKit✔️✔️:           canJAtomType);
-        let Some((j_begin, j_end)) = equal_range_u8(j_atom_types, i_begin, i_end, can_j_atom_type)
-        else {
+        let Some((j_begin, j_end)) = equal_range_u8(j_atom_types, i_begin, i_end, can_j_atom_type) else {
             return (sign, None);
         };
 
@@ -779,8 +754,7 @@ impl MmffChgCollection {
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.first - d_jAtomType.begin()),
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.second - d_jAtomType.begin()),
         // RDKit✔️✔️:             bondType);
-        let Some((bond_begin, _bond_end)) = equal_range_u8(bond_types, j_begin, j_end, bond_type)
-        else {
+        let Some((bond_begin, _bond_end)) = equal_range_u8(bond_types, j_begin, j_end, bond_type) else {
             return (sign, None);
         };
 
@@ -880,11 +854,7 @@ impl MmffBondCollection {
         }
 
         if let MmffBondStorage::Static(params) = &self.params {
-            let key = (
-                bond_type as u8,
-                can_atom_type as u8,
-                can_nbr_atom_type as u8,
-            );
+            let key = (bond_type as u8, can_atom_type as u8, can_nbr_atom_type as u8);
             return params
                 .binary_search_by_key(&key, |(bond, atom, nbr_atom, _)| (*bond, *atom, *nbr_atom))
                 .ok()
@@ -1049,9 +1019,7 @@ impl MmffAngleCollection {
                     j_atom_type as u8,
                     can_k_atom_type as u8,
                 );
-                if let Ok(idx) =
-                    params.binary_search_by_key(&key, |(angle, i, j, k, _)| (*angle, *i, *j, *k))
-                {
+                if let Ok(idx) = params.binary_search_by_key(&key, |(angle, i, j, k, _)| (*angle, *i, *j, *k)) {
                     return Some(&params[idx].4);
                 }
                 iter += 1;
@@ -1122,25 +1090,19 @@ impl MmffAngleCollection {
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
             // RDKit✔️✔️:             canIAtomType);
-            if let Some((i_begin, i_end)) =
-                equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type)
-            {
+            if let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type) {
                 // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                 // RDKit✔️✔️:           bounds = std::equal_range(
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.first - d_iAtomType.begin()),
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                 // RDKit✔️✔️:               canKAtomType);
-                if let Some((k_begin, k_end)) =
-                    equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type)
-                {
+                if let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type) {
                     // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:             bounds = std::equal_range(
                     // RDKit✔️✔️:                 d_angleType.begin() + (bounds.first - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 d_angleType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 angleType);
-                    if let Some((angle_begin, _angle_end)) =
-                        equal_range_u8(angle_types, k_begin, k_end, angle_type)
-                    {
+                    if let Some((angle_begin, _angle_end)) = equal_range_u8(angle_types, k_begin, k_end, angle_type) {
                         // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:               mmffAngleParams = &d_params[bounds.first - d_angleType.begin()];
                         // RDKit✔️✔️:             }
@@ -1309,9 +1271,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto jBounds =
         // RDKit✔️✔️:         std::equal_range(d_jAtomType.begin(), d_jAtomType.end(), jAtomType);
-        let Some((j_begin, j_end)) =
-            equal_range_u8(j_atom_types, 0, j_atom_types.len(), j_atom_type)
-        else {
+        let Some((j_begin, j_end)) = equal_range_u8(j_atom_types, 0, j_atom_types.len(), j_atom_type) else {
             // RDKit✔️✔️:     return std::make_pair(swap, mmffStbnParams);
             return (swap, None);
         };
@@ -1321,8 +1281,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:           d_iAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
         // RDKit✔️✔️:           d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
         // RDKit✔️✔️:           canIAtomType);
-        let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type)
-        else {
+        let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type) else {
             return (swap, None);
         };
 
@@ -1331,8 +1290,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:             d_kAtomType.begin() + (bounds.first - d_iAtomType.begin()),
         // RDKit✔️✔️:             d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
         // RDKit✔️✔️:             canKAtomType);
-        let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type)
-        else {
+        let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type) else {
             return (swap, None);
         };
 
@@ -1341,8 +1299,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:               d_stretchBendType.begin() + (bounds.first - d_kAtomType.begin()),
         // RDKit✔️✔️:               d_stretchBendType.begin() + (bounds.second - d_kAtomType.begin()),
         // RDKit✔️✔️:               canStretchBendType);
-        let Some((stbn_begin, _stbn_end)) =
-            equal_range_u8(stretch_bend_types, k_begin, k_end, can_stretch_bend_type)
+        let Some((stbn_begin, _stbn_end)) = equal_range_u8(stretch_bend_types, k_begin, k_end, can_stretch_bend_type)
         else {
             return (swap, None);
         };
@@ -1463,11 +1420,7 @@ impl MmffDfsbCollection {
         let params = match &self.params {
             MmffDfsbStorage::Static(params) => params
                 .binary_search_by_key(
-                    &(
-                        can_periodic_table_row1,
-                        periodic_table_row2,
-                        can_periodic_table_row3,
-                    ),
+                    &(can_periodic_table_row1, periodic_table_row2, can_periodic_table_row3),
                     |(row1, row2, row3, _)| (*row1, *row2, *row3),
                 )
                 .ok()
@@ -1602,9 +1555,7 @@ impl MmffOopCollection {
                     can_ikl_atom_type[1] as u8,
                     can_ikl_atom_type[2] as u8,
                 );
-                if let Ok(idx) =
-                    params.binary_search_by_key(&key, |(i, j, k, l, _)| (*i, *j, *k, *l))
-                {
+                if let Ok(idx) = params.binary_search_by_key(&key, |(i, j, k, l, _)| (*i, *j, *k, *l)) {
                     return Some(&params[idx].4);
                 }
                 iter += 1;
@@ -1644,24 +1595,19 @@ impl MmffOopCollection {
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
             // RDKit✔️✔️:             canIKLAtomType[0]);
-            if let Some((i_begin, i_end)) =
-                equal_range_u8(i_atom_types, j_begin, j_end, can_ikl_atom_type[0])
-            {
+            if let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, j_begin, j_end, can_ikl_atom_type[0]) {
                 // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                 // RDKit✔️✔️:           bounds = std::equal_range(
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.first - d_iAtomType.begin()),
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                 // RDKit✔️✔️:               canIKLAtomType[1]);
-                if let Some((k_begin, k_end)) =
-                    equal_range_u8(k_atom_types, i_begin, i_end, can_ikl_atom_type[1])
-                {
+                if let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, i_begin, i_end, can_ikl_atom_type[1]) {
                     // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:             bounds = std::equal_range(
                     // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.first - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 canIKLAtomType[2]);
-                    if let Some((l_begin, _l_end)) =
-                        equal_range_u8(l_atom_types, k_begin, k_end, can_ikl_atom_type[2])
+                    if let Some((l_begin, _l_end)) = equal_range_u8(l_atom_types, k_begin, k_end, can_ikl_atom_type[2])
                     {
                         // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:               mmffOopParams = &d_params[bounds.first - d_lAtomType.begin()];
@@ -1804,14 +1750,10 @@ impl MmffTorCollection {
                     i_wild_card = 3;
                     l_wild_card = 1;
                 }
-                let Some(can_i_atom_type) =
-                    mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card)
-                else {
+                let Some(can_i_atom_type) = mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card) else {
                     return (can_tor_type, None);
                 };
-                let Some(can_l_atom_type) =
-                    mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card)
-                else {
+                let Some(can_l_atom_type) = mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card) else {
                     return (can_tor_type, None);
                 };
                 let mut can_i_atom_type = u32::from(can_i_atom_type);
@@ -1821,9 +1763,7 @@ impl MmffTorCollection {
                 if can_j_atom_type > can_k_atom_type {
                     std::mem::swap(&mut can_j_atom_type, &mut can_k_atom_type);
                     std::mem::swap(&mut can_i_atom_type, &mut can_l_atom_type);
-                } else if (can_j_atom_type == can_k_atom_type)
-                    && (can_i_atom_type > can_l_atom_type)
-                {
+                } else if (can_j_atom_type == can_k_atom_type) && (can_i_atom_type > can_l_atom_type) {
                     std::mem::swap(&mut can_i_atom_type, &mut can_l_atom_type);
                 }
                 let key = (
@@ -1833,9 +1773,7 @@ impl MmffTorCollection {
                     can_k_atom_type as u8,
                     can_l_atom_type as u8,
                 );
-                if let Ok(idx) =
-                    params.binary_search_by_key(&key, |(tor, i, j, k, l, _)| (*tor, *i, *j, *k, *l))
-                {
+                if let Ok(idx) = params.binary_search_by_key(&key, |(tor, i, j, k, l, _)| (*tor, *i, *j, *k, *l)) {
                     mmff_tor_params = Some(&params[idx].5);
                     if max_iter == 4 {
                         break;
@@ -1911,14 +1849,10 @@ impl MmffTorCollection {
             // RDKit✔️✔️:       unsigned int canJAtomType = jAtomType;
             // RDKit✔️✔️:       unsigned int canKAtomType = kAtomType;
             // RDKit✔️✔️:       unsigned int canLAtomType = (*mmffDef)(lAtomType)->eqLevel[lWildCard];
-            let Some(can_i_atom_type) =
-                mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card)
-            else {
+            let Some(can_i_atom_type) = mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card) else {
                 return (can_tor_type, None);
             };
-            let Some(can_l_atom_type) =
-                mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card)
-            else {
+            let Some(can_l_atom_type) = mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card) else {
                 return (can_tor_type, None);
             };
             let mut can_i_atom_type = u32::from(can_i_atom_type);
@@ -1969,40 +1903,31 @@ impl MmffTorCollection {
             // RDKit✔️✔️: #else
             // RDKit✔️✔️:       auto jBounds = std::equal_range(d_jAtomType.begin(), d_jAtomType.end(),
             // RDKit✔️✔️:                                       canJAtomType);
-            if let Some((j_begin, j_end)) =
-                equal_range_u8(j_atom_types, 0, j_atom_types.len(), can_j_atom_type)
-            {
+            if let Some((j_begin, j_end)) = equal_range_u8(j_atom_types, 0, j_atom_types.len(), can_j_atom_type) {
                 // RDKit✔️✔️:       if (jBounds.first != jBounds.second) {
                 // RDKit✔️✔️:         auto bounds = std::equal_range(
                 // RDKit✔️✔️:             d_kAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
                 // RDKit✔️✔️:             d_kAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
                 // RDKit✔️✔️:             canKAtomType);
-                if let Some((k_begin, k_end)) =
-                    equal_range_u8(k_atom_types, j_begin, j_end, can_k_atom_type)
-                {
+                if let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, j_begin, j_end, can_k_atom_type) {
                     // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:           bounds = std::equal_range(
                     // RDKit✔️✔️:               d_iAtomType.begin() + (bounds.first - d_kAtomType.begin()),
                     // RDKit✔️✔️:               d_iAtomType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:               canIAtomType);
-                    if let Some((i_begin, i_end)) =
-                        equal_range_u8(i_atom_types, k_begin, k_end, can_i_atom_type)
-                    {
+                    if let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, k_begin, k_end, can_i_atom_type) {
                         // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:             bounds = std::equal_range(
                         // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.first - d_iAtomType.begin()),
                         // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                         // RDKit✔️✔️:                 canLAtomType);
-                        if let Some((l_begin, l_end)) =
-                            equal_range_u8(l_atom_types, i_begin, i_end, can_l_atom_type)
-                        {
+                        if let Some((l_begin, l_end)) = equal_range_u8(l_atom_types, i_begin, i_end, can_l_atom_type) {
                             // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                             // RDKit✔️✔️:               bounds = std::equal_range(
                             // RDKit✔️✔️:                   d_torType.begin() + (bounds.first - d_lAtomType.begin()),
                             // RDKit✔️✔️:                   d_torType.begin() + (bounds.second - d_lAtomType.begin()),
                             // RDKit✔️✔️:                   canTorType);
-                            if let Some((tor_begin, _tor_end)) =
-                                equal_range_u8(tor_types, l_begin, l_end, can_tor_type)
+                            if let Some((tor_begin, _tor_end)) = equal_range_u8(tor_types, l_begin, l_end, can_tor_type)
                             {
                                 // RDKit✔️✔️:               if (bounds.first != bounds.second) {
                                 // RDKit✔️✔️:                 mmffTorParams = &d_params[bounds.first - d_torType.begin()];
@@ -2049,10 +1974,7 @@ pub struct MmffVdwCollection {
 #[derive(Clone, Debug, PartialEq)]
 enum MmffVdwStorage {
     Static(&'static [(u8, MmffVdw)]),
-    Owned {
-        params: Vec<MmffVdw>,
-        atom_type: Vec<u8>,
-    },
+    Owned { params: Vec<MmffVdw>, atom_type: Vec<u8> },
 }
 
 impl MmffVdwCollection {
@@ -2148,8 +2070,7 @@ impl MmffVdwCollection {
                 params,
                 atom_type: atom_types,
             } => {
-                let (atom_begin, _atom_end) =
-                    equal_range_u8(atom_types, 0, atom_types.len(), atom_type)?;
+                let (atom_begin, _atom_end) = equal_range_u8(atom_types, 0, atom_types.len(), atom_type)?;
 
                 // RDKit✔️✔️:     return ((bounds.first != bounds.second)
                 // RDKit✔️✔️:                 ? &d_params[bounds.first - d_atomType.begin()]
@@ -2258,10 +2179,7 @@ pub fn default_mmff_cov_rad_pau_ele() -> Result<&'static str, MmffParamError> {
     Ok(DEFAULT_MMFF_COV_RAD_PAU_ELE)
 }
 
-pub(crate) fn default_mmff_bndk_params(
-    atomic_num: u32,
-    nbr_atomic_num: u32,
-) -> Option<&'static MmffBond> {
+pub(crate) fn default_mmff_bndk_params(atomic_num: u32, nbr_atomic_num: u32) -> Option<&'static MmffBond> {
     // RDKit❗✔️: const MMFFBond *operator()(const int atomicNum,
     // RDKit❗✔️:                              const int nbrAtomicNum) const {
     // RDKit❗✔️:   const MMFFBond *mmffBndkParams = nullptr;
@@ -2295,10 +2213,7 @@ pub(crate) fn default_mmff_bndk_params(
         .map(|idx| &DEFAULT_MMFF_BNDK_ROWS[idx].2)
 }
 
-pub(crate) fn default_mmff_herschbach_laurie_params(
-    i_row: u32,
-    j_row: u32,
-) -> Option<&'static MmffHerschbachLaurie> {
+pub(crate) fn default_mmff_herschbach_laurie_params(i_row: u32, j_row: u32) -> Option<&'static MmffHerschbachLaurie> {
     // RDKit❗✔️: const MMFFHerschbachLaurie *operator()(const int iRow, const int jRow) const {
     // RDKit❗✔️:   const MMFFHerschbachLaurie *mmffHerschbachLaurieParams = nullptr;
     // RDKit❗✔️:   unsigned int canIRow = iRow;
@@ -2329,9 +2244,7 @@ pub(crate) fn default_mmff_herschbach_laurie_params(
         .map(|idx| &DEFAULT_MMFF_HERSCHBACH_LAURIE_ROWS[idx].2)
 }
 
-pub(crate) fn default_mmff_cov_rad_pau_ele_params(
-    atomic_num: u32,
-) -> Option<&'static MmffCovRadPauEle> {
+pub(crate) fn default_mmff_cov_rad_pau_ele_params(atomic_num: u32) -> Option<&'static MmffCovRadPauEle> {
     // RDKit❗✔️: const MMFFCovRadPauEle *operator()(const unsigned int atomicNum) const {
     // RDKit❗✔️:   auto bounds =
     // RDKit❗✔️:       std::equal_range(d_atomicNum.begin(), d_atomicNum.end(), atomicNum);
@@ -2551,9 +2464,7 @@ fn parse_mmff_chg(mmff_chg: &str) -> Result<ParsedMmffChg, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .bond_type
-            .push(parse_u8(line_number, "bondType", columns[0])?);
+        parsed.bond_type.push(parse_u8(line_number, "bondType", columns[0])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int iAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2562,9 +2473,7 @@ fn parse_mmff_chg(mmff_chg: &str) -> Result<ParsedMmffChg, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "iAtomType", columns[1])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "iAtomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2573,9 +2482,7 @@ fn parse_mmff_chg(mmff_chg: &str) -> Result<ParsedMmffChg, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[2])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[2])?);
 
         let mmff_chg_obj = MmffChg {
             // RDKit✔️✔️:       mmffChgObj.bci = boost::lexical_cast<double>(*token);
@@ -2624,9 +2531,7 @@ fn parse_mmff_bond(mmff_bond: &str) -> Result<ParsedMmffBond, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .bond_type
-            .push(parse_u8(line_number, "bondType", columns[0])?);
+        parsed.bond_type.push(parse_u8(line_number, "bondType", columns[0])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int atomType = boost::lexical_cast<unsigned int>(*token);
@@ -2635,9 +2540,7 @@ fn parse_mmff_bond(mmff_bond: &str) -> Result<ParsedMmffBond, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "atomType", columns[1])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "atomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2646,9 +2549,7 @@ fn parse_mmff_bond(mmff_bond: &str) -> Result<ParsedMmffBond, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[2])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[2])?);
 
         let mmff_bond_obj = MmffBond {
             // RDKit✔️✔️:       mmffBondObj.kb = boost::lexical_cast<double>(*token);
@@ -2702,9 +2603,7 @@ fn parse_mmff_angle(mmff_angle: &str) -> Result<ParsedMmffAngle, MmffParamError>
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .angle_type
-            .push(parse_u8(line_number, "angleType", columns[0])?);
+        parsed.angle_type.push(parse_u8(line_number, "angleType", columns[0])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int iAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2713,9 +2612,7 @@ fn parse_mmff_angle(mmff_angle: &str) -> Result<ParsedMmffAngle, MmffParamError>
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "iAtomType", columns[1])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "iAtomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2724,9 +2621,7 @@ fn parse_mmff_angle(mmff_angle: &str) -> Result<ParsedMmffAngle, MmffParamError>
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[2])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[2])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int kAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2735,9 +2630,7 @@ fn parse_mmff_angle(mmff_angle: &str) -> Result<ParsedMmffAngle, MmffParamError>
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .k_atom_type
-            .push(parse_u8(line_number, "kAtomType", columns[3])?);
+        parsed.k_atom_type.push(parse_u8(line_number, "kAtomType", columns[3])?);
 
         let mmff_angle_obj = MmffAngle {
             // RDKit✔️✔️:       mmffAngleObj.ka = boost::lexical_cast<double>(*token);
@@ -2801,9 +2694,7 @@ fn parse_mmff_stbn(mmff_stbn: &str) -> Result<ParsedMmffStbn, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "iAtomType", columns[1])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "iAtomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2812,9 +2703,7 @@ fn parse_mmff_stbn(mmff_stbn: &str) -> Result<ParsedMmffStbn, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[2])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[2])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int kAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2823,9 +2712,7 @@ fn parse_mmff_stbn(mmff_stbn: &str) -> Result<ParsedMmffStbn, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .k_atom_type
-            .push(parse_u8(line_number, "kAtomType", columns[3])?);
+        parsed.k_atom_type.push(parse_u8(line_number, "kAtomType", columns[3])?);
 
         let mmff_stbn_obj = MmffStbn {
             // RDKit✔️✔️:       mmffStbnObj.kbaIJK = boost::lexical_cast<double>(*token);
@@ -2846,9 +2733,7 @@ fn parse_mmff_stbn(mmff_stbn: &str) -> Result<ParsedMmffStbn, MmffParamError> {
     Ok(parsed)
 }
 
-fn parse_mmff_dfsb(
-    mmff_dfsb: &str,
-) -> Result<BTreeMap<u32, BTreeMap<u32, BTreeMap<u32, MmffStbn>>>, MmffParamError> {
+fn parse_mmff_dfsb(mmff_dfsb: &str) -> Result<BTreeMap<u32, BTreeMap<u32, BTreeMap<u32, MmffStbn>>>, MmffParamError> {
     // RDKit✔️✔️:   std::istringstream inStream(mmffDfsb);
     // RDKit✔️✔️:   std::string inLine = RDKit::getLine(inStream);
     // RDKit✔️✔️:   while (!(inStream.eof())) {
@@ -2931,9 +2816,7 @@ fn parse_mmff_oop(mmff_oop: &str) -> Result<ParsedMmffOop, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "iAtomType", columns[0])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "iAtomType", columns[0])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2942,9 +2825,7 @@ fn parse_mmff_oop(mmff_oop: &str) -> Result<ParsedMmffOop, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[1])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int kAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2953,9 +2834,7 @@ fn parse_mmff_oop(mmff_oop: &str) -> Result<ParsedMmffOop, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .k_atom_type
-            .push(parse_u8(line_number, "kAtomType", columns[2])?);
+        parsed.k_atom_type.push(parse_u8(line_number, "kAtomType", columns[2])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int lAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -2964,9 +2843,7 @@ fn parse_mmff_oop(mmff_oop: &str) -> Result<ParsedMmffOop, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .l_atom_type
-            .push(parse_u8(line_number, "lAtomType", columns[3])?);
+        parsed.l_atom_type.push(parse_u8(line_number, "lAtomType", columns[3])?);
 
         let mmff_oop_obj = MmffOop {
             // RDKit✔️✔️:       mmffOopObj.koop = boost::lexical_cast<double>(*token);
@@ -3017,9 +2894,7 @@ fn parse_mmff_tor(mmff_tor: &str) -> Result<ParsedMmffTor, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .tor_type
-            .push(parse_u8(line_number, "torType", columns[0])?);
+        parsed.tor_type.push(parse_u8(line_number, "torType", columns[0])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int iAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -3028,9 +2903,7 @@ fn parse_mmff_tor(mmff_tor: &str) -> Result<ParsedMmffTor, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .i_atom_type
-            .push(parse_u8(line_number, "iAtomType", columns[1])?);
+        parsed.i_atom_type.push(parse_u8(line_number, "iAtomType", columns[1])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int jAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -3039,9 +2912,7 @@ fn parse_mmff_tor(mmff_tor: &str) -> Result<ParsedMmffTor, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .j_atom_type
-            .push(parse_u8(line_number, "jAtomType", columns[2])?);
+        parsed.j_atom_type.push(parse_u8(line_number, "jAtomType", columns[2])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int kAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -3050,9 +2921,7 @@ fn parse_mmff_tor(mmff_tor: &str) -> Result<ParsedMmffTor, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .k_atom_type
-            .push(parse_u8(line_number, "kAtomType", columns[3])?);
+        parsed.k_atom_type.push(parse_u8(line_number, "kAtomType", columns[3])?);
 
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:       unsigned int lAtomType = boost::lexical_cast<unsigned int>(*token);
@@ -3061,9 +2930,7 @@ fn parse_mmff_tor(mmff_tor: &str) -> Result<ParsedMmffTor, MmffParamError> {
         // RDKit✔️✔️:           (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:       ++token;
-        parsed
-            .l_atom_type
-            .push(parse_u8(line_number, "lAtomType", columns[4])?);
+        parsed.l_atom_type.push(parse_u8(line_number, "lAtomType", columns[4])?);
 
         let mmff_tor_obj = MmffTor {
             // RDKit✔️✔️:       mmffTorObj.V1 = boost::lexical_cast<double>(*token);
@@ -3155,9 +3022,7 @@ fn parse_mmff_vdw(mmff_vdw: &str) -> Result<ParsedMmffVdw, MmffParamError> {
             // RDKit✔️✔️:             (std::uint8_t)(boost::lexical_cast<unsigned int>(*token)));
             // RDKit✔️✔️: #endif
             // RDKit✔️✔️:         ++token;
-            parsed
-                .atom_type
-                .push(parse_u8(line_number, "atomType", columns[0])?);
+            parsed.atom_type.push(parse_u8(line_number, "atomType", columns[0])?);
 
             // RDKit✔️✔️:         mmffVdWObj.alpha_i = boost::lexical_cast<double>(*token);
             // RDKit✔️✔️:         ++token;
@@ -3254,18 +3119,10 @@ fn parse_mmff_pbci(mmff_pbci: &str) -> Result<Vec<MmffPbci>, MmffParamError> {
 fn equal_range_u8(values: &[u8], start: usize, end: usize, target: u32) -> Option<(usize, usize)> {
     let lower = start + values[start..end].partition_point(|&probe| u32::from(probe) < target);
     let upper = start + values[start..end].partition_point(|&probe| u32::from(probe) <= target);
-    if lower != upper {
-        Some((lower, upper))
-    } else {
-        None
-    }
+    if lower != upper { Some((lower, upper)) } else { None }
 }
 
-fn parse_u8(
-    line_number: usize,
-    column_name: &'static str,
-    value: &str,
-) -> Result<u8, MmffParamError> {
+fn parse_u8(line_number: usize, column_name: &'static str, value: &str) -> Result<u8, MmffParamError> {
     let parsed = value
         .parse::<u32>()
         .map_err(|_err: ParseIntError| MmffParamError::ParseInt {
@@ -3278,11 +3135,7 @@ fn parse_u8(
     Ok(parsed as u8)
 }
 
-fn parse_u32(
-    line_number: usize,
-    column_name: &'static str,
-    value: &str,
-) -> Result<u32, MmffParamError> {
+fn parse_u32(line_number: usize, column_name: &'static str, value: &str) -> Result<u32, MmffParamError> {
     // RDKit✔️✔️:       auto iAtomicNum = boost::lexical_cast<unsigned int>(*token);
     value
         .parse::<u32>()
@@ -3293,11 +3146,7 @@ fn parse_u32(
         })
 }
 
-fn parse_f64(
-    line_number: usize,
-    column_name: &'static str,
-    value: &str,
-) -> Result<f64, MmffParamError> {
+fn parse_f64(line_number: usize, column_name: &'static str, value: &str) -> Result<f64, MmffParamError> {
     value
         .parse::<f64>()
         .map_err(|_err: ParseFloatError| MmffParamError::ParseFloat {
@@ -3323,8 +3172,7 @@ mod tests {
     #[test]
     fn mmff_generated_herschbach_laurie_lookup_matches_source_and_canonicalizes_order() {
         let forward = default_mmff_herschbach_laurie_params(2, 4).expect("period-pair row exists");
-        let reversed =
-            default_mmff_herschbach_laurie_params(4, 2).expect("reversed period-pair row exists");
+        let reversed = default_mmff_herschbach_laurie_params(4, 2).expect("reversed period-pair row exists");
 
         assert_eq!(
             forward,
@@ -3351,12 +3199,7 @@ mod tests {
         let collection = MmffDefCollection::new("").expect("default MMFFDef parses");
 
         assert!(collection.source_mmff_def().contains("CR\t1\t1\t1\t1\t0"));
-        assert_eq!(
-            collection.get(1),
-            Some(&MmffDef {
-                eq_level: [1, 1, 1, 0]
-            })
-        );
+        assert_eq!(collection.get(1), Some(&MmffDef { eq_level: [1, 1, 1, 0] }));
         assert_eq!(
             collection.get(37),
             Some(&MmffDef {
@@ -3373,8 +3216,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdefcollection_uses_source_vector_lookup_bounds() {
-        let collection =
-            MmffDefCollection::new("A\t3\t7\t8\t9\t10\n").expect("custom MMFFDef parses");
+        let collection = MmffDefCollection::new("A\t3\t7\t8\t9\t10\n").expect("custom MMFFDef parses");
 
         assert_eq!(collection.len(), 1);
         assert_eq!(
@@ -3400,12 +3242,7 @@ mod tests {
         .expect("custom MMFFDef parses");
 
         assert_eq!(collection.len(), 2);
-        assert_eq!(
-            collection.get(1),
-            Some(&MmffDef {
-                eq_level: [1, 2, 3, 4],
-            })
-        );
+        assert_eq!(collection.get(1), Some(&MmffDef { eq_level: [1, 2, 3, 4] }));
         assert_eq!(
             collection.get(2),
             Some(&MmffDef {
@@ -3416,8 +3253,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdefcollection_casts_unsigned_values_to_uint8_like_rdkit() {
-        let collection =
-            MmffDefCollection::new("A\t1\t300\t301\t302\t303\n").expect("custom MMFFDef parses");
+        let collection = MmffDefCollection::new("A\t1\t300\t301\t302\t303\n").expect("custom MMFFDef parses");
 
         assert_eq!(
             collection.get(1),
@@ -3560,8 +3396,8 @@ mod tests {
 
     #[test]
     fn mmff_mmffpropcollection_casts_unsigned_values_to_uint8_like_rdkit() {
-        let collection = MmffPropCollection::new("300\t301\t302\t303\t304\t305\t306\t307\t308\n")
-            .expect("custom MMFFProp parses");
+        let collection =
+            MmffPropCollection::new("300\t301\t302\t303\t304\t305\t306\t307\t308\n").expect("custom MMFFProp parses");
 
         assert_eq!(
             collection.get(44),
@@ -3581,8 +3417,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffpropcollection_rejects_malformed_line_with_too_few_columns() {
-        let err =
-            MmffPropCollection::new("1\t6\t4\t4\t0\t0\t0\t0\n").expect_err("line is malformed");
+        let err = MmffPropCollection::new("1\t6\t4\t4\t0\t0\t0\t0\n").expect_err("line is malformed");
 
         assert_eq!(
             err,
@@ -3595,8 +3430,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffpropcollection_rejects_non_unsigned_integer_tokens() {
-        let err = MmffPropCollection::new("1\tbad\t4\t4\t0\t0\t0\t0\t0\n")
-            .expect_err("property value is invalid");
+        let err = MmffPropCollection::new("1\tbad\t4\t4\t0\t0\t0\t0\t0\n").expect_err("property value is invalid");
 
         assert_eq!(
             err,
@@ -3617,13 +3451,7 @@ mod tests {
                 .source_mmff_pbci()
                 .contains("* MMFF Partial Bond Charge Incs")
         );
-        assert_eq!(
-            collection.get(1),
-            Some(&MmffPbci {
-                pbci: 0.0,
-                fcadj: 0.0,
-            })
-        );
+        assert_eq!(collection.get(1), Some(&MmffPbci { pbci: 0.0, fcadj: 0.0 }));
         assert_eq!(
             collection.get(32),
             Some(&MmffPbci {
@@ -3631,19 +3459,12 @@ mod tests {
                 fcadj: 0.5,
             })
         );
-        assert_eq!(
-            collection.get(99),
-            Some(&MmffPbci {
-                pbci: 2.0,
-                fcadj: 0.0,
-            })
-        );
+        assert_eq!(collection.get(99), Some(&MmffPbci { pbci: 2.0, fcadj: 0.0 }));
     }
 
     #[test]
     fn mmff_mmffpbcicollection_uses_source_vector_lookup_bounds() {
-        let collection = MmffPbciCollection::new("9\t5\t1.250\t0.125\tignored\n")
-            .expect("custom MMFFPBCI parses");
+        let collection = MmffPbciCollection::new("9\t5\t1.250\t0.125\tignored\n").expect("custom MMFFPBCI parses");
 
         assert_eq!(collection.len(), 1);
         assert_eq!(
@@ -3708,11 +3529,7 @@ mod tests {
     fn mmff_mmffchgcollection_loads_default_charge_table() {
         let collection = MmffChgCollection::new("").expect("default MMFFChg parses");
 
-        assert!(
-            collection
-                .source_mmff_chg()
-                .contains("* MMFF BOND-CHARGE INCREMENTS")
-        );
+        assert!(collection.source_mmff_chg().contains("* MMFF BOND-CHARGE INCREMENTS"));
         let (sign, params) = collection.get_mmff_chg_params(0, 1, 2);
         assert_eq!(sign, -1);
         assert_eq!(params, Some(&MmffChg { bci: -0.1382 }));
@@ -3770,8 +3587,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffchgcollection_casts_unsigned_keys_to_uint8_like_rdkit() {
-        let collection =
-            MmffChgCollection::new("300\t301\t302\t-0.1250\n").expect("custom MMFFChg parses");
+        let collection = MmffChgCollection::new("300\t301\t302\t-0.1250\n").expect("custom MMFFChg parses");
 
         assert_eq!(
             collection.get_mmff_chg_params(44, 45, 46),
@@ -3825,45 +3641,17 @@ mod tests {
     fn mmff_mmffbondcollection_loads_default_bond_table() {
         let collection = MmffBondCollection::new("").expect("default MMFFBond parses");
 
-        assert!(
-            collection
-                .source_mmff_bond()
-                .contains("* MMFF BOND PARAMETERS")
-        );
-        assert_eq!(
-            collection.get(0, 1, 1),
-            Some(&MmffBond {
-                kb: 4.258,
-                r0: 1.508
-            })
-        );
-        assert_eq!(
-            collection.get(0, 1, 2),
-            Some(&MmffBond {
-                kb: 4.539,
-                r0: 1.482
-            })
-        );
-        assert_eq!(
-            collection.get(1, 2, 3),
-            Some(&MmffBond {
-                kb: 4.565,
-                r0: 1.468
-            })
-        );
+        assert!(collection.source_mmff_bond().contains("* MMFF BOND PARAMETERS"));
+        assert_eq!(collection.get(0, 1, 1), Some(&MmffBond { kb: 4.258, r0: 1.508 }));
+        assert_eq!(collection.get(0, 1, 2), Some(&MmffBond { kb: 4.539, r0: 1.482 }));
+        assert_eq!(collection.get(1, 2, 3), Some(&MmffBond { kb: 4.565, r0: 1.468 }));
     }
 
     #[test]
     fn mmff_mmffbondcollection_canonicalizes_atom_order_without_sign_change() {
         let collection = MmffBondCollection::new("").expect("default MMFFBond parses");
 
-        assert_eq!(
-            collection.get(0, 2, 1),
-            Some(&MmffBond {
-                kb: 4.539,
-                r0: 1.482
-            })
-        );
+        assert_eq!(collection.get(0, 2, 1), Some(&MmffBond { kb: 4.539, r0: 1.482 }));
     }
 
     #[test]
@@ -3877,13 +3665,7 @@ mod tests {
         .expect("custom MMFFBond parses");
 
         assert_eq!(collection.len(), 4);
-        assert_eq!(
-            collection.get(1, 1, 2),
-            Some(&MmffBond {
-                kb: 2.25,
-                r0: 2.125
-            })
-        );
+        assert_eq!(collection.get(1, 1, 2), Some(&MmffBond { kb: 2.25, r0: 2.125 }));
         assert_eq!(collection.get(2, 1, 2), None);
         assert_eq!(collection.get(0, 1, 4), None);
         assert_eq!(collection.get(0, 4, 1), None);
@@ -3899,27 +3681,14 @@ mod tests {
         .expect("custom MMFFBond parses");
 
         assert_eq!(collection.len(), 1);
-        assert_eq!(
-            collection.get(0, 1, 2),
-            Some(&MmffBond {
-                kb: 1.25,
-                r0: 1.125
-            })
-        );
+        assert_eq!(collection.get(0, 1, 2), Some(&MmffBond { kb: 1.25, r0: 1.125 }));
     }
 
     #[test]
     fn mmff_mmffbondcollection_casts_unsigned_keys_to_uint8_like_rdkit() {
-        let collection = MmffBondCollection::new("300\t301\t302\t1.250\t1.125\n")
-            .expect("custom MMFFBond parses");
+        let collection = MmffBondCollection::new("300\t301\t302\t1.250\t1.125\n").expect("custom MMFFBond parses");
 
-        assert_eq!(
-            collection.get(44, 45, 46),
-            Some(&MmffBond {
-                kb: 1.25,
-                r0: 1.125
-            })
-        );
+        assert_eq!(collection.get(44, 45, 46), Some(&MmffBond { kb: 1.25, r0: 1.125 }));
         assert_eq!(collection.get(300, 301, 302), None);
     }
 
@@ -3938,8 +3707,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffbondcollection_rejects_non_unsigned_integer_tokens() {
-        let err =
-            MmffBondCollection::new("bad\t1\t2\t1.250\t1.125\n").expect_err("bond type is invalid");
+        let err = MmffBondCollection::new("bad\t1\t2\t1.250\t1.125\n").expect_err("bond type is invalid");
 
         assert_eq!(
             err,
@@ -3970,11 +3738,7 @@ mod tests {
         let defs = MmffDefCollection::new("").expect("default MMFFDef parses");
         let collection = MmffAngleCollection::new("").expect("default MMFFAngle parses");
 
-        assert!(
-            collection
-                .source_mmff_angle()
-                .contains("* MMFF ANGLE PARAMETERS")
-        );
+        assert!(collection.source_mmff_angle().contains("* MMFF ANGLE PARAMETERS"));
         assert_eq!(
             collection.get(&defs, 0, 1, 1, 1),
             Some(&MmffAngle {
@@ -3999,8 +3763,7 @@ mod tests {
              C\t3\t3\t8\t9\t10\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffAngleCollection::new("0\t1\t2\t3\t1.250\t120.500\tA\n")
-            .expect("custom MMFFAngle parses");
+        let collection = MmffAngleCollection::new("0\t1\t2\t3\t1.250\t120.500\tA\n").expect("custom MMFFAngle parses");
 
         assert_eq!(
             collection.get(&defs, 0, 3, 2, 1),
@@ -4078,8 +3841,8 @@ mod tests {
              B\t2\t301\t301\t301\t301\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffAngleCollection::new("300\t44\t45\t44\t1.250\t120.500\n")
-            .expect("custom MMFFAngle parses");
+        let collection =
+            MmffAngleCollection::new("300\t44\t45\t44\t1.250\t120.500\n").expect("custom MMFFAngle parses");
 
         assert_eq!(
             collection.get(&defs, 44, 1, 45, 1),
@@ -4106,8 +3869,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffanglecollection_rejects_non_unsigned_integer_tokens() {
-        let err = MmffAngleCollection::new("bad\t1\t2\t3\t1.250\t120.500\n")
-            .expect_err("angle type is invalid");
+        let err = MmffAngleCollection::new("bad\t1\t2\t3\t1.250\t120.500\n").expect_err("angle type is invalid");
 
         assert_eq!(
             err,
@@ -4121,8 +3883,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffanglecollection_rejects_non_float_tokens() {
-        let err =
-            MmffAngleCollection::new("0\t1\t2\t3\tbad\t120.500\n").expect_err("ka is invalid");
+        let err = MmffAngleCollection::new("0\t1\t2\t3\tbad\t120.500\n").expect_err("ka is invalid");
 
         assert_eq!(
             err,
@@ -4138,11 +3899,7 @@ mod tests {
     fn mmff_mmffstbncollection_loads_default_stretch_bend_table() {
         let collection = MmffStbnCollection::new("").expect("default MMFFStbn parses");
 
-        assert!(
-            collection
-                .source_mmff_stbn()
-                .contains("* MMFF STRETCH-BEND PARAMETERS")
-        );
+        assert!(collection.source_mmff_stbn().contains("* MMFF STRETCH-BEND PARAMETERS"));
         assert_eq!(
             collection.get_mmff_stbn_params(0, 0, 0, 1, 1, 1),
             (
@@ -4167,8 +3924,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffstbncollection_canonicalizes_terminal_atom_types_and_reports_swap() {
-        let collection = MmffStbnCollection::new("0\t1\t2\t3\t1.250\t1.125\tA\n")
-            .expect("custom MMFFStbn parses");
+        let collection = MmffStbnCollection::new("0\t1\t2\t3\t1.250\t1.125\tA\n").expect("custom MMFFStbn parses");
 
         assert_eq!(
             collection.get_mmff_stbn_params(0, 0, 0, 3, 2, 1),
@@ -4184,8 +3940,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffstbncollection_sets_swap_for_equal_terminals_from_bond_order() {
-        let collection = MmffStbnCollection::new("0\t1\t2\t1\t1.250\t1.125\tA\n")
-            .expect("custom MMFFStbn parses");
+        let collection = MmffStbnCollection::new("0\t1\t2\t1\t1.250\t1.125\tA\n").expect("custom MMFFStbn parses");
 
         assert_eq!(
             collection.get_mmff_stbn_params(0, 1, 2, 1, 2, 1),
@@ -4230,22 +3985,10 @@ mod tests {
                 }),
             )
         );
-        assert_eq!(
-            collection.get_mmff_stbn_params(2, 0, 0, 1, 2, 3),
-            (false, None)
-        );
-        assert_eq!(
-            collection.get_mmff_stbn_params(0, 0, 0, 1, 2, 9),
-            (false, None)
-        );
-        assert_eq!(
-            collection.get_mmff_stbn_params(0, 0, 0, 1, 9, 3),
-            (false, None)
-        );
-        assert_eq!(
-            collection.get_mmff_stbn_params(0, 0, 0, 9, 2, 1),
-            (true, None)
-        );
+        assert_eq!(collection.get_mmff_stbn_params(2, 0, 0, 1, 2, 3), (false, None));
+        assert_eq!(collection.get_mmff_stbn_params(0, 0, 0, 1, 2, 9), (false, None));
+        assert_eq!(collection.get_mmff_stbn_params(0, 0, 0, 1, 9, 3), (false, None));
+        assert_eq!(collection.get_mmff_stbn_params(0, 0, 0, 9, 2, 1), (true, None));
     }
 
     #[test]
@@ -4272,8 +4015,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffstbncollection_casts_unsigned_keys_to_uint8_like_rdkit() {
-        let collection = MmffStbnCollection::new("300\t301\t302\t303\t1.250\t1.125\n")
-            .expect("custom MMFFStbn parses");
+        let collection = MmffStbnCollection::new("300\t301\t302\t303\t1.250\t1.125\n").expect("custom MMFFStbn parses");
 
         assert_eq!(
             collection.get_mmff_stbn_params(44, 0, 0, 45, 46, 47),
@@ -4285,10 +4027,7 @@ mod tests {
                 }),
             )
         );
-        assert_eq!(
-            collection.get_mmff_stbn_params(300, 0, 0, 301, 302, 303),
-            (false, None)
-        );
+        assert_eq!(collection.get_mmff_stbn_params(300, 0, 0, 301, 302, 303), (false, None));
     }
 
     #[test]
@@ -4306,8 +4045,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffstbncollection_rejects_non_unsigned_integer_tokens() {
-        let err = MmffStbnCollection::new("bad\t1\t2\t3\t1.250\t1.125\n")
-            .expect_err("stretch-bend type is invalid");
+        let err = MmffStbnCollection::new("bad\t1\t2\t3\t1.250\t1.125\n").expect_err("stretch-bend type is invalid");
 
         assert_eq!(
             err,
@@ -4321,8 +4059,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffstbncollection_rejects_non_float_tokens() {
-        let err =
-            MmffStbnCollection::new("0\t1\t2\t3\tbad\t1.125\n").expect_err("kbaIJK is invalid");
+        let err = MmffStbnCollection::new("0\t1\t2\t3\tbad\t1.125\n").expect_err("kbaIJK is invalid");
 
         assert_eq!(
             err,
@@ -4367,8 +4104,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdfsbcollection_canonicalizes_terminal_rows_and_reports_swap() {
-        let collection =
-            MmffDfsbCollection::new("1\t2\t4\t1.250\t1.125\n").expect("custom MMFFDfsb parses");
+        let collection = MmffDfsbCollection::new("1\t2\t4\t1.250\t1.125\n").expect("custom MMFFDfsb parses");
 
         assert_eq!(
             collection.get_mmff_dfsb_params(4, 2, 1),
@@ -4394,8 +4130,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdfsbcollection_returns_none_for_missing_nested_map_branches() {
-        let collection =
-            MmffDfsbCollection::new("1\t2\t4\t1.250\t1.125\n").expect("custom MMFFDfsb parses");
+        let collection = MmffDfsbCollection::new("1\t2\t4\t1.250\t1.125\n").expect("custom MMFFDfsb parses");
 
         assert_eq!(collection.get_mmff_dfsb_params(0, 2, 4), (false, None));
         assert_eq!(collection.get_mmff_dfsb_params(1, 9, 4), (false, None));
@@ -4448,8 +4183,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdfsbcollection_preserves_unsigned_int_keys_without_uint8_cast() {
-        let collection = MmffDfsbCollection::new("300\t301\t302\t1.250\t1.125\n")
-            .expect("custom MMFFDfsb parses");
+        let collection = MmffDfsbCollection::new("300\t301\t302\t1.250\t1.125\n").expect("custom MMFFDfsb parses");
 
         assert_eq!(
             collection.get_mmff_dfsb_params(300, 301, 302),
@@ -4479,8 +4213,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffdfsbcollection_rejects_non_unsigned_integer_tokens() {
-        let err = MmffDfsbCollection::new("bad\t2\t4\t1.250\t1.125\n")
-            .expect_err("iAtomicNum is invalid");
+        let err = MmffDfsbCollection::new("bad\t2\t4\t1.250\t1.125\n").expect_err("iAtomicNum is invalid");
 
         assert_eq!(
             err,
@@ -4512,15 +4245,8 @@ mod tests {
         let mmff = MmffOopCollection::new(false, "").expect("default MMFFOop parses");
         let mmffs = MmffOopCollection::new(true, "").expect("default MMFFsOop parses");
 
-        assert!(
-            mmff.source_mmff_oop()
-                .contains("* MMFF OUT-OF-PLANE PARAMETERS")
-        );
-        assert!(
-            mmffs
-                .source_mmff_oop()
-                .contains("* MMFF94s OUT-OF-PLANE PARAMETERS")
-        );
+        assert!(mmff.source_mmff_oop().contains("* MMFF OUT-OF-PLANE PARAMETERS"));
+        assert!(mmffs.source_mmff_oop().contains("* MMFF94s OUT-OF-PLANE PARAMETERS"));
         assert_eq!(
             mmff.get_mmff_oop_params(&defs, 1, 10, 1, 1),
             Some(&MmffOop { koop: -0.02 })
@@ -4540,8 +4266,7 @@ mod tests {
              D\t4\t4\t4\t4\t4\n",
         )
         .expect("custom MMFFDef parses");
-        let collection =
-            MmffOopCollection::new(false, "1\t2\t3\t4\t1.250\n").expect("custom MMFFOop parses");
+        let collection = MmffOopCollection::new(false, "1\t2\t3\t4\t1.250\n").expect("custom MMFFOop parses");
 
         assert_eq!(
             collection.get_mmff_oop_params(&defs, 4, 2, 1, 3),
@@ -4608,8 +4333,7 @@ mod tests {
              B\t2\t301\t301\t301\t301\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffOopCollection::new(false, "44\t45\t44\t44\t1.250\n")
-            .expect("custom MMFFOop parses");
+        let collection = MmffOopCollection::new(false, "44\t45\t44\t44\t1.250\n").expect("custom MMFFOop parses");
 
         assert_eq!(
             collection.get_mmff_oop_params(&defs, 1, 45, 1, 1),
@@ -4654,8 +4378,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffoopcollection_rejects_non_unsigned_integer_tokens() {
-        let err = MmffOopCollection::new(false, "bad\t2\t1\t1\t1.250\n")
-            .expect_err("iAtomType is invalid");
+        let err = MmffOopCollection::new(false, "bad\t2\t1\t1\t1.250\n").expect_err("iAtomType is invalid");
 
         assert_eq!(
             err,
@@ -4688,11 +4411,7 @@ mod tests {
         let mmffs = MmffTorCollection::new(true, "").expect("default MMFFsTor parses");
 
         assert!(mmff.source_mmff_tor().contains("* MMFF TORSION PARAMETERS"));
-        assert!(
-            mmffs
-                .source_mmff_tor()
-                .contains("* MMFF94s TORSION PARAMETERS")
-        );
+        assert!(mmffs.source_mmff_tor().contains("* MMFF94s TORSION PARAMETERS"));
         assert_eq!(
             mmff.get_mmff_tor_params(&defs, (0, 0), 1, 1, 1, 1),
             (
@@ -4737,8 +4456,8 @@ mod tests {
              D\t4\t4\t4\t4\t4\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffTorCollection::new(false, "0\t4\t2\t3\t1\t1.250\t1.125\t1.000\n")
-            .expect("custom MMFFTor parses");
+        let collection =
+            MmffTorCollection::new(false, "0\t4\t2\t3\t1\t1.250\t1.125\t1.000\n").expect("custom MMFFTor parses");
 
         assert_eq!(
             collection.get_mmff_tor_params(&defs, (0, 0), 1, 3, 2, 4),
@@ -4761,8 +4480,8 @@ mod tests {
              C\t3\t1\t1\t1\t1\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffTorCollection::new(false, "0\t1\t2\t2\t4\t1.250\t1.125\t1.000\n")
-            .expect("custom MMFFTor parses");
+        let collection =
+            MmffTorCollection::new(false, "0\t1\t2\t2\t4\t1.250\t1.125\t1.000\n").expect("custom MMFFTor parses");
 
         assert_eq!(
             collection.get_mmff_tor_params(&defs, (0, 0), 1, 2, 2, 3),
@@ -4818,26 +4537,11 @@ mod tests {
                 }),
             )
         );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (0, 0), 1, 2, 3, 99),
-            (0, None)
-        );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (0, 0), 1, 2, 99, 4),
-            (0, None)
-        );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (0, 0), 99, 2, 3, 4),
-            (0, None)
-        );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (0, 0), 1, 99, 3, 4),
-            (0, None)
-        );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (2, 3), 1, 2, 3, 4),
-            (3, None)
-        );
+        assert_eq!(collection.get_mmff_tor_params(&defs, (0, 0), 1, 2, 3, 99), (0, None));
+        assert_eq!(collection.get_mmff_tor_params(&defs, (0, 0), 1, 2, 99, 4), (0, None));
+        assert_eq!(collection.get_mmff_tor_params(&defs, (0, 0), 99, 2, 3, 4), (0, None));
+        assert_eq!(collection.get_mmff_tor_params(&defs, (0, 0), 1, 99, 3, 4), (0, None));
+        assert_eq!(collection.get_mmff_tor_params(&defs, (2, 3), 1, 2, 3, 4), (3, None));
     }
 
     #[test]
@@ -4849,8 +4553,8 @@ mod tests {
              D\t4\t9\t10\t11\t12\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffTorCollection::new(false, "2\t5\t2\t3\t9\t1.250\t1.125\t1.000\n")
-            .expect("custom MMFFTor parses");
+        let collection =
+            MmffTorCollection::new(false, "2\t5\t2\t3\t9\t1.250\t1.125\t1.000\n").expect("custom MMFFTor parses");
 
         assert_eq!(
             collection.get_mmff_tor_params(&defs, (5, 2), 1, 2, 3, 4),
@@ -4874,8 +4578,8 @@ mod tests {
              D\t4\t9\t10\t11\t12\n",
         )
         .expect("custom MMFFDef parses");
-        let collection = MmffTorCollection::new(false, "2\t0\t2\t3\t0\t1.250\t1.125\t1.000\n")
-            .expect("custom MMFFTor parses");
+        let collection =
+            MmffTorCollection::new(false, "2\t0\t2\t3\t0\t1.250\t1.125\t1.000\n").expect("custom MMFFTor parses");
 
         assert_eq!(
             collection.get_mmff_tor_params(&defs, (5, 2), 1, 2, 3, 4),
@@ -4906,10 +4610,7 @@ mod tests {
                 }),
             )
         );
-        assert_eq!(
-            collection.get_mmff_tor_params(&defs, (5, 1), 64, 54, 2, 1),
-            (1, None)
-        );
+        assert_eq!(collection.get_mmff_tor_params(&defs, (5, 1), 64, 54, 2, 1), (1, None));
     }
 
     #[test]
@@ -4949,8 +4650,7 @@ mod tests {
         )
         .expect("custom MMFFDef parses");
         let collection =
-            MmffTorCollection::new(false, "300\t44\t45\t45\t44\t1.250\t1.125\t1.000\n")
-                .expect("custom MMFFTor parses");
+            MmffTorCollection::new(false, "300\t44\t45\t45\t44\t1.250\t1.125\t1.000\n").expect("custom MMFFTor parses");
 
         assert_eq!(
             collection.get_mmff_tor_params(&defs, (44, 0), 1, 45, 45, 1),
@@ -4998,8 +4698,7 @@ mod tests {
 
     #[test]
     fn mmff_mmfftorcollection_rejects_malformed_line_with_too_few_columns() {
-        let err = MmffTorCollection::new(false, "0\t1\t2\t2\t1\t1.250\t1.125\n")
-            .expect_err("line is malformed");
+        let err = MmffTorCollection::new(false, "0\t1\t2\t2\t1\t1.250\t1.125\n").expect_err("line is malformed");
 
         assert_eq!(
             err,
@@ -5027,8 +4726,7 @@ mod tests {
 
     #[test]
     fn mmff_mmfftorcollection_rejects_non_float_tokens() {
-        let err = MmffTorCollection::new(false, "0\t1\t2\t2\t1\tbad\t1.125\t1.000\n")
-            .expect_err("V1 is invalid");
+        let err = MmffTorCollection::new(false, "0\t1\t2\t2\t1\tbad\t1.125\t1.000\n").expect_err("V1 is invalid");
 
         assert_eq!(
             err,
@@ -5187,8 +4885,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffvdwcollection_rejects_malformed_constants_line() {
-        let err = MmffVdwCollection::new("0.5\t0.2\t12.0\t0.8\n")
-            .expect_err("constants line is malformed");
+        let err = MmffVdwCollection::new("0.5\t0.2\t12.0\t0.8\n").expect_err("constants line is malformed");
 
         assert_eq!(
             err,
@@ -5247,8 +4944,7 @@ mod tests {
 
     #[test]
     fn mmff_mmffvdwcollection_rejects_non_float_constants() {
-        let err =
-            MmffVdwCollection::new("bad\t0.2\t12.0\t0.8\t0.5\n").expect_err("power is invalid");
+        let err = MmffVdwCollection::new("bad\t0.2\t12.0\t0.8\t0.5\n").expect_err("power is invalid");
 
         assert_eq!(
             err,

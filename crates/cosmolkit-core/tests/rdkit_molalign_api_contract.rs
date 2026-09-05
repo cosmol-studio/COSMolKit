@@ -1,7 +1,7 @@
 use cosmolkit_core::{
-    AlignmentAtomMap, AlignmentError, AlignmentParameters, AllConformerRmsdParameters,
-    BestAlignmentParameters, Conformer3D, ConformerAlignmentParameters, ConformerAlignmentReport,
-    CoordinateRmsdParameters, Molecule, OperationError, mol_transforms,
+    AlignmentAtomMap, AlignmentError, AlignmentParameters, AllConformerRmsdParameters, BestAlignmentParameters,
+    Conformer3D, ConformerAlignmentParameters, ConformerAlignmentReport, CoordinateRmsdParameters, Molecule,
+    OperationError, mol_transforms,
 };
 
 fn molecule_with_conformer(smiles: &str, id: usize, coordinates: Vec<[f64; 3]>) -> Molecule {
@@ -40,23 +40,16 @@ fn assert_coordinates_close(actual: &[[f64; 3]], expected: &[[f64; 3]]) {
 
 #[test]
 fn operation_output_signatures_preserve_existing_operations_and_type_alignment_reports() {
-    let _: fn(&Molecule, Vec<[f64; 3]>, bool) -> Result<Molecule, OperationError> =
-        Molecule::with_only_3d_conformer;
-    let _: fn(
-        &Molecule,
-        ConformerAlignmentParameters,
-    ) -> Result<(Molecule, ConformerAlignmentReport), OperationError> =
+    let _: fn(&Molecule, Vec<[f64; 3]>, bool) -> Result<Molecule, OperationError> = Molecule::with_only_3d_conformer;
+    let _: fn(&Molecule, ConformerAlignmentParameters) -> Result<(Molecule, ConformerAlignmentReport), OperationError> =
         Molecule::with_aligned_conformers_with_params;
-    let _: fn(
-        &mut Molecule,
-        ConformerAlignmentParameters,
-    ) -> Result<ConformerAlignmentReport, OperationError> = Molecule::align_conformers_with_params_;
+    let _: fn(&mut Molecule, ConformerAlignmentParameters) -> Result<ConformerAlignmentReport, OperationError> =
+        Molecule::align_conformers_with_params_;
     let _: fn(
         &Molecule,
         &Molecule,
         &AlignmentParameters,
-    ) -> Result<(Molecule, cosmolkit_core::AlignmentResult), OperationError> =
-        Molecule::with_alignment_to;
+    ) -> Result<(Molecule, cosmolkit_core::AlignmentResult), OperationError> = Molecule::with_alignment_to;
     let _: fn(
         &mut Molecule,
         &Molecule,
@@ -66,16 +59,8 @@ fn operation_output_signatures_preserve_existing_operations_and_type_alignment_r
 
 #[test]
 fn explicit_alignment_mutation_is_registered_value_style_and_in_place() {
-    let probe = molecule_with_conformer(
-        "CCC",
-        7,
-        vec![[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]],
-    );
-    let reference = molecule_with_conformer(
-        "CCC",
-        17,
-        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
-    );
+    let probe = molecule_with_conformer("CCC", 7, vec![[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]]);
+    let reference = molecule_with_conformer("CCC", 17, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]);
     let params = AlignmentParameters {
         probe_conformer_id: 7,
         reference_conformer_id: 17,
@@ -166,10 +151,7 @@ fn mol_transforms_resolve_sparse_stored_conformer_ids() {
     )
     .expect("transform sparse conformer ID");
     assert_eq!(transformed.conformers_3d()[0].id(), 17);
-    assert_eq!(
-        transformed.conformers_3d()[0].coordinates(),
-        &[[5.0, 2.0, 3.0]]
-    );
+    assert_eq!(transformed.conformers_3d()[0].coordinates(), &[[5.0, 2.0, 3.0]]);
 }
 
 #[test]
@@ -256,10 +238,7 @@ fn explicit_map_transform_matches_rdkit_orientation_weights_and_zero_iterations(
         }
     }
     assert_eq!(probe.conformers_3d()[0].coordinates(), probe_coordinates);
-    assert_eq!(
-        reference.conformers_3d()[0].coordinates(),
-        reference_coordinates
-    );
+    assert_eq!(reference.conformers_3d()[0].coordinates(), reference_coordinates);
 }
 
 #[test]
@@ -281,10 +260,7 @@ fn coordinate_rmsd_is_weighted_in_the_existing_frame_and_does_not_align() {
         .expect("coordinate-frame RMSD");
     assert_close(rmsd, 28.0_f64.sqrt());
     assert_eq!(probe.conformers_3d()[0].coordinates(), probe_coordinates);
-    assert_eq!(
-        reference.conformers_3d()[0].coordinates(),
-        reference_coordinates
-    );
+    assert_eq!(reference.conformers_3d()[0].coordinates(), reference_coordinates);
 }
 
 #[test]
@@ -292,22 +268,12 @@ fn explicit_map_reflection_matches_rdkit_source_regression() {
     let reference = molecule_with_conformer(
         "CCCC",
         0,
-        vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ],
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
     );
     let probe = molecule_with_conformer(
         "CCCC",
         0,
-        vec![
-            [2.0, 2.0, 3.0],
-            [3.0, 2.0, 3.0],
-            [2.0, 2.0, 4.0],
-            [2.0, 3.0, 3.0],
-        ],
+        vec![[2.0, 2.0, 3.0], [3.0, 2.0, 3.0], [2.0, 2.0, 4.0], [2.0, 3.0, 3.0]],
     );
     let without_reflection = probe
         .alignment_transform_to(
@@ -400,10 +366,7 @@ fn explicit_map_validation_reports_each_source_boundary_without_mutation() {
             weights,
             ..CoordinateRmsdParameters::default()
         };
-        assert_eq!(
-            molecule.coordinate_rmsd_to(&molecule, &rmsd_params),
-            Err(expected)
-        );
+        assert_eq!(molecule.coordinate_rmsd_to(&molecule, &rmsd_params), Err(expected));
     }
     assert_eq!(molecule.conformers_3d()[0].coordinates(), original);
 }
@@ -429,10 +392,7 @@ fn automatic_best_alignment_uses_all_non_unique_matches() {
     assert_close(result.rmsd, 0.0);
     assert_eq!(result.atom_map.len(), 3);
     assert_eq!(probe.conformers_3d()[0].coordinates(), probe_coordinates);
-    assert_eq!(
-        reference.conformers_3d()[0].coordinates(),
-        reference_coordinates
-    );
+    assert_eq!(reference.conformers_3d()[0].coordinates(), reference_coordinates);
 }
 
 #[test]
@@ -540,16 +500,8 @@ fn automatic_map_reports_no_match_and_zero_max_matches_like_source() {
 
 #[test]
 fn coordinate_rmsd_chooses_best_candidate_without_alignment() {
-    let probe = molecule_with_conformer(
-        "CCC",
-        0,
-        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
-    );
-    let reference = molecule_with_conformer(
-        "CCC",
-        0,
-        vec![[2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
-    );
+    let probe = molecule_with_conformer("CCC", 0, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
+    let reference = molecule_with_conformer("CCC", 0, vec![[2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]);
     let rmsd = probe
         .coordinate_rmsd_to(
             &reference,
@@ -580,18 +532,8 @@ fn coordinate_rmsd_chooses_best_candidate_without_alignment() {
 
 #[test]
 fn automatic_best_alignment_symmetrizes_conjugated_terminal_atoms_on_a_clone() {
-    let probe_coordinates = vec![
-        [-2.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [1.0, -0.3, 0.0],
-    ];
-    let reference_coordinates = vec![
-        [-2.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-        [1.0, -0.3, 0.0],
-        [0.0, 1.0, 0.0],
-    ];
+    let probe_coordinates = vec![[-2.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, -0.3, 0.0]];
+    let reference_coordinates = vec![[-2.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, -0.3, 0.0], [0.0, 1.0, 0.0]];
     let probe = molecule_with_conformer("CC(=O)[O-]", 0, probe_coordinates.clone());
     let reference = molecule_with_conformer("CC(=O)[O-]", 0, reference_coordinates.clone());
 
@@ -632,10 +574,7 @@ fn automatic_best_alignment_symmetrizes_conjugated_terminal_atoms_on_a_clone() {
         .expect("ordinary topology alignment");
     assert!(unsymmetrized.rmsd > 1.0e-6);
     assert_eq!(probe.conformers_3d()[0].coordinates(), probe_coordinates);
-    assert_eq!(
-        reference.conformers_3d()[0].coordinates(),
-        reference_coordinates
-    );
+    assert_eq!(reference.conformers_3d()[0].coordinates(), reference_coordinates);
 }
 
 #[test]
@@ -760,10 +699,7 @@ fn conformer_alignment_report_follows_selected_source_order() {
     for (id, coordinates) in [
         (7, vec![[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [0.2, 1.7, 0.0]]),
         (17, vec![[2.0, 3.0, 1.0], [3.8, 3.1, 1.0], [2.1, 4.2, 1.4]]),
-        (
-            29,
-            vec![[-1.0, 2.0, 0.5], [0.1, 2.2, 0.6], [-0.8, 4.1, 0.2]],
-        ),
+        (29, vec![[-1.0, 2.0, 0.5], [0.1, 2.2, 0.6], [-0.8, 4.1, 0.2]]),
         (41, vec![[9.0, 8.0, 7.0], [8.0, 7.0, 6.0], [7.0, 6.0, 5.0]]),
     ] {
         builder
@@ -841,11 +777,7 @@ fn empty_conformer_selection_uses_all_conformers_like_the_source_wrapper() {
 
 #[test]
 fn conformer_alignment_errors_return_no_report_and_keep_complete_state() {
-    let molecule = molecule_with_conformer(
-        "CCC",
-        7,
-        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
-    );
+    let molecule = molecule_with_conformer("CCC", 7, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]);
     let before = molecule.conformers_3d()[0].coordinates().to_vec();
     let params = ConformerAlignmentParameters {
         conformer_ids: Some(vec![999]),

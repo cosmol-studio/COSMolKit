@@ -1,7 +1,7 @@
 use super::{
     ConfSeqDecodeError, ConfSeqDecodeOptions, ConfSeqFastGeometryError, ConfSeqTemplateBackend,
-    build_confseq_base_template, build_distance_geometry_template, decode_from_template,
-    parse_confseq, prepare_p_chiral_embedding_molecule,
+    build_confseq_base_template, build_distance_geometry_template, decode_from_template, parse_confseq,
+    prepare_p_chiral_embedding_molecule,
 };
 use crate::{ChiralTag, Molecule};
 use std::collections::HashMap;
@@ -60,8 +60,7 @@ pub fn prepare_p_chiral_for_diagnostics(
     smiles: &str,
     chiral_tags_by_atom: &HashMap<usize, ChiralTag>,
 ) -> Result<Molecule, ConfSeqDecodeError> {
-    let molecule = Molecule::from_smiles(smiles)
-        .map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
+    let molecule = Molecule::from_smiles(smiles).map_err(|err| ConfSeqDecodeError::SmilesParse(err.to_string()))?;
     prepare_p_chiral_embedding_molecule(molecule, chiral_tags_by_atom)
 }
 
@@ -73,31 +72,13 @@ pub fn distance_geometry_dihedral_pair_diagnostics(
     let parsed = parse_confseq(in_smiles, confseq)?;
     let mut dg_options = options.clone();
     dg_options.template_backend = ConfSeqTemplateBackend::DistanceGeometry;
-    let template = build_distance_geometry_template(
-        &parsed.stripped_smiles,
-        &parsed.chiral_tags_by_atom,
-        &dg_options,
-    )?;
-    let mut parsed_pairs = parsed
-        .dihedral_angles_by_pair
-        .keys()
-        .copied()
-        .collect::<Vec<_>>();
-    let mut template_pairs = template
-        .dihedrals_by_pair
-        .keys()
-        .copied()
-        .collect::<Vec<_>>();
+    let template = build_distance_geometry_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &dg_options)?;
+    let mut parsed_pairs = parsed.dihedral_angles_by_pair.keys().copied().collect::<Vec<_>>();
+    let mut template_pairs = template.dihedrals_by_pair.keys().copied().collect::<Vec<_>>();
     parsed_pairs.sort_unstable();
     template_pairs.sort_unstable();
-    let parsed_set = parsed_pairs
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
-    let template_set = template_pairs
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+    let parsed_set = parsed_pairs.iter().copied().collect::<std::collections::HashSet<_>>();
+    let template_set = template_pairs.iter().copied().collect::<std::collections::HashSet<_>>();
     let mut missing_from_tokens = template_pairs
         .iter()
         .copied()
@@ -164,64 +145,48 @@ impl ConfSeqDiagnostic {
 /// This is intended for corpus development and benchmark scripts. It does not
 /// align conformers or compute RMSD; callers can do that from the normal decode
 /// API after selecting successful candidates.
-pub fn diagnose_confseq_candidate(
-    in_smiles: &str,
-    confseq: &str,
-    options: &ConfSeqDecodeOptions,
-) -> ConfSeqDiagnostic {
+pub fn diagnose_confseq_candidate(in_smiles: &str, confseq: &str, options: &ConfSeqDecodeOptions) -> ConfSeqDiagnostic {
     let parsed = match parse_confseq(in_smiles, confseq) {
         Ok(parsed) => parsed,
         Err(error) => {
-            return ConfSeqDiagnostic::failed(
-                ConfSeqDiagnosticPhase::Parse,
-                error,
-                false,
-                false,
-                false,
-                false,
-                false,
-            );
+            return ConfSeqDiagnostic::failed(ConfSeqDiagnosticPhase::Parse, error, false, false, false, false, false);
         }
     };
 
     let mut dg_options = options.clone();
     dg_options.template_backend = ConfSeqTemplateBackend::DistanceGeometry;
-    let dg_template = match build_distance_geometry_template(
-        &parsed.stripped_smiles,
-        &parsed.chiral_tags_by_atom,
-        &dg_options,
-    ) {
-        Ok(template) => template,
-        Err(error) => {
-            return ConfSeqDiagnostic::failed(
-                ConfSeqDiagnosticPhase::DistanceGeometryTemplate,
-                error,
-                true,
-                false,
-                false,
-                false,
-                false,
-            );
-        }
-    };
-
-    let dg_decoded = decode_from_template(&dg_template, &parsed, &dg_options).is_ok();
-
-    let base_template =
-        match build_confseq_base_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom) {
+    let dg_template =
+        match build_distance_geometry_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom, &dg_options) {
             Ok(template) => template,
             Err(error) => {
                 return ConfSeqDiagnostic::failed(
-                    ConfSeqDiagnosticPhase::BaseTemplate,
+                    ConfSeqDiagnosticPhase::DistanceGeometryTemplate,
                     error,
                     true,
-                    true,
                     false,
-                    dg_decoded,
+                    false,
+                    false,
                     false,
                 );
             }
         };
+
+    let dg_decoded = decode_from_template(&dg_template, &parsed, &dg_options).is_ok();
+
+    let base_template = match build_confseq_base_template(&parsed.stripped_smiles, &parsed.chiral_tags_by_atom) {
+        Ok(template) => template,
+        Err(error) => {
+            return ConfSeqDiagnostic::failed(
+                ConfSeqDiagnosticPhase::BaseTemplate,
+                error,
+                true,
+                true,
+                false,
+                dg_decoded,
+                false,
+            );
+        }
+    };
 
     let mut base_options = options.clone();
     base_options.template_backend = ConfSeqTemplateBackend::FastGeometry;

@@ -1,21 +1,15 @@
 use std::collections::BTreeMap;
 
 use cosmolkit_core::{
-    Molecule, TopologicalFingerprintOutputRequest, TopologicalFingerprintParams,
-    topological_fingerprint_with_output,
+    Molecule, TopologicalFingerprintOutputRequest, TopologicalFingerprintParams, topological_fingerprint_with_output,
 };
 
 fn bits(smiles: &str, params: TopologicalFingerprintParams) -> Vec<usize> {
-    let molecule = Molecule::from_smiles(smiles)
-        .unwrap_or_else(|err| panic!("failed to parse {smiles}: {err}"));
-    topological_fingerprint_with_output(
-        &molecule,
-        &params,
-        TopologicalFingerprintOutputRequest::default(),
-    )
-    .unwrap_or_else(|err| panic!("RDKFingerprint failed for {smiles}: {err}"))
-    .fingerprint
-    .on_bits()
+    let molecule = Molecule::from_smiles(smiles).unwrap_or_else(|err| panic!("failed to parse {smiles}: {err}"));
+    topological_fingerprint_with_output(&molecule, &params, TopologicalFingerprintOutputRequest::default())
+        .unwrap_or_else(|err| panic!("RDKFingerprint failed for {smiles}: {err}"))
+        .fingerprint
+        .on_bits()
 }
 
 fn params_for_branch(branch: &str, atom_count: usize) -> TopologicalFingerprintParams {
@@ -68,8 +62,7 @@ fn rdkit_topological_fingerprint_matches_pinned_exact_bit_matrix() {
                 (
                     "custom_invariants",
                     vec![
-                        283, 367, 375, 437, 661, 1265, 1296, 1441, 1468, 1524, 1685, 1784, 1941,
-                        1986,
+                        283, 367, 375, 437, 661, 1265, 1296, 1441, 1468, 1524, 1685, 1784, 1941, 1986,
                     ],
                 ),
                 ("density", vec![5, 7, 12, 13, 21, 24, 28, 29]),
@@ -80,27 +73,18 @@ fn rdkit_topological_fingerprint_matches_pinned_exact_bit_matrix() {
             &[
                 (
                     "default",
-                    vec![
-                        148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927,
-                    ],
+                    vec![148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927],
                 ),
                 ("fp64", vec![5, 7, 13, 18, 20, 21, 25, 28, 35, 43, 44, 49]),
                 ("n1", vec![148, 433, 875, 1308, 1813, 1869]),
-                (
-                    "linear",
-                    vec![148, 709, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927],
-                ),
+                ("linear", vec![148, 709, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927]),
                 (
                     "no_bond_order",
-                    vec![
-                        148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927,
-                    ],
+                    vec![148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927],
                 ),
                 (
                     "from_atom_1",
-                    vec![
-                        148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927,
-                    ],
+                    vec![148, 433, 709, 786, 803, 875, 1308, 1772, 1813, 1817, 1869, 1927],
                 ),
             ],
         ),
@@ -109,27 +93,18 @@ fn rdkit_topological_fingerprint_matches_pinned_exact_bit_matrix() {
             &[
                 (
                     "default",
-                    vec![
-                        103, 161, 194, 294, 330, 792, 842, 1026, 1287, 1784, 1889, 1907,
-                    ],
+                    vec![103, 161, 194, 294, 330, 792, 842, 1026, 1287, 1784, 1889, 1907],
                 ),
                 ("fp64", vec![2, 7, 10, 24, 33, 38, 39, 51, 56]),
                 ("n1", vec![161, 194, 294, 842, 1287, 1889]),
-                (
-                    "linear",
-                    vec![103, 161, 194, 294, 330, 792, 842, 1026, 1784, 1889],
-                ),
+                ("linear", vec![103, 161, 194, 294, 330, 792, 842, 1026, 1784, 1889]),
                 (
                     "no_bond_order",
-                    vec![
-                        172, 402, 528, 899, 1127, 1411, 1494, 1510, 1571, 1859, 1906, 2030,
-                    ],
+                    vec![172, 402, 528, 899, 1127, 1411, 1494, 1510, 1571, 1859, 1906, 2030],
                 ),
                 (
                     "from_atom_1",
-                    vec![
-                        103, 161, 194, 294, 330, 792, 842, 1026, 1287, 1784, 1889, 1907,
-                    ],
+                    vec![103, 161, 194, 294, 330, 792, 842, 1026, 1287, 1784, 1889, 1907],
                 ),
             ],
         ),
@@ -224,8 +199,7 @@ fn rdkit_topological_fingerprint_rejects_source_precondition_ranges() {
             "fp_size" => params.fp_size = 0,
             _ => params.num_bits_per_feature = 0,
         }
-        let err = topological_fingerprint_with_output(&molecule, &params, Default::default())
-            .unwrap_err();
+        let err = topological_fingerprint_with_output(&molecule, &params, Default::default()).unwrap_err();
         assert!(err.to_string().contains(expected), "{field}: {err}");
     }
 }

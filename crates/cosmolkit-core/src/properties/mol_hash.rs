@@ -8,8 +8,8 @@
 //   - MolHash: canonical hash via CIP-ordered atom traversal
 
 use crate::{
-    AtomId, AtomSpec, BondOrder, BondSpec, ChiralTag, Element, Molecule, MoleculeBuilder,
-    NeighborRef, fingerprint::hash_combine, stereo::assign_atom_cip_ranks,
+    AtomId, AtomSpec, BondOrder, BondSpec, ChiralTag, Element, Molecule, MoleculeBuilder, NeighborRef,
+    fingerprint::hash_combine, stereo::assign_atom_cip_ranks,
 };
 
 /// RDKit-derived error type for MolHash operations.
@@ -158,9 +158,7 @@ pub fn mol_net_scaffold(mol: &Molecule) -> Result<Molecule, HashError> {
     // Determine which atoms are in a ring
     let ri = mol.derived_cache().rings.as_ref();
     let is_ring_atom: Vec<bool> = if let Some(ring_info) = ri {
-        (0..n)
-            .map(|i| ring_info.num_atom_rings(AtomId::new(i)) > 0)
-            .collect()
+        (0..n).map(|i| ring_info.num_atom_rings(AtomId::new(i)) > 0).collect()
     } else {
         vec![false; n]
     };
@@ -225,8 +223,7 @@ pub fn mol_net_scaffold(mol: &Molecule) -> Result<Molecule, HashError> {
         }
         let new_begin = AtomId::new(old_to_new[begin_idx].unwrap());
         let new_end = AtomId::new(old_to_new[end_idx].unwrap());
-        let bond_spec =
-            BondSpec::new(new_begin, new_end, bond.order()).with_aromatic(bond.is_aromatic());
+        let bond_spec = BondSpec::new(new_begin, new_end, bond.order()).with_aromatic(bond.is_aromatic());
         builder.add_bond(bond_spec)?;
     }
 
@@ -264,12 +261,7 @@ pub fn mol_hash_with_ranks(mol: &Molecule, ranks: &[u32]) -> Result<u64, HashErr
     let ri = mol.derived_cache().rings.as_ref();
 
     // Build (rank, original_index) pairs and sort by rank
-    let mut order: Vec<(u32, usize)> = ranks
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(i, r)| (r, i))
-        .collect();
+    let mut order: Vec<(u32, usize)> = ranks.iter().copied().enumerate().map(|(i, r)| (r, i)).collect();
     order.sort();
 
     let mut hash_hi: u32 = 0;
@@ -291,17 +283,12 @@ pub fn mol_hash_with_ranks(mol: &Molecule, ranks: &[u32]) -> Result<u64, HashErr
         // Aromaticity
         hash_combine(&mut atom_hash, if atom.is_aromatic() { 1u32 } else { 0u32 });
         // Ring membership
-        let in_ring = ri.map_or(false, |rinfo| {
-            rinfo.num_atom_rings(AtomId::new(atom_idx)) > 0
-        });
+        let in_ring = ri.map_or(false, |rinfo| rinfo.num_atom_rings(AtomId::new(atom_idx)) > 0);
         hash_combine(&mut atom_hash, if in_ring { 1u32 } else { 0u32 });
 
         // Neighbors: sorted by neighbor rank
         let nbrs = adjacency.neighbors_of(atom_idx);
-        let mut nbr_entries: Vec<(u32, &NeighborRef)> = nbrs
-            .iter()
-            .map(|nbr| (ranks[nbr.atom_index], nbr))
-            .collect();
+        let mut nbr_entries: Vec<(u32, &NeighborRef)> = nbrs.iter().map(|nbr| (ranks[nbr.atom_index], nbr)).collect();
         nbr_entries.sort_by_key(|&(r, _)| r);
 
         for (_nbr_rank, nbr) in &nbr_entries {
@@ -343,8 +330,7 @@ fn build_molecule_builder(mol: &Molecule) -> MoleculeBuilder {
         builder.add_atom(spec);
     }
     for bond in mol.bonds() {
-        let bond_spec =
-            BondSpec::new(bond.begin(), bond.end(), bond.order()).with_aromatic(bond.is_aromatic());
+        let bond_spec = BondSpec::new(bond.begin(), bond.end(), bond.order()).with_aromatic(bond.is_aromatic());
         // Silently ignore bond errors during copy (should not happen for valid mol)
         let _ = builder.add_bond(bond_spec);
     }
@@ -464,11 +450,7 @@ fn traverse_for_ring(
 }
 
 /// Check if an atom has a neighbor in the scaffold.
-fn has_nbr_in_scaffold(
-    atom_idx: usize,
-    is_in_scaffold: &[bool],
-    adjacency: &crate::AdjacencyList,
-) -> bool {
+fn has_nbr_in_scaffold(atom_idx: usize, is_in_scaffold: &[bool], adjacency: &crate::AdjacencyList) -> bool {
     for nbr in adjacency.neighbors_of(atom_idx) {
         if is_in_scaffold[nbr.atom_index] {
             return true;

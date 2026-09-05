@@ -1,16 +1,12 @@
 use std::sync::OnceLock;
 
 use super::{
-    Fingerprint, FingerprintError, SsMatcher, hash_combine, rdkit_bond_type_code,
-    rdkit_fp_bond_between_atoms,
+    Fingerprint, FingerprintError, SsMatcher, hash_combine, rdkit_bond_type_code, rdkit_fp_bond_between_atoms,
 };
 use crate::search::query::{
-    AtomQueryPredicate, BondQueryPredicate, QueryNode, build_query_match_context,
-    is_complex_atom_query,
+    AtomQueryPredicate, BondQueryPredicate, QueryNode, build_query_match_context, is_complex_atom_query,
 };
-use crate::search::substruct::{
-    SubstructMatchParams, try_get_substruct_matches_with_params_and_context,
-};
+use crate::search::substruct::{SubstructMatchParams, try_get_substruct_matches_with_params_and_context};
 use crate::{Bond, BondOrder, Molecule};
 
 // RDKit✔️✔️: const std::string PatternFingerprintMolVersion = "1.0.0";
@@ -102,14 +98,7 @@ pub fn pattern_fingerprint(
         return Err(FingerprintError::EmptyFingerprint);
     }
     let mut fingerprint = Fingerprint::zeroed(params.n_bits);
-    update_pattern_fingerprint(
-        molecule,
-        &mut fingerprint,
-        params.n_bits,
-        None,
-        None,
-        params.tautomeric,
-    )?;
+    update_pattern_fingerprint(molecule, &mut fingerprint, params.n_bits, None, None, params.tautomeric)?;
     Ok(fingerprint)
 }
 
@@ -154,8 +143,7 @@ pub(super) const PATTERN_FINGERPRINT_SMARTS: [&str; 13] = [
     "[*]",
 ];
 
-pub(super) fn compiled_pattern_fingerprint_queries()
--> Result<&'static [SsMatcher], FingerprintError> {
+pub(super) fn compiled_pattern_fingerprint_queries() -> Result<&'static [SsMatcher], FingerprintError> {
     // RDKit✔️✔️: typedef boost::flyweight<boost::flyweights::key_value<std::string, ss_matcher>,
     // RDKit✔️✔️:                          boost::flyweights::no_tracking>
     // RDKit✔️✔️:     pattern_flyweight;
@@ -481,10 +469,8 @@ fn update_pattern_fingerprint_impl(
         .iter()
         .map(|atom| {
             atom.query().is_some()
-                && (matches!(
-                    atom.query(),
-                    Some(QueryNode::Predicate(AtomQueryPredicate::Any))
-                ) || is_complex_atom_query(atom))
+                && (matches!(atom.query(), Some(QueryNode::Predicate(AtomQueryPredicate::Any)))
+                    || is_complex_atom_query(atom))
         })
         .collect();
     let mut is_query_bond = vec![false; molecule.num_bonds()];
@@ -505,15 +491,10 @@ fn update_pattern_fingerprint_impl(
     for (pattern_offset, matcher) in patterns.iter().enumerate() {
         let pattern_index = pattern_offset as u32 + 1;
         let pattern = matcher.getMatcher();
-        let matches = try_get_substruct_matches_with_params_and_context(
-            molecule,
-            pattern,
-            &params,
-            &query_context,
-        )
-        .map_err(|error| FingerprintError::Pattern {
-            reason: error.to_string(),
-        })?;
+        let matches = try_get_substruct_matches_with_params_and_context(molecule, pattern, &params, &query_context)
+            .map_err(|error| FingerprintError::Pattern {
+                reason: error.to_string(),
+            })?;
         trace(PatternTraceEvent::PatternMatches {
             pattern_index,
             count: matches.len(),
@@ -536,8 +517,7 @@ fn update_pattern_fingerprint_impl(
             let mut is_query = false;
             let mut bit_id = pattern_index;
             let mut atom_map = vec![0usize; matched.atom_mapping.len()];
-            for (query_atom_index, &molecule_atom_index) in matched.atom_mapping.iter().enumerate()
-            {
+            for (query_atom_index, &molecule_atom_index) in matched.atom_mapping.iter().enumerate() {
                 if is_query_atom[molecule_atom_index] {
                     is_query = true;
                     trace(PatternTraceEvent::QueryAtomSuppressed {
@@ -546,8 +526,7 @@ fn update_pattern_fingerprint_impl(
                     });
                     break;
                 }
-                let atomic_number =
-                    u32::from(molecule.atoms()[molecule_atom_index].atomic_number());
+                let atomic_number = u32::from(molecule.atoms()[molecule_atom_index].atomic_number());
                 hash_combine(&mut bit_id, atomic_number);
                 trace(PatternTraceEvent::AtomHash {
                     pattern_index,
@@ -684,8 +663,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
-                    let matchers =
-                        compiled_pattern_fingerprint_queries().expect("concurrent Pattern cache");
+                    let matchers = compiled_pattern_fingerprint_queries().expect("concurrent Pattern cache");
                     (matchers.as_ptr() as usize, matchers.len())
                 })
             })
@@ -705,27 +683,22 @@ mod tests {
         let order_in = |orders| QueryNode::predicate(BondQueryPredicate::OrderIn(orders));
 
         assert!(!is_pattern_complex_query(&test_bond(None)));
-        assert!(!is_pattern_complex_query(&test_bond(Some(order(
-            BondOrder::Single,
-        )))));
-        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::not(
-            order(BondOrder::Single),
-        )))));
+        assert!(!is_pattern_complex_query(&test_bond(Some(order(BondOrder::Single,)))));
+        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::not(order(
+            BondOrder::Single
+        ),)))));
         assert!(is_pattern_complex_query(&test_bond(Some(order_in(vec![
             BondOrder::Single,
             BondOrder::Aromatic,
         ])))));
-        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::or(
-            vec![order(BondOrder::Single), order(BondOrder::Aromatic)],
-        )))));
+        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::or(vec![
+            order(BondOrder::Single),
+            order(BondOrder::Aromatic)
+        ],)))));
 
         for query in [
             order_in(vec![BondOrder::Single, BondOrder::Aromatic]),
-            order_in(vec![
-                BondOrder::Single,
-                BondOrder::Double,
-                BondOrder::Aromatic,
-            ]),
+            order_in(vec![BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]),
             QueryNode::not(order_in(vec![BondOrder::Single, BondOrder::Aromatic])),
         ] {
             assert!(is_tautomer_bond_query(&test_bond(Some(query))));
@@ -806,10 +779,7 @@ mod tests {
         }));
 
         let (tautomeric, tautomeric_events) = traced_pattern_fingerprint(&molecule, 2048, true);
-        assert_eq!(
-            tautomeric.on_bits(),
-            vec![429, 776, 778, 1022, 1061, 1236, 1295]
-        );
+        assert_eq!(tautomeric.on_bits(), vec![429, 776, 778, 1022, 1061, 1236, 1295]);
         assert!(tautomeric_events.contains(&PatternTraceEvent::TautomerBit {
             pattern_index: 1,
             seed: 4_217_150_216,
@@ -839,13 +809,8 @@ mod tests {
             let molecule = Molecule::from_smiles(smiles).expect("Pattern fixture");
             let (_, events) = traced_pattern_fingerprint(&molecule, 2048, false);
             for event in events {
-                if let PatternTraceEvent::PatternMatches {
-                    pattern_index,
-                    count,
-                } = event
-                {
-                    maximum_counts[pattern_index as usize - 1] =
-                        maximum_counts[pattern_index as usize - 1].max(count);
+                if let PatternTraceEvent::PatternMatches { pattern_index, count } = event {
+                    maximum_counts[pattern_index as usize - 1] = maximum_counts[pattern_index as usize - 1].max(count);
                 }
             }
         }
@@ -875,13 +840,11 @@ mod tests {
             pattern_index: 13,
             count: 1,
         }));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::StructureBit {
-                pattern_index: 13,
-                ..
-            }
-        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 13, .. }))
+        );
         assert!(!fingerprint.on_bits().is_empty());
     }
 
@@ -898,13 +861,11 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, PatternTraceEvent::QueryAtomSuppressed { .. }))
         );
-        assert!(!atom_events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::StructureBit {
-                pattern_index: 13,
-                ..
-            }
-        )));
+        assert!(
+            !atom_events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 13, .. }))
+        );
 
         let query_bond = crate::search::smarts_parse::mol_from_smarts(
             "C~C",
@@ -912,17 +873,13 @@ mod tests {
         )
         .expect("query bond");
         let (_, bond_events) = traced_query_pattern_fingerprint(&query_bond, 2048, false);
-        assert!(bond_events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::QueryBondSuppressed {
-                pattern_index: 1,
-                ..
-            }
-        )));
+        assert!(
+            bond_events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::QueryBondSuppressed { pattern_index: 1, .. }))
+        );
         assert_eq!(
-            traced_query_pattern_fingerprint(&query_bond, 257, false)
-                .0
-                .on_bits(),
+            traced_query_pattern_fingerprint(&query_bond, 257, false).0.on_bits(),
             vec![14, 44, 132, 136, 146]
         );
 
@@ -932,9 +889,7 @@ mod tests {
         )
         .expect("any query bond");
         assert_eq!(
-            traced_query_pattern_fingerprint(&any_query, 257, false)
-                .0
-                .on_bits(),
+            traced_query_pattern_fingerprint(&any_query, 257, false).0.on_bits(),
             vec![14, 43, 44, 132, 136, 146]
         );
 
@@ -944,9 +899,7 @@ mod tests {
         )
         .expect("single-or-double query bond");
         assert_eq!(
-            traced_query_pattern_fingerprint(&order_query, 257, false)
-                .0
-                .on_bits(),
+            traced_query_pattern_fingerprint(&order_query, 257, false).0.on_bits(),
             vec![14, 43, 44, 132, 136, 146]
         );
     }
@@ -959,27 +912,21 @@ mod tests {
         )
         .expect("single-or-aromatic query bond");
         let (_, events) = traced_query_pattern_fingerprint(&query, 2048, true);
-        assert!(events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::TautomerQueryBond {
-                pattern_index: 1,
-                ..
-            }
-        )));
-        assert!(!events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::StructureBit {
-                pattern_index: 1,
-                ..
-            }
-        )));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            PatternTraceEvent::TautomerBit {
-                pattern_index: 1,
-                ..
-            }
-        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::TautomerQueryBond { pattern_index: 1, .. }))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 1, .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, PatternTraceEvent::TautomerBit { pattern_index: 1, .. }))
+        );
     }
 
     #[test]
@@ -989,8 +936,7 @@ mod tests {
         assert_eq!(width_one.on_bits(), vec![0]);
 
         let mut baseline = Fingerprint::zeroed(127);
-        update_pattern_fingerprint(&molecule, &mut baseline, 127, None, None, true)
-            .expect("baseline");
+        update_pattern_fingerprint(&molecule, &mut baseline, 127, None, None, true).expect("baseline");
         let mut atom_counts = vec![17; molecule.num_atoms()];
         let set_only_bits = Fingerprint::from_on_bits(127, [0, 5, 126]);
         let mut with_inert_arguments = Fingerprint::zeroed(127);
@@ -1008,14 +954,7 @@ mod tests {
 
         let mut invalid = Fingerprint::zeroed(127);
         assert!(matches!(
-            update_pattern_fingerprint(
-                &molecule,
-                &mut invalid,
-                127,
-                Some(&mut [0; 2]),
-                None,
-                false,
-            ),
+            update_pattern_fingerprint(&molecule, &mut invalid, 127, Some(&mut [0; 2]), None, false,),
             Err(FingerprintError::InvalidArguments { .. })
         ));
         assert!(matches!(

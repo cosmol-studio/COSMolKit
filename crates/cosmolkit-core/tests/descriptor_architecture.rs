@@ -3,17 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cosmolkit_core::{
-    CrippenDescriptorValues, DescriptorResult, Molecule, NumRotatableBondsOptions,
-};
+use cosmolkit_core::{CrippenDescriptorValues, DescriptorResult, Molecule, NumRotatableBondsOptions};
 
 fn core_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn rust_sources_below(root: &Path, sources: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(root)
-        .unwrap_or_else(|error| panic!("read source directory {}: {error}", root.display()))
+    for entry in fs::read_dir(root).unwrap_or_else(|error| panic!("read source directory {}: {error}", root.display()))
     {
         let path = entry.expect("read source directory entry").path();
         if path.is_dir() {
@@ -33,8 +30,8 @@ fn definition_paths(definition: &str) -> Vec<String> {
 
     let mut definitions = Vec::new();
     for path in sources {
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("read source file {}: {error}", path.display()));
+        let source =
+            fs::read_to_string(&path).unwrap_or_else(|error| panic!("read source file {}: {error}", path.display()));
         for _ in source.match_indices(definition) {
             definitions.push(
                 path.strip_prefix(&root)
@@ -50,10 +47,7 @@ fn definition_paths(definition: &str) -> Vec<String> {
 #[test]
 fn descriptor_family_cores_have_single_owners() {
     let definitions = [
-        (
-            "fn find_all_paths_of_length_n(",
-            &["src/chemistry/subgraph.rs"][..],
-        ),
+        ("fn find_all_paths_of_length_n(", &["src/chemistry/subgraph.rs"][..]),
         ("fn rdkit_rb0(", &["src/chemistry/valence.rs"][..]),
         ("const RDKIT_RB0:", &["src/chemistry/valence.rs"][..]),
         ("fn add_hs_rdkit_rb0(", &[][..]),
@@ -61,18 +55,9 @@ fn descriptor_family_cores_have_single_owners() {
             "fn rdkit_crippen_atom_contribs(",
             &["src/properties/descriptors.rs"][..],
         ),
-        (
-            "fn hk_deltas(",
-            &["src/properties/descriptors/connectivity.rs"][..],
-        ),
-        (
-            "fn n_vals(",
-            &["src/properties/descriptors/connectivity.rs"][..],
-        ),
-        (
-            "fn calc_mqns_core(",
-            &["src/properties/descriptors/mqn.rs"][..],
-        ),
+        ("fn hk_deltas(", &["src/properties/descriptors/connectivity.rs"][..]),
+        ("fn n_vals(", &["src/properties/descriptors/connectivity.rs"][..]),
+        ("fn calc_mqns_core(", &["src/properties/descriptors/mqn.rs"][..]),
         (
             "fn get_labute_atom_contribs(",
             &["src/properties/descriptors/mol_surface.rs"][..],
@@ -102,14 +87,8 @@ fn descriptor_family_cores_have_single_owners() {
 
 #[test]
 fn descriptor_facade_declares_every_family_boundary_once() {
-    let facade = fs::read_to_string(core_root().join("src/properties/descriptors.rs"))
-        .expect("read descriptor facade");
-    for declaration in [
-        "mod connectivity;",
-        "mod lipinski;",
-        "mod mol_surface;",
-        "mod mqn;",
-    ] {
+    let facade = fs::read_to_string(core_root().join("src/properties/descriptors.rs")).expect("read descriptor facade");
+    for declaration in ["mod connectivity;", "mod lipinski;", "mod mol_surface;", "mod mqn;"] {
         assert_eq!(
             facade.matches(declaration).count(),
             1,
@@ -120,8 +99,7 @@ fn descriptor_facade_declares_every_family_boundary_once() {
 
 #[test]
 fn descriptor_facade_delegates_to_each_single_family_core() {
-    let facade = fs::read_to_string(core_root().join("src/properties/descriptors.rs"))
-        .expect("read descriptor facade");
+    let facade = fs::read_to_string(core_root().join("src/properties/descriptors.rs")).expect("read descriptor facade");
 
     for delegation in [
         "connectivity::calc_chi_0(molecule)",
@@ -159,8 +137,7 @@ fn descriptor_facade_delegates_to_each_single_family_core() {
 
 #[test]
 fn python_descriptor_facade_borrows_the_retained_molecule() {
-    let python_source = fs::read_to_string(core_root().join("../../python/src/lib.rs"))
-        .expect("read Python facade");
+    let python_source = fs::read_to_string(core_root().join("../../python/src/lib.rs")).expect("read Python facade");
     let descriptor_start = python_source
         .find("fn calc_mol_wt(")
         .expect("Python descriptor facade start");
@@ -214,18 +191,15 @@ fn existing_descriptor_exports_keep_their_public_signatures() {
     let _: fn(&Molecule) -> DescriptorResult<u32> = cosmolkit_core::calc_num_hba;
     let _: fn(&Molecule) -> DescriptorResult<f64> = module::calc_fraction_csp3;
     let _: fn(&Molecule) -> DescriptorResult<f64> = cosmolkit_core::calc_fraction_csp3;
-    let _: fn(&Molecule, bool, bool) -> DescriptorResult<CrippenDescriptorValues> =
-        module::calc_crippen_descriptors;
+    let _: fn(&Molecule, bool, bool) -> DescriptorResult<CrippenDescriptorValues> = module::calc_crippen_descriptors;
     let _: fn(&Molecule, bool, bool) -> DescriptorResult<CrippenDescriptorValues> =
         cosmolkit_core::calc_crippen_descriptors;
     let _: fn(&Molecule, bool, bool) -> DescriptorResult<f64> = module::calc_tpsa;
     let _: fn(&Molecule, bool, bool) -> DescriptorResult<f64> = cosmolkit_core::calc_tpsa;
     let _: fn(&Molecule) -> DescriptorResult<u32> = module::calc_num_aromatic_rings;
     let _: fn(&Molecule) -> DescriptorResult<u32> = cosmolkit_core::calc_num_aromatic_rings;
-    let _: fn(&Molecule, NumRotatableBondsOptions) -> DescriptorResult<u32> =
-        module::calc_num_rotatable_bonds;
-    let _: fn(&Molecule, NumRotatableBondsOptions) -> DescriptorResult<u32> =
-        cosmolkit_core::calc_num_rotatable_bonds;
+    let _: fn(&Molecule, NumRotatableBondsOptions) -> DescriptorResult<u32> = module::calc_num_rotatable_bonds;
+    let _: fn(&Molecule, NumRotatableBondsOptions) -> DescriptorResult<u32> = cosmolkit_core::calc_num_rotatable_bonds;
     let _: fn(&Molecule) -> DescriptorResult<f64> = module::calc_qed;
     let _: fn(&Molecule) -> DescriptorResult<f64> = cosmolkit_core::calc_qed;
 }

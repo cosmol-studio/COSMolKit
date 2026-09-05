@@ -5,15 +5,13 @@
 
 use crate::chemistry::atom_properties::{AtomPropertyError, num_pi_electrons};
 use crate::chemistry::ciplabeler::assign_cip_labels;
-use crate::chemistry::matrices::{
-    DistanceMatrixError, distance_matrix_3d, topological_distance_matrix,
-};
+use crate::chemistry::matrices::{DistanceMatrixError, distance_matrix_3d, topological_distance_matrix};
 use crate::{AtomId, ChiralTag, Molecule};
 
 use super::{
-    AdditionalOutput, Fingerprint, FingerprintArguments, FingerprintError,
-    FingerprintFuncArguments, SparseBitFingerprint, SparseCountFingerprint, generator,
-    hash_combine, json_value_as_bool, json_value_as_u32, rdkit_use_legacy_stereo_perception,
+    AdditionalOutput, Fingerprint, FingerprintArguments, FingerprintError, FingerprintFuncArguments,
+    SparseBitFingerprint, SparseCountFingerprint, generator, hash_combine, json_value_as_bool, json_value_as_u32,
+    rdkit_use_legacy_stereo_perception,
 };
 use serde_json::Value;
 
@@ -101,11 +99,11 @@ impl AtomPairEnvironmentGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         Ok(())
     }
 
@@ -151,8 +149,7 @@ impl AtomPairEnvironmentGenerator {
         // RDKit✔️✔️:   } else {
         } else {
             // RDKit✔️✔️:     distanceMatrix = MolOps::get3DDistanceMat(mol, confId);
-            distance_matrix_3d(molecule, conf_id, false)
-                .map_err(AtomPairCodeError::DistanceMatrix)?
+            distance_matrix_3d(molecule, conf_id, false).map_err(AtomPairCodeError::DistanceMatrix)?
             // RDKit✔️✔️:   }
         };
 
@@ -185,27 +182,20 @@ impl AtomPairEnvironmentGenerator {
                 // RDKit✔️✔️:            fromAtoms->end()) &&
                 // RDKit✔️✔️:           (std::find(fromAtoms->begin(), fromAtoms->end(), j) ==
                 // RDKit✔️✔️:            fromAtoms->end())) {
-                if from_atoms.is_some_and(|atoms| {
-                    !atoms.contains(&atom_id_first) && !atoms.contains(&atom_id_second)
-                }) {
+                if from_atoms.is_some_and(|atoms| !atoms.contains(&atom_id_first) && !atoms.contains(&atom_id_second)) {
                     // RDKit✔️✔️:         continue;
                     continue;
                     // RDKit✔️✔️:       }
                 }
                 // RDKit✔️✔️:       auto distance =
                 // RDKit✔️✔️:           static_cast<unsigned int>(floor(distanceMatrix[i * atomCount + j]));
-                let distance =
-                    distance_matrix[atom_id_first * atom_count + atom_id_second].floor() as u32;
+                let distance = distance_matrix[atom_id_first * atom_count + atom_id_second].floor() as u32;
 
                 // RDKit✔️✔️:       if (distance >= atomPairArguments->d_minDistance &&
                 // RDKit✔️✔️:           distance <= atomPairArguments->d_maxDistance) {
                 if distance >= arguments.min_distance && distance <= arguments.max_distance {
                     // RDKit✔️✔️:         result.push_back(new AtomPairAtomEnv<OutputType>(i, j, distance));
-                    result.push(AtomPairEnvironment::new(
-                        atom_id_first,
-                        atom_id_second,
-                        distance,
-                    ));
+                    result.push(AtomPairEnvironment::new(atom_id_first, atom_id_second, distance));
                     // RDKit✔️✔️:       }
                 }
                 // RDKit✔️✔️:     }
@@ -263,13 +253,8 @@ impl AtomPairArguments {
         // RDKit✔️✔️:     const std::vector<std::uint32_t> countBounds, const std::uint32_t fpSize)
         // RDKit✔️✔️:     : FingerprintArguments(countSimulation, countBounds, fpSize, 1,
         // RDKit✔️✔️:                            includeChirality),
-        let fingerprint_arguments = FingerprintArguments::new(
-            count_simulation,
-            count_bounds,
-            fp_size,
-            1,
-            include_chirality,
-        )?;
+        let fingerprint_arguments =
+            FingerprintArguments::new(count_simulation, count_bounds, fp_size, 1, include_chirality)?;
         // RDKit✔️✔️:       df_use2D(use2D),
         // RDKit✔️✔️:       d_minDistance(minDistance),
         // RDKit✔️✔️:       d_maxDistance(maxDistance) {
@@ -324,17 +309,17 @@ impl AtomPairArguments {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
         self.from_json_value(&value)
     }
 
     fn from_json_value(&mut self, value: &Value) -> Result<(), FingerprintError> {
         // RDKit source: AtomPairGenerator.cpp lines 101-106
         // RDKit✔️✔️: void AtomPairArguments::fromJSON(const boost::property_tree::ptree &pt) {
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         // RDKit✔️✔️:   df_use2D = pt.get<bool>("use2D", df_use2D);
         if let Some(field) = object.get("use2D") {
             self.use_2d = json_value_as_bool("use2D", field)?;
@@ -425,10 +410,7 @@ impl AtomPairAtomInvariantsGenerator {
         }
     }
 
-    pub(crate) fn atom_invariants(
-        &self,
-        molecule: &Molecule,
-    ) -> Result<Vec<u32>, AtomPairCodeError> {
+    pub(crate) fn atom_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, AtomPairCodeError> {
         // RDKit source: AtomPairGenerator.cpp lines 31-43
         // RDKit✔️✔️: std::vector<std::uint32_t> *AtomPairAtomInvGenerator::getAtomInvariants(
         // RDKit✔️✔️:     const ROMol &mol) const {
@@ -441,14 +423,9 @@ impl AtomPairAtomInvariantsGenerator {
             // RDKit✔️✔️:     (*atomInvariants)[(*atomItI)->getIdx()] =
             // RDKit✔️✔️:         getAtomCode(*atomItI, 0, df_includeChirality) -
             // RDKit✔️✔️:         (df_topologicalTorsionCorrection ? 2 : 0);
-            let correction = if self.topological_torsion_correction {
-                2
-            } else {
-                0
-            };
+            let correction = if self.topological_torsion_correction { 2 } else { 0 };
             atom_invariants[atom.id().index()] =
-                get_atom_code(molecule, atom.id(), 0, self.include_chirality)?
-                    .wrapping_sub(correction);
+                get_atom_code(molecule, atom.id(), 0, self.include_chirality)?.wrapping_sub(correction);
             // RDKit✔️✔️:   }
         }
 
@@ -459,8 +436,7 @@ impl AtomPairAtomInvariantsGenerator {
 
     #[allow(non_snake_case)]
     pub fn getAtomInvariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
-        self.atom_invariants(molecule)
-            .map_err(FingerprintError::from)
+        self.atom_invariants(molecule).map_err(FingerprintError::from)
     }
 
     #[must_use]
@@ -507,11 +483,11 @@ impl AtomPairAtomInvariantsGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        let object = value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         // RDKit source: AtomPairGenerator.cpp lines 56-61
         // RDKit✔️✔️: void AtomPairAtomInvGenerator::fromJSON(const boost::property_tree::ptree &pt) {
         // RDKit✔️✔️:   df_includeChirality = pt.get<bool>("includeChirality", df_includeChirality);
@@ -521,8 +497,7 @@ impl AtomPairAtomInvariantsGenerator {
         // RDKit✔️✔️:   df_topologicalTorsionCorrection = pt.get<bool>(
         // RDKit✔️✔️:       "topologicalTorsionCorrection", df_topologicalTorsionCorrection);
         if let Some(field) = object.get("topologicalTorsionCorrection") {
-            self.topological_torsion_correction =
-                json_value_as_bool("topologicalTorsionCorrection", field)?;
+            self.topological_torsion_correction = json_value_as_bool("topologicalTorsionCorrection", field)?;
         }
         // RDKit✔️✔️:   AtomInvariantsGenerator::fromJSON(pt);
         // RDKit✔️✔️: }
@@ -660,11 +635,7 @@ impl AtomPairEnvironment {
         // RDKit✔️✔️: }
     }
 
-    pub(crate) fn update_additional_output(
-        &self,
-        additional_output: &mut AdditionalOutput,
-        bit_id: u64,
-    ) {
+    pub(crate) fn update_additional_output(&self, additional_output: &mut AdditionalOutput, bit_id: u64) {
         // RDKit source file: AtomPairGenerator.cpp
         // RDKit source: AtomPairGenerator.cpp lines 109-128
         // RDKit✔️✔️: void AtomPairAtomEnv<OutputType>::updateAdditionalOutput(
@@ -813,10 +784,9 @@ impl AtomPairFingerprintGenerator {
         if params.n_bits == 0 {
             return Err(FingerprintError::EmptyFingerprint);
         }
-        let fp_size =
-            u32::try_from(params.n_bits).map_err(|_| FingerprintError::InvalidArguments {
-                reason: "AtomPair n_bits exceeds the source uint32 range",
-            })?;
+        let fp_size = u32::try_from(params.n_bits).map_err(|_| FingerprintError::InvalidArguments {
+            reason: "AtomPair n_bits exceeds the source uint32 range",
+        })?;
         let mut generator = atom_pair_generator_with_parameters(
             params.min_distance,
             params.max_distance,
@@ -833,10 +803,7 @@ impl AtomPairFingerprintGenerator {
                 reason: "num_bits_per_feature must be greater than zero",
             });
         }
-        generator
-            .arguments
-            .fingerprint_arguments
-            .d_num_bits_per_feature = params.num_bits_per_feature;
+        generator.arguments.fingerprint_arguments.d_num_bits_per_feature = params.num_bits_per_feature;
         Ok(generator)
     }
 
@@ -845,16 +812,12 @@ impl AtomPairFingerprintGenerator {
     pub fn from_json(json: &str) -> Result<Self, FingerprintError> {
         match generator::generator_from_json(json)? {
             generator::RestoredFingerprintGenerator::AtomPair(generator) => Ok(generator),
-            generator::RestoredFingerprintGenerator::Morgan(_) => {
-                Err(FingerprintError::InvalidArgumentsJson(
-                    "serialized generator is not an AtomPair generator".to_string(),
-                ))
-            }
-            generator::RestoredFingerprintGenerator::TopologicalTorsion(_) => {
-                Err(FingerprintError::InvalidArgumentsJson(
-                    "serialized generator is not an AtomPair generator".to_string(),
-                ))
-            }
+            generator::RestoredFingerprintGenerator::Morgan(_) => Err(FingerprintError::InvalidArgumentsJson(
+                "serialized generator is not an AtomPair generator".to_string(),
+            )),
+            generator::RestoredFingerprintGenerator::TopologicalTorsion(_) => Err(
+                FingerprintError::InvalidArgumentsJson("serialized generator is not an AtomPair generator".to_string()),
+            ),
         }
     }
 
@@ -934,9 +897,7 @@ pub fn atom_pair_fingerprint_with_output(
     })
 }
 
-pub(crate) fn atom_pair_function_arguments(
-    params: &AtomPairFingerprintParams,
-) -> FingerprintFuncArguments {
+pub(crate) fn atom_pair_function_arguments(params: &AtomPairFingerprintParams) -> FingerprintFuncArguments {
     let mut arguments = FingerprintFuncArguments {
         from_atoms: params.from_atoms.clone(),
         ignore_atoms: params.ignore_atoms.clone(),
@@ -1124,10 +1085,7 @@ pub(crate) fn atom_pair_generator(
         Some(generator) => generator,
         None => {
             owns_atom_invariants_generator = true;
-            AtomPairAtomInvariantsGenerator::new(
-                arguments.fingerprint_arguments.df_include_chirality,
-                false,
-            )
+            AtomPairAtomInvariantsGenerator::new(arguments.fingerprint_arguments.df_include_chirality, false)
         }
     };
 
@@ -1197,9 +1155,7 @@ pub(crate) enum AtomPairCodeError {
     CodeWidth { code: u32, width: u32 },
     #[error("AtomPair distance {distance} must be less than {maximum}")]
     DistanceTooLong { distance: u32, maximum: u32 },
-    #[error(
-        "AtomPair atom invariants length {length} does not contain endpoint index {atom_index}"
-    )]
+    #[error("AtomPair atom invariants length {length} does not contain endpoint index {atom_index}")]
     AtomInvariantLength { length: usize, atom_index: usize },
     #[error("AtomPair distance-matrix construction failed: {0:?}")]
     DistanceMatrix(DistanceMatrixError),
@@ -1219,9 +1175,7 @@ impl From<AtomPairCodeError> for FingerprintError {
             AtomPairCodeError::AtomProperty(AtomPropertyError::MissingExplicitValence { atom }) => {
                 Self::Valence(crate::ValenceError::ExplicitValenceCacheNotInitialized { atom })
             }
-            AtomPairCodeError::AtomProperty(AtomPropertyError::Valence(error)) => {
-                Self::Valence(error)
-            }
+            AtomPairCodeError::AtomProperty(AtomPropertyError::Valence(error)) => Self::Valence(error),
             other => Self::AtomPair {
                 reason: other.to_string(),
             },
@@ -1263,11 +1217,7 @@ fn get_atom_code_with_stereo_mode(
     // RDKit✔️✔️:   std::uint32_t code;
     // RDKit✔️✔️:
     // RDKit✔️✔️:   unsigned int numBranches = 0;
-    let degree = molecule
-        .topology_block()
-        .adjacency
-        .neighbors_of(atom_id.index())
-        .len() as u32;
+    let degree = molecule.topology_block().adjacency.neighbors_of(atom_id.index()).len() as u32;
     // RDKit✔️✔️:   if (atom->getDegree() > branchSubtract) {
     // RDKit✔️✔️:     numBranches = atom->getDegree() - branchSubtract;
     // RDKit✔️✔️:   }
@@ -1357,12 +1307,7 @@ fn get_atom_code_with_stereo_mode(
     // RDKit✔️✔️:   POSTCONDITION(code < static_cast<std::uint32_t>(
     // RDKit✔️✔️:                            1 << (codeSize + (includeChirality ? 2 : 0))),
     // RDKit✔️✔️:                 "code exceeds number of bits");
-    let width = CODE_SIZE
-        + if include_chirality {
-            NUM_CHIRAL_BITS
-        } else {
-            0
-        };
+    let width = CODE_SIZE + if include_chirality { NUM_CHIRAL_BITS } else { 0 };
     if code >= (1u32 << width) {
         return Err(AtomPairCodeError::CodeWidth { code, width });
     }
@@ -1394,14 +1339,7 @@ pub(crate) fn get_atom_pair_code(
     result |= code_i.min(code_j) << NUM_PATH_BITS;
     // RDKit✔️✔️:   res |= std::max(codeI, codeJ)
     // RDKit✔️✔️:          << (numPathBits + codeSize + (includeChirality ? numChiralBits : 0));
-    result |= code_i.max(code_j)
-        << (NUM_PATH_BITS
-            + CODE_SIZE
-            + if include_chirality {
-                NUM_CHIRAL_BITS
-            } else {
-                0
-            });
+    result |= code_i.max(code_j) << (NUM_PATH_BITS + CODE_SIZE + if include_chirality { NUM_CHIRAL_BITS } else { 0 });
     // RDKit✔️✔️:   return res;
     Ok(result)
     // RDKit✔️✔️: }
@@ -1415,8 +1353,7 @@ mod tests {
     fn isolated_atom(atomic_number: u8) -> Molecule {
         let mut builder = Molecule::builder();
         builder.add_atom(
-            AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap())
-                .with_hybridization(Hybridization::Sp3),
+            AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap()).with_hybridization(Hybridization::Sp3),
         );
         builder.build().unwrap()
     }
@@ -1445,11 +1382,9 @@ mod tests {
     #[test]
     fn atom_code_preserves_degree_subtraction_and_modulo_seven() {
         let mut builder = Molecule::builder();
-        let center =
-            builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3));
+        let center = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3));
         for _ in 0..8 {
-            let neighbor =
-                builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
+            let neighbor = builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
             builder
                 .add_bond(BondSpec::new(center, neighbor, BondOrder::Single))
                 .unwrap();
@@ -1468,20 +1403,11 @@ mod tests {
         assert_eq!(get_atom_code(&aromatic, AtomId::new(0), 0, false), Ok(42));
 
         let carbon_dioxide = Molecule::from_smiles("O=C=O").unwrap();
-        assert_eq!(
-            get_atom_code(&carbon_dioxide, AtomId::new(1), 0, false),
-            Ok(50)
-        );
-        assert_eq!(
-            get_atom_code(&carbon_dioxide, AtomId::new(0), 0, false),
-            Ok(105)
-        );
+        assert_eq!(get_atom_code(&carbon_dioxide, AtomId::new(1), 0, false), Ok(50));
+        assert_eq!(get_atom_code(&carbon_dioxide, AtomId::new(0), 0, false), Ok(105));
 
         let explicit_hydrogens = Molecule::from_smiles("[CH2]=C").unwrap();
-        assert_eq!(
-            get_atom_code(&explicit_hydrogens, AtomId::new(0), 0, false),
-            Ok(41)
-        );
+        assert_eq!(get_atom_code(&explicit_hydrogens, AtomId::new(0), 0, false), Ok(41));
     }
 
     #[test]
@@ -1514,10 +1440,7 @@ mod tests {
         let original_cip = molecule.atoms()[center.index()].prop("_CIPCode");
         let code = get_atom_code_with_stereo_mode(&molecule, center, 0, true, false).unwrap();
         assert!(matches!(code >> CODE_SIZE, 1 | 2));
-        assert_eq!(
-            molecule.atoms()[center.index()].prop("_CIPCode"),
-            original_cip
-        );
+        assert_eq!(molecule.atoms()[center.index()].prop("_CIPCode"), original_cip);
     }
 
     #[test]
@@ -1525,14 +1448,11 @@ mod tests {
         let molecule = isolated_atom(6);
         assert_eq!(
             get_atom_code(&molecule, AtomId::new(1), 0, false),
-            Err(AtomPairCodeError::AtomIndex {
-                atom: AtomId::new(1)
-            })
+            Err(AtomPairCodeError::AtomIndex { atom: AtomId::new(1) })
         );
 
         let mut builder = Molecule::builder();
-        let atom =
-            builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
+        let atom = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
         let uncached = builder.build().unwrap();
         assert_eq!(
             get_atom_code(&uncached, atom, 0, false),
@@ -1572,10 +1492,7 @@ mod tests {
             Ok(134_217_726)
         );
 
-        assert_eq!(
-            get_atom_pair_code(u32::MAX, u32::MAX, 0, false),
-            Ok(u32::MAX - 31)
-        );
+        assert_eq!(get_atom_pair_code(u32::MAX, u32::MAX, 0, false), Ok(u32::MAX - 31));
     }
 
     #[test]
@@ -1644,8 +1561,7 @@ mod tests {
             r#"{"type":"AtomPairArguments","use2D":"true","minDistance":"1","maxDistance":"30","countSimulation":"true","fpSize":"2048","numBitsPerFeature":"1","includeChirality":"false","countBounds":["1","2","4","8"]}"#
         );
 
-        let mut restored =
-            AtomPairArguments::new(false, true, false, 0, 0, Vec::new(), 32).unwrap();
+        let mut restored = AtomPairArguments::new(false, true, false, 0, 0, Vec::new(), 32).unwrap();
         restored.from_json(&original.to_json()).unwrap();
         assert_eq!(restored, original);
     }
@@ -1653,9 +1569,7 @@ mod tests {
     #[test]
     fn arguments_partial_json_preserves_unmentioned_family_fields_and_source_clears_bounds() {
         let mut arguments = AtomPairArguments::default();
-        arguments
-            .from_json(r#"{"minDistance":4,"fpSize":4096}"#)
-            .unwrap();
+        arguments.from_json(r#"{"minDistance":4,"fpSize":4096}"#).unwrap();
         assert!(arguments.use_2d);
         assert_eq!(arguments.min_distance, 4);
         assert_eq!(arguments.max_distance, 30);
@@ -1735,10 +1649,8 @@ mod tests {
         );
 
         let mut builder = Molecule::builder();
-        let center =
-            builder.add_atom(AtomSpec::new(Element::B).with_hybridization(Hybridization::Sp3));
-        let hydrogen =
-            builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
+        let center = builder.add_atom(AtomSpec::new(Element::B).with_hybridization(Hybridization::Sp3));
+        let hydrogen = builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
         builder
             .add_bond(BondSpec::new(center, hydrogen, BondOrder::Single))
             .unwrap();
@@ -1867,16 +1779,14 @@ mod tests {
             })
         );
         assert_eq!(
-            AtomPairEnvironment::new(0, 1, 1)
-                .bit_id(&arguments.fingerprint_arguments, &[10], true,),
+            AtomPairEnvironment::new(0, 1, 1).bit_id(&arguments.fingerprint_arguments, &[10], true,),
             Err(AtomPairCodeError::AtomInvariantLength {
                 length: 1,
                 atom_index: 1,
             })
         );
         assert_eq!(
-            AtomPairEnvironment::new(1, 0, 1)
-                .bit_id(&arguments.fingerprint_arguments, &[10], true,),
+            AtomPairEnvironment::new(1, 0, 1).bit_id(&arguments.fingerprint_arguments, &[10], true,),
             Err(AtomPairCodeError::AtomInvariantLength {
                 length: 1,
                 atom_index: 1,
@@ -1898,10 +1808,7 @@ mod tests {
         atom_to_bits.allocate_atom_to_bits();
         atom_to_bits.reset_for_atom_count(3);
         environment.update_additional_output(&mut atom_to_bits, 17);
-        assert_eq!(
-            atom_to_bits.atom_to_bits.unwrap(),
-            [vec![17], vec![], vec![17]]
-        );
+        assert_eq!(atom_to_bits.atom_to_bits.unwrap(), [vec![17], vec![], vec![17]]);
 
         let mut atom_counts = AdditionalOutput::new();
         atom_counts.allocate_atom_counts();
@@ -1913,10 +1820,7 @@ mod tests {
         atoms_per_bit.allocate_atoms_per_bit();
         atoms_per_bit.reset_for_atom_count(3);
         environment.update_additional_output(&mut atoms_per_bit, 17);
-        assert_eq!(
-            atoms_per_bit.atoms_per_bit.unwrap().get(&17).unwrap(),
-            &[vec![0, 2]]
-        );
+        assert_eq!(atoms_per_bit.atoms_per_bit.unwrap().get(&17).unwrap(), &[vec![0, 2]]);
     }
 
     #[test]
@@ -1937,10 +1841,7 @@ mod tests {
             output.bit_info_map.as_ref().unwrap().get(&17).unwrap(),
             &[(0, 2), (2, 0)]
         );
-        assert_eq!(
-            output.bit_info_map.as_ref().unwrap().get(&19).unwrap(),
-            &[(1, 3)]
-        );
+        assert_eq!(output.bit_info_map.as_ref().unwrap().get(&19).unwrap(), &[(1, 3)]);
         assert_eq!(
             output.atom_to_bits.as_ref().unwrap(),
             &[vec![17, 17], vec![19], vec![17, 17], vec![19]]
@@ -2003,15 +1904,7 @@ mod tests {
     fn environment_generation_empty_single_chain_branch_ring_and_fused_order() {
         let arguments = AtomPairArguments::default();
         assert!(environments_2d(&Molecule::new(), &arguments, None, None).is_empty());
-        assert!(
-            environments_2d(
-                &Molecule::from_smiles("[He]").unwrap(),
-                &arguments,
-                None,
-                None
-            )
-            .is_empty()
-        );
+        assert!(environments_2d(&Molecule::from_smiles("[He]").unwrap(), &arguments, None, None).is_empty());
 
         let chain = Molecule::from_smiles("CCCC").unwrap();
         assert_eq!(
@@ -2053,8 +1946,7 @@ mod tests {
         let fused_environments = environments_2d(&fused, &arguments, None, None);
         assert_eq!(fused_environments.len(), 45);
         assert!(fused_environments.windows(2).all(|pair| {
-            (pair[0].atom_id_first, pair[0].atom_id_second)
-                < (pair[1].atom_id_first, pair[1].atom_id_second)
+            (pair[0].atom_id_first, pair[0].atom_id_second) < (pair[1].atom_id_first, pair[1].atom_id_second)
         }));
     }
 
@@ -2071,10 +1963,7 @@ mod tests {
         }
         let explicit_h = explicit_h_builder.build().unwrap();
         assert_eq!(explicit_h.num_atoms(), 5);
-        assert_eq!(
-            environments_2d(&explicit_h, &arguments, None, None).len(),
-            10
-        );
+        assert_eq!(environments_2d(&explicit_h, &arguments, None, None).len(), 10);
 
         let disconnected = Molecule::from_smiles("C.C").unwrap();
         assert!(environments_2d(&disconnected, &arguments, None, None).is_empty());
@@ -2120,18 +2009,14 @@ mod tests {
         assert!(environments_2d(&molecule, &arguments, Some(&[1]), Some(&[1])).is_empty());
         assert_eq!(
             environments_2d(&molecule, &arguments, Some(&[0, 2]), Some(&[0])),
-            [
-                AtomPairEnvironment::new(1, 2, 1),
-                AtomPairEnvironment::new(2, 3, 1),
-            ]
+            [AtomPairEnvironment::new(1, 2, 1), AtomPairEnvironment::new(2, 3, 1),]
         );
     }
 
     #[test]
     fn environment_generation_distance_bounds_are_inclusive_and_allow_equality() {
         let molecule = Molecule::from_smiles("CCCCC").unwrap();
-        let exactly_two =
-            AtomPairArguments::new(false, false, true, 2, 2, Vec::new(), 2048).unwrap();
+        let exactly_two = AtomPairArguments::new(false, false, true, 2, 2, Vec::new(), 2048).unwrap();
         assert_eq!(
             environments_2d(&molecule, &exactly_two, None, None),
             [
@@ -2141,8 +2026,7 @@ mod tests {
             ]
         );
 
-        let one_through_two =
-            AtomPairArguments::new(false, false, true, 1, 2, Vec::new(), 2048).unwrap();
+        let one_through_two = AtomPairArguments::new(false, false, true, 1, 2, Vec::new(), 2048).unwrap();
         let distances = environments_2d(&molecule, &one_through_two, None, None)
             .into_iter()
             .map(|environment| environment.distance)
@@ -2175,8 +2059,7 @@ mod tests {
     #[test]
     fn environment_generation_3d_floors_fractional_distances_and_selects_conformer_ids() {
         let molecule = three_atom_3d_molecule();
-        let arguments =
-            AtomPairArguments::new(false, false, false, 0, 10, Vec::new(), 2048).unwrap();
+        let arguments = AtomPairArguments::new(false, false, false, 0, 10, Vec::new(), 2048).unwrap();
         assert_eq!(
             AtomPairEnvironmentGenerator
                 .environments(&molecule, &arguments, None, None, -1)
@@ -2204,8 +2087,7 @@ mod tests {
         let mut no_conformer_builder = Molecule::builder();
         no_conformer_builder.add_atom(AtomSpec::new(Element::C));
         let no_conformer = no_conformer_builder.build().unwrap();
-        let arguments =
-            AtomPairArguments::new(false, false, false, 0, 30, Vec::new(), 2048).unwrap();
+        let arguments = AtomPairArguments::new(false, false, false, 0, 30, Vec::new(), 2048).unwrap();
         assert_eq!(
             AtomPairEnvironmentGenerator.environments(&no_conformer, &arguments, None, None, -1),
             Err(AtomPairCodeError::DistanceMatrix(
@@ -2225,11 +2107,7 @@ mod tests {
         nonfinite_builder.add_atom(AtomSpec::new(Element::C));
         nonfinite_builder.add_atom(AtomSpec::new(Element::C));
         nonfinite_builder
-            .add_conformer(Conformer3D::new(
-                0,
-                vec![[0.0, 0.0, 0.0], [f64::NAN, 0.0, 0.0]],
-                true,
-            ))
+            .add_conformer(Conformer3D::new(0, vec![[0.0, 0.0, 0.0], [f64::NAN, 0.0, 0.0]], true))
             .unwrap();
         let nonfinite = nonfinite_builder.build().unwrap();
         assert_eq!(
@@ -2279,41 +2157,15 @@ mod tests {
             AtomPairAtomInvariantsGenerator::new(false, false)
         );
 
-        let parameterized = atom_pair_generator_with_parameters(
-            2,
-            9,
-            true,
-            false,
-            None,
-            false,
-            4096,
-            vec![2, 3, 7],
-            false,
-        )
-        .unwrap();
+        let parameterized =
+            atom_pair_generator_with_parameters(2, 9, true, false, None, false, 4096, vec![2, 3, 7], false).unwrap();
         assert_eq!(parameterized.arguments.min_distance, 2);
         assert_eq!(parameterized.arguments.max_distance, 9);
         assert!(!parameterized.arguments.use_2d);
-        assert!(
-            parameterized
-                .arguments
-                .fingerprint_arguments
-                .df_include_chirality
-        );
-        assert!(
-            !parameterized
-                .arguments
-                .fingerprint_arguments
-                .df_count_simulation
-        );
-        assert_eq!(
-            parameterized.arguments.fingerprint_arguments.d_count_bounds,
-            [2, 3, 7]
-        );
-        assert_eq!(
-            parameterized.arguments.fingerprint_arguments.d_fp_size,
-            4096
-        );
+        assert!(parameterized.arguments.fingerprint_arguments.df_include_chirality);
+        assert!(!parameterized.arguments.fingerprint_arguments.df_count_simulation);
+        assert_eq!(parameterized.arguments.fingerprint_arguments.d_count_bounds, [2, 3, 7]);
+        assert_eq!(parameterized.arguments.fingerprint_arguments.d_fp_size, 4096);
         assert_eq!(
             parameterized.atom_invariants_generator,
             AtomPairAtomInvariantsGenerator::new(true, false)
@@ -2325,8 +2177,7 @@ mod tests {
     fn generator_factory_owns_a_logically_independent_custom_invariant_generator() {
         let arguments = AtomPairArguments::default();
         let mut source_generator = AtomPairAtomInvariantsGenerator::new(true, true);
-        let fingerprint_generator =
-            atom_pair_generator(&arguments, Some(source_generator.clone()), false);
+        let fingerprint_generator = atom_pair_generator(&arguments, Some(source_generator.clone()), false);
         source_generator.include_chirality = false;
         source_generator.topological_torsion_correction = false;
 
@@ -2367,10 +2218,7 @@ mod tests {
             panic!("AtomPair JSON restored a different fingerprint family");
         };
         assert_eq!(restored.arguments, original.arguments);
-        assert_eq!(
-            restored.atom_invariants_generator,
-            original.atom_invariants_generator
-        );
+        assert_eq!(restored.atom_invariants_generator, original.atom_invariants_generator);
         assert_eq!(restored.to_json(), original.to_json());
 
         let partial = r#"{
@@ -2401,10 +2249,7 @@ mod tests {
             r#"{"fingerprintArguments":{"type":"AtomPairArguments"},"atomEnvironmentGenerator":{"type":"AtomPairEnvGenerator"},"atomInvariantsGenerator":{"type":"Unknown"}}"#,
             r#"{"fingerprintArguments":{"type":"AtomPairArguments"},"atomEnvironmentGenerator":{"type":"AtomPairEnvGenerator"},"bondInvariantsGenerator":{"type":"MorganBondInvGenerator"}}"#,
         ] {
-            assert!(
-                generator::generator_from_json(invalid).is_err(),
-                "{invalid}"
-            );
+            assert!(generator::generator_from_json(invalid).is_err(), "{invalid}");
         }
     }
 
@@ -2456,15 +2301,13 @@ mod tests {
         let legacy_arguments = LegacyAtomPairArguments::default();
 
         let legacy_sparse = legacy_sparse_count_fingerprint(&molecule, &legacy_arguments).unwrap();
-        let modern_default =
-            AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).unwrap();
+        let modern_default = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).unwrap();
         let modern_sparse = modern_default
             .sparse_count_fingerprint(&molecule, &mut FingerprintFuncArguments::default())
             .unwrap();
         assert_eq!(legacy_sparse, modern_sparse);
 
-        let legacy_count =
-            legacy_hashed_count_fingerprint(&molecule, 128, &legacy_arguments).unwrap();
+        let legacy_count = legacy_hashed_count_fingerprint(&molecule, 128, &legacy_arguments).unwrap();
         let modern_count = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams {
             n_bits: 128,
             ..Default::default()
@@ -2474,16 +2317,8 @@ mod tests {
         .unwrap();
         assert_eq!(legacy_count, modern_count);
 
-        for (n_bits, n_bits_per_entry, count_bounds) in
-            [(128, 4, vec![1, 2, 4, 8]), (96, 3, vec![1, 2, 3])]
-        {
-            let legacy = legacy_hashed_bit_fingerprint(
-                &molecule,
-                n_bits,
-                n_bits_per_entry,
-                &legacy_arguments,
-            )
-            .unwrap();
+        for (n_bits, n_bits_per_entry, count_bounds) in [(128, 4, vec![1, 2, 4, 8]), (96, 3, vec![1, 2, 3])] {
+            let legacy = legacy_hashed_bit_fingerprint(&molecule, n_bits, n_bits_per_entry, &legacy_arguments).unwrap();
             let modern = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams {
                 n_bits: n_bits as usize,
                 count_bounds,

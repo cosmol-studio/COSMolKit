@@ -4,8 +4,8 @@ use std::sync::{
 };
 
 use cosmolkit_core::{
-    AtomPairFingerprintGenerator, AtomPairFingerprintParams, BatchRecord, FingerprintFuncArguments,
-    Molecule, MoleculeBatch, MorganFingerprintParams,
+    AtomPairFingerprintGenerator, AtomPairFingerprintParams, BatchRecord, FingerprintFuncArguments, Molecule,
+    MoleculeBatch, MorganFingerprintParams,
 };
 
 fn smiles(values: &[&str]) -> Vec<String> {
@@ -60,13 +60,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .unwrap();
     let expected_count: Vec<_> = molecules
         .iter()
-        .map(|molecule| {
-            Some(
-                generator
-                    .count_fingerprint(molecule, &mut arguments(&params))
-                    .unwrap(),
-            )
-        })
+        .map(|molecule| Some(generator.count_fingerprint(molecule, &mut arguments(&params)).unwrap()))
         .collect();
     assert_eq!(count, expected_count);
 
@@ -103,13 +97,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .unwrap();
     let expected_outputs: Vec<_> = molecules
         .iter()
-        .map(|molecule| {
-            Some(
-                molecule
-                    .atom_pair_fingerprint_with_output(&output_params)
-                    .unwrap(),
-            )
-        })
+        .map(|molecule| Some(molecule.atom_pair_fingerprint_with_output(&output_params).unwrap()))
         .collect();
     assert_eq!(outputs, expected_outputs);
 }
@@ -152,11 +140,7 @@ fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
         .expect_err("batch collection must retain every source-defined index error");
     assert_eq!(error.errors, 3);
     assert_eq!(
-        error
-            .record_errors
-            .iter()
-            .map(|error| error.index)
-            .collect::<Vec<_>>(),
+        error.record_errors.iter().map(|error| error.index).collect::<Vec<_>>(),
         vec![1, 2, 3]
     );
     for (error, expected_index) in error.record_errors.iter().zip(expected_indices) {
@@ -209,11 +193,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
     assert_eq!(batch.errors()[0].index, 1);
 
     let values = batch
-        .atom_pair_fingerprint_list_with_options(
-            &AtomPairFingerprintParams::default(),
-            Some(2),
-            Some(false),
-        )
+        .atom_pair_fingerprint_list_with_options(&AtomPairFingerprintParams::default(), Some(2), Some(false))
         .unwrap();
     assert!(values[0].is_some());
     assert!(values[1].is_none());
@@ -227,11 +207,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
         .atom_pair_fingerprint_list_with_options(&no_conformer, Some(2), Some(false))
         .unwrap_err();
     assert_eq!(
-        error
-            .record_errors
-            .iter()
-            .map(|error| error.index)
-            .collect::<Vec<_>>(),
+        error.record_errors.iter().map(|error| error.index).collect::<Vec<_>>(),
         vec![0, 2]
     );
     assert!(
@@ -249,10 +225,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
         .atom_pair_fingerprint_list_with_options(&bad_config, Some(2), Some(false))
         .unwrap_err();
     assert_eq!(error.record_errors[0].index, 0);
-    assert_eq!(
-        error.record_errors[0].operation,
-        "batch.atom_pair_fingerprint"
-    );
+    assert_eq!(error.record_errors[0].operation, "batch.atom_pair_fingerprint");
 }
 
 #[test]
@@ -268,30 +241,18 @@ fn shared_batch_is_immutable_and_safe_across_mixed_family_threads() {
     let atom_pair_batch = Arc::clone(&batch);
     let atom_pair = std::thread::spawn(move || {
         atom_pair_batch
-            .atom_pair_fingerprint_list_with_options(
-                &AtomPairFingerprintParams::default(),
-                Some(4),
-                Some(false),
-            )
+            .atom_pair_fingerprint_list_with_options(&AtomPairFingerprintParams::default(), Some(4), Some(false))
             .unwrap()
     });
     let morgan_batch = Arc::clone(&batch);
     let morgan = std::thread::spawn(move || {
         morgan_batch
-            .morgan_fingerprint_list_with_options(
-                &MorganFingerprintParams::default(),
-                Some(3),
-                Some(false),
-            )
+            .morgan_fingerprint_list_with_options(&MorganFingerprintParams::default(), Some(3), Some(false))
             .unwrap()
     });
 
     assert_eq!(atom_pair.join().unwrap(), expected);
     assert_eq!(morgan.join().unwrap().len(), source.len());
     assert_eq!(*batch, snapshot);
-    assert!(
-        batch
-            .iter()
-            .all(|record| matches!(record, BatchRecord::Molecule(_)))
-    );
+    assert!(batch.iter().all(|record| matches!(record, BatchRecord::Molecule(_))));
 }

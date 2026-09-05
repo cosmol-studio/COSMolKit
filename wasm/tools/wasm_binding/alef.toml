@@ -1,0 +1,18 @@
+[workspace]
+languages = ["wasm"]
+alef_version = "0.83.3"
+
+[[crates]]
+name = "cosmolkit-wasm"
+sources = ["wasm/src/lib.rs"]
+version_from = "Cargo.toml"
+languages = ["wasm"]
+features = ["full"]
+
+[crates.output]
+wasm = "tmp/alef/wasm"
+
+[crates.wasm]
+package_name = "@cosmol-studio/cosmolkit"
+targets = ["web"]
+type_prefix = ""

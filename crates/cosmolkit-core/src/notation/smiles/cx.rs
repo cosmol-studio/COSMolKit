@@ -78,10 +78,7 @@ pub(super) fn handle_cx_part_and_name(
     Ok(())
 }
 
-pub(super) fn parse_cx_extensions(
-    state: &mut SmilesBuildState,
-    ext_text: &str,
-) -> Result<usize, SmilesParseError> {
+pub(super) fn parse_cx_extensions(state: &mut SmilesBuildState, ext_text: &str) -> Result<usize, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION parseCXExtensions / parser::parse_it
     // RDKit✔️✔️: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
     // RDKit✔️✔️:                        std::string::const_iterator &first,
@@ -681,10 +678,7 @@ pub(super) fn parse_cx_coordinate_bonds(
             if begin != atom_id && end != atom_id {
                 return Err(cx_parse_failure());
             }
-            let bond = state
-                .builder
-                .bond_mut(bond_id)
-                .ok_or_else(cx_parse_failure)?;
+            let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
             bond.set_order(order);
             if begin != atom_id {
                 bond.set_endpoints(atom_id, begin);
@@ -878,11 +872,7 @@ pub(super) fn parse_cx_enhanced_stereo(
         StereoGroupKind::Or => 2,
         StereoGroupKind::And => 3,
     };
-    if let Some(index) = state
-        .cx_stereo_group_tracker
-        .get(&(kind_code, group_id))
-        .copied()
-    {
+    if let Some(index) = state.cx_stereo_group_tracker.get(&(kind_code, group_id)).copied() {
         if let Some(group) = state.builder.stereo_groups_mut().get_mut(index) {
             for atom in atoms {
                 group.push_atom(atom);
@@ -894,18 +884,12 @@ pub(super) fn parse_cx_enhanced_stereo(
             .builder
             .add_stereo_group(StereoGroup::new(kind, atoms, Vec::new()).with_id(group_id))
             .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
-        state
-            .cx_stereo_group_tracker
-            .insert((kind_code, group_id), index);
+        state.cx_stereo_group_tracker.insert((kind_code, group_id), index);
     }
     Ok(())
 }
 
-pub(super) fn expand_cx_atom_query(
-    state: &mut SmilesBuildState,
-    atom_idx: usize,
-    predicate: AtomQueryPredicate,
-) {
+pub(super) fn expand_cx_atom_query(state: &mut SmilesBuildState, atom_idx: usize, predicate: AtomQueryPredicate) {
     if let Some(atom) = state.builder.atom_mut(AtomId::new(atom_idx)) {
         let next = QueryNode::predicate(predicate);
         let combined = match atom.query().cloned() {
@@ -1357,8 +1341,7 @@ pub(super) fn parse_cx_data_sgroup(
             break;
         }
     }
-    let mut sgroup =
-        SubstanceGroup::new(SubstanceGroupId::new(sgroup_idx), SubstanceGroupKind::Data);
+    let mut sgroup = SubstanceGroup::new(SubstanceGroupId::new(sgroup_idx), SubstanceGroupKind::Data);
     sgroup.set_prop("_cxsmilesindex", sgroup_idx.to_string());
     let keep_sgroup = !atoms.is_empty();
     for atom in atoms {
@@ -1384,10 +1367,7 @@ pub(super) fn parse_cx_data_sgroup(
         }
     }
     if keep_sgroup {
-        sgroup.set_prop(
-            "index",
-            (state.builder.substance_groups_len() + 1).to_string(),
-        );
+        sgroup.set_prop("index", (state.builder.substance_groups_len() + 1).to_string());
         state
             .builder
             .add_substance_group(sgroup)
@@ -1503,10 +1483,7 @@ pub(super) fn parse_cx_sgroup_hierarchy(
                         "child id references non-existent SGroup".to_string(),
                     ));
                 }
-                if let Some((child_pos, _)) = cx_index_to_parent
-                    .iter()
-                    .find(|(cx, _)| *cx == *child_cx_idx)
-                {
+                if let Some((child_pos, _)) = cx_index_to_parent.iter().find(|(cx, _)| *cx == *child_cx_idx) {
                     if let Some(child_sg) = state.builder.substance_group_mut(*child_pos) {
                         child_sg.set_prop("PARENT", actual_parent_idx.to_string());
                     }
@@ -1691,10 +1668,7 @@ pub(super) fn parse_cx_polymer_sgroup(
         }
     }
     if keep_sgroup {
-        sgroup.set_prop(
-            "index",
-            (state.builder.substance_groups_len() + 1).to_string(),
-        );
+        sgroup.set_prop("index", (state.builder.substance_groups_len() + 1).to_string());
         state
             .builder
             .add_substance_group(sgroup)
@@ -1967,10 +1941,7 @@ pub(super) fn parse_cx_wedged_bonds(
             if begin != atom_id && end != atom_id {
                 return Err(cx_parse_failure());
             }
-            let bond = state
-                .builder
-                .bond_mut(bond_id)
-                .ok_or_else(cx_parse_failure)?;
+            let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
             if begin != atom_id {
                 bond.set_endpoints(atom_id, begin);
             }
@@ -2094,10 +2065,7 @@ pub(super) fn parse_cx_variable_attachments(
             };
             let cached_bonds: Vec<_> = state.builder.neighbor_bonds(atom_id).to_vec();
             for bond_id in cached_bonds {
-                let bond = state
-                    .builder
-                    .bond_mut(bond_id)
-                    .ok_or_else(cx_parse_failure)?;
+                let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
                 bond.set_prop("_MolFileBondEndPts", end_pts.clone());
                 bond.set_prop("_MolFileBondAttach", "ANY");
             }
@@ -2185,10 +2153,7 @@ pub(super) fn set_cx_stereo_for_bond(
     } else {
         [low_control, high_control]
     };
-    let bond = state
-        .builder
-        .bond_mut(bond_id)
-        .ok_or_else(cx_parse_failure)?;
+    let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
     bond.set_stereo_atoms(Some(stereo_atoms));
     bond.set_stereo(stereo);
     state.set_property("_needsDetectBondStereo", "1");
@@ -2404,22 +2369,15 @@ pub(super) fn read_cx_usize(ext_text: &str, pos: &mut usize) -> Result<usize, Sm
             "failure parsing CXSMILES extensions".to_string(),
         ));
     }
-    ext_text[start..*pos].parse::<usize>().map_err(|_| {
-        SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string())
-    })
+    ext_text[start..*pos]
+        .parse::<usize>()
+        .map_err(|_| SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string()))
 }
 
-pub(super) fn read_cx_text_to(
-    ext_text: &str,
-    pos: &mut usize,
-    delimiters: &[u8],
-) -> Result<String, SmilesParseError> {
+pub(super) fn read_cx_text_to(ext_text: &str, pos: &mut usize, delimiters: &[u8]) -> Result<String, SmilesParseError> {
     let mut value = String::new();
     while *pos < ext_text.len() && !delimiters.contains(&ext_text.as_bytes()[*pos]) {
-        if ext_text.as_bytes()[*pos] == b'&'
-            && *pos + 2 < ext_text.len()
-            && ext_text.as_bytes()[*pos + 1] == b'#'
-        {
+        if ext_text.as_bytes()[*pos] == b'&' && *pos + 2 < ext_text.len() && ext_text.as_bytes()[*pos + 1] == b'#' {
             *pos += 2;
             let numeric_start = *pos;
             while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
@@ -2427,14 +2385,13 @@ pub(super) fn read_cx_text_to(
             }
             if *pos >= ext_text.len() || ext_text.as_bytes()[*pos] != b';' {
                 return Err(SmilesParseError::ParseError(
-                    "failure parsing CXSMILES extensions: quoted block not terminated with ';'"
-                        .to_string(),
+                    "failure parsing CXSMILES extensions: quoted block not terminated with ';'".to_string(),
                 ));
             }
             if *pos > numeric_start {
-                let code = ext_text[numeric_start..*pos].parse::<u32>().map_err(|_| {
-                    SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string())
-                })?;
+                let code = ext_text[numeric_start..*pos]
+                    .parse::<u32>()
+                    .map_err(|_| SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string()))?;
                 if let Some(ch) = char::from_u32(code) {
                     value.push(ch);
                 }
@@ -2448,11 +2405,7 @@ pub(super) fn read_cx_text_to(
     Ok(value)
 }
 
-pub(super) fn expect_byte(
-    ext_text: &str,
-    pos: usize,
-    expected: u8,
-) -> Result<(), SmilesParseError> {
+pub(super) fn expect_byte(ext_text: &str, pos: usize, expected: u8) -> Result<(), SmilesParseError> {
     if pos < ext_text.len() && ext_text.as_bytes()[pos] == expected {
         Ok(())
     } else {

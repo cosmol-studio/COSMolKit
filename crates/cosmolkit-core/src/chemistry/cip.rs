@@ -264,8 +264,6 @@ pub enum CipLabelerError {
     Invariant(#[from] crate::InvariantError),
 }
 
-pub(crate) fn descriptor_from_property(
-    value: Option<&str>,
-) -> Result<Option<CipDescriptor>, CipDescriptorError> {
+pub(crate) fn descriptor_from_property(value: Option<&str>) -> Result<Option<CipDescriptor>, CipDescriptorError> {
     value.map(str::parse).transpose()
 }

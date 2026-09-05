@@ -9,20 +9,14 @@ use crate::{InvariantError, Molecule};
 pub(crate) fn check_molecule_invariants(molecule: &Molecule) -> Result<(), InvariantError> {
     for (row, atom) in molecule.atoms().iter().enumerate() {
         if atom.id().index() != row {
-            return Err(InvariantError::AtomIndexMismatch {
-                row,
-                actual: atom.id(),
-            });
+            return Err(InvariantError::AtomIndexMismatch { row, actual: atom.id() });
         }
     }
 
     let atom_count = molecule.num_atoms();
     for (row, bond) in molecule.bonds().iter().enumerate() {
         if bond.id().index() != row {
-            return Err(InvariantError::BondIndexMismatch {
-                row,
-                actual: bond.id(),
-            });
+            return Err(InvariantError::BondIndexMismatch { row, actual: bond.id() });
         }
         if bond.begin() == bond.end() {
             return Err(InvariantError::SelfLoopBond {
@@ -48,11 +42,7 @@ pub(crate) fn check_molecule_invariants(molecule: &Molecule) -> Result<(), Invar
                 atom_count,
             });
         }
-        if matches!(
-            bond.stereo(),
-            crate::BondStereo::Cis | crate::BondStereo::Trans
-        ) && bond.stereo_atoms().is_none()
-        {
+        if matches!(bond.stereo(), crate::BondStereo::Cis | crate::BondStereo::Trans) && bond.stereo_atoms().is_none() {
             return Err(InvariantError::BondStereoAtomsRequired {
                 bond: bond.id(),
                 stereo: bond.stereo(),

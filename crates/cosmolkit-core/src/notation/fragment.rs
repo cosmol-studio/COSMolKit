@@ -6,9 +6,7 @@
 // The C++ source uses boost::connected_components for graph connectivity.
 // Here we implement an equivalent DFS-based connected-components algorithm.
 
-use crate::{
-    AdjacencyList, Atom, AtomSpec, BondSpec, Molecule, MoleculeBuilder, error::MoleculeBuildError,
-};
+use crate::{AdjacencyList, Atom, AtomSpec, BondSpec, Molecule, MoleculeBuilder, error::MoleculeBuildError};
 
 // ---------------------------------------------------------------------------
 // FragmentError
@@ -176,10 +174,7 @@ pub(crate) fn build_fragment_molecule(
     // or implicitly kept when batch-removing non-fragment atoms (lines 801-809).
     // Here we add atoms explicitly.
     for old_idx in fragment_atoms {
-        let atom = mol
-            .atoms()
-            .get(*old_idx)
-            .expect("fragment atom index out of range");
+        let atom = mol.atoms().get(*old_idx).expect("fragment atom index out of range");
         let spec = atom_to_spec(atom);
         builder.add_atom(spec);
     }

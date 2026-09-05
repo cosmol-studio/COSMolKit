@@ -88,8 +88,7 @@ fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
             continue;
         }
         let positions = record.positions.as_ref().expect("positions missing");
-        let mol =
-            Molecule::from_smiles(&record.smiles).expect("COSMolKit should parse golden SMILES");
+        let mol = Molecule::from_smiles(&record.smiles).expect("COSMolKit should parse golden SMILES");
         let stereos = mol
             .tetrahedral_stereo()
             .expect("COSMolKit should report tetrahedral stereo");
@@ -138,10 +137,7 @@ fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
             let batch_stereos = batch_mol
                 .tetrahedral_stereo()
                 .expect("batch molecule should report tetrahedral stereo");
-            let batch_centers: Vec<usize> = batch_stereos
-                .iter()
-                .map(|stereo| stereo.center.index())
-                .collect();
+            let batch_centers: Vec<usize> = batch_stereos.iter().map(|stereo| stereo.center.index()).collect();
             assert_eq!(
                 batch_centers,
                 record.centers,
@@ -156,12 +152,9 @@ fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
                     .copied()
                     .expect("center coordinate missing");
                 let first_three = [
-                    ligand_position(stereo.ligands[0], positions)
-                        .expect("ligand 0 coordinate missing"),
-                    ligand_position(stereo.ligands[1], positions)
-                        .expect("ligand 1 coordinate missing"),
-                    ligand_position(stereo.ligands[2], positions)
-                        .expect("ligand 2 coordinate missing"),
+                    ligand_position(stereo.ligands[0], positions).expect("ligand 0 coordinate missing"),
+                    ligand_position(stereo.ligands[1], positions).expect("ligand 1 coordinate missing"),
+                    ligand_position(stereo.ligands[2], positions).expect("ligand 2 coordinate missing"),
                 ];
                 let volume = oriented_volume(center, first_three);
                 assert!(

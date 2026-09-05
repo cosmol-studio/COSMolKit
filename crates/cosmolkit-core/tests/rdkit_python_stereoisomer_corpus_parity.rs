@@ -5,8 +5,8 @@ use std::{
 };
 
 use cosmolkit_core::{
-    BondDirection, BondStereo, ChiralTag, ControllingAtom, Molecule, PotentialStereoOptions,
-    StereoCenter, StereoDescriptor, StereoInfo, StereoSpecified, StereoType, StereoisomerOptions,
+    BondDirection, BondStereo, ChiralTag, ControllingAtom, Molecule, PotentialStereoOptions, StereoCenter,
+    StereoDescriptor, StereoInfo, StereoSpecified, StereoType, StereoisomerOptions,
 };
 use num_bigint::BigInt;
 use rayon::prelude::*;
@@ -97,26 +97,15 @@ struct OracleRecord {
 
 fn read_records(profile: &str) -> Vec<OracleRecord> {
     let path = parity_data::expected_path_for_profile("stereo", "rdkit", profile, OUTPUT_NAME);
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line_index, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    line_index + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    line_index + 1
-                )
-            })
+            let line = line
+                .unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line_index + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line_index + 1))
         })
         .collect()
 }
@@ -232,8 +221,7 @@ fn enumeration_direction_gauge(molecule: &Molecule) -> Vec<Option<&'static str>>
     }
     let mut flip = vec![false; molecule.num_bonds()];
     for (root, first) in minimum.iter().copied().enumerate() {
-        if first != usize::MAX && molecule.bonds()[first].direction() == BondDirection::EndDownRight
-        {
+        if first != usize::MAX && molecule.bonds()[first].direction() == BondDirection::EndDownRight {
             flip[root] = true;
         }
     }
@@ -247,28 +235,18 @@ fn enumeration_direction_gauge(molecule: &Molecule) -> Vec<Option<&'static str>>
             }
             let root = find(&mut parent, bond.id().index());
             Some(match (bond.direction(), flip[root]) {
-                (BondDirection::EndDownRight, false) | (BondDirection::EndUpRight, true) => {
-                    "EndDownRight"
-                }
-                (BondDirection::EndUpRight, false) | (BondDirection::EndDownRight, true) => {
-                    "EndUpRight"
-                }
+                (BondDirection::EndDownRight, false) | (BondDirection::EndUpRight, true) => "EndDownRight",
+                (BondDirection::EndUpRight, false) | (BondDirection::EndDownRight, true) => "EndUpRight",
                 _ => unreachable!("direction gauge contains only slash directions"),
             })
         })
         .collect()
 }
 
-fn molecule_state(
-    molecule: &Molecule,
-    normalize_enumeration_directions: bool,
-) -> Result<MoleculeState, String> {
-    let direction_gauge =
-        normalize_enumeration_directions.then(|| enumeration_direction_gauge(molecule));
+fn molecule_state(molecule: &Molecule, normalize_enumeration_directions: bool) -> Result<MoleculeState, String> {
+    let direction_gauge = normalize_enumeration_directions.then(|| enumeration_direction_gauge(molecule));
     Ok(MoleculeState {
-        canonical_smiles: molecule
-            .to_smiles(true)
-            .map_err(|error| error.to_string())?,
+        canonical_smiles: molecule.to_smiles(true).map_err(|error| error.to_string())?,
         atom_chiral_tags: molecule
             .atoms()
             .iter()
@@ -284,9 +262,9 @@ fn molecule_state(
                     .unwrap_or_else(|| bond_direction_name(bond.direction()))
                     .to_owned(),
                 stereo: bond_stereo_name(bond.stereo()).to_owned(),
-                stereo_atoms: bond.stereo_atoms().map_or_else(Vec::new, |atoms| {
-                    atoms.into_iter().map(|atom| atom.index()).collect()
-                }),
+                stereo_atoms: bond
+                    .stereo_atoms()
+                    .map_or_else(Vec::new, |atoms| atoms.into_iter().map(|atom| atom.index()).collect()),
             })
             .collect(),
         conformer_count: molecule.conformers_2d().len() + molecule.conformers_3d().len(),
@@ -331,14 +309,7 @@ fn stereo_info_state(info: &StereoInfo) -> StereoInfoState {
     let (center_kind, center_index) = match info.center() {
         StereoCenter::Atom(atom) => ("atom", Some(atom.index())),
         StereoCenter::Bond(bond) => ("bond", Some(bond.index())),
-        StereoCenter::Missing => (
-            if stereo_type.is_atom_centered() {
-                "atom"
-            } else {
-                "bond"
-            },
-            None,
-        ),
+        StereoCenter::Missing => (if stereo_type.is_atom_centered() { "atom" } else { "bond" }, None),
     };
     StereoInfoState {
         stereo_type: stereo_type_name(stereo_type).to_owned(),
@@ -505,10 +476,7 @@ fn validate_record_identity(records: &[OracleRecord], corpus: &[String]) -> Resu
     }
     for (row, (record, smiles)) in records.iter().zip(corpus).enumerate() {
         if record.schema_version != 2 {
-            return Err(format!(
-                "row {row} has schema version {}",
-                record.schema_version
-            ));
+            return Err(format!("row {row} has schema version {}", record.schema_version));
         }
         if record.row != row {
             return Err(format!("row identity {} does not match {row}", record.row));
@@ -595,11 +563,8 @@ fn enumeration_difference(expected: &[EnumerationRun], actual: &[EnumerationRun]
                 actual_run.outputs.len()
             );
         }
-        for (output_index, (expected_output, actual_output)) in expected_run
-            .outputs
-            .iter()
-            .zip(&actual_run.outputs)
-            .enumerate()
+        for (output_index, (expected_output, actual_output)) in
+            expected_run.outputs.iter().zip(&actual_run.outputs).enumerate()
         {
             if expected_output.canonical_smiles != actual_output.canonical_smiles {
                 return format!(
@@ -613,11 +578,8 @@ fn enumeration_difference(expected: &[EnumerationRun], actual: &[EnumerationRun]
                     expected_output.atom_chiral_tags, actual_output.atom_chiral_tags
                 );
             }
-            for (bond_index, (expected_bond, actual_bond)) in expected_output
-                .bonds
-                .iter()
-                .zip(&actual_output.bonds)
-                .enumerate()
+            for (bond_index, (expected_bond, actual_bond)) in
+                expected_output.bonds.iter().zip(&actual_output.bonds).enumerate()
             {
                 if expected_bond != actual_bond {
                     return format!(
@@ -659,10 +621,7 @@ fn compare_record(expected: &OracleRecord) -> Result<usize, String> {
             return Err("potential-stereo records or cleaned state differ".to_owned());
         }
         if actual.enumeration != expected.enumeration {
-            return Err(enumeration_difference(
-                &expected.enumeration,
-                &actual.enumeration,
-            ));
+            return Err(enumeration_difference(&expected.enumeration, &actual.enumeration));
         }
         return Err("record metadata differs".to_owned());
     }
@@ -670,22 +629,15 @@ fn compare_record(expected: &OracleRecord) -> Result<usize, String> {
     Ok(leaf_count(&value))
 }
 
-fn assert_profile(
-    profile: &str,
-    corpus_path: &Path,
-    expected_records: usize,
-    expected_comparisons: usize,
-) {
+fn assert_profile(profile: &str, corpus_path: &Path, expected_records: usize, expected_comparisons: usize) {
     let records = read_records(profile);
     let corpus = read_smiles(corpus_path);
     assert_eq!(records.len(), expected_records, "{profile}: record count");
-    validate_record_identity(&records, &corpus)
-        .unwrap_or_else(|error| panic!("{profile}: {error}"));
+    validate_record_identity(&records, &corpus).unwrap_or_else(|error| panic!("{profile}: {error}"));
     let results = records
         .par_iter()
         .map(|record| {
-            compare_record(record)
-                .map_err(|error| format!("row {} ({}): {error}", record.row, record.smiles))
+            compare_record(record).map_err(|error| format!("row {} ({}): {error}", record.row, record.smiles))
         })
         .collect::<Vec<_>>();
     let failures = results
@@ -694,10 +646,7 @@ fn assert_profile(
         .take(32)
         .cloned()
         .collect::<Vec<_>>();
-    assert!(
-        failures.is_empty(),
-        "{profile} parity failures: {failures:?}"
-    );
+    assert!(failures.is_empty(), "{profile} parity failures: {failures:?}");
     let comparisons = results.into_iter().map(Result::unwrap).sum::<usize>();
     assert_eq!(
         comparisons, expected_comparisons,

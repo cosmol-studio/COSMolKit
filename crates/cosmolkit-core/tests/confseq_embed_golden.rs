@@ -3,8 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use cosmolkit_core::{
-    ChiralTag, ConfSeqDecodeOptions, ConfSeqTemplateBackend, EmbedParameters, Molecule,
-    decode_confseq_with_options,
+    ChiralTag, ConfSeqDecodeOptions, ConfSeqTemplateBackend, EmbedParameters, Molecule, decode_confseq_with_options,
     io::sdf::{SdfCoordinateMode, SdfReadParams, read_sdf_from_str_with_params},
 };
 use serde::{Deserialize, Serialize};
@@ -50,12 +49,9 @@ fn load_golden() -> Vec<ConfSeqEmbedGoldenRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -258,11 +254,7 @@ fn first_json_diff(path: &str, left: &Value, right: &Value) -> Option<String> {
                         }
                     }
                     _ => {
-                        return Some(format!(
-                            "{next}: left={:?} right={:?}",
-                            left.get(key),
-                            right.get(key)
-                        ));
+                        return Some(format!("{next}: left={:?} right={:?}", left.get(key), right.get(key)));
                     }
                 }
             }
@@ -279,11 +271,7 @@ fn first_json_diff(path: &str, left: &Value, right: &Value) -> Option<String> {
                         }
                     }
                     _ => {
-                        return Some(format!(
-                            "{next}: left={:?} right={:?}",
-                            left.get(idx),
-                            right.get(idx)
-                        ));
+                        return Some(format!("{next}: left={:?} right={:?}", left.get(idx), right.get(idx)));
                     }
                 }
             }
@@ -294,11 +282,7 @@ fn first_json_diff(path: &str, left: &Value, right: &Value) -> Option<String> {
     }
 }
 
-fn decode_stage(
-    record: &ConfSeqEmbedGoldenRecord,
-    apply_angles: bool,
-    apply_dihedrals: bool,
-) -> Molecule {
+fn decode_stage(record: &ConfSeqEmbedGoldenRecord, apply_angles: bool, apply_dihedrals: bool) -> Molecule {
     let mut embed_params = EmbedParameters::etkdg();
     embed_params.random_seed = 0;
     let options = ConfSeqDecodeOptions {
@@ -309,21 +293,18 @@ fn decode_stage(
         template_backend: ConfSeqTemplateBackend::DistanceGeometry,
         ..ConfSeqDecodeOptions::default()
     };
-    decode_confseq_with_options(&record.in_smiles, &record.td_smiles, &options).unwrap_or_else(
-        |err| {
-            let diag =
-                cosmolkit_core::confseq::diagnostics::distance_geometry_dihedral_pair_diagnostics(
-                    &record.in_smiles,
-                    &record.td_smiles,
-                    &options,
-                )
-                .ok();
-            panic!(
-                "{} stage decode failed: {err}; dihedral_pair_diag={diag:#?}",
-                record.case_id
-            )
-        },
-    )
+    decode_confseq_with_options(&record.in_smiles, &record.td_smiles, &options).unwrap_or_else(|err| {
+        let diag = cosmolkit_core::confseq::diagnostics::distance_geometry_dihedral_pair_diagnostics(
+            &record.in_smiles,
+            &record.td_smiles,
+            &options,
+        )
+        .ok();
+        panic!(
+            "{} stage decode failed: {err}; dihedral_pair_diag={diag:#?}",
+            record.case_id
+        )
+    })
 }
 
 fn stage_report(stage: &str, molecule: &Molecule, expected_coords: &[[f64; 3]]) -> String {
@@ -339,17 +320,15 @@ fn confseq_embedding_input_state_matches_rdkit_confseq_golden() {
         if !record.rdkit_ok {
             continue;
         }
-        let parsed = cosmolkit_core::confseq::diagnostics::parse_confseq_for_diagnostics(
-            &record.in_smiles,
-            &record.td_smiles,
-        )
-        .unwrap_or_else(|err| {
-            panic!(
-                "row {} ({}) diagnostic parse failed: {err}",
-                row_idx + 1,
-                record.case_id
-            )
-        });
+        let parsed =
+            cosmolkit_core::confseq::diagnostics::parse_confseq_for_diagnostics(&record.in_smiles, &record.td_smiles)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "row {} ({}) diagnostic parse failed: {err}",
+                        row_idx + 1,
+                        record.case_id
+                    )
+                });
         let pre_add_hs = cosmolkit_core::confseq::diagnostics::prepare_p_chiral_for_diagnostics(
             &parsed.stripped_smiles,
             &parsed.chiral_tags_by_atom,
@@ -361,47 +340,38 @@ fn confseq_embedding_input_state_matches_rdkit_confseq_golden() {
                 record.case_id
             )
         });
-        let with_h = pre_add_hs.with_hydrogens().unwrap_or_else(|err| {
+        let with_h = pre_add_hs
+            .with_hydrogens()
+            .unwrap_or_else(|err| panic!("row {} ({}) COSMolKit AddHs failed: {err}", row_idx + 1, record.case_id));
+
+        let actual_pre = normalized_cosmolkit_summary(&pre_add_hs);
+        let expected_pre = normalize_rdkit_summary(record.pre_add_hs_summary.as_ref().unwrap_or_else(|| {
             panic!(
-                "row {} ({}) COSMolKit AddHs failed: {err}",
+                "row {} ({}) missing RDKit pre-AddHs summary",
                 row_idx + 1,
                 record.case_id
             )
-        });
-
-        let actual_pre = normalized_cosmolkit_summary(&pre_add_hs);
-        let expected_pre =
-            normalize_rdkit_summary(record.pre_add_hs_summary.as_ref().unwrap_or_else(|| {
-                panic!(
-                    "row {} ({}) missing RDKit pre-AddHs summary",
-                    row_idx + 1,
-                    record.case_id
-                )
-            }));
+        }));
         assert!(
             actual_pre == expected_pre,
             "row {} ({}) pre-AddHs state differs from RDKit/ConfSeq: {}",
             row_idx + 1,
             record.case_id,
-            first_json_diff("", &actual_pre, &expected_pre)
-                .unwrap_or_else(|| "unknown difference".to_string())
+            first_json_diff("", &actual_pre, &expected_pre).unwrap_or_else(|| "unknown difference".to_string())
         );
         let actual_with_h = normalized_cosmolkit_summary(&with_h);
-        let expected_with_h =
-            normalize_rdkit_summary(record.with_h_summary.as_ref().unwrap_or_else(|| {
-                panic!(
-                    "row {} ({}) missing RDKit AddHs summary",
-                    row_idx + 1,
-                    record.case_id
-                )
-            }));
+        let expected_with_h = normalize_rdkit_summary(
+            record
+                .with_h_summary
+                .as_ref()
+                .unwrap_or_else(|| panic!("row {} ({}) missing RDKit AddHs summary", row_idx + 1, record.case_id)),
+        );
         assert!(
             actual_with_h == expected_with_h,
             "row {} ({}) AddHs state differs from RDKit/ConfSeq: {}",
             row_idx + 1,
             record.case_id,
-            first_json_diff("", &actual_with_h, &expected_with_h)
-                .unwrap_or_else(|| "unknown difference".to_string())
+            first_json_diff("", &actual_with_h, &expected_with_h).unwrap_or_else(|| "unknown difference".to_string())
         );
     }
 }
@@ -413,11 +383,7 @@ fn rdkit_confseq_embed_golden_template_is_structurally_sane() {
             continue;
         }
         let Some(sdf) = &record.sdf else {
-            panic!(
-                "row {} ({}) RDKit success row missing SDF",
-                row_idx + 1,
-                record.case_id
-            );
+            panic!("row {} ({}) RDKit success row missing SDF", row_idx + 1, record.case_id);
         };
         let expected = read_sdf_from_str_with_params(
             sdf,
@@ -482,8 +448,8 @@ fn confseq_distance_geometry_template_matches_rdkit_confseq_embed_golden() {
             template_backend: ConfSeqTemplateBackend::DistanceGeometry,
             ..ConfSeqDecodeOptions::default()
         };
-        let actual = decode_confseq_with_options(&record.in_smiles, &record.td_smiles, &options)
-            .unwrap_or_else(|err| {
+        let actual =
+            decode_confseq_with_options(&record.in_smiles, &record.td_smiles, &options).unwrap_or_else(|err| {
                 panic!(
                     "row {} ({}) COSMolKit ConfSeq template decode failed: {err}",
                     row_idx + 1,
@@ -507,11 +473,7 @@ fn confseq_distance_geometry_template_matches_rdkit_confseq_embed_golden() {
             record.case_id
         );
         let Some(sdf) = &record.sdf else {
-            panic!(
-                "row {} ({}) RDKit success row missing SDF",
-                row_idx + 1,
-                record.case_id
-            );
+            panic!("row {} ({}) RDKit success row missing SDF", row_idx + 1, record.case_id);
         };
         let expected = read_sdf_from_str_with_params(
             sdf,

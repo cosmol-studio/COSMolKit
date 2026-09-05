@@ -67,10 +67,7 @@ impl AngleBendContrib {
         assert!(idx3 < force_field.positions().len());
         // RDKit✔️✔️:   PRECONDITION(((idx1 != idx2) && (idx2 != idx3) && (idx1 != idx3)),
         // RDKit✔️✔️:                "degenerate points");
-        assert!(
-            idx1 != idx2 && idx2 != idx3 && idx1 != idx3,
-            "degenerate points"
-        );
+        assert!(idx1 != idx2 && idx2 != idx3 && idx1 != idx3, "degenerate points");
         // Rust references reproduce RDKit's non-null angle and central-atom
         // parameter preconditions for the dereferences below.
         // RDKit✔️✔️:   d_at1Idxs.push_back(idx1);
@@ -118,25 +115,13 @@ impl AngleBendContrib {
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at1Idx + 2]);
-            let p1 = ForceFieldVec3::new(
-                pos[3 * atom1_idx],
-                pos[3 * atom1_idx + 1],
-                pos[3 * atom1_idx + 2],
-            );
+            let p1 = ForceFieldVec3::new(pos[3 * atom1_idx], pos[3 * atom1_idx + 1], pos[3 * atom1_idx + 2]);
             // RDKit✔️✔️:     RDGeom::Point3D p2(pos[3 * d_at2Idx], pos[3 * d_at2Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at2Idx + 2]);
-            let p2 = ForceFieldVec3::new(
-                pos[3 * atom2_idx],
-                pos[3 * atom2_idx + 1],
-                pos[3 * atom2_idx + 2],
-            );
+            let p2 = ForceFieldVec3::new(pos[3 * atom2_idx], pos[3 * atom2_idx + 1], pos[3 * atom2_idx + 2]);
             // RDKit✔️✔️:     RDGeom::Point3D p3(pos[3 * d_at3Idx], pos[3 * d_at3Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at3Idx + 2]);
-            let p3 = ForceFieldVec3::new(
-                pos[3 * atom3_idx],
-                pos[3 * atom3_idx + 1],
-                pos[3 * atom3_idx + 2],
-            );
+            let p3 = ForceFieldVec3::new(pos[3 * atom3_idx], pos[3 * atom3_idx + 1], pos[3 * atom3_idx + 2]);
 
             // RDKit✔️✔️:     res += Utils::calcAngleBendEnergy(
             // RDKit✔️✔️:         d_theta0[i], d_ka[i], d_isLinear[i],
@@ -183,25 +168,13 @@ impl AngleBendContrib {
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at1Idx + 2]);
-            let p1 = ForceFieldVec3::new(
-                pos[3 * atom1_idx],
-                pos[3 * atom1_idx + 1],
-                pos[3 * atom1_idx + 2],
-            );
+            let p1 = ForceFieldVec3::new(pos[3 * atom1_idx], pos[3 * atom1_idx + 1], pos[3 * atom1_idx + 2]);
             // RDKit✔️✔️:     RDGeom::Point3D p2(pos[3 * d_at2Idx], pos[3 * d_at2Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at2Idx + 2]);
-            let p2 = ForceFieldVec3::new(
-                pos[3 * atom2_idx],
-                pos[3 * atom2_idx + 1],
-                pos[3 * atom2_idx + 2],
-            );
+            let p2 = ForceFieldVec3::new(pos[3 * atom2_idx], pos[3 * atom2_idx + 1], pos[3 * atom2_idx + 2]);
             // RDKit✔️✔️:     RDGeom::Point3D p3(pos[3 * d_at3Idx], pos[3 * d_at3Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at3Idx + 2]);
-            let p3 = ForceFieldVec3::new(
-                pos[3 * atom3_idx],
-                pos[3 * atom3_idx + 1],
-                pos[3 * atom3_idx + 2],
-            );
+            let p3 = ForceFieldVec3::new(pos[3 * atom3_idx], pos[3 * atom3_idx + 1], pos[3 * atom3_idx + 2]);
 
             // RDKit✔️✔️:     double *g[3] = {&(grad[3 * d_at1Idx]), &(grad[3 * d_at2Idx]),
             // RDKit✔️✔️:                     &(grad[3 * d_at3Idx])};
@@ -217,12 +190,7 @@ impl AngleBendContrib {
             let sin_theta_sq = 1.0 - cos_theta * cos_theta;
             // RDKit✔️✔️:     double sinTheta =
             // RDKit✔️✔️:         std::max(((sinThetaSq > 0.0) ? sqrt(sinThetaSq) : 0.0), 1.0e-8);
-            let sin_theta = (if sin_theta_sq > 0.0 {
-                sin_theta_sq.sqrt()
-            } else {
-                0.0
-            })
-            .max(1.0e-8);
+            let sin_theta = (if sin_theta_sq > 0.0 { sin_theta_sq.sqrt() } else { 0.0 }).max(1.0e-8);
 
             // RDKit✔️✔️:
             // RDKit✔️✔️:     // use the chain rule:
@@ -321,13 +289,7 @@ impl AngleBendContrib {
     }
 }
 
-fn calc_cos_theta(
-    p1: ForceFieldVec3,
-    p2: ForceFieldVec3,
-    p3: ForceFieldVec3,
-    dist1: f64,
-    dist2: f64,
-) -> f64 {
+fn calc_cos_theta(p1: ForceFieldVec3, p2: ForceFieldVec3, p3: ForceFieldVec3, dist1: f64, dist2: f64) -> f64 {
     // BEGIN RDKIT CPP HELPER ForceFields::MMFF::Utils::calcCosTheta (AngleBend.cpp:27-35)
     // RDKit✔️✔️: double calcCosTheta(RDGeom::Point3D p1, RDGeom::Point3D p2, RDGeom::Point3D p3,
     // RDKit✔️✔️:                     double dist1, double dist2) {
@@ -505,13 +467,7 @@ mod tests {
         }
     }
 
-    fn source_angle_bend_grad(
-        pos: &[f64],
-        idx: [usize; 3],
-        theta0: f64,
-        ka: f64,
-        is_linear: bool,
-    ) -> Vec<f64> {
+    fn source_angle_bend_grad(pos: &[f64], idx: [usize; 3], theta0: f64, ka: f64, is_linear: bool) -> Vec<f64> {
         let p1 = ForceFieldVec3::new(pos[3 * idx[0]], pos[3 * idx[0] + 1], pos[3 * idx[0] + 2]);
         let p2 = ForceFieldVec3::new(pos[3 * idx[1]], pos[3 * idx[1] + 1], pos[3 * idx[1] + 2]);
         let p3 = ForceFieldVec3::new(pos[3 * idx[2]], pos[3 * idx[2] + 1], pos[3 * idx[2] + 2]);
@@ -522,12 +478,7 @@ mod tests {
             cos_theta = f64::NAN;
         }
         let sin_theta_sq = 1.0 - cos_theta * cos_theta;
-        let sin_theta = (if sin_theta_sq > 0.0 {
-            sin_theta_sq.sqrt()
-        } else {
-            0.0
-        })
-        .max(1.0e-8);
+        let sin_theta = (if sin_theta_sq > 0.0 { sin_theta_sq.sqrt() } else { 0.0 }).max(1.0e-8);
         let angle_term = 180.0 / std::f64::consts::PI * cos_theta.acos() - theta0;
         let cb = -0.006981317;
         let c2 = 143.9325 * (std::f64::consts::PI / 180.0) * (std::f64::consts::PI / 180.0);
@@ -823,10 +774,7 @@ mod tests {
         let p2 = ForceFieldVec3::new(0.0, 0.0, 0.0);
         let p3 = ForceFieldVec3::new(1.0, 0.0, 0.0);
 
-        assert_close(
-            calc_cos_theta(p1, p2, p3, 2.0_f64.sqrt(), 1.0),
-            0.5_f64.sqrt(),
-        );
+        assert_close(calc_cos_theta(p1, p2, p3, 2.0_f64.sqrt(), 1.0), 0.5_f64.sqrt());
     }
 
     #[test]

@@ -1,15 +1,14 @@
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
 use crate::source::base::ichirvr1::{
-    AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge,
-    MakeOneInChIOutOfStrFromINChI2, RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue,
-    RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
+    AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge, MakeOneInChIOutOfStrFromINChI2,
+    RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue, RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
 };
 use crate::source::base::ichirvr4::{FillOutCMP2FHINCHI, FillOutExtraFixedHDataRestr};
 use crate::source_types::{
-    ALL_TC_GROUPS, AT_NUMB, BN_DATA, BN_STRUCT, BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE, CANON_GLOBALS,
-    CMP2FHINCHI, EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE, INCHI_CLOCK, INChI, INPUT_PARMS,
-    MAX_DIFF_FIXH, NO_VERTEX, STRUCT_DATA, SourceHeap, SourceHeapError, SourceMutPointer,
-    SourceTGroupInfoPointer, StrFromINChI, T_GROUP_INFO, TAUT_YES, VAL_AT, clock_t, inp_ATOM,
+    ALL_TC_GROUPS, AT_NUMB, BN_DATA, BN_STRUCT, BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE, CANON_GLOBALS, CMP2FHINCHI,
+    EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE, INCHI_CLOCK, INChI, INPUT_PARMS, MAX_DIFF_FIXH, NO_VERTEX, STRUCT_DATA,
+    SourceHeap, SourceHeapError, SourceMutPointer, SourceTGroupInfoPointer, StrFromINChI, T_GROUP_INFO, TAUT_YES,
+    VAL_AT, clock_t, inp_ATOM,
     local_ichirvr3::{fNumRNeutrlH, fNumRPosChgH},
 };
 
@@ -141,9 +140,7 @@ pub(crate) fn bHas_N_V(at2: &[inp_ATOM], num_atoms: i32) -> Result<i32, SourceHe
         return Ok(0);
     }
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = at2
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atoms = at2.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut number_found = 0_i32;
     for atom in atoms {
         if atom.el_number == EL_NUMBER_N
@@ -389,8 +386,7 @@ pub(crate) fn FillTgDiffHChgFH(
     // INCHI✔️❌: The active memset clears exactly max_tdhc bytes, not max_tdhc structures.
     // END INCHI ACTIVE MACRO CONFIGURATION: FillTgDiffHChgFH
 
-    let max_tdhc_usize =
-        usize::try_from(max_tdhc).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let max_tdhc_usize = usize::try_from(max_tdhc).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if max_tdhc_usize > tdhc.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -406,9 +402,7 @@ pub(crate) fn FillTgDiffHChgFH(
         let byte_in_record = byte_index % (WORDS_PER_RECORD * BYTES_PER_WORD);
         let word_index = byte_in_record / BYTES_PER_WORD;
         let byte_in_word = byte_in_record % BYTES_PER_WORD;
-        let record = tdhc
-            .get_mut(record_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let record = tdhc.get_mut(record_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut bytes = record.word(word_index).to_ne_bytes();
         bytes[byte_in_word] = 0;
         record.set_word(word_index, i16::from_ne_bytes(bytes));
@@ -416,8 +410,7 @@ pub(crate) fn FillTgDiffHChgFH(
 
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut itg_out = 0_i32;
-        let group_count =
-            usize::try_from(ti.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let group_count = usize::try_from(ti.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
 
         for group_index in 0..group_count {
             let group = heap
@@ -450,15 +443,9 @@ pub(crate) fn FillTgDiffHChgFH(
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let reverse_atom = at2
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let normalized_atom = atf
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence_atom = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let reverse_atom = at2.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let normalized_atom = atf.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence_atom = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
 
                 let mut reverse_type = -1_i32;
                 let mut normalized_type = -1_i32;
@@ -476,14 +463,10 @@ pub(crate) fn FillTgDiffHChgFH(
                         reverse_type = F_NUM_R_NEG_CHG_N as i32;
                     }
                     current.nNumMRevrs = current.nNumMRevrs.wrapping_add(1);
-                } else if reverse_atom.num_H != 0
-                    && reverse_atom.valence == reverse_atom.chem_bonds_valence
-                {
+                } else if reverse_atom.num_H != 0 && reverse_atom.valence == reverse_atom.chem_bonds_valence {
                     reverse_type = F_NUM_R_NEUTRL_H as i32;
                 }
-                current.nNumHRevrs = current
-                    .nNumHRevrs
-                    .wrapping_add(i16::from(reverse_atom.num_H));
+                current.nNumHRevrs = current.nNumHRevrs.wrapping_add(i16::from(reverse_atom.num_H));
 
                 if normalized_atom.charge == 1 {
                     normalized_type = if normalized_atom.num_H != 0 {
@@ -499,14 +482,10 @@ pub(crate) fn FillTgDiffHChgFH(
                         normalized_type = F_NUM_N_NEG_CHG_N as i32;
                     }
                     current.nNumMNorml = current.nNumMNorml.wrapping_add(1);
-                } else if normalized_atom.num_H != 0
-                    && normalized_atom.valence == normalized_atom.chem_bonds_valence
-                {
+                } else if normalized_atom.num_H != 0 && normalized_atom.valence == normalized_atom.chem_bonds_valence {
                     normalized_type = F_NUM_N_NEUTRL_H as i32;
                 }
-                current.nNumHNorml = current
-                    .nNumHNorml
-                    .wrapping_add(i16::from(normalized_atom.num_H));
+                current.nNumHNorml = current.nNumHNorml.wrapping_add(i16::from(normalized_atom.num_H));
 
                 if reverse_atom.charge < 0 || valence_atom.nCPlusGroupEdge > 0 {
                     if reverse_type >= 0 {
@@ -528,17 +507,13 @@ pub(crate) fn FillTgDiffHChgFH(
                 }
             }
 
-            if current.nNumHNorml == current.nNumHInchi && current.nNumMNorml == current.nNumMInchi
-            {
+            if current.nNumHNorml == current.nNumHInchi && current.nNumMNorml == current.nNumMInchi {
                 ind_list.num_edges = current_ind_list_len;
                 continue;
             }
             if itg_out < max_tdhc {
                 *tdhc
-                    .get_mut(
-                        usize::try_from(itg_out)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(itg_out).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = current;
                 itg_out = itg_out.wrapping_add(1);
             } else {
@@ -552,8 +527,8 @@ pub(crate) fn FillTgDiffHChgFH(
             for type_index in 0..F_NUM_ALL_CHG_T {
                 let mut list_index = 0_i32;
                 for output_index in 0..itg_out {
-                    let output_index_usize = usize::try_from(output_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let output_index_usize =
+                        usize::try_from(output_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let group_index = i32::from(
                         tdhc.get(output_index_usize)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -562,8 +537,8 @@ pub(crate) fn FillTgDiffHChgFH(
                     tdhc[output_index_usize].i[type_index] = -999;
                     let mut number = 0_i32;
                     loop {
-                        let list_index_usize = usize::try_from(list_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let list_index_usize =
+                            usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let values = heap.slice(ind_list.pnEdges.as_const())?;
                         let record_group = *values
                             .get(list_index_usize + 1)
@@ -576,8 +551,7 @@ pub(crate) fn FillTgDiffHChgFH(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if record_type == type_index as i32 {
                             if number == 0 {
-                                tdhc[output_index_usize].i[type_index] =
-                                    pAtomIndList.num_edges as i16;
+                                tdhc[output_index_usize].i[type_index] = pAtomIndList.num_edges as i16;
                             }
                             number = number.wrapping_add(1);
                             let atom_index = *values
@@ -6885,19 +6859,13 @@ pub(crate) fn FixFixedHRestoredStructure(
 
         let mut atom_number = 0_i32;
         while atom_number < pStruct.num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let valence = pVA
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
             if minus_edge >= 0 {
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.forbidden == 0 {
                     ret = AddToEdgeList(heap, &mut all_charge_edges, minus_edge, INC_ADD_EDGE)?;
@@ -6912,10 +6880,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             if plus_edge >= 0 {
                 let edge_forbidden = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(plus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .forbidden;
                 if edge_forbidden == 0 {
@@ -6923,47 +6888,27 @@ pub(crate) fn FixFixedHRestoredStructure(
                     if ret != 0 {
                         return Ok(());
                     }
-                    let valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if valence.cNumValenceElectrons == 5 && valence.cMetal == 0 {
                         let upper = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
                         if upper != NO_VERTEX {
                             let flower = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(upper)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(upper).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if flower.forbidden != 0 {
                                 continue_outer = true;
                             } else if flower.flow != 0 {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut all_charge_edges,
-                                    upper,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut all_charge_edges, upper, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut nitrogen_flower_edges,
-                                    upper,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut nitrogen_flower_edges, upper, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
                             } else {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut other_nitrogen_flower_edges,
-                                    upper,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut other_nitrogen_flower_edges, upper, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -6974,20 +6919,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                         if upper != NO_VERTEX {
                             let flower = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(upper)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(upper).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if flower.forbidden != 0 {
                                 continue_outer = true;
                             } else if flower.flow != 0 {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut sulfur_flower_edges,
-                                    upper,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut sulfur_flower_edges, upper, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -7013,8 +6950,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut neighbor_order = 0_i32;
             while neighbor_order < i32::from(atom.valence) {
-                let order = usize::try_from(neighbor_order)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let order = usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let neighbor = i32::from(atom.neighbor[order]);
                 if neighbor < atom_number {
                     let edge_number = *heap
@@ -7023,10 +6959,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let forbidden = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden;
                     if forbidden == 0 {
@@ -7049,8 +6982,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             atom_number = 0;
             while atom_number < pStruct.num_atoms {
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -7063,18 +6995,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut neighbor_order = 0_i32;
                 while neighbor_order < i32::from(atom.valence) {
-                    let order = usize::try_from(neighbor_order)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let order = usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = *heap
                         .slice(vertex.iedge.as_const())?
                         .get(order)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let forbidden = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden;
                     if i32::from(forbidden) == forbidden_stereo_edge_mask {
@@ -7089,12 +7017,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             99,
                         )?;
                         if ring_size > 0 {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut fixed_large_ring_stereo_edges,
-                                edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut fixed_large_ring_stereo_edges, edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -7136,12 +7059,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge_number = pVA
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7150,10 +7072,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let eligible_edge = edge_number >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -7172,10 +7091,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && atom.valence == 1
                         && atom.chem_bonds_valence == 1
                     {
-                        single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                            atom_number as i16;
-                        number_single_bond_oxygen_minus =
-                            number_single_bond_oxygen_minus.wrapping_add(1);
+                        single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
+                        number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, edge_number, INC_ADD_EDGE)?;
                         if ret != 0 {
                             return Ok(());
@@ -7209,15 +7126,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_oxygen_minus && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_oxygen_minus[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -7242,8 +7157,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -7285,8 +7199,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(delta);
                         }
                         {
@@ -7349,8 +7262,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -7392,12 +7304,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = pVA
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7406,10 +7317,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -7418,8 +7326,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if number_single_bond_nh < MAX_DIFF_FIXH as i32
-                    && ((difference.nValElectr == 5 && difference.nPeriodNum == 1)
-                        || difference.nValElectr == 6)
+                    && ((difference.nValElectr == 5 && difference.nPeriodNum == 1) || difference.nValElectr == 6)
                     && edge_available
                     && difference.nFixHInChI > 0
                     && difference.nFixHRevrs == 0
@@ -7439,23 +7346,20 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -7480,10 +7384,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -7500,10 +7401,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && mobile_h == 0
                     && edge_available
                 {
-                    double_bond_positive_hetero[number_double_bond_positive_hetero as usize] =
-                        atom_number as i16;
-                    number_double_bond_positive_hetero =
-                        number_double_bond_positive_hetero.wrapping_add(1);
+                    double_bond_positive_hetero[number_double_bond_positive_hetero as usize] = atom_number as i16;
+                    number_double_bond_positive_hetero = number_double_bond_positive_hetero.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -7521,15 +7420,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut index = 0_i32;
                     while index < number_single_bond_nh && current_success < number_to_try {
                         let atom_number = i32::from(single_bond_nh[index as usize]);
-                        let atom_index = usize::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index =
+                            usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_number = pVA
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nCPlusGroupEdge
                             .wrapping_sub(1);
-                        let edge_index = usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -7546,8 +7445,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             edge.flow = edge.flow.wrapping_sub(delta);
                         }
                         {
@@ -7593,15 +7491,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 current_success = current_success.wrapping_add(1);
                             }
                         } else {
-                            number_zero_returns =
-                                number_zero_returns.wrapping_add(i32::from(ret == 0));
+                            number_zero_returns = number_zero_returns.wrapping_add(i32::from(ret == 0));
                             {
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(edge_index)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                                 edge.flow = edge.flow.wrapping_add(delta);
                             }
                             {
@@ -7616,8 +7512,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(delta);
                                 }
                             }
-                            pBNS.tot_st_flow =
-                                pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
+                            pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
                         }
                         index = index.wrapping_add(1);
                     }
@@ -7625,12 +7520,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && !allowed_nitrogen_flower_edges
                         && nitrogen_flower_edges.num_edges != 0
                     {
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &nitrogen_flower_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &nitrogen_flower_edges, forbidden_edge_mask)?;
                         allowed_nitrogen_flower_edges = true;
                         continue;
                     }
@@ -7681,8 +7571,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -7711,12 +7600,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let minus_edge = pVA
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7725,10 +7613,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -7762,23 +7647,20 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let reversed_endpoint = !mobile_h_reversed.is_null()
                     && heap
                         .slice(mobile_h_reversed.as_const())?
@@ -7790,10 +7672,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -7806,10 +7685,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && reversed_endpoint
                     && edge_available
                 {
-                    single_bond_nitrogen_minus[number_single_bond_nitrogen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_nitrogen_minus =
-                        number_single_bond_nitrogen_minus.wrapping_add(1);
+                    single_bond_nitrogen_minus[number_single_bond_nitrogen_minus as usize] = atom_number as i16;
+                    number_single_bond_nitrogen_minus = number_single_bond_nitrogen_minus.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -7826,15 +7703,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_nitrogen_minus && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_nitrogen_minus[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -7859,8 +7734,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -7902,8 +7776,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(delta);
                         }
                         {
@@ -7967,8 +7840,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8021,23 +7893,20 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let reversed_endpoint = !mobile_h_reversed.is_null()
                     && heap
                         .slice(mobile_h_reversed.as_const())?
@@ -8049,10 +7918,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -8065,10 +7931,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && reversed_endpoint
                     && edge_available
                 {
-                    single_bond_nitrogen_minus[number_single_bond_nitrogen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_nitrogen_minus =
-                        number_single_bond_nitrogen_minus.wrapping_add(1);
+                    single_bond_nitrogen_minus[number_single_bond_nitrogen_minus as usize] = atom_number as i16;
+                    number_single_bond_nitrogen_minus = number_single_bond_nitrogen_minus.wrapping_add(1);
                 } else {
                     let original_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
@@ -8115,15 +7979,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_nitrogen_minus && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_nitrogen_minus[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -8148,8 +8010,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -8191,8 +8052,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(delta);
                         }
                         {
@@ -8256,8 +8116,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8301,31 +8160,25 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -8391,15 +8244,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_neutral && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_neutral[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -8424,8 +8275,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -8467,8 +8317,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(delta);
                         }
                         {
@@ -8532,8 +8381,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8550,33 +8398,26 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let plus_edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
                 if number_single_bond_nh < MAX_DIFF_FIXH as i32
-                    && ((difference.nValElectr == 5 && difference.nPeriodNum == 1)
-                        || difference.nValElectr == 6)
+                    && ((difference.nValElectr == 5 && difference.nPeriodNum == 1) || difference.nValElectr == 6)
                     && difference.endptInChI == 0
                     && plus_edge_available
                     && difference.nFixHInChI == 1
@@ -8598,10 +8439,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let minus_edge_available = minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -8637,15 +8475,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_nh && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_nh[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -8670,8 +8506,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -8713,8 +8548,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(delta);
                         }
                         {
@@ -8778,8 +8612,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8800,12 +8633,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -8818,15 +8650,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
-                if (difference.nValElectr == 6
-                    || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
+                if (difference.nValElectr == 6 || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
                     && difference.endptInChI == 0
                     && edge_available
                     && difference.nFixHInChI == 1
@@ -8849,24 +8677,21 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut leave_case = false;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -8880,10 +8705,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow == 0
                     }
@@ -8900,15 +8722,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
-                        let adjacent_index = usize::try_from(adjacent_atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let adjacent_index =
+                            usize::try_from(adjacent_atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_atom = heap
                             .slice(at2.as_const())?
                             .get(adjacent_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let adjacent_valence = pVA
-                            .get(adjacent_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let adjacent_valence = pVA.get(adjacent_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_plus_edge = adjacent_valence.nCPlusGroupEdge.wrapping_sub(1);
                         let adjacent_positive = adjacent_plus_edge >= 0 && {
                             let edge = heap
@@ -8920,34 +8740,20 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             edge.forbidden == 0 && edge.flow == 0
                         };
-                        if adjacent_atom.charge == 1
-                            && adjacent_valence.cMetal == 0
-                            && adjacent_positive
-                        {
+                        if adjacent_atom.charge == 1 && adjacent_valence.cMetal == 0 && adjacent_positive {
                             if FindInEdgeList(heap, &current_edges, plus_edge)? < 0
                                 && FindInEdgeList(heap, &current_charge_edges, plus_edge)? < 0
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_charge_edges,
-                                    plus_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_charge_edges, plus_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     leave_case = true;
                                     break;
                                 }
                             }
                             if FindInEdgeList(heap, &current_edges, adjacent_plus_edge)? < 0
-                                && FindInEdgeList(heap, &current_charge_edges, adjacent_plus_edge)?
-                                    < 0
+                                && FindInEdgeList(heap, &current_charge_edges, adjacent_plus_edge)? < 0
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_charge_edges,
-                                    adjacent_plus_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_charge_edges, adjacent_plus_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     leave_case = true;
                                     break;
@@ -8964,24 +8770,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let number_to_try = current_edges.num_edges.min(current_charge_edges.num_edges);
                 if number_to_try != 0 {
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                    RemoveForbiddenEdgeMask(
-                        heap,
-                        pBNS,
-                        &current_charge_edges,
-                        forbidden_edge_mask,
-                    )?;
+                    RemoveForbiddenEdgeMask(heap, pBNS, &current_charge_edges, forbidden_edge_mask)?;
                     let delta = 1_i32;
                     let mut index = 0_i32;
                     while index < current_edges.num_edges && current_success < number_to_try {
                         let edge_number = *heap
                             .slice(current_edges.pnEdges.as_const())?
-                            .get(
-                                usize::try_from(index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let edge_index = usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -8993,8 +8791,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         let first_vertex = i32::from(edge_before.neighbor1);
                         let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                        heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                            edge_before.flow.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(delta);
                         {
                             let vertices = heap.slice_mut(pBNS.vert)?;
                             for vertex_number in [first_vertex, second_vertex] {
@@ -9055,8 +8852,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(delta);
                                 }
                             }
-                            pBNS.tot_st_flow =
-                                pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
+                            pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
                         }
                         index = index.wrapping_add(1);
                     }
@@ -9110,8 +8906,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9127,8 +8922,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut leave_case = false;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) && !leave_case {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_index = usize::try_from(i32::from(difference.atomNumber))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -9140,42 +8935,29 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge = if plus_edge >= 0 {
                     Some(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
                 } else {
                     None
                 };
-                let reconstructed_charged = i32::from(difference.nMobHRevrs) + 1
-                    == i32::from(difference.nFixHRevrs)
+                let reconstructed_charged = i32::from(difference.nMobHRevrs) + 1 == i32::from(difference.nFixHRevrs)
                     && difference.nFixHRevrs > 0
                     && difference.endptRevrs == 0
                     && difference.nAtChargeRevrs == 1
-                    && ((difference.nFixHInChI == 0
-                        && difference.nMobHInChI == difference.nFixHRevrs)
-                        || (difference.nFixHInChI == difference.nFixHRevrs
-                            && difference.endptInChI != 0));
-                if reconstructed_charged
-                    && edge.is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0)
-                {
+                    && ((difference.nFixHInChI == 0 && difference.nMobHInChI == difference.nFixHRevrs)
+                        || (difference.nFixHInChI == difference.nFixHRevrs && difference.endptInChI != 0));
+                if reconstructed_charged && edge.is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0) {
                     ret = AddToEdgeList(heap, &mut current_charge_edges, plus_edge, INC_ADD_EDGE)?;
                     leave_case = ret != 0;
                 } else {
-                    let original_has_h = i32::from(difference.nMobHInChI) + 1
-                        == i32::from(difference.nFixHInChI)
+                    let original_has_h = i32::from(difference.nMobHInChI) + 1 == i32::from(difference.nFixHInChI)
                         && difference.nFixHInChI > 0
                         && difference.endptInChI == 0
                         && difference.nAtChargeRevrs == 0
-                        && ((difference.nFixHRevrs == 0
-                            && difference.nMobHRevrs == difference.nFixHInChI)
-                            || (difference.nFixHRevrs == difference.nFixHInChI
-                                && difference.endptRevrs != 0));
-                    if original_has_h
-                        && edge.is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0)
-                    {
+                        && ((difference.nFixHRevrs == 0 && difference.nMobHRevrs == difference.nFixHInChI)
+                            || (difference.nFixHRevrs == difference.nFixHInChI && difference.endptRevrs != 0));
+                    if original_has_h && edge.is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0) {
                         ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                         leave_case = ret != 0;
                     }
@@ -9190,32 +8972,19 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut sulfur_is_forbidden = sulfur_may_be_forbidden;
                     while sulfur_is_forbidden >= 0 {
                         if sulfur_is_forbidden != 0 {
-                            SetForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &sulfur_flower_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            SetForbiddenEdgeMask(heap, pBNS, &sulfur_flower_edges, forbidden_edge_mask)?;
                         }
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &current_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &current_charge_edges, forbidden_edge_mask)?;
                         let delta = 1_i32;
                         let mut index = 0_i32;
                         while index < current_edges.num_edges && current_success < number_to_try {
                             let edge_number = *heap
                                 .slice(current_edges.pnEdges.as_const())?
-                                .get(
-                                    usize::try_from(index)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let edge_index = usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let edge_index =
+                                usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_before = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(edge_index)
@@ -9227,8 +8996,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             let first_vertex = i32::from(edge_before.neighbor1);
                             let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                            heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                                edge_before.flow.wrapping_sub(delta);
+                            heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(delta);
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
                                 for vertex_number in [first_vertex, second_vertex] {
@@ -9241,8 +9009,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
                                 }
                             }
-                            pBNS.tot_st_flow =
-                                pBNS.tot_st_flow.wrapping_sub(2_i32.wrapping_mul(delta));
+                            pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2_i32.wrapping_mul(delta));
                             let mut path_start = 0_i32;
                             let mut path_end = 0_i32;
                             let mut path_length = 0_i32;
@@ -9266,14 +9033,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     || (path_end == second_vertex && path_start == first_vertex))
                                 && delta_charge == -1
                             {
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret > 0 {
                                     n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                     current_success = current_success.wrapping_add(1);
@@ -9294,23 +9054,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(delta);
                                 }
-                                pBNS.tot_st_flow =
-                                    pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
+                                pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
                             }
                             index = index.wrapping_add(1);
                         }
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &all_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &sulfur_flower_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &sulfur_flower_edges, forbidden_edge_mask)?;
                         sulfur_is_forbidden = sulfur_is_forbidden.wrapping_sub(1);
                     }
                 }
@@ -9358,8 +9107,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9376,12 +9124,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -9394,15 +9141,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
-                if (difference.nValElectr == 6
-                    || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
+                if (difference.nValElectr == 6 || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
                     && difference.endptInChI == 0
                     && edge_available
                 {
@@ -9413,10 +9156,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && atom.num_H != 0
                         && atom.valence == atom.chem_bonds_valence
                     {
-                        single_bond_nhm_neutral[number_single_bond_nhm_neutral as usize] =
-                            atom_number as i16;
-                        number_single_bond_nhm_neutral =
-                            number_single_bond_nhm_neutral.wrapping_add(1);
+                        single_bond_nhm_neutral[number_single_bond_nhm_neutral as usize] = atom_number as i16;
+                        number_single_bond_nhm_neutral = number_single_bond_nhm_neutral.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             return Ok(());
@@ -9428,8 +9169,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && atom.num_H != 0
                         && atom.valence < atom.chem_bonds_valence
                     {
-                        double_bond_nhn_plus[number_double_bond_nhn_plus as usize] =
-                            atom_number as i16;
+                        double_bond_nhn_plus[number_double_bond_nhn_plus as usize] = atom_number as i16;
                         number_double_bond_nhn_plus = number_double_bond_nhn_plus.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
@@ -9448,15 +9188,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let mut index = 0_i32;
                 while index < number_single_bond_nhm_neutral && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_nhm_neutral[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -9481,8 +9219,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(delta);
@@ -9522,15 +9259,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         edge.flow = edge.flow.wrapping_add(delta);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(delta);
@@ -9583,8 +9318,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9603,8 +9337,7 @@ pub(crate) fn FixFixedHRestoredStructure(
         };
         if ((comparison.nNumTgInChI > comparison.nNumTgRevrs && comparison.nNumTgRevrs == 1)
             || comparison.nNumEndpInChI < comparison.nNumEndpRevrs)
-            && pStruct.nNumRemovedProtonsMobHInChI
-                == i32::from(pStruct.One_ti.tni.nNumRemovedProtons)
+            && pStruct.nNumRemovedProtonsMobHInChI == i32::from(pStruct.One_ti.tni.nNumRemovedProtons)
             && !pStruct.fixed_H.is_null()
             && !pStruct.endpoint.is_null()
             && !normalized_tautomeric.is_null()
@@ -9641,16 +9374,15 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut leave_case = false;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -9665,17 +9397,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let edge = if plus_edge >= 0 {
                     Some(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .clone(),
                     )
@@ -9695,9 +9422,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         == 0
                     && atom.charge == 0
                     && atom.radical == 0
-                    && edge
-                        .as_ref()
-                        .is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0);
+                    && edge.as_ref().is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0);
                 if neutral {
                     ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
@@ -9715,16 +9440,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && valence.cNumValenceElectrons == 5
                         && valence.cPeriodicRowNumber == 1
                         && fixed_bond_charge == 0
-                        && edge
-                            .as_ref()
-                            .is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0);
+                        && edge.as_ref().is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0);
                     if charged {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut current_charge_edges,
-                            plus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut current_charge_edges, plus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             leave_case = true;
                         }
@@ -9736,24 +9454,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let number_to_try = current_edges.num_edges.min(current_charge_edges.num_edges);
                 if number_to_try != 0 {
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                    RemoveForbiddenEdgeMask(
-                        heap,
-                        pBNS,
-                        &current_charge_edges,
-                        forbidden_edge_mask,
-                    )?;
+                    RemoveForbiddenEdgeMask(heap, pBNS, &current_charge_edges, forbidden_edge_mask)?;
                     let delta = 1_i32;
                     let mut index = 0_i32;
                     while index < current_edges.num_edges && current_success < number_to_try {
                         let edge_number = *heap
                             .slice(current_edges.pnEdges.as_const())?
-                            .get(
-                                usize::try_from(index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let edge_index = usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -9765,8 +9475,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         let first_vertex = i32::from(edge_before.neighbor1);
                         let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                        heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                            edge_before.flow.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(delta);
                         {
                             let vertices = heap.slice_mut(pBNS.vert)?;
                             for vertex_number in [first_vertex, second_vertex] {
@@ -9824,8 +9533,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(delta);
                             }
-                            pBNS.tot_st_flow =
-                                pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
+                            pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2_i32.wrapping_mul(delta));
                         }
                         index = index.wrapping_add(1);
                     }
@@ -9875,8 +9583,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9895,10 +9602,8 @@ pub(crate) fn FixFixedHRestoredStructure(
         };
         if ((comparison.nNumTgInChI > comparison.nNumTgRevrs && comparison.nNumTgRevrs == 1)
             || comparison.nNumEndpInChI < comparison.nNumEndpRevrs)
-            && (pStruct.nNumRemovedProtonsMobHInChI
-                == i32::from(pStruct.One_ti.tni.nNumRemovedProtons)
-                || pStruct.nNumRemovedProtonsMobHInChI
-                    > i32::from(pStruct.One_ti.tni.nNumRemovedProtons))
+            && (pStruct.nNumRemovedProtonsMobHInChI == i32::from(pStruct.One_ti.tni.nNumRemovedProtons)
+                || pStruct.nNumRemovedProtonsMobHInChI > i32::from(pStruct.One_ti.tni.nNumRemovedProtons))
             && !pStruct.fixed_H.is_null()
             && !pStruct.endpoint.is_null()
             && !normalized_tautomeric.is_null()
@@ -9935,16 +9640,15 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut leave_case = false;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -9959,17 +9663,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let edge = if plus_edge >= 0 {
                     Some(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .clone(),
                     )
@@ -9989,9 +9688,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         == 0
                     && atom.charge == 0
                     && atom.radical == 0
-                    && edge
-                        .as_ref()
-                        .is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0);
+                    && edge.as_ref().is_some_and(|edge| edge.forbidden == 0 && edge.flow != 0);
                 if neutral {
                     ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
@@ -10008,16 +9705,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && atom.num_H == 0
                         && (valence.cNumValenceElectrons == 6 || valence.cPeriodicRowNumber == 7)
                         && fixed_bond_charge == 1
-                        && edge
-                            .as_ref()
-                            .is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0);
+                        && edge.as_ref().is_some_and(|edge| edge.forbidden == 0 && edge.flow == 0);
                     if charged {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut current_charge_edges,
-                            plus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut current_charge_edges, plus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             leave_case = true;
                         }
@@ -10032,32 +9722,19 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut sulfur_is_forbidden = sulfur_may_be_forbidden;
                     while sulfur_is_forbidden >= 0 {
                         if sulfur_is_forbidden != 0 {
-                            SetForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &sulfur_flower_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            SetForbiddenEdgeMask(heap, pBNS, &sulfur_flower_edges, forbidden_edge_mask)?;
                         }
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &current_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &current_charge_edges, forbidden_edge_mask)?;
                         let delta = 1_i32;
                         let mut index = 0_i32;
                         while index < current_edges.num_edges && current_success < number_to_try {
                             let edge_number = *heap
                                 .slice(current_edges.pnEdges.as_const())?
-                                .get(
-                                    usize::try_from(index)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let edge_index = usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let edge_index =
+                                usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_before = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(edge_index)
@@ -10069,8 +9746,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             let first_vertex = i32::from(edge_before.neighbor1);
                             let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                            heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                                edge_before.flow.wrapping_sub(1);
+                            heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(1);
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
                                 for vertex_number in [first_vertex, second_vertex] {
@@ -10107,14 +9783,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     || (path_end == second_vertex && path_start == first_vertex))
                                 && delta_charge == -1
                             {
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret > 0 {
                                     n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                     current_success = current_success.wrapping_add(1);
@@ -10139,18 +9808,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             index = index.wrapping_add(1);
                         }
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &all_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &sulfur_flower_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &sulfur_flower_edges, forbidden_edge_mask)?;
                         sulfur_is_forbidden = sulfur_is_forbidden.wrapping_sub(1);
                     }
                 }
@@ -10198,8 +9857,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10273,15 +9931,14 @@ pub(crate) fn FixFixedHRestoredStructure(
             if !leave_case {
                 let mut group_index = 0_i32;
                 while group_index < number_wrong_tgroups && !leave_case {
-                    let difference = &tgroup_differences[usize::try_from(group_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let difference = &tgroup_differences
+                        [usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     if difference.nNumHInchi > difference.nNumHNorml
                         && difference.nNumPRevrs > difference.nNumPNorml
                         && difference.n[fNumRPosChgH as usize] != 0
                     {
-                        let needed = (i32::from(difference.nNumHInchi)
-                            - i32::from(difference.nNumHNorml))
-                        .min(i32::from(difference.n[fNumRPosChgH as usize]));
+                        let needed = (i32::from(difference.nNumHInchi) - i32::from(difference.nNumHNorml))
+                            .min(i32::from(difference.n[fNumRPosChgH as usize]));
                         number_remove_plus = number_remove_plus.wrapping_add(needed);
                         let offset = i32::from(difference.i[fNumRPosChgH as usize]);
                         let mut endpoint_number = 0_i32;
@@ -10289,36 +9946,26 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let endpoint_index = offset.wrapping_add(endpoint_number);
                             let atom_number = *heap
                                 .slice(endpoint_list.pnEdges.as_const())?
-                                .get(
-                                    usize::try_from(endpoint_index)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(endpoint_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let atom_index = usize::try_from(atom_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let atom_index =
+                                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_number = pVA
                                 .get(atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nCPlusGroupEdge
                                 .wrapping_sub(1);
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut current_charge_edges,
-                                edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut current_charge_edges, edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 leave_case = true;
                                 break;
                             }
                             endpoint_number = endpoint_number.wrapping_add(1);
                         }
-                    } else if difference.nNumHInchi < difference.nNumHNorml
-                        && difference.n[fNumRNeutrlH as usize] != 0
+                    } else if difference.nNumHInchi < difference.nNumHNorml && difference.n[fNumRNeutrlH as usize] != 0
                     {
-                        let needed = (i32::from(difference.nNumHNorml)
-                            - i32::from(difference.nNumHInchi))
-                        .min(i32::from(difference.n[fNumRNeutrlH as usize]));
+                        let needed = (i32::from(difference.nNumHNorml) - i32::from(difference.nNumHInchi))
+                            .min(i32::from(difference.n[fNumRNeutrlH as usize]));
                         number_add_plus = number_add_plus.wrapping_add(needed);
                         let offset = i32::from(difference.i[fNumRNeutrlH as usize]);
                         let mut endpoint_number = 0_i32;
@@ -10326,20 +9973,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let endpoint_index = offset.wrapping_add(endpoint_number);
                             let atom_number = *heap
                                 .slice(endpoint_list.pnEdges.as_const())?
-                                .get(
-                                    usize::try_from(endpoint_index)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(endpoint_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let atom_index = usize::try_from(atom_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let atom_index =
+                                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_number = pVA
                                 .get(atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nCPlusGroupEdge
                                 .wrapping_sub(1);
-                            ret =
-                                AddToEdgeList(heap, &mut current_edges, edge_number, INC_ADD_EDGE)?;
+                            ret = AddToEdgeList(heap, &mut current_edges, edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 leave_case = true;
                                 break;
@@ -10354,15 +9997,14 @@ pub(crate) fn FixFixedHRestoredStructure(
             if !leave_case && current_edges.num_edges > 0 && current_charge_edges.num_edges > 0 {
                 let mut group_index = 0_i32;
                 while number_move_plus > 0 && group_index < number_wrong_tgroups && !leave_case {
-                    let difference = tgroup_differences[usize::try_from(group_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    let difference = tgroup_differences
+                        [usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .clone();
                     if difference.nNumHInchi > difference.nNumHNorml
                         && difference.nNumPRevrs > difference.nNumPNorml
                         && difference.n[fNumRPosChgH as usize] != 0
                     {
-                        let mut number_remove =
-                            i32::from(difference.nNumHInchi) - i32::from(difference.nNumHNorml);
+                        let mut number_remove = i32::from(difference.nNumHInchi) - i32::from(difference.nNumHNorml);
                         if number_remove < i32::from(difference.n[fNumRPosChgH as usize]) {
                             number_remove = i32::from(difference.n[fNumRPosChgH as usize]);
                         }
@@ -10381,15 +10023,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let atom_index = usize::try_from(atom_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let atom_index =
+                                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_number = pVA
                                 .get(atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nCPlusGroupEdge
                                 .wrapping_sub(1);
-                            let edge_index = usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let edge_index =
+                                usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_before = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(edge_index)
@@ -10404,10 +10046,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                             let first_vertex_data = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(first_vertex)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(first_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let mut adjacent_index = i32::from(first_vertex_data.num_adj_edges) - 1;
@@ -10436,22 +10075,17 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 adjacent_index -= 1;
                             }
-                            let Some((first_neighbor_edge, first_neighbor_vertex)) = first_neighbor
-                            else {
+                            let Some((first_neighbor_edge, first_neighbor_vertex)) = first_neighbor else {
                                 endpoint_number = endpoint_number.wrapping_add(1);
                                 continue;
                             };
 
                             let second_vertex_data = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(second_vertex)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(second_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let mut adjacent_index =
-                                i32::from(second_vertex_data.num_adj_edges) - 2;
+                            let mut adjacent_index = i32::from(second_vertex_data.num_adj_edges) - 2;
                             let mut second_neighbor = None;
                             while adjacent_index >= 0 {
                                 let adjacent_edge_number = *heap
@@ -10477,15 +10111,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 adjacent_index -= 1;
                             }
-                            let Some((second_neighbor_edge, second_neighbor_vertex)) =
-                                second_neighbor
-                            else {
+                            let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor else {
                                 endpoint_number = endpoint_number.wrapping_add(1);
                                 continue;
                             };
 
-                            heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                                edge_before.flow.wrapping_add(1);
+                            heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_add(1);
                             for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
                                 let adjacent_edge = heap
                                     .slice_mut(pBNS.edge)?
@@ -10498,8 +10129,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
-                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex]
-                                {
+                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                                     let vertex = vertices
                                         .get_mut(
                                             usize::try_from(vertex_number)
@@ -10529,20 +10159,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 &mut number_visited_atoms,
                             )?;
                             if ret == 1
-                                && ((path_end == first_neighbor_vertex
-                                    && path_start == second_neighbor_vertex)
-                                    || (path_end == second_neighbor_vertex
-                                        && path_start == first_neighbor_vertex))
+                                && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                                    || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                                 && (delta_charge == 0 || delta_charge == 1)
                             {
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret > 0 {
                                     n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                     number_remove = number_remove.wrapping_sub(1);
@@ -10566,8 +10187,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     adjacent_edge.flow = adjacent_edge.flow.wrapping_add(1);
                                 }
                                 let vertices = heap.slice_mut(pBNS.vert)?;
-                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex]
-                                {
+                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                                     let vertex = vertices
                                         .get_mut(
                                             usize::try_from(vertex_number)
@@ -10578,8 +10198,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                             }
-                            ret =
-                                AddToEdgeList(heap, &mut current_edges, edge_number, INC_ADD_EDGE)?;
+                            ret = AddToEdgeList(heap, &mut current_edges, edge_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 leave_case = true;
                                 break;
@@ -10587,12 +10206,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             endpoint_number = endpoint_number.wrapping_add(1);
                         }
                         if !leave_case {
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &all_charge_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                         }
                     }
                     group_index = group_index.wrapping_add(1);
@@ -10642,8 +10256,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10691,12 +10304,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -10709,10 +10321,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -10728,10 +10337,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && atom.num_H == 0
                     && atom.valence < atom.chem_bonds_valence
                 {
-                    double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] =
-                        atom_number as i16;
-                    number_double_bond_oxygen_neutral =
-                        number_double_bond_oxygen_neutral.wrapping_add(1);
+                    double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] = atom_number as i16;
+                    number_double_bond_oxygen_neutral = number_double_bond_oxygen_neutral.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -10741,23 +10348,20 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let reversed_endpoint = !mobile_h_reversed.is_null()
                     && heap
                         .slice(mobile_h_reversed.as_const())?
@@ -10781,10 +10385,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -10799,10 +10400,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && !mobile_h
                     && edge_available
                 {
-                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_oxygen_minus =
-                        number_single_bond_oxygen_minus.wrapping_add(1);
+                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
+                    number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -10810,23 +10409,20 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 canonical_number = canonical_number.wrapping_add(1);
             }
-            let number_to_try =
-                number_single_bond_oxygen_minus.min(number_double_bond_oxygen_neutral);
+            let number_to_try = number_single_bond_oxygen_minus.min(number_double_bond_oxygen_neutral);
             if number_to_try != 0 {
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut index = 0_i32;
                 while index < number_single_bond_oxygen_minus && current_success < number_to_try {
                     let atom_number = i32::from(single_bond_oxygen_minus[index as usize]);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -10851,8 +10447,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -10892,15 +10487,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         edge.flow = edge.flow.wrapping_add(1);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -10953,8 +10546,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10994,12 +10586,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -11012,10 +10603,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -11031,10 +10619,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && atom.num_H == 0
                     && atom.valence < atom.chem_bonds_valence
                 {
-                    double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] =
-                        atom_number as i16;
-                    number_double_bond_oxygen_neutral =
-                        number_double_bond_oxygen_neutral.wrapping_add(1);
+                    double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] = atom_number as i16;
+                    number_double_bond_oxygen_neutral = number_double_bond_oxygen_neutral.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -11044,24 +10630,21 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -11082,10 +10665,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -11102,8 +10682,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && atom.valence == 1
                 {
                     let nitrogen_number = i32::from(atom.neighbor[0]);
-                    let nitrogen_index = usize::try_from(nitrogen_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let nitrogen_index =
+                        usize::try_from(nitrogen_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let nitrogen = heap
                         .slice(at2.as_const())?
                         .get(nitrogen_index)
@@ -11129,10 +10709,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && nitrogen_five_neighbor
                     && edge_available
                 {
-                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_oxygen_minus =
-                        number_single_bond_oxygen_minus.wrapping_add(1);
+                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
+                    number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -11140,23 +10718,20 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 canonical_number = canonical_number.wrapping_add(1);
             }
-            let number_to_try =
-                number_single_bond_oxygen_minus.min(number_double_bond_oxygen_neutral);
+            let number_to_try = number_single_bond_oxygen_minus.min(number_double_bond_oxygen_neutral);
             if number_to_try != 0 {
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut index = 0_i32;
                 while index < number_single_bond_oxygen_minus && current_success < number_to_try {
-                    let atom_index =
-                        usize::try_from(i32::from(single_bond_oxygen_minus[index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(i32::from(single_bond_oxygen_minus[index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -11181,8 +10756,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -11222,15 +10796,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         edge.flow = edge.flow.wrapping_add(1);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -11283,8 +10855,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11326,24 +10897,21 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -11364,10 +10932,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -11381,10 +10946,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && !mobile_h
                     && edge_available
                 {
-                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_oxygen_minus =
-                        number_single_bond_oxygen_minus.wrapping_add(1);
+                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
+                    number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -11402,10 +10965,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && !mobile_h
                     && edge_available
                 {
-                    double_bond_nitrogen_neutral[number_double_bond_nitrogen_neutral as usize] =
-                        atom_number as i16;
-                    number_double_bond_nitrogen_neutral =
-                        number_double_bond_nitrogen_neutral.wrapping_add(1);
+                    double_bond_nitrogen_neutral[number_double_bond_nitrogen_neutral as usize] = atom_number as i16;
+                    number_double_bond_nitrogen_neutral = number_double_bond_nitrogen_neutral.wrapping_add(1);
                     ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                     if ret != 0 {
                         return Ok(());
@@ -11413,31 +10974,23 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 canonical_number = canonical_number.wrapping_add(1);
             }
-            let number_to_try =
-                number_double_bond_nitrogen_neutral.min(number_single_bond_oxygen_minus);
+            let number_to_try = number_double_bond_nitrogen_neutral.min(number_single_bond_oxygen_minus);
             if number_to_try != 0 {
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 if forbidden_stereo_edge_mask != 0 {
-                    RemoveForbiddenEdgeMask(
-                        heap,
-                        pBNS,
-                        &fixed_large_ring_stereo_edges,
-                        forbidden_stereo_edge_mask,
-                    )?;
+                    RemoveForbiddenEdgeMask(heap, pBNS, &fixed_large_ring_stereo_edges, forbidden_stereo_edge_mask)?;
                 }
                 let mut index = 0_i32;
                 while index < number_single_bond_oxygen_minus && current_success < number_to_try {
-                    let atom_index =
-                        usize::try_from(i32::from(single_bond_oxygen_minus[index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(i32::from(single_bond_oxygen_minus[index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -11462,8 +11015,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -11503,15 +11055,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         edge.flow = edge.flow.wrapping_add(1);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -11522,12 +11072,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 if forbidden_stereo_edge_mask != 0 {
-                    SetForbiddenEdgeMask(
-                        heap,
-                        pBNS,
-                        &fixed_large_ring_stereo_edges,
-                        forbidden_stereo_edge_mask,
-                    )?;
+                    SetForbiddenEdgeMask(heap, pBNS, &fixed_large_ring_stereo_edges, forbidden_stereo_edge_mask)?;
                 }
             }
             current_edges.num_edges = 0;
@@ -11572,8 +11117,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11585,12 +11129,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -11604,10 +11147,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let plus_edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -11625,8 +11165,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                 {
                     let mut bond_number = 0_i32;
                     while bond_number < i32::from(atom.valence) {
-                        let bond_index = usize::try_from(bond_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let bond_index =
+                            usize::try_from(bond_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         if atom.bond_type[bond_index] == BOND_TYPE_DOUBLE as u8 {
                             break;
                         }
@@ -11643,38 +11183,27 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let nitrogen_carbon_edge = *heap
                         .slice(atom_vertex.iedge.as_const())?
-                        .get(
-                            usize::try_from(bond_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(bond_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let carbon_number = i32::from(
                         *atom
                             .neighbor
-                            .get(
-                                usize::try_from(bond_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(bond_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let carbon_index = usize::try_from(carbon_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let carbon_index =
+                        usize::try_from(carbon_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let carbon = heap
                         .slice(at2.as_const())?
                         .get(carbon_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let carbon_valence = pVA
-                        .get(carbon_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let carbon_valence = pVA.get(carbon_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let carbon_plus_edge = carbon_valence.nCPlusGroupEdge.wrapping_sub(1);
                     let carbon_plus_available = carbon_plus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(carbon_plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(carbon_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -11690,12 +11219,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                     }
                     let mut carbon_neighbor_number = 0_i32;
                     while carbon_neighbor_number < i32::from(carbon.valence) {
-                        let carbon_neighbor_index = usize::try_from(carbon_neighbor_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let second_nitrogen_number =
-                            i32::from(carbon.neighbor[carbon_neighbor_index]);
-                        let second_nitrogen_index = usize::try_from(second_nitrogen_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let carbon_neighbor_index =
+                            usize::try_from(carbon_neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let second_nitrogen_number = i32::from(carbon.neighbor[carbon_neighbor_index]);
+                        let second_nitrogen_index =
+                            usize::try_from(second_nitrogen_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let second_nitrogen = heap
                             .slice(at2.as_const())?
                             .get(second_nitrogen_index)
@@ -11728,10 +11256,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                             carbon_neighbor_number = carbon_neighbor_number.wrapping_add(1);
                             continue;
                         }
-                        let second_difference =
-                            comparison.c2at[usize::try_from(second_difference_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                            .clone();
+                        let second_difference = comparison.c2at[usize::try_from(second_difference_index)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                        .clone();
                         if second_difference.nValElectr == 5
                             && second_difference.nPeriodNum == 1
                             && second_difference.endptInChI == 0
@@ -11747,27 +11274,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                             if ret != 0 {
                                 return Ok(());
                             }
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut current_edges,
-                                carbon_plus_edge,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut current_edges, carbon_plus_edge, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
-                            SetForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &all_charge_edges,
-                                forbidden_edge_mask,
-                            )?;
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &current_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                             let edge_index = usize::try_from(nitrogen_carbon_edge)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let edge_before = heap
@@ -11788,8 +11300,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(edge_index)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                                 edge.flow = edge.flow.wrapping_sub(1);
                             }
                             {
@@ -11828,14 +11339,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     || (path_end == second_vertex && path_start == first_vertex))
                                 && delta_charge == 0
                             {
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret > 0 {
                                     n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                     current_success = current_success.wrapping_add(1);
@@ -11862,14 +11366,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &all_charge_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                             current_edges.num_edges = 0;
                             break;
                         }
@@ -11919,8 +11417,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11932,37 +11429,30 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let comparison_index = usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let comparison_index =
+                    usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let difference = comparison.c2at[comparison_index].clone();
                 if difference.nValue != 0 {
                     difference_index = difference_index.wrapping_add(1);
                     continue;
                 }
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let atom_valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom_valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let atom_plus_edge = atom_valence.nCPlusGroupEdge.wrapping_sub(1);
                 let atom_plus_available = atom_plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(atom_plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(atom_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
-                if (difference.nValElectr == 6
-                    || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
+                if (difference.nValElectr == 6 || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
                     && difference.endptInChI != 0
                     && difference.nFixHInChI != 0
                     && difference.nMobHInChI == 0
@@ -11981,20 +11471,18 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut keep_searching = true;
                     let mut first_bond_number = 0_i32;
                     while first_bond_number < i32::from(atom.valence) && keep_searching {
-                        let first_bond_index = usize::try_from(first_bond_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let first_bond_index =
+                            usize::try_from(first_bond_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         if atom.bond_type[first_bond_index] == BOND_TYPE_SINGLE as u8 {
                             let center_number = i32::from(atom.neighbor[first_bond_index]);
-                            let center_index = usize::try_from(center_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let center_index =
+                                usize::try_from(center_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let center = heap
                                 .slice(at2.as_const())?
                                 .get(center_index)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let center_valence = pVA
-                                .get(center_index)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let center_valence = pVA.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let center_plus_edge = center_valence.nCPlusGroupEdge.wrapping_sub(1);
                             let center_plus_available = center_plus_edge >= 0
                                 && heap
@@ -12017,15 +11505,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 let mut second_bond_number = 0_i32;
-                                while second_bond_number < i32::from(center.valence)
-                                    && keep_searching
-                                {
+                                while second_bond_number < i32::from(center.valence) && keep_searching {
                                     let second_bond_index = usize::try_from(second_bond_number)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                    if center.bond_type[second_bond_index] == BOND_TYPE_SINGLE as u8
-                                    {
-                                        let second_atom_number =
-                                            i32::from(center.neighbor[second_bond_index]);
+                                    if center.bond_type[second_bond_index] == BOND_TYPE_SINGLE as u8 {
+                                        let second_atom_number = i32::from(center.neighbor[second_bond_index]);
                                         let second_atom_index = usize::try_from(second_atom_number)
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                         let second_atom = heap
@@ -12033,17 +11517,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                                             .get(second_atom_index)
                                             .cloned()
                                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                        let second_valence = pVA
-                                            .get(second_atom_index)
-                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                        let second_plus_edge =
-                                            second_valence.nCPlusGroupEdge.wrapping_sub(1);
+                                        let second_valence =
+                                            pVA.get(second_atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        let second_plus_edge = second_valence.nCPlusGroupEdge.wrapping_sub(1);
                                         let second_plus_available = second_plus_edge >= 0
                                             && heap
                                                 .slice(pBNS.edge.as_const())?
-                                                .get(usize::try_from(second_plus_edge).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
+                                                .get(
+                                                    usize::try_from(second_plus_edge)
+                                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                                )
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                 .forbidden
                                                 == 0;
@@ -12056,23 +11539,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                                             && second_plus_available
                                         {
                                             let mut second_difference_index = 0_i32;
-                                            while second_difference_index
-                                                < i32::from(comparison.len_c2at)
-                                            {
-                                                let second_comparison_index =
-                                                    usize::try_from(second_difference_index)
-                                                        .map_err(|_| {
-                                                            SourceHeapError::PointerOutOfBounds
-                                                        })?;
-                                                let second_difference = comparison.c2at
-                                                    [second_comparison_index]
-                                                    .clone();
-                                                if second_atom_number
-                                                    != i32::from(second_difference.atomNumber)
+                                            while second_difference_index < i32::from(comparison.len_c2at) {
+                                                let second_comparison_index = usize::try_from(second_difference_index)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                                let second_difference =
+                                                    comparison.c2at[second_comparison_index].clone();
+                                                if second_atom_number != i32::from(second_difference.atomNumber)
                                                     || second_difference.nValue != 0
                                                 {
-                                                    second_difference_index =
-                                                        second_difference_index.wrapping_add(1);
+                                                    second_difference_index = second_difference_index.wrapping_add(1);
                                                     continue;
                                                 }
                                                 if second_difference.endptInChI != 0
@@ -12086,78 +11561,53 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                     let first_bond_edge = *heap
                                                         .slice(atom_vertex.iedge.as_const())?
                                                         .get(first_bond_index)
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?;
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                                     let second_bond_edge = *heap
                                                         .slice(center_vertex.iedge.as_const())?
                                                         .get(second_bond_index)
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?;
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                                     let first_bond_forbidden = heap
                                                         .slice(pBNS.edge.as_const())?
                                                         .get(
-                                                            usize::try_from(first_bond_edge).map_err(
-                                                                |_| {
-                                                                    SourceHeapError::PointerOutOfBounds
-                                                                },
-                                                            )?,
+                                                            usize::try_from(first_bond_edge)
+                                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                                         )
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                         .forbidden
                                                         != 0;
                                                     let first_charge_flow = heap
                                                         .slice(pBNS.edge.as_const())?
                                                         .get(
-                                                            usize::try_from(atom_plus_edge).map_err(
-                                                                |_| {
-                                                                    SourceHeapError::PointerOutOfBounds
-                                                                },
-                                                            )?,
+                                                            usize::try_from(atom_plus_edge)
+                                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                                         )
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                         .flow;
                                                     let second_bond_forbidden = heap
                                                         .slice(pBNS.edge.as_const())?
                                                         .get(
                                                             usize::try_from(second_bond_edge)
-                                                                .map_err(|_| {
-                                                                    SourceHeapError::PointerOutOfBounds
-                                                                })?,
+                                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                                         )
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                         .forbidden
                                                         != 0;
                                                     let second_charge_flow = heap
                                                         .slice(pBNS.edge.as_const())?
                                                         .get(
                                                             usize::try_from(second_plus_edge)
-                                                                .map_err(|_| {
-                                                                    SourceHeapError::PointerOutOfBounds
-                                                                })?,
+                                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                                         )
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                         .flow;
-                                                    let selected_edge = if !first_bond_forbidden
-                                                        && first_charge_flow != 0
-                                                    {
-                                                        Some(atom_plus_edge)
-                                                    } else if !second_bond_forbidden
-                                                        && second_charge_flow != 0
-                                                    {
-                                                        Some(second_plus_edge)
-                                                    } else {
-                                                        None
-                                                    };
+                                                    let selected_edge =
+                                                        if !first_bond_forbidden && first_charge_flow != 0 {
+                                                            Some(atom_plus_edge)
+                                                        } else if !second_bond_forbidden && second_charge_flow != 0 {
+                                                            Some(second_plus_edge)
+                                                        } else {
+                                                            None
+                                                        };
                                                     let Some(selected_edge) = selected_edge else {
                                                         second_difference_index =
                                                             second_difference_index.wrapping_add(1);
@@ -12184,46 +11634,31 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                         &current_edges,
                                                         forbidden_edge_mask,
                                                     )?;
-                                                    let selected_index =
-                                                        usize::try_from(selected_edge).map_err(
-                                                            |_| SourceHeapError::PointerOutOfBounds,
-                                                        )?;
+                                                    let selected_index = usize::try_from(selected_edge)
+                                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                                     let selected_before = heap
                                                         .slice(pBNS.edge.as_const())?
                                                         .get(selected_index)
                                                         .cloned()
-                                                        .ok_or(
-                                                            SourceHeapError::PointerOutOfBounds,
-                                                        )?;
-                                                    let first_vertex =
-                                                        i32::from(selected_before.neighbor1);
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                                    let first_vertex = i32::from(selected_before.neighbor1);
                                                     let second_vertex =
-                                                        i32::from(selected_before.neighbor12)
-                                                            ^ first_vertex;
-                                                    heap.slice_mut(pBNS.edge)?[selected_index]
-                                                        .flow =
+                                                        i32::from(selected_before.neighbor12) ^ first_vertex;
+                                                    heap.slice_mut(pBNS.edge)?[selected_index].flow =
                                                         selected_before.flow.wrapping_sub(1);
                                                     {
                                                         let vertices = heap.slice_mut(pBNS.vert)?;
-                                                        for vertex_number in
-                                                            [first_vertex, second_vertex]
-                                                        {
-                                                            let vertex = vertices
-                                                                .get_mut(
-                                                                    usize::try_from(vertex_number)
-                                                                        .map_err(|_| {
-                                                                            SourceHeapError::PointerOutOfBounds
-                                                                        })?,
-                                                                )
-                                                                .ok_or(
-                                                                    SourceHeapError::PointerOutOfBounds,
-                                                                )?;
-                                                            vertex.st_edge.flow =
-                                                                vertex.st_edge.flow.wrapping_sub(1);
+                                                        for vertex_number in [first_vertex, second_vertex] {
+                                                            let vertex =
+                                                                vertices
+                                                                    .get_mut(usize::try_from(vertex_number).map_err(
+                                                                        |_| SourceHeapError::PointerOutOfBounds,
+                                                                    )?)
+                                                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                                            vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                                                         }
                                                     }
-                                                    pBNS.tot_st_flow =
-                                                        pBNS.tot_st_flow.wrapping_sub(2);
+                                                    pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                                                     let mut path_start = 0_i32;
                                                     let mut path_end = 0_i32;
                                                     let mut path_length = 0_i32;
@@ -12243,8 +11678,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                         &mut number_visited_atoms,
                                                     )?;
                                                     if ret == 1
-                                                        && ((path_end == first_vertex
-                                                            && path_start == second_vertex)
+                                                        && ((path_end == first_vertex && path_start == second_vertex)
                                                             || (path_end == second_vertex
                                                                 && path_start == first_vertex))
                                                         && delta_charge == -1
@@ -12258,45 +11692,29 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                             clock_result,
                                                         )?;
                                                         if ret > 0 {
-                                                            n_num_run_bns =
-                                                                n_num_run_bns.wrapping_add(1);
-                                                            current_success =
-                                                                current_success.wrapping_add(1);
+                                                            n_num_run_bns = n_num_run_bns.wrapping_add(1);
+                                                            current_success = current_success.wrapping_add(1);
                                                             keep_searching = false;
-                                                            comparison.c2at[comparison_index]
-                                                                .nValue = 1;
-                                                            comparison.c2at
-                                                                [second_comparison_index]
-                                                                .nValue = 1;
+                                                            comparison.c2at[comparison_index].nValue = 1;
+                                                            comparison.c2at[second_comparison_index].nValue = 1;
                                                         }
                                                     } else {
                                                         let selected = heap
                                                             .slice_mut(pBNS.edge)?
                                                             .get_mut(selected_index)
-                                                            .ok_or(
-                                                                SourceHeapError::PointerOutOfBounds,
-                                                            )?;
-                                                        selected.flow =
-                                                            selected.flow.wrapping_add(1);
+                                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                                        selected.flow = selected.flow.wrapping_add(1);
                                                         let vertices = heap.slice_mut(pBNS.vert)?;
-                                                        for vertex_number in
-                                                            [first_vertex, second_vertex]
-                                                        {
-                                                            let vertex = vertices
-                                                                .get_mut(
-                                                                    usize::try_from(vertex_number)
-                                                                        .map_err(|_| {
-                                                                            SourceHeapError::PointerOutOfBounds
-                                                                        })?,
-                                                                )
-                                                                .ok_or(
-                                                                    SourceHeapError::PointerOutOfBounds,
-                                                                )?;
-                                                            vertex.st_edge.flow =
-                                                                vertex.st_edge.flow.wrapping_add(1);
+                                                        for vertex_number in [first_vertex, second_vertex] {
+                                                            let vertex =
+                                                                vertices
+                                                                    .get_mut(usize::try_from(vertex_number).map_err(
+                                                                        |_| SourceHeapError::PointerOutOfBounds,
+                                                                    )?)
+                                                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                                            vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                                         }
-                                                        pBNS.tot_st_flow =
-                                                            pBNS.tot_st_flow.wrapping_add(2);
+                                                        pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                                                     }
                                                     RemoveForbiddenEdgeMask(
                                                         heap,
@@ -12307,8 +11725,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                     current_edges.num_edges = 0;
                                                     break;
                                                 }
-                                                second_difference_index =
-                                                    second_difference_index.wrapping_add(1);
+                                                second_difference_index = second_difference_index.wrapping_add(1);
                                             }
                                         }
                                     }
@@ -12362,8 +11779,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -12405,32 +11821,26 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -12483,19 +11893,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_double_bond_charged
-                    && current_success < number_to_try
-                {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_double_bond_charged && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -12509,10 +11915,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
                     let first_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(first_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(first_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(first_vertex_data.num_adj_edges) - 1;
@@ -12520,10 +11923,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(first_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -12533,10 +11933,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if adjacent_edge.flow != 0 && adjacent_edge.forbidden == 0 {
-                            first_neighbor = Some((
-                                adjacent_edge_number,
-                                i32::from(adjacent_edge.neighbor12) ^ first_vertex,
-                            ));
+                            first_neighbor =
+                                Some((adjacent_edge_number, i32::from(adjacent_edge.neighbor12) ^ first_vertex));
                             break;
                         }
                         adjacency_index -= 1;
@@ -12547,10 +11945,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     };
                     let second_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(second_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(second_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(second_vertex_data.num_adj_edges) - 2;
@@ -12558,10 +11953,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(second_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -12579,8 +11971,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         adjacency_index -= 1;
                     }
-                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor
-                    else {
+                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor else {
                         candidate_index = candidate_index.wrapping_add(1);
                         continue;
                     };
@@ -12588,10 +11979,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
                         let adjacent_edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(neighbor_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         adjacent_edge.flow = adjacent_edge.flow.wrapping_sub(1);
                     }
@@ -12600,8 +11988,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -12627,10 +12014,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         &mut number_visited_atoms,
                     )?;
                     if ret == 1
-                        && ((path_end == first_neighbor_vertex
-                            && path_start == second_neighbor_vertex)
-                            || (path_end == second_neighbor_vertex
-                                && path_start == first_neighbor_vertex))
+                        && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                            || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                         && (delta_charge == 0 || delta_charge == 1)
                     {
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
@@ -12648,8 +12033,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let adjacent_edge = heap
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(
-                                    usize::try_from(neighbor_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             adjacent_edge.flow = adjacent_edge.flow.wrapping_add(1);
@@ -12658,8 +12042,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -12712,8 +12095,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -12769,12 +12151,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                 let mut difference_index = 0_i32;
                 while difference_index < i32::from(comparison.len_c2at) {
-                    let difference = comparison.c2at[usize::try_from(difference_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    let difference = comparison.c2at
+                        [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .clone();
                     let atom_number = i32::from(difference.atomNumber);
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
@@ -12787,10 +12168,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let edge_available = minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -12802,8 +12180,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         false
                     };
                     if number_double_bond_hetero < MAX_DIFF_FIXH as i32
-                        && (difference.nValElectr == 6
-                            || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
+                        && (difference.nValElectr == 6 || (difference.nValElectr == 5 && difference.nPeriodNum == 1))
                         && difference.endptInChI != 0
                         && edge_available
                         && difference.nFixHInChI == 0
@@ -12823,28 +12200,24 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                 let mut canonical_number = 0_i32;
                 while canonical_number < pStruct.num_atoms {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut nitrogen_five = false;
                     let valence_matches = atom.valence == atom.chem_bonds_valence || {
-                        nitrogen_five =
-                            i32::from(atom.valence) + 2 == i32::from(atom.chem_bonds_valence);
+                        nitrogen_five = i32::from(atom.valence) + 2 == i32::from(atom.chem_bonds_valence);
                         nitrogen_five
                     };
                     let reversed_endpoint = !mobile_h_reversed.is_null()
@@ -12875,10 +12248,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let edge_available = plus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -12903,10 +12273,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let upper_available = upper_edge != NO_VERTEX && {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(upper_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(upper_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             edge.forbidden == 0 && edge.flow == 0
                         };
@@ -12915,36 +12282,28 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 current_edges.num_edges = 0;
                                 number_single_bond_nitrogen_neutral = 0;
                             }
-                            single_bond_nitrogen_neutral
-                                [number_single_bond_nitrogen_neutral as usize] = atom_number as i16;
-                            number_single_bond_nitrogen_neutral =
-                                number_single_bond_nitrogen_neutral.wrapping_add(1);
+                            single_bond_nitrogen_neutral[number_single_bond_nitrogen_neutral as usize] =
+                                atom_number as i16;
+                            number_single_bond_nitrogen_neutral = number_single_bond_nitrogen_neutral.wrapping_add(1);
                             number_nitrogen_five = number_nitrogen_five.wrapping_add(1);
                             ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
-                            ret =
-                                AddToEdgeList(heap, &mut current_edges, upper_edge, INC_ADD_EDGE)?;
+                            ret = AddToEdgeList(heap, &mut current_edges, upper_edge, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
                         } else if number_nitrogen_five == 0 {
-                            single_bond_nitrogen_neutral
-                                [number_single_bond_nitrogen_neutral as usize] = atom_number as i16;
-                            number_single_bond_nitrogen_neutral =
-                                number_single_bond_nitrogen_neutral.wrapping_add(1);
+                            single_bond_nitrogen_neutral[number_single_bond_nitrogen_neutral as usize] =
+                                atom_number as i16;
+                            number_single_bond_nitrogen_neutral = number_single_bond_nitrogen_neutral.wrapping_add(1);
                             ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 return Ok(());
                             }
                             if nitrogen_five && upper_available {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_edges,
-                                    upper_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_edges, upper_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -12954,31 +12313,27 @@ pub(crate) fn FixFixedHRestoredStructure(
                     canonical_number = canonical_number.wrapping_add(1);
                 }
 
-                let number_to_try =
-                    number_single_bond_nitrogen_neutral.min(number_double_bond_hetero);
+                let number_to_try = number_single_bond_nitrogen_neutral.min(number_double_bond_hetero);
                 if number_to_try != 0 {
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                     RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                     let mut donor_index = 0_i32;
-                    while donor_index < number_double_bond_hetero && current_success < number_to_try
-                    {
-                        let atom_index =
-                            usize::try_from(i32::from(double_bond_hetero[donor_index as usize]))
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    while donor_index < number_double_bond_hetero && current_success < number_to_try {
+                        let atom_index = usize::try_from(i32::from(double_bond_hetero[donor_index as usize]))
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let minus_edge = pVA
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nCMinusGroupEdge
                             .wrapping_sub(1);
-                        let minus_edge_index = usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let minus_edge_index =
+                            usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         {
                             let edge = heap
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(minus_edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         }
                         let atom_vertex = heap
                             .slice(pBNS.vert.as_const())?
@@ -12989,8 +12344,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice(atom_vertex.iedge.as_const())?
                             .first()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let bond_edge_index = usize::try_from(bond_edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let bond_edge_index =
+                            usize::try_from(bond_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let bond_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(bond_edge_index)
@@ -13007,8 +12362,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(bond_edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             edge.flow = edge.flow.wrapping_sub(1);
                         }
                         {
@@ -13074,8 +12428,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(bond_edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         donor_index = donor_index.wrapping_add(1);
                     }
                     RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
@@ -13122,14 +12475,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         return Ok(());
                     }
                     let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                    ret = FillOutCMP2FHINCHI(
-                        heap,
-                        pStruct,
-                        &at2_snapshot,
-                        pVA,
-                        pInChI,
-                        &mut comparison,
-                    )?;
+                    ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                     if ret != 0 || comparison.bHasDifference == 0 {
                         return Ok(());
                     }
@@ -13206,11 +12552,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             };
 
             let mut tgroup_index = 0_i32;
-            while tgroup_index < pStruct.ti.num_t_groups
-                && tgroup_index < pStruct.One_ti.num_t_groups
-            {
-                let group_index = usize::try_from(tgroup_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            while tgroup_index < pStruct.ti.num_t_groups && tgroup_index < pStruct.One_ti.num_t_groups {
+                let group_index = usize::try_from(tgroup_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let input_group = heap
                     .slice(pStruct.ti.t_group.as_const())?
                     .get(group_index)
@@ -13233,27 +12576,23 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut current_success = 0_i32;
                     let mut canonical_number = 0_i32;
                     while canonical_number < pStruct.num_atoms {
-                        let canonical_index = usize::try_from(canonical_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let canonical_index =
+                            usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let atom_number = i32::from(
                             *heap
                                 .slice(canonical_to_atom.as_const())?
                                 .get(canonical_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
-                        let atom_index = usize::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index =
+                            usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let atom = heap
                             .slice(at2.as_const())?
                             .get(atom_index)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let canonical_valence = pVA
-                            .get(canonical_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let atom_valence = pVA
-                            .get(atom_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let canonical_valence = pVA.get(canonical_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let atom_valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let input_endpoint = *heap
                             .slice(pStruct.endpoint.as_const())?
                             .get(canonical_index)
@@ -13282,8 +12621,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .get(atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 != 0;
-                        let canonical_minus_edge =
-                            canonical_valence.nCMinusGroupEdge.wrapping_sub(1);
+                        let canonical_minus_edge = canonical_valence.nCMinusGroupEdge.wrapping_sub(1);
                         let canonical_minus_available = canonical_minus_edge >= 0
                             && heap
                                 .slice(pBNS.edge.as_const())?
@@ -13307,8 +12645,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             && atom.valence == 1
                             && atom.chem_bonds_valence == 2
                         {
-                            double_bond_oxygen[number_double_bond_oxygen as usize] =
-                                atom_number as i16;
+                            double_bond_oxygen[number_double_bond_oxygen as usize] = atom_number as i16;
                             number_double_bond_oxygen = number_double_bond_oxygen.wrapping_add(1);
                         } else {
                             let reversed_endpoint = !mobile_h_reversed_atoms.is_null()
@@ -13322,10 +12659,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let plus_available = plus_edge >= 0
                                 && heap
                                     .slice(pBNS.edge.as_const())?
-                                    .get(
-                                        usize::try_from(plus_edge)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .forbidden
                                     == 0;
@@ -13343,17 +12677,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 && !input_mobile_h
                                 && plus_available
                             {
-                                single_bond_nitrogen_neutral
-                                    [number_single_bond_nitrogen_neutral as usize] =
+                                single_bond_nitrogen_neutral[number_single_bond_nitrogen_neutral as usize] =
                                     atom_number as i16;
                                 number_single_bond_nitrogen_neutral =
                                     number_single_bond_nitrogen_neutral.wrapping_add(1);
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut current_edges,
-                                    plus_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -13361,33 +12689,27 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         canonical_number = canonical_number.wrapping_add(1);
                     }
-                    let number_to_try =
-                        number_single_bond_nitrogen_neutral.min(number_double_bond_oxygen);
+                    let number_to_try = number_single_bond_nitrogen_neutral.min(number_double_bond_oxygen);
                     if number_to_try != 0 {
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                         RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                         let mut donor_index = 0_i32;
-                        while donor_index < number_double_bond_oxygen
-                            && current_success < number_to_try
-                        {
-                            let atom_index = usize::try_from(i32::from(
-                                double_bond_oxygen[donor_index as usize],
-                            ))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        while donor_index < number_double_bond_oxygen && current_success < number_to_try {
+                            let atom_index = usize::try_from(i32::from(double_bond_oxygen[donor_index as usize]))
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let minus_edge = pVA
                                 .get(atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nCMinusGroupEdge
                                 .wrapping_sub(1);
-                            let minus_edge_index = usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let minus_edge_index =
+                                usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             {
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(minus_edge_index)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             }
                             let atom_vertex = heap
                                 .slice(pBNS.vert.as_const())?
@@ -13398,8 +12720,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice(atom_vertex.iedge.as_const())?
                                 .first()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let bond_edge_index = usize::try_from(bond_edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let bond_edge_index =
+                                usize::try_from(bond_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let bond_before = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(bond_edge_index)
@@ -13416,8 +12738,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(bond_edge_index)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                                 edge.flow = edge.flow.wrapping_sub(1);
                             }
                             {
@@ -13456,14 +12777,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     || (path_end == second_vertex && path_start == first_vertex))
                                 && delta_charge == 2
                             {
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret > 0 {
                                     n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                     current_success = current_success.wrapping_add(1);
@@ -13490,16 +12804,10 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(bond_edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             donor_index = donor_index.wrapping_add(1);
                         }
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &all_charge_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                     }
                     current_edges.num_edges = 0;
                     if current_success != 0 {
@@ -13543,14 +12851,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             return Ok(());
                         }
                         let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                        ret = FillOutCMP2FHINCHI(
-                            heap,
-                            pStruct,
-                            &at2_snapshot,
-                            pVA,
-                            pInChI,
-                            &mut comparison,
-                        )?;
+                        ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                         if ret != 0 || comparison.bHasDifference == 0 {
                             return Ok(());
                         }
@@ -13562,8 +12863,7 @@ pub(crate) fn FixFixedHRestoredStructure(
         }
 
         // Complete translation of source case 14, ichirvr3.c:3696-4032.
-        let case_14_guard = (comparison.nNumTgInChI <= 1
-            && comparison.nNumRemHInChI > comparison.nNumRemHRevrs)
+        let case_14_guard = (comparison.nNumTgInChI <= 1 && comparison.nNumRemHInChI > comparison.nNumRemHRevrs)
             || comparison.len_c2at != 0;
         let has_nitrogen_five = if case_14_guard {
             let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
@@ -13606,8 +12906,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             };
             let mut nitrogen_five_atoms = [0_i16; MAX_DIFF_FIXH as usize];
             let mut number_nitrogen_five = 0_i32;
-            let mut max_success =
-                i32::from(comparison.nNumRemHInChI) - i32::from(comparison.nNumRemHRevrs);
+            let mut max_success = i32::from(comparison.nNumRemHInChI) - i32::from(comparison.nNumRemHRevrs);
             let mut x_atoms = EDGE_LIST::default();
             let mut nitrogen_three_atoms = EDGE_LIST::default();
             let _ = AllocEdgeList(heap, &mut x_atoms, EDGE_LIST_CLEAR)?;
@@ -13618,24 +12917,21 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let reversed_endpoint = !mobile_h_reversed.is_null()
                     && heap
                         .slice(mobile_h_reversed.as_const())?
@@ -13664,10 +12960,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let plus_state = if plus_edge >= 0 {
                     Some(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .clone(),
                     )
@@ -13692,10 +12985,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let upper_available = upper_edge != NO_VERTEX && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(upper_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(upper_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow == 0
                     };
@@ -13713,10 +13003,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let minus_state = if minus_edge >= 0 {
                         Some(
                             heap.slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .clone(),
                         )
@@ -13746,8 +13033,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let is_x = atom.chem_bonds_valence == atom.valence
                             && atom.charge == 0
                             && atom.radical == 0
-                            && ((valence.cNumValenceElectrons == 5
-                                && valence.cPeriodicRowNumber == 1)
+                            && ((valence.cNumValenceElectrons == 5 && valence.cPeriodicRowNumber == 1)
                                 || valence.cNumValenceElectrons == 6)
                             && atom.num_H != 0
                             && plus_state
@@ -13771,20 +13057,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 max_success = number_nitrogen_five.min(nitrogen_three_atoms.num_edges);
                 max_success = max_success.min(x_atoms.num_edges);
             }
-            if !leave_case
-                && number_nitrogen_five != 0
-                && nitrogen_three_atoms.num_edges != 0
-                && x_atoms.num_edges != 0
+            if !leave_case && number_nitrogen_five != 0 && nitrogen_three_atoms.num_edges != 0 && x_atoms.num_edges != 0
             {
                 let mut nitrogen_five_index = 0_i32;
-                while nitrogen_five_index < number_nitrogen_five
-                    && current_success < max_success
-                    && !leave_case
-                {
-                    let nitrogen_five_atom =
-                        i32::from(nitrogen_five_atoms[nitrogen_five_index as usize]);
-                    let nitrogen_five_atom_index = usize::try_from(nitrogen_five_atom)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while nitrogen_five_index < number_nitrogen_five && current_success < max_success && !leave_case {
+                    let nitrogen_five_atom = i32::from(nitrogen_five_atoms[nitrogen_five_index as usize]);
+                    let nitrogen_five_atom_index =
+                        usize::try_from(nitrogen_five_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let nitrogen_five_plus = pVA
                         .get(nitrogen_five_atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -13800,10 +13079,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && nitrogen_five_flower != NO_VERTEX
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(nitrogen_five_plus)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(nitrogen_five_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             == 1
@@ -13821,10 +13097,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         continue;
                     }
                     let mut nitrogen_three_list_index = nitrogen_three_atoms.num_edges - 1;
-                    while nitrogen_three_list_index >= 0
-                        && current_success < max_success
-                        && !leave_case
-                    {
+                    while nitrogen_three_list_index >= 0 && current_success < max_success && !leave_case {
                         let list_index = usize::try_from(nitrogen_three_list_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let nitrogen_three_atom = *heap
@@ -13841,9 +13114,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         };
                         let (nitrogen_three_minus, nitrogen_three_plus) =
                             if let Some(atom_index) = nitrogen_three_atom_index {
-                                let valence = pVA
-                                    .get(atom_index)
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 (
                                     valence.nCMinusGroupEdge.wrapping_sub(1),
                                     valence.nCPlusGroupEdge.wrapping_sub(1),
@@ -13882,18 +13153,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         let mut x_list_index = x_atoms.num_edges - 1;
                         while x_list_index >= 0 && current_success < max_success && !leave_case {
-                            let x_index = usize::try_from(x_list_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let x_index =
+                                usize::try_from(x_list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let x_atom = *heap
                                 .slice(x_atoms.pnEdges.as_const())?
                                 .get(x_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             ret = 0;
                             let x_atom_index = if x_atom != NO_VERTEX {
-                                Some(
-                                    usize::try_from(x_atom)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                Some(usize::try_from(x_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             } else {
                                 None
                             };
@@ -13909,10 +13177,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 && x_plus > 0
                                 && heap
                                     .slice(pBNS.edge.as_const())?
-                                    .get(
-                                        usize::try_from(x_plus)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(x_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .flow
                                     == 1;
@@ -13936,14 +13201,10 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let second_vertex = i32::from(flower_before.neighbor12) ^ first_vertex;
                             let first_vertex_data = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(first_vertex)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(first_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let mut adjacency_index =
-                                i32::from(first_vertex_data.num_adj_edges) - 1;
+                            let mut adjacency_index = i32::from(first_vertex_data.num_adj_edges) - 1;
                             let mut first_neighbor = None;
                             while adjacency_index >= 0 {
                                 let adjacent_edge_number = *heap
@@ -13972,21 +13233,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 adjacency_index -= 1;
                             }
-                            let Some((first_neighbor_edge, first_neighbor_vertex)) = first_neighbor
-                            else {
+                            let Some((first_neighbor_edge, first_neighbor_vertex)) = first_neighbor else {
                                 x_list_index -= 1;
                                 continue;
                             };
                             let second_vertex_data = heap
                                 .slice(pBNS.vert.as_const())?
-                                .get(
-                                    usize::try_from(second_vertex)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(second_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let mut adjacency_index =
-                                i32::from(second_vertex_data.num_adj_edges) - 1;
+                            let mut adjacency_index = i32::from(second_vertex_data.num_adj_edges) - 1;
                             let mut second_neighbor = None;
                             while adjacency_index >= 0 {
                                 let adjacent_edge_number = *heap
@@ -14015,15 +13271,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 adjacency_index -= 1;
                             }
-                            let Some((second_neighbor_edge, second_neighbor_vertex)) =
-                                second_neighbor
-                            else {
+                            let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor else {
                                 x_list_index -= 1;
                                 continue;
                             };
 
-                            heap.slice_mut(pBNS.edge)?[flower_index].flow =
-                                flower_before.flow.wrapping_add(1);
+                            heap.slice_mut(pBNS.edge)?[flower_index].flow = flower_before.flow.wrapping_add(1);
                             for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
@@ -14036,8 +13289,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
-                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex]
-                                {
+                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                                     let vertex = vertices
                                         .get_mut(
                                             usize::try_from(vertex_number)
@@ -14048,18 +13300,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                             }
                             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                            SetForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &all_charge_edges,
-                                forbidden_edge_mask,
-                            )?;
-                            SetForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &other_nitrogen_flower_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
+                            SetForbiddenEdgeMask(heap, pBNS, &other_nitrogen_flower_edges, forbidden_edge_mask)?;
                             for edge_number in [nitrogen_three_minus, x_plus] {
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
@@ -14068,8 +13310,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             }
                             let mut path_start = 0_i32;
                             let mut path_end = 0_i32;
@@ -14094,10 +13335,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 break;
                             }
                             if !(ret == 1
-                                && ((path_end == first_neighbor_vertex
-                                    && path_start == second_neighbor_vertex)
-                                    || (path_end == second_neighbor_vertex
-                                        && path_start == first_neighbor_vertex))
+                                && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                                    || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                                 && delta_charge == 2)
                             {
                                 ret = 0;
@@ -14110,8 +13349,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             }
                             {
                                 let flower = heap
@@ -14132,8 +13370,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             }
                             {
                                 let vertices = heap.slice_mut(pBNS.vert)?;
-                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex]
-                                {
+                                for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                                     let vertex = vertices
                                         .get_mut(
                                             usize::try_from(vertex_number)
@@ -14165,15 +13402,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 }
                                 {
                                     let vertices = heap.slice_mut(pBNS.vert)?;
-                                    for vertex_number in
-                                        [first_neighbor_vertex, second_neighbor_vertex]
-                                    {
-                                        let vertex =
-                                            vertices
-                                                .get_mut(usize::try_from(vertex_number).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
+                                        let vertex = vertices
+                                            .get_mut(
+                                                usize::try_from(vertex_number)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                                     }
                                 }
@@ -14186,8 +13421,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                         )
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                    edge.forbidden =
-                                        (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                                    edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                                 }
                                 path_start = 0;
                                 path_end = 0;
@@ -14208,20 +13442,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     &mut number_visited_atoms,
                                 )?;
                                 if ret == 1
-                                    && ((path_end == first_neighbor_vertex
-                                        && path_start == second_neighbor_vertex)
-                                        || (path_end == second_neighbor_vertex
-                                            && path_start == first_neighbor_vertex))
+                                    && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                                        || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                                     && delta_charge == 2
                                 {
-                                    ret = RunBnsRestoreOnce(
-                                        heap,
-                                        pBNS,
-                                        pBD,
-                                        pVA,
-                                        pTCGroups,
-                                        clock_result,
-                                    )?;
+                                    ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                     if ret > 0 {
                                         n_num_run_bns = n_num_run_bns.wrapping_add(1);
                                         current_success = current_success.wrapping_add(1);
@@ -14233,46 +13458,33 @@ pub(crate) fn FixFixedHRestoredStructure(
                                         .get_mut(flower_index)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     flower.flow = flower.flow.wrapping_sub(1);
-                                    for neighbor_edge in [first_neighbor_edge, second_neighbor_edge]
-                                    {
-                                        let edge =
-                                            heap.slice_mut(pBNS.edge)?
-                                                .get_mut(usize::try_from(neighbor_edge).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
+                                        let edge = heap
+                                            .slice_mut(pBNS.edge)?
+                                            .get_mut(
+                                                usize::try_from(neighbor_edge)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                         edge.flow = edge.flow.wrapping_add(1);
                                     }
                                     let vertices = heap.slice_mut(pBNS.vert)?;
-                                    for vertex_number in
-                                        [first_neighbor_vertex, second_neighbor_vertex]
-                                    {
-                                        let vertex =
-                                            vertices
-                                                .get_mut(usize::try_from(vertex_number).map_err(
-                                                    |_| SourceHeapError::PointerOutOfBounds,
-                                                )?)
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
+                                        let vertex = vertices
+                                            .get_mut(
+                                                usize::try_from(vertex_number)
+                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                            )
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                     }
                                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                                 }
                             }
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &all_charge_edges,
-                                forbidden_edge_mask,
-                            )?;
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &other_nitrogen_flower_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &other_nitrogen_flower_edges, forbidden_edge_mask)?;
                             if ret > 0 {
-                                nitrogen_five_atoms[nitrogen_five_index as usize] =
-                                    NO_VERTEX as i16;
+                                nitrogen_five_atoms[nitrogen_five_index as usize] = NO_VERTEX as i16;
                                 *heap
                                     .slice_mut(nitrogen_three_atoms.pnEdges)?
                                     .get_mut(list_index)
@@ -14303,12 +13515,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut x_atoms, EDGE_LIST_FREE)?;
             let _ = AllocEdgeList(heap, &mut nitrogen_three_atoms, EDGE_LIST_FREE)?;
             RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-            RemoveForbiddenEdgeMask(
-                heap,
-                pBNS,
-                &other_nitrogen_flower_edges,
-                forbidden_edge_mask,
-            )?;
+            RemoveForbiddenEdgeMask(heap, pBNS, &other_nitrogen_flower_edges, forbidden_edge_mask)?;
             current_edges.num_edges = 0;
             if ret < 0 {
                 return Ok(());
@@ -14354,8 +13561,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -14399,24 +13605,21 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let fixed_h = !pStruct.fixed_H.is_null()
                     && *heap
                         .slice(pStruct.fixed_H.as_const())?
@@ -14433,10 +13636,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let edge_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -14477,19 +13677,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_double_bond_charged
-                    && current_success < number_to_try
-                {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_double_bond_charged && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -14503,10 +13699,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
                     let first_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(first_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(first_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(first_vertex_data.num_adj_edges) - 1;
@@ -14514,10 +13707,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(first_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -14527,10 +13717,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if adjacent_edge.flow != 0 && adjacent_edge.forbidden == 0 {
-                            first_neighbor = Some((
-                                adjacent_edge_number,
-                                i32::from(adjacent_edge.neighbor12) ^ first_vertex,
-                            ));
+                            first_neighbor =
+                                Some((adjacent_edge_number, i32::from(adjacent_edge.neighbor12) ^ first_vertex));
                             break;
                         }
                         adjacency_index -= 1;
@@ -14541,10 +13729,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     };
                     let second_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(second_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(second_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(second_vertex_data.num_adj_edges) - 1;
@@ -14552,10 +13737,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(second_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -14573,8 +13755,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         adjacency_index -= 1;
                     }
-                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor
-                    else {
+                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor else {
                         candidate_index = candidate_index.wrapping_add(1);
                         continue;
                     };
@@ -14582,10 +13763,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
                         let adjacent_edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(neighbor_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         adjacent_edge.flow = adjacent_edge.flow.wrapping_sub(1);
                     }
@@ -14594,8 +13772,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -14621,10 +13798,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         &mut number_visited_atoms,
                     )?;
                     if ret == 1
-                        && ((path_end == first_neighbor_vertex
-                            && path_start == second_neighbor_vertex)
-                            || (path_end == second_neighbor_vertex
-                                && path_start == first_neighbor_vertex))
+                        && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                            || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                         && (delta_charge == 0 || delta_charge == 1)
                     {
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
@@ -14642,8 +13817,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let adjacent_edge = heap
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(
-                                    usize::try_from(neighbor_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             adjacent_edge.flow = adjacent_edge.flow.wrapping_add(1);
@@ -14652,8 +13826,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -14706,8 +13879,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -14744,11 +13916,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             };
             let mut current_success = 0_i32;
             let mut tgroup_index = 0_i32;
-            while tgroup_index < pStruct.ti.num_t_groups
-                && tgroup_index < pStruct.One_ti.num_t_groups
-            {
-                let group_index = usize::try_from(tgroup_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            while tgroup_index < pStruct.ti.num_t_groups && tgroup_index < pStruct.One_ti.num_t_groups {
+                let group_index = usize::try_from(tgroup_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let input_group = heap
                     .slice(pStruct.ti.t_group.as_const())?
                     .get(group_index)
@@ -14773,33 +13942,29 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let first_endpoint = i32::from(reversed_group.nFirstEndpointAtNoPos);
                 let mut endpoint_index = 0_i32;
                 while endpoint_index < i32::from(reversed_group.nNumEndpoints) {
-                    let endpoint_position =
-                        usize::try_from(first_endpoint.wrapping_add(endpoint_index))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let endpoint_position = usize::try_from(first_endpoint.wrapping_add(endpoint_index))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let canonical_number = i32::from(
                         *heap
                             .slice(pStruct.One_ti.nEndpointAtomNumber.as_const())?
                             .get(endpoint_position)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let input_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
                         .get(canonical_index)
@@ -14814,10 +13979,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let minus_available = minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -14831,10 +13993,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && !input_mobile_h
                         && minus_available
                     {
-                        double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] =
-                            atom_number as i16;
-                        number_double_bond_oxygen_neutral =
-                            number_double_bond_oxygen_neutral.wrapping_add(1);
+                        double_bond_oxygen_neutral[number_double_bond_oxygen_neutral as usize] = atom_number as i16;
+                        number_double_bond_oxygen_neutral = number_double_bond_oxygen_neutral.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             return Ok(());
@@ -14858,35 +14018,29 @@ pub(crate) fn FixFixedHRestoredStructure(
                             && !input_mobile_h
                             && minus_available
                         {
-                            single_bond_nitrogen_minus
-                                [number_single_bond_nitrogen_minus as usize] = atom_number as i16;
-                            number_single_bond_nitrogen_minus =
-                                number_single_bond_nitrogen_minus.wrapping_add(1);
+                            single_bond_nitrogen_minus[number_single_bond_nitrogen_minus as usize] = atom_number as i16;
+                            number_single_bond_nitrogen_minus = number_single_bond_nitrogen_minus.wrapping_add(1);
                         }
                     }
                     endpoint_index = endpoint_index.wrapping_add(1);
                 }
 
-                let number_to_try =
-                    number_single_bond_nitrogen_minus.min(number_double_bond_oxygen_neutral);
+                let number_to_try = number_single_bond_nitrogen_minus.min(number_double_bond_oxygen_neutral);
                 if number_to_try != 0 {
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                     RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                     let mut candidate_index = 0_i32;
-                    while candidate_index < number_single_bond_nitrogen_minus
-                        && current_success < number_to_try
-                    {
-                        let atom_index = usize::try_from(i32::from(
-                            single_bond_nitrogen_minus[candidate_index as usize],
-                        ))
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    while candidate_index < number_single_bond_nitrogen_minus && current_success < number_to_try {
+                        let atom_index =
+                            usize::try_from(i32::from(single_bond_nitrogen_minus[candidate_index as usize]))
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let minus_edge = pVA
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nCMinusGroupEdge
                             .wrapping_sub(1);
-                        let edge_index = usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -14951,8 +14105,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(edge_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                             edge.flow = edge.flow.wrapping_add(1);
                             let vertices = heap.slice_mut(pBNS.vert)?;
                             for vertex_number in [first_vertex, second_vertex] {
@@ -15012,14 +14165,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         return Ok(());
                     }
                     let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                    ret = FillOutCMP2FHINCHI(
-                        heap,
-                        pStruct,
-                        &at2_snapshot,
-                        pVA,
-                        pInChI,
-                        &mut comparison,
-                    )?;
+                    ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                     if ret != 0 || comparison.bHasDifference == 0 {
                         return Ok(());
                     }
@@ -15061,32 +14207,26 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                 let plus_available = plus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -15125,15 +14265,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && valence.cMetal == 0
                         && (valence.cNumValenceElectrons == 6
                             || valence.cNumValenceElectrons == 7
-                            || (valence.cNumValenceElectrons == 5
-                                && valence.cPeriodicRowNumber > 1))
+                            || (valence.cNumValenceElectrons == 5 && valence.cPeriodicRowNumber > 1))
                         && input_endpoint == 0
                         && !input_fixed_h
                         && !input_mobile_h
                         && plus_available
                     {
-                        single_bond_neutral[number_single_bond_neutral as usize] =
-                            atom_number as i16;
+                        single_bond_neutral[number_single_bond_neutral as usize] = atom_number as i16;
                         number_single_bond_neutral = number_single_bond_neutral.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, plus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
@@ -15145,26 +14283,20 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             let mut number_to_try = number_single_bond_neutral.min(number_double_bond_charged);
             if number_to_try != 0 {
-                number_to_try = number_to_try.min(
-                    i32::from(comparison.nNumRemHRevrs)
-                        .wrapping_sub(i32::from(comparison.nNumRemHInChI)),
-                );
+                number_to_try = number_to_try
+                    .min(i32::from(comparison.nNumRemHRevrs).wrapping_sub(i32::from(comparison.nNumRemHInChI)));
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_double_bond_charged
-                    && current_success < number_to_try
-                {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_double_bond_charged && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(double_bond_charged[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_number = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCPlusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -15178,10 +14310,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
                     let first_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(first_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(first_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(first_vertex_data.num_adj_edges) - 1;
@@ -15189,10 +14318,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(first_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -15202,10 +14328,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if adjacent_edge.flow != 0 && adjacent_edge.forbidden == 0 {
-                            first_neighbor = Some((
-                                adjacent_edge_number,
-                                i32::from(adjacent_edge.neighbor12) ^ first_vertex,
-                            ));
+                            first_neighbor =
+                                Some((adjacent_edge_number, i32::from(adjacent_edge.neighbor12) ^ first_vertex));
                             break;
                         }
                         adjacency_index -= 1;
@@ -15216,10 +14340,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     };
                     let second_vertex_data = heap
                         .slice(pBNS.vert.as_const())?
-                        .get(
-                            usize::try_from(second_vertex)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(second_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut adjacency_index = i32::from(second_vertex_data.num_adj_edges) - 1;
@@ -15227,10 +14348,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     while adjacency_index >= 0 {
                         let adjacent_edge_number = *heap
                             .slice(second_vertex_data.iedge.as_const())?
-                            .get(
-                                usize::try_from(adjacency_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(adjacency_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let adjacent_edge = heap
                             .slice(pBNS.edge.as_const())?
@@ -15248,8 +14366,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         adjacency_index -= 1;
                     }
-                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor
-                    else {
+                    let Some((second_neighbor_edge, second_neighbor_vertex)) = second_neighbor else {
                         candidate_index = candidate_index.wrapping_add(1);
                         continue;
                     };
@@ -15257,10 +14374,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     for neighbor_edge in [first_neighbor_edge, second_neighbor_edge] {
                         let adjacent_edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(neighbor_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         adjacent_edge.flow = adjacent_edge.flow.wrapping_sub(1);
                     }
@@ -15269,8 +14383,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -15296,10 +14409,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         &mut number_visited_atoms,
                     )?;
                     if ret == 1
-                        && ((path_end == first_neighbor_vertex
-                            && path_start == second_neighbor_vertex)
-                            || (path_end == second_neighbor_vertex
-                                && path_start == first_neighbor_vertex))
+                        && ((path_end == first_neighbor_vertex && path_start == second_neighbor_vertex)
+                            || (path_end == second_neighbor_vertex && path_start == first_neighbor_vertex))
                         && (delta_charge == 0 || delta_charge == 1)
                     {
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
@@ -15317,8 +14428,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let adjacent_edge = heap
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(
-                                    usize::try_from(neighbor_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(neighbor_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             adjacent_edge.flow = adjacent_edge.flow.wrapping_add(1);
@@ -15327,8 +14437,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_neighbor_vertex, second_neighbor_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -15381,8 +14490,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -15408,11 +14516,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             ret = 0;
             let mut tgroup_index = 0_i32;
-            while tgroup_index < pStruct.ti.num_t_groups
-                && tgroup_index < pStruct.One_ti.num_t_groups
-            {
-                let group_index = usize::try_from(tgroup_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            while tgroup_index < pStruct.ti.num_t_groups && tgroup_index < pStruct.One_ti.num_t_groups {
+                let group_index = usize::try_from(tgroup_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let input_group = heap
                     .slice(pStruct.ti.t_group.as_const())?
                     .get(group_index)
@@ -15434,25 +14539,23 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let first_endpoint = i32::from(input_group.nFirstEndpointAtNoPos);
                 let mut endpoint_index = 0_i32;
                 while endpoint_index < i32::from(input_group.nNumEndpoints) {
-                    let endpoint_position =
-                        usize::try_from(first_endpoint.wrapping_add(endpoint_index))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let endpoint_position = usize::try_from(first_endpoint.wrapping_add(endpoint_index))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let canonical_number = i32::from(
                         *heap
                             .slice(pStruct.ti.nEndpointAtomNumber.as_const())?
                             .get(endpoint_position)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let input_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
                         .get(canonical_index)
@@ -15464,25 +14567,18 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .endpoint
                             != 0;
-                    let canonical_valence = pVA
-                        .get(canonical_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_valence = pVA.get(canonical_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let atom_valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let atom_valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let plus_edge = atom_valence.nCPlusGroupEdge.wrapping_sub(1);
                     let plus_rejects = plus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             == 0;
@@ -15490,10 +14586,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let minus_available = minus_edge >= 0 && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow == 0
                     };
@@ -15522,39 +14615,31 @@ pub(crate) fn FixFixedHRestoredStructure(
             if max_success != 0 {
                 let mut canonical_number = 0_i32;
                 while canonical_number < pStruct.num_atoms && current_success < max_success {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let input_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let canonical_valence = pVA
-                        .get(canonical_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_valence = pVA.get(canonical_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let atom_valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let atom_valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let minus_edge = atom_valence.nCMinusGroupEdge.wrapping_sub(1);
                     let minus_rejects = minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             == 0;
@@ -15562,10 +14647,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let plus_available = plus_edge >= 0 && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow == 1
                     };
@@ -15582,15 +14664,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                     }
 
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                    SetForbiddenEdgeMask(
-                        heap,
-                        pBNS,
-                        &other_nitrogen_flower_edges,
-                        forbidden_edge_mask,
-                    )?;
+                    SetForbiddenEdgeMask(heap, pBNS, &other_nitrogen_flower_edges, forbidden_edge_mask)?;
                     RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
-                    let edge_index = usize::try_from(plus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -15608,8 +14684,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -15645,14 +14720,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                             current_success = current_success.wrapping_add(1);
                         }
                     } else {
-                        heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                            edge_before.flow.wrapping_add(0);
+                        heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_add(0);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -15664,12 +14737,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
 
             RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-            RemoveForbiddenEdgeMask(
-                heap,
-                pBNS,
-                &other_nitrogen_flower_edges,
-                forbidden_edge_mask,
-            )?;
+            RemoveForbiddenEdgeMask(heap, pBNS, &other_nitrogen_flower_edges, forbidden_edge_mask)?;
             current_edges.num_edges = 0;
             if ret < 0 {
                 return Ok(());
@@ -15715,8 +14783,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -15728,12 +14795,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -15741,17 +14807,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut is_candidate = false;
                 if difference.nValElectr == 6 {
-                    let valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let oxygen_plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                     let oxygen_plus_available = oxygen_plus_edge >= 0 && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(oxygen_plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(oxygen_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow != 0
                     };
@@ -15766,9 +14827,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && atom.valence == atom.chem_bonds_valence
                     {
                         let metal_index = usize::from(atom.neighbor[0]);
-                        let metal_valence = pVA
-                            .get(metal_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let metal_valence = pVA.get(metal_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if metal_valence.cMetal != 0 {
                             let metal_plus_edge = metal_valence.nCPlusGroupEdge.wrapping_sub(1);
                             let metal_plus_available = metal_plus_edge >= 0
@@ -15782,8 +14841,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                     .forbidden
                                     == 0;
                             if metal_plus_available {
-                                let metal_minus_edge =
-                                    metal_valence.nCMinusGroupEdge.wrapping_sub(1);
+                                let metal_minus_edge = metal_valence.nCMinusGroupEdge.wrapping_sub(1);
                                 let metal_minus_available = metal_minus_edge >= 0
                                     && heap
                                         .slice(pBNS.edge.as_const())?
@@ -15835,21 +14893,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                 while candidate_index < current_edges.num_edges {
                     let atom_number = *heap
                         .slice(current_edges.pnEdges.as_const())?
-                        .get(
-                            usize::try_from(candidate_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(candidate_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let metal_number = i32::from(atom.neighbor[0]);
-                    let metal_index = usize::try_from(metal_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let metal_index = usize::try_from(metal_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let oxygen_plus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -15877,33 +14930,22 @@ pub(crate) fn FixFixedHRestoredStructure(
                     for edge_number in [metal_plus_edge, metal_minus_edge, metal_bond_edge] {
                         let edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                     }
                     let metal_plus = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(metal_plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(metal_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let metal_minus = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(metal_minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(metal_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let charge_on_metal = (i32::from(metal_plus.cap)
-                        .wrapping_sub(i32::from(metal_plus.flow)))
-                    .wrapping_sub(i32::from(metal_minus.flow));
+                    let charge_on_metal = (i32::from(metal_plus.cap).wrapping_sub(i32::from(metal_plus.flow)))
+                        .wrapping_sub(i32::from(metal_minus.flow));
                     let expected_delta_charge = if charge_on_metal == 1 {
                         -1
                     } else if charge_on_metal == 0 {
@@ -15911,8 +14953,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     } else {
                         0
                     };
-                    let oxygen_plus_index = usize::try_from(oxygen_plus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let oxygen_plus_index =
+                        usize::try_from(oxygen_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(oxygen_plus_index)
@@ -15924,15 +14966,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                     }
                     let first_vertex = i32::from(edge_before.neighbor1);
                     let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                    heap.slice_mut(pBNS.edge)?[oxygen_plus_index].flow =
-                        edge_before.flow.wrapping_sub(1);
+                    heap.slice_mut(pBNS.edge)?[oxygen_plus_index].flow = edge_before.flow.wrapping_sub(1);
                     {
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -15968,14 +15008,12 @@ pub(crate) fn FixFixedHRestoredStructure(
                             current_success = current_success.wrapping_add(1);
                         }
                     } else {
-                        heap.slice_mut(pBNS.edge)?[oxygen_plus_index].flow =
-                            edge_before.flow.wrapping_add(0);
+                        heap.slice_mut(pBNS.edge)?[oxygen_plus_index].flow = edge_before.flow.wrapping_add(0);
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -15985,10 +15023,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     for edge_number in [metal_plus_edge, metal_minus_edge, metal_bond_edge] {
                         let edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                     }
@@ -16039,14 +15074,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         return Ok(());
                     }
                     let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                    ret = FillOutCMP2FHINCHI(
-                        heap,
-                        pStruct,
-                        &at2_snapshot,
-                        pVA,
-                        pInChI,
-                        &mut comparison,
-                    )?;
+                    ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                     if ret != 0 || comparison.bHasDifference == 0 {
                         return Ok(());
                     }
@@ -16065,12 +15093,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -16084,10 +15111,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let minus_state = if minus_edge >= 0 {
                     Some(
                         heap.slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
@@ -16106,8 +15130,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && difference.nFixHRevrs == 0
                     && difference.nAtChargeRevrs == 0
                     && atom.num_H == 0
-                    && i32::from(atom.valence).wrapping_add(1)
-                        == i32::from(atom.chem_bonds_valence);
+                    && i32::from(atom.valence).wrapping_add(1) == i32::from(atom.chem_bonds_valence);
                 if double_bond_candidate {
                     double_bond_nitrogen[number_double_bond_nitrogen as usize] = atom_number as i16;
                     number_double_bond_nitrogen = number_double_bond_nitrogen.wrapping_add(1);
@@ -16131,10 +15154,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && atom.valence == 1
                     && atom.chem_bonds_valence == 1
                 {
-                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                        atom_number as i16;
-                    number_single_bond_oxygen_minus =
-                        number_single_bond_oxygen_minus.wrapping_add(1);
+                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
+                    number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                 }
                 difference_index = difference_index.wrapping_add(1);
             }
@@ -16142,8 +15163,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             if number_double_bond_nitrogen == 0 {
                 let mut canonical_number = 0_i32;
                 while canonical_number < pStruct.num_atoms {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let input_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
                         .get(canonical_index)
@@ -16158,16 +15179,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let valence = pVA
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let input_fixed_h = !pStruct.fixed_H.is_null()
                         && *heap
                             .slice(pStruct.fixed_H.as_const())?
@@ -16178,24 +15196,19 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let minus_available = minus_edge >= 0 && {
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden == 0 && edge.flow == 0
                     };
                     if number_double_bond_nitrogen < MAX_DIFF_FIXH as i32
                         && atom.charge == 0
                         && atom.num_H == 0
-                        && i32::from(atom.valence).wrapping_add(1)
-                            == i32::from(atom.chem_bonds_valence)
+                        && i32::from(atom.valence).wrapping_add(1) == i32::from(atom.chem_bonds_valence)
                         && valence.cMetal == 0
                         && !input_fixed_h
                         && minus_available
                     {
-                        double_bond_nitrogen[number_double_bond_nitrogen as usize] =
-                            atom_number as i16;
+                        double_bond_nitrogen[number_double_bond_nitrogen as usize] = atom_number as i16;
                         number_double_bond_nitrogen = number_double_bond_nitrogen.wrapping_add(1);
                         ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
@@ -16211,20 +15224,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_single_bond_oxygen_minus
-                    && current_success < number_to_try
-                {
-                    let atom_index = usize::try_from(i32::from(
-                        single_bond_oxygen_minus[candidate_index as usize],
-                    ))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_single_bond_oxygen_minus && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(single_bond_oxygen_minus[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(minus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -16242,8 +15250,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -16284,8 +15291,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -16338,8 +15344,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -16371,12 +15376,11 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -16390,10 +15394,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let minus_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -16422,8 +15423,8 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while number_double_bond_oxygen != 0 && canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let input_endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -16438,16 +15439,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let reversed_endpoint = !mobile_h_reversed.is_null()
                     && heap
                         .slice(mobile_h_reversed.as_const())?
@@ -16465,10 +15463,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let minus_available = minus_edge >= 0 && {
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.forbidden == 0 && edge.flow != 0
                 };
@@ -16499,8 +15494,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         canonical_number = canonical_number.wrapping_add(1);
                         continue;
                     }
-                    let central_index = usize::try_from(central_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let central_index =
+                        usize::try_from(central_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let central_at = heap
                         .slice(at.as_const())?
                         .get(central_index)
@@ -16519,16 +15514,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut number_negative_endpoints = 0_i32;
                     let mut neighbor_index = 0_i32;
                     while neighbor_index < i32::from(central_at.valence) {
-                        let neighbor_position = usize::try_from(neighbor_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_position =
+                            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let bond_type = i32::from(central_at2.bond_type[neighbor_position]);
                         let neighbor_number = i32::from(central_at2.neighbor[neighbor_position]);
                         if neighbor_number == canonical_number {
                             neighbor_index = neighbor_index.wrapping_add(1);
                             continue;
                         }
-                        let neighbor_index_usize = usize::try_from(neighbor_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_index_usize =
+                            usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_input_endpoint = *heap
                             .slice(pStruct.endpoint.as_const())?
                             .get(neighbor_index_usize)
@@ -16562,22 +15557,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         neighbor_index = neighbor_index.wrapping_add(1);
                     }
-                    let _ = (
-                        number_other_single_bonds,
-                        number_other_bonds,
-                        number_negative_endpoints,
-                    );
+                    let _ = (number_other_single_bonds, number_other_bonds, number_negative_endpoints);
                     if number_tautomer_single_bonds == 0
                         || !(number_other_double_bonds != 0 && number_tautomer_double_bonds != 0)
                     {
                         canonical_number = canonical_number.wrapping_add(1);
                         continue;
                     }
-                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] =
-                        atom_number as i16;
+                    single_bond_oxygen_minus[number_single_bond_oxygen_minus as usize] = atom_number as i16;
                     central_atoms[number_single_bond_oxygen_minus as usize] = central_number as i16;
-                    number_single_bond_oxygen_minus =
-                        number_single_bond_oxygen_minus.wrapping_add(1);
+                    number_single_bond_oxygen_minus = number_single_bond_oxygen_minus.wrapping_add(1);
                 }
                 canonical_number = canonical_number.wrapping_add(1);
             }
@@ -16587,20 +15576,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_single_bond_oxygen_minus
-                    && current_success < number_to_try
-                {
-                    let atom_index = usize::try_from(i32::from(
-                        single_bond_oxygen_minus[candidate_index as usize],
-                    ))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_single_bond_oxygen_minus && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(single_bond_oxygen_minus[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
-                    let edge_index = usize::try_from(minus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -16625,8 +15609,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -16667,8 +15650,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -16721,8 +15703,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -16756,28 +15737,22 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut difference_index = 0_i32;
             while !leave_case && difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                 let minus_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -16790,18 +15765,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                 {
                     let edge_flow = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .flow;
                     let central_number = i32::from(atom.neighbor[0]);
-                    let central_index = usize::try_from(central_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let central_valence = pVA
-                        .get(central_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let central_index =
+                        usize::try_from(central_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let central_valence = pVA.get(central_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let central_atom = heap
                         .slice(at2.as_const())?
                         .get(central_index)
@@ -16827,10 +15797,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let difference_atom = heap
                             .slice(at2.as_const())?
-                            .get(
-                                usize::try_from(difference_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut number_tautomer_single_bonds = 0_i32;
@@ -16842,17 +15809,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let mut number_endpoint_oxygen = 0_i32;
                         let mut neighbor_index = 0_i32;
                         while neighbor_index < i32::from(central_original.valence) {
-                            let neighbor_position = usize::try_from(neighbor_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let neighbor_position =
+                                usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let bond_type = i32::from(central_atom.bond_type[neighbor_position]);
-                            let neighbor_number =
-                                i32::from(central_atom.neighbor[neighbor_position]);
+                            let neighbor_number = i32::from(central_atom.neighbor[neighbor_position]);
                             if neighbor_number == atom_number {
                                 neighbor_index = neighbor_index.wrapping_add(1);
                                 continue;
                             }
-                            let neighbor_atom_index = usize::try_from(neighbor_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let neighbor_atom_index =
+                                usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let neighbor_mobile_endpoint = heap
                                 .slice(mobile_h_reversed.as_const())?
                                 .get(neighbor_atom_index)
@@ -16865,24 +15831,18 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let neighbor_valence = pVA
                                 .get(neighbor_atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            if difference.endptRevrs == neighbor_mobile_endpoint
-                                && neighbor_atom.endpoint == 0
-                            {
+                            if difference.endptRevrs == neighbor_mobile_endpoint && neighbor_atom.endpoint == 0 {
                                 number_tautomer_single_bonds = number_tautomer_single_bonds
                                     .wrapping_add(i32::from(bond_type == BOND_TYPE_SINGLE as i32));
                                 number_tautomer_double_bonds = number_tautomer_double_bonds
                                     .wrapping_add(i32::from(bond_type == BOND_TYPE_DOUBLE as i32));
-                                number_endpoint_oxygen =
-                                    number_endpoint_oxygen.wrapping_add(i32::from(
-                                        neighbor_valence.cNumValenceElectrons == 6
-                                            && neighbor_atom.valence == 1,
-                                    ));
+                                number_endpoint_oxygen = number_endpoint_oxygen.wrapping_add(i32::from(
+                                    neighbor_valence.cNumValenceElectrons == 6 && neighbor_atom.valence == 1,
+                                ));
                             } else if bond_type == BOND_TYPE_DOUBLE as i32 {
-                                number_other_double_bonds =
-                                    number_other_double_bonds.wrapping_add(1);
+                                number_other_double_bonds = number_other_double_bonds.wrapping_add(1);
                             } else if bond_type == BOND_TYPE_SINGLE as i32 {
-                                number_other_single_bonds =
-                                    number_other_single_bonds.wrapping_add(1);
+                                number_other_single_bonds = number_other_single_bonds.wrapping_add(1);
                             } else {
                                 number_other_bonds = number_other_bonds.wrapping_add(1);
                             }
@@ -16891,16 +15851,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 && neighbor_atom.charge == -1
                                 && neighbor_valence.cNumValenceElectrons == 6
                             {
-                                number_negative_endpoints =
-                                    number_negative_endpoints.wrapping_add(1);
+                                number_negative_endpoints = number_negative_endpoints.wrapping_add(1);
                             }
                             neighbor_index = neighbor_index.wrapping_add(1);
                         }
-                        let _ = (
-                            number_other_single_bonds,
-                            number_other_bonds,
-                            number_negative_endpoints,
-                        );
+                        let _ = (number_other_single_bonds, number_other_bonds, number_negative_endpoints);
                         if number_endpoint_oxygen == 0
                             || number_tautomer_single_bonds
                                 .wrapping_add(number_tautomer_double_bonds)
@@ -16913,13 +15868,12 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                         neighbor_index = 0;
                         while neighbor_index < i32::from(central_original.valence) && !leave_case {
-                            let neighbor_position = usize::try_from(neighbor_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let neighbor_position =
+                                usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let bond_type = i32::from(central_atom.bond_type[neighbor_position]);
-                            let neighbor_number =
-                                i32::from(central_atom.neighbor[neighbor_position]);
-                            let neighbor_atom_index = usize::try_from(neighbor_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let neighbor_number = i32::from(central_atom.neighbor[neighbor_position]);
+                            let neighbor_atom_index =
+                                usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let neighbor_mobile_endpoint = heap
                                 .slice(mobile_h_reversed.as_const())?
                                 .get(neighbor_atom_index)
@@ -16932,8 +15886,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             let neighbor_valence = pVA
                                 .get(neighbor_atom_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let neighbor_minus_edge =
-                                neighbor_valence.nCMinusGroupEdge.wrapping_sub(1);
+                            let neighbor_minus_edge = neighbor_valence.nCMinusGroupEdge.wrapping_sub(1);
                             let neighbor_minus_available = neighbor_minus_edge >= 0
                                 && heap
                                     .slice(pBNS.edge.as_const())?
@@ -16989,20 +15942,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                             neighbor_index = neighbor_index.wrapping_add(1);
                         }
                         if !leave_case {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut central_sulfur,
-                                central_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut central_sulfur, central_number, INC_ADD_EDGE)?;
                             if ret != 0 {
                                 leave_case = true;
                             }
                         }
                     } else if atom.charge == 0
                         && edge_flow == 0
-                        && i32::from(atom.valence).wrapping_add(1)
-                            == i32::from(atom.chem_bonds_valence)
+                        && i32::from(atom.valence).wrapping_add(1) == i32::from(atom.chem_bonds_valence)
                     {
                         ret = AddToEdgeList(heap, &mut current_edges, minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
@@ -17018,10 +15965,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 while index < other_sulfur_oxygen.num_edges {
                     let edge_number = *heap
                         .slice(other_sulfur_oxygen.pnEdges.as_const())?
-                        .get(
-                            usize::try_from(index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let _ = RemoveFromEdgeListByValue(heap, &mut current_edges, edge_number)?;
                     index = index.wrapping_add(1);
@@ -17031,18 +15975,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                     SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                     RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                     let mut candidate_index = 0_i32;
-                    while candidate_index < sulfur_oxygen_minus.num_edges
-                        && current_success < number_to_try
-                    {
+                    while candidate_index < sulfur_oxygen_minus.num_edges && current_success < number_to_try {
                         let edge_number = *heap
                             .slice(sulfur_oxygen_minus.pnEdges.as_const())?
-                            .get(
-                                usize::try_from(candidate_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(candidate_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let edge_index = usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let edge_before = heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -17054,8 +15993,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         let first_vertex = i32::from(edge_before.neighbor1);
                         let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                        heap.slice_mut(pBNS.edge)?[edge_index].flow =
-                            edge_before.flow.wrapping_sub(1);
+                        heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(1);
                         {
                             let vertices = heap.slice_mut(pBNS.vert)?;
                             for vertex_number in [first_vertex, second_vertex] {
@@ -17163,8 +16101,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -17188,12 +16125,11 @@ pub(crate) fn FixFixedHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -17207,10 +16143,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 let minus_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -17235,32 +16168,26 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while number_double_bond_oxygen != 0 && canonical_number < pStruct.num_atoms {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                 let minus_available = minus_edge >= 0 && {
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.forbidden == 0 && edge.flow != 0
                 };
@@ -17297,9 +16224,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         && second_nitrogen.chem_bonds_valence == 4
                     {
                         let carbon_neighbor_index = usize::from(
-                            second_nitrogen.neighbor[usize::from(
-                                second_nitrogen.neighbor[0] as usize == second_nitrogen_index,
-                            )],
+                            second_nitrogen.neighbor
+                                [usize::from(second_nitrogen.neighbor[0] as usize == second_nitrogen_index)],
                         );
                         chain_matches = pVA
                             .get(carbon_neighbor_index)
@@ -17322,11 +16248,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
-                while candidate_index < number_double_bond_oxygen && current_success < number_to_try
-                {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_oxygen[candidate_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                while candidate_index < number_double_bond_oxygen && current_success < number_to_try {
+                    let atom_index = usize::try_from(i32::from(double_bond_oxygen[candidate_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let target_minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -17341,8 +16265,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .slice(atom_vertex.iedge.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let bond_edge_index = usize::try_from(bond_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let bond_edge_index =
+                        usize::try_from(bond_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -17363,20 +16287,17 @@ pub(crate) fn FixFixedHRestoredStructure(
                         edge.flow = edge.flow.wrapping_sub(1);
                         let target_edge = edges
                             .get_mut(
-                                usize::try_from(target_minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(target_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        target_edge.forbidden =
-                            (i32::from(target_edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        target_edge.forbidden = (i32::from(target_edge.forbidden) & forbidden_edge_mask_inv) as i8;
                     }
                     {
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -17417,8 +16338,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -17430,16 +16350,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let edge = edges
                             .get_mut(bond_edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         let target_edge = edges
                             .get_mut(
-                                usize::try_from(target_minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(target_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        target_edge.forbidden =
-                            (i32::from(target_edge.forbidden) | forbidden_edge_mask) as i8;
+                        target_edge.forbidden = (i32::from(target_edge.forbidden) | forbidden_edge_mask) as i8;
                     }
                     candidate_index = candidate_index.wrapping_add(1);
                 }
@@ -17487,8 +16404,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -17544,36 +16460,29 @@ pub(crate) fn FixFixedHRestoredStructure(
             } else {
                 SourceMutPointer::null()
             };
-            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] =
-                std::array::from_fn(|_| EDGE_LIST::default());
+            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] = std::array::from_fn(|_| EDGE_LIST::default());
             current_edges.num_edges = 0;
             let mut current_success = 0_i32;
             let mut leave_case = false;
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) && !leave_case {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                 let minus_available = minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -17603,8 +16512,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         == 5
                         && nitrogen.valence == 3
                         && (nitrogen.charge == 0 || nitrogen.charge == 1)
-                        && i32::from(nitrogen.chem_bonds_valence)
-                            == 5_i32.wrapping_sub(i32::from(nitrogen.charge))
+                        && i32::from(nitrogen.chem_bonds_valence) == 5_i32.wrapping_sub(i32::from(nitrogen.charge))
                     {
                         dioxide_center = Some(nitrogen_index);
                     }
@@ -17619,15 +16527,15 @@ pub(crate) fn FixFixedHRestoredStructure(
                     let mut number_others = 0_i32;
                     let mut neighbor_index = 0_i32;
                     while neighbor_index < i32::from(nitrogen.valence) {
-                        let position = usize::try_from(neighbor_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let position =
+                            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_number = i32::from(nitrogen.neighbor[position]);
                         if neighbor_number == atom_number {
                             neighbor_index = neighbor_index.wrapping_add(1);
                             continue;
                         }
-                        let neighbor_atom_index = usize::try_from(neighbor_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_atom_index =
+                            usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_atom = heap
                             .slice(at2.as_const())?
                             .get(neighbor_atom_index)
@@ -17653,8 +16561,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             && neighbor_atom.num_H == 0
                             && neighbor_atom.radical == 0
                             && (neighbor_atom.charge == 0 || neighbor_atom.charge == -1)
-                            && i32::from(neighbor_atom.chem_bonds_valence)
-                                .wrapping_sub(i32::from(neighbor_atom.charge))
+                            && i32::from(neighbor_atom.chem_bonds_valence).wrapping_sub(i32::from(neighbor_atom.charge))
                                 == 2
                         {
                             number_oxygen = number_oxygen.wrapping_add(1);
@@ -17670,24 +16577,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let nitrogen_number = nitrogen_index as i32;
                         let mut duplicate_index = 0_i32;
                         while duplicate_index < number_double_bond_oxygen
-                            && i32::from(nitrogen_dioxide[duplicate_index as usize])
-                                != nitrogen_number
+                            && i32::from(nitrogen_dioxide[duplicate_index as usize]) != nitrogen_number
                         {
                             duplicate_index = duplicate_index.wrapping_add(1);
                         }
                         if duplicate_index == number_double_bond_oxygen {
-                            nitrogen_dioxide[number_double_bond_oxygen as usize] =
-                                nitrogen_number as i16;
-                            double_bond_oxygen[number_double_bond_oxygen as usize] =
-                                atom_number as i16;
+                            nitrogen_dioxide[number_double_bond_oxygen as usize] = nitrogen_number as i16;
+                            double_bond_oxygen[number_double_bond_oxygen as usize] = atom_number as i16;
                             number_double_bond_oxygen = number_double_bond_oxygen.wrapping_add(1);
                         }
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut changeable_edges[CHG_SET_O_FIXED],
-                            minus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut changeable_edges[CHG_SET_O_FIXED], minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             leave_case = true;
                         }
@@ -17699,24 +16598,21 @@ pub(crate) fn FixFixedHRestoredStructure(
             if number_double_bond_oxygen != 0 && !leave_case {
                 let mut canonical_number = 0_i32;
                 while canonical_number < pStruct.num_atoms && !leave_case {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let canonical_valence = pVA
-                        .get(canonical_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_valence = pVA.get(canonical_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut nitrogen_match = None;
                     if *heap
                         .slice(pStruct.endpoint.as_const())?
@@ -17733,9 +16629,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .nCMinusGroupEdge
                             .wrapping_sub(1);
                         if atom_minus_edge >= 0
-                            && i32::from(atom.num_H)
-                                .wrapping_add(i32::from(atom.chem_bonds_valence))
-                                == 2
+                            && i32::from(atom.num_H).wrapping_add(i32::from(atom.chem_bonds_valence)) == 2
                         {
                             let nitrogen_index = usize::from(atom.neighbor[0]);
                             if pVA
@@ -17784,8 +16678,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let mut number_others = 0_i32;
                         let mut neighbor_index = 0_i32;
                         while neighbor_index < i32::from(nitrogen.valence) {
-                            let position = usize::try_from(neighbor_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let position =
+                                usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let neighbor_atom_index = usize::from(nitrogen.neighbor[position]);
                             if neighbor_atom_index == atom_index {
                                 neighbor_index = neighbor_index.wrapping_add(1);
@@ -17837,8 +16731,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             if ret != 0 {
                                 leave_case = true;
                             } else {
-                                let flower_edge =
-                                    GetChargeFlowerUpperEdge(heap, pBNS, pVA, nitrogen_plus_edge)?;
+                                let flower_edge = GetChargeFlowerUpperEdge(heap, pBNS, pVA, nitrogen_plus_edge)?;
                                 if flower_edge != NO_VERTEX {
                                     ret = AddToEdgeList(
                                         heap,
@@ -17866,16 +16759,15 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                 canonical_number = 0;
                 while canonical_number < pStruct.num_atoms && !leave_case {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom_number = i32::from(
                         *heap
                             .slice(canonical_to_atom.as_const())?
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
@@ -17903,9 +16795,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     };
                     let wrong_tautomer = atom.charge == -1
                         && input_endpoint == 0
-                        && reversed_mobile_atom.is_some_and(|mobile| {
-                            mobile.endpoint != 0 || atom.num_H < mobile.num_H
-                        });
+                        && reversed_mobile_atom.is_some_and(|mobile| mobile.endpoint != 0 || atom.num_H < mobile.num_H);
                     let normalized_fixed = atom.charge == -1
                         && input_endpoint != 0
                         && !reversed_endpoint
@@ -17932,16 +16822,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nCMinusGroupEdge
                             .wrapping_sub(1);
-                        if minus_edge >= 0
-                            && FindInEdgeList(heap, &changeable_edges[CHG_SET_O_FIXED], minus_edge)?
-                                < 0
+                        if minus_edge >= 0 && FindInEdgeList(heap, &changeable_edges[CHG_SET_O_FIXED], minus_edge)? < 0
                         {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if edge.forbidden == 0 && edge.flow != 0 {
                                 ret = AddToEdgeList(
@@ -17969,8 +16854,8 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                 canonical_number = 0;
                 while canonical_number < pStruct.num_atoms && !leave_case {
-                    let canonical_index = usize::try_from(canonical_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let canonical_index =
+                        usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let input_endpoint = *heap
                         .slice(pStruct.endpoint.as_const())?
                         .get(canonical_index)
@@ -17988,8 +16873,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .get(canonical_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    let atom_index = usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
@@ -18003,25 +16887,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                         if minus_edge >= 0 {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if edge.forbidden == 0
                                 && edge.flow != 0
-                                && FindInEdgeList(
-                                    heap,
-                                    &changeable_edges[CHG_SET_O_FIXED],
-                                    minus_edge,
-                                )? < 0
+                                && FindInEdgeList(heap, &changeable_edges[CHG_SET_O_FIXED], minus_edge)? < 0
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut changeable_edges[CHG_SET_TAUT],
-                                    minus_edge,
-                                    INC_ADD_EDGE,
-                                )?;
+                                ret =
+                                    AddToEdgeList(heap, &mut changeable_edges[CHG_SET_TAUT], minus_edge, INC_ADD_EDGE)?;
                                 if ret != 0 {
                                     leave_case = true;
                                 }
@@ -18033,9 +16906,8 @@ pub(crate) fn FixFixedHRestoredStructure(
 
                 let mut target_index = 0_i32;
                 while target_index < number_double_bond_oxygen && !leave_case {
-                    let atom_index =
-                        usize::try_from(i32::from(double_bond_oxygen[target_index as usize]))
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(i32::from(double_bond_oxygen[target_index as usize]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let target_minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -18050,8 +16922,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .slice(atom_vertex.iedge.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let bond_edge_index = usize::try_from(bond_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let bond_edge_index =
+                        usize::try_from(bond_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -18076,8 +16948,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -18093,21 +16964,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                         let expected_delta_charge = if set_index == CHG_SET_NOOH { 2 } else { 0 };
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &changeable_edges[set_index],
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &changeable_edges[set_index], forbidden_edge_mask)?;
                         let target_edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(
-                                usize::try_from(target_minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(target_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        target_edge.forbidden =
-                            (i32::from(target_edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        target_edge.forbidden = (i32::from(target_edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         let mut path_start = 0_i32;
                         let mut path_end = 0_i32;
                         let mut path_length = 0_i32;
@@ -18146,8 +17010,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .slice_mut(pBNS.edge)?
                             .get_mut(bond_edge_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        edge.forbidden =
-                            (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                     }
                     if one_success == 0 {
                         heap.slice_mut(pBNS.edge)?[bond_edge_index].flow = edge_before.flow;
@@ -18155,8 +17018,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -18212,8 +17074,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -18247,36 +17108,29 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at_fixed_bonds
             };
-            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] =
-                std::array::from_fn(|_| EDGE_LIST::default());
+            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] = std::array::from_fn(|_| EDGE_LIST::default());
             current_edges.num_edges = 0;
             let mut current_success = 0_i32;
             let mut leave_case = false;
 
             let mut difference_index = 0_i32;
             while difference_index < i32::from(comparison.len_c2at) && !leave_case {
-                let difference = comparison.c2at[usize::try_from(difference_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                let difference = comparison.c2at
+                    [usize::try_from(difference_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
                 let atom_number = i32::from(difference.atomNumber);
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let input_minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                 let input_minus_available = input_minus_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(input_minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(input_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -18293,9 +17147,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                     && atom.valence == 2
                     && atom.chem_bonds_valence == 3
                 {
-                    let nitrogen_index = usize::from(
-                        atom.neighbor[usize::from(atom.bond_type[0] != BOND_TYPE_DOUBLE as u8)],
-                    );
+                    let nitrogen_index =
+                        usize::from(atom.neighbor[usize::from(atom.bond_type[0] != BOND_TYPE_DOUBLE as u8)]);
                     let nitrogen = heap
                         .slice(at2.as_const())?
                         .get(nitrogen_index)
@@ -18319,18 +17172,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                         if plus_edge >= 0 {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(plus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if edge.forbidden == 0
                                 && edge.flow != 0
-                                && FindInEdgeList(
-                                    heap,
-                                    &changeable_edges[CHG_SET_AVOID],
-                                    plus_edge,
-                                )? < 0
+                                && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], plus_edge)? < 0
                             {
                                 first_kind = Some(plus_edge);
                             }
@@ -18348,12 +17194,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         (CHG_SET_AVOID, flower_edge),
                     ] {
                         if ret == 0 {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut changeable_edges[list_index],
-                                edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut changeable_edges[list_index], edge_number, INC_ADD_EDGE)?;
                         }
                     }
                     if ret != 0 {
@@ -18363,17 +17204,10 @@ pub(crate) fn FixFixedHRestoredStructure(
                         if raw_minus_edge >= 0 {
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(raw_minus_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(raw_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if edge.forbidden == 0
-                                && FindInEdgeList(
-                                    heap,
-                                    &changeable_edges[CHG_SET_AVOID],
-                                    raw_minus_edge,
-                                )? < 0
+                                && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], raw_minus_edge)? < 0
                             {
                                 ret = AddToEdgeList(
                                     heap,
@@ -18407,8 +17241,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if fixed_atom.valence == 2 && fixed_atom.chem_bonds_valence == 3 {
                         let nitrogen_index = usize::from(
-                            fixed_atom.neighbor
-                                [usize::from(fixed_atom.bond_type[0] != BOND_TYPE_DOUBLE as u8)],
+                            fixed_atom.neighbor[usize::from(fixed_atom.bond_type[0] != BOND_TYPE_DOUBLE as u8)],
                         );
                         let nitrogen = heap
                             .slice(at2.as_const())?
@@ -18422,10 +17255,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(input_minus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(input_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if pVA
                             .get(nitrogen_index)
@@ -18440,11 +17270,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             && nitrogen.radical == 0
                             && edge.forbidden == 0
                             && edge.flow != 0
-                            && FindInEdgeList(
-                                heap,
-                                &changeable_edges[CHG_SET_AVOID],
-                                input_minus_edge,
-                            )? < 0
+                            && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], input_minus_edge)? < 0
                         {
                             for (list_index, edge_number) in [
                                 (CHG_SET_NN, input_minus_edge),
@@ -18475,8 +17301,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -18492,21 +17318,17 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if atom.charge != 0 || atom.radical != 0 || atom.valence == atom.chem_bonds_valence
-                {
+                if atom.charge != 0 || atom.radical != 0 || atom.valence == atom.chem_bonds_valence {
                     canonical_number = canonical_number.wrapping_add(1);
                     continue;
                 }
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                 if minus_edge < 0 {
                     canonical_number = canonical_number.wrapping_add(1);
@@ -18514,10 +17336,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.forbidden != 0
                     || edge.flow != 0
@@ -18545,19 +17364,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if let Some(destination_set) = destination_set
                     && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], minus_edge)? < 0
                 {
-                    ret = AddToEdgeList(
-                        heap,
-                        &mut changeable_edges[destination_set],
-                        minus_edge,
-                        INC_ADD_EDGE,
-                    )?;
+                    ret = AddToEdgeList(heap, &mut changeable_edges[destination_set], minus_edge, INC_ADD_EDGE)?;
                     if ret == 0 {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut changeable_edges[CHG_SET_AVOID],
-                            minus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut changeable_edges[CHG_SET_AVOID], minus_edge, INC_ADD_EDGE)?;
                     }
                     if ret != 0 {
                         leave_case = true;
@@ -18571,10 +17380,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 while triple_index < changeable_edges[CHG_SET_NN].num_edges {
                     let edge_number = *heap
                         .slice(changeable_edges[CHG_SET_NN].pnEdges.as_const())?
-                        .get(
-                            usize::try_from(triple_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(triple_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let flower_edge = *heap
                         .slice(changeable_edges[CHG_SET_NN].pnEdges.as_const())?
@@ -18590,8 +17396,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let edge_index = usize::try_from(edge_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -18609,8 +17414,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -18625,22 +17429,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                             continue;
                         }
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &changeable_edges[set_index],
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &changeable_edges[set_index], forbidden_edge_mask)?;
                         if flower_edge != NO_VERTEX {
                             let edge = heap
                                 .slice_mut(pBNS.edge)?
-                                .get_mut(
-                                    usize::try_from(flower_edge)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get_mut(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            edge.forbidden =
-                                (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                            edge.forbidden = (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         }
                         let mut path_start = 0_i32;
                         let mut path_end = 0_i32;
@@ -18681,8 +17476,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -18738,8 +17532,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -18751,8 +17544,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             && comparison.nNumTgInChI == 1
             && comparison.nNumRemHRevrs > comparison.nNumRemHInChI
             && comparison.nNumRemHInChI < 0
-            && (comparison.nNumEndpRevrs < comparison.nNumEndpInChI
-                || comparison.nNumTgRevrs > comparison.nNumTgInChI)
+            && (comparison.nNumEndpRevrs < comparison.nNumEndpInChI || comparison.nNumTgRevrs > comparison.nNumTgInChI)
         {
             const CHG_SET_MISSED_TAUT_1: usize = 0;
             const CHG_SET_MISSED_TAUT_ALL: usize = 1;
@@ -18773,23 +17565,21 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at
             };
-            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] =
-                std::array::from_fn(|_| EDGE_LIST::default());
+            let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] = std::array::from_fn(|_| EDGE_LIST::default());
             current_edges.num_edges = 0;
             let mut current_success = 0_i32;
             let mut leave_case = false;
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
-                let canonical_index = usize::try_from(canonical_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let canonical_index =
+                    usize::try_from(canonical_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::try_from(atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let input_endpoint = *heap
                     .slice(pStruct.endpoint.as_const())?
                     .get(canonical_index)
@@ -18799,9 +17589,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if input_endpoint != 0 {
                     let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                     if minus_edge < 0 {
@@ -18810,14 +17598,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                     }
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if edge.forbidden != 0
-                        || FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], minus_edge)? >= 0
-                    {
+                    if edge.forbidden != 0 || FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], minus_edge)? >= 0 {
                         canonical_number = canonical_number.wrapping_add(1);
                         continue;
                     }
@@ -18877,24 +17660,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                         }
                     }
                     if !leave_case {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut changeable_edges[CHG_SET_AVOID],
-                            minus_edge,
-                            INC_ADD_EDGE,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut changeable_edges[CHG_SET_AVOID], minus_edge, INC_ADD_EDGE)?;
                         if ret != 0 {
                             leave_case = true;
                         }
                     }
-                } else if atom.valence == 1
-                    && atom.charge == -1
-                    && valence.cNumValenceElectrons == 6
-                {
+                } else if atom.valence == 1 && atom.charge == -1 && valence.cNumValenceElectrons == 6 {
                     let nitrogen_index = usize::from(atom.neighbor[0]);
-                    let nitrogen_valence = pVA
-                        .get(nitrogen_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let nitrogen_valence = pVA.get(nitrogen_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let nitrogen = heap
                         .slice(at2.as_const())?
                         .get(nitrogen_index)
@@ -18928,21 +17701,10 @@ pub(crate) fn FixFixedHRestoredStructure(
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            plus.forbidden == 0
-                                && plus.flow != 0
-                                && minus.forbidden == 0
-                                && minus.flow != 0
+                            plus.forbidden == 0 && plus.flow != 0 && minus.forbidden == 0 && minus.flow != 0
                         }
-                        && FindInEdgeList(
-                            heap,
-                            &changeable_edges[CHG_SET_AVOID],
-                            nitrogen_plus_edge,
-                        )? < 0
-                        && FindInEdgeList(
-                            heap,
-                            &changeable_edges[CHG_SET_AVOID],
-                            oxygen_minus_edge,
-                        )? < 0;
+                        && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], nitrogen_plus_edge)? < 0
+                        && FindInEdgeList(heap, &changeable_edges[CHG_SET_AVOID], oxygen_minus_edge)? < 0;
                     if nitrogen_valence.cNumValenceElectrons == 5
                         && nitrogen_input_endpoint == 0
                         && nitrogen.valence == 3
@@ -18955,8 +17717,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                         let mut number_others = 0_i32;
                         let mut neighbor_index = 0_i32;
                         while neighbor_index < i32::from(nitrogen.valence) {
-                            let position = usize::try_from(neighbor_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let position =
+                                usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let neighbor_atom_index = usize::from(nitrogen.neighbor[position]);
                             if neighbor_atom_index == atom_index {
                                 neighbor_index = neighbor_index.wrapping_add(1);
@@ -19026,10 +17788,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 while pair_index < changeable_edges[CHG_SET_NO_IN_NO2M2].num_edges {
                     let nitrogen_plus_edge = *heap
                         .slice(changeable_edges[CHG_SET_NO_IN_NO2M2].pnEdges.as_const())?
-                        .get(
-                            usize::try_from(pair_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(pair_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let oxygen_minus_edge = *heap
                         .slice(changeable_edges[CHG_SET_NO_IN_NO2M2].pnEdges.as_const())?
@@ -19038,8 +17797,8 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let oxygen_minus_index = usize::try_from(oxygen_minus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let oxygen_minus_index =
+                        usize::try_from(oxygen_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(oxygen_minus_index)
@@ -19051,15 +17810,13 @@ pub(crate) fn FixFixedHRestoredStructure(
                     }
                     let first_vertex = i32::from(edge_before.neighbor1);
                     let second_vertex = i32::from(edge_before.neighbor12) ^ first_vertex;
-                    heap.slice_mut(pBNS.edge)?[oxygen_minus_index].flow =
-                        edge_before.flow.wrapping_sub(1);
+                    heap.slice_mut(pBNS.edge)?[oxygen_minus_index].flow = edge_before.flow.wrapping_sub(1);
                     {
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
@@ -19074,21 +17831,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                             continue;
                         }
                         SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
-                        RemoveForbiddenEdgeMask(
-                            heap,
-                            pBNS,
-                            &changeable_edges[set_index],
-                            forbidden_edge_mask,
-                        )?;
+                        RemoveForbiddenEdgeMask(heap, pBNS, &changeable_edges[set_index], forbidden_edge_mask)?;
                         let nitrogen_edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(
-                                usize::try_from(nitrogen_plus_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(nitrogen_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        nitrogen_edge.forbidden =
-                            (i32::from(nitrogen_edge.forbidden) & forbidden_edge_mask_inv) as i8;
+                        nitrogen_edge.forbidden = (i32::from(nitrogen_edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         let mut path_start = 0_i32;
                         let mut path_end = 0_i32;
                         let mut path_length = 0_i32;
@@ -19128,8 +17878,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         for vertex_number in [first_vertex, second_vertex] {
                             let vertex = vertices
                                 .get_mut(
-                                    usize::try_from(vertex_number)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
@@ -19185,8 +17934,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     return Ok(());
                 }
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -19218,9 +17966,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source_types::{
-        BNS_EDGE, BNS_VERTEX, INChI_Aux, RI_ERR_ALLOC, RI_ERR_PROGR, T_GROUP,
-    };
+    use crate::source_types::{BNS_EDGE, BNS_VERTEX, INChI_Aux, RI_ERR_ALLOC, RI_ERR_PROGR, T_GROUP};
 
     fn call_fix_fixed_h_restored_structure(
         heap: &mut SourceHeap,
@@ -19270,11 +18016,7 @@ mod tests {
         }
     }
 
-    fn make_info(
-        heap: &mut SourceHeap,
-        groups: Vec<T_GROUP>,
-        endpoints: Vec<AT_NUMB>,
-    ) -> T_GROUP_INFO {
+    fn make_info(heap: &mut SourceHeap, groups: Vec<T_GROUP>, endpoints: Vec<AT_NUMB>) -> T_GROUP_INFO {
         T_GROUP_INFO {
             num_t_groups: groups.len() as i32,
             max_num_t_groups: groups.len() as i32,
@@ -19496,18 +18238,10 @@ mod tests {
         fn zero_atom_fixture(
             heap: &mut SourceHeap,
             with_mobile_layer: bool,
-        ) -> (
-            StrFromINChI,
-            SourceMutPointer<inp_ATOM>,
-            [SourceMutPointer<INChI>; 2],
-        ) {
+        ) -> (StrFromINChI, SourceMutPointer<inp_ATOM>, [SourceMutPointer<INChI>; 2]) {
             let fixed_h = heap.allocate_model_storage(vec![0_i8]).unwrap();
-            let input_fixed = heap
-                .allocate_model_storage(vec![fixed_h_inchi(fixed_h)])
-                .unwrap();
-            let reversed_fixed = heap
-                .allocate_model_storage(vec![fixed_h_inchi(fixed_h)])
-                .unwrap();
+            let input_fixed = heap.allocate_model_storage(vec![fixed_h_inchi(fixed_h)]).unwrap();
+            let reversed_fixed = heap.allocate_model_storage(vec![fixed_h_inchi(fixed_h)]).unwrap();
             let input_mobile = if with_mobile_layer {
                 heap.allocate_model_storage(vec![INChI {
                     nNumberOfAtoms: 1,
@@ -19538,12 +18272,8 @@ mod tests {
         }
 
         let mut no_fixed_heap = SourceHeap::default();
-        let input = no_fixed_heap
-            .allocate_model_storage(vec![INChI::default()])
-            .unwrap();
-        let reversed = no_fixed_heap
-            .allocate_model_storage(vec![INChI::default()])
-            .unwrap();
+        let input = no_fixed_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let reversed = no_fixed_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
         let mut no_fixed_structure = StrFromINChI {
             pOneINChI: [reversed, SourceMutPointer::null()],
             ..StrFromINChI::default()
@@ -19621,31 +18351,18 @@ mod tests {
                 heap.live_allocation_count(),
                 fixture_allocations + successful_allocations as usize
             );
-            assert_eq!(
-                structure.nCanon2Atno[0].is_null(),
-                successful_allocations == 0
-            );
+            assert_eq!(structure.nCanon2Atno[0].is_null(), successful_allocations == 0);
             assert!(structure.nAtno2Canon[0].is_null());
         }
 
         for fail_charge_list_allocation in [true, false] {
             let mut heap = SourceHeap::default();
             let fixed_h = heap.allocate_model_storage(vec![0_i8]).unwrap();
-            let input = heap
-                .allocate_model_storage(vec![fixed_h_inchi(fixed_h)])
-                .unwrap();
-            let reversed = heap
-                .allocate_model_storage(vec![fixed_h_inchi(fixed_h)])
-                .unwrap();
-            let atoms = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
-            let vertices = heap
-                .allocate_model_storage(vec![BNS_VERTEX::default()])
-                .unwrap();
-            let edges = heap
-                .allocate_model_storage(vec![BNS_EDGE::default()])
-                .unwrap();
+            let input = heap.allocate_model_storage(vec![fixed_h_inchi(fixed_h)]).unwrap();
+            let reversed = heap.allocate_model_storage(vec![fixed_h_inchi(fixed_h)]).unwrap();
+            let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+            let vertices = heap.allocate_model_storage(vec![BNS_VERTEX::default()]).unwrap();
+            let edges = heap.allocate_model_storage(vec![BNS_EDGE::default()]).unwrap();
             let mut structure = StrFromINChI {
                 num_atoms: 1,
                 pOneINChI: [reversed, SourceMutPointer::null()],
@@ -19691,10 +18408,7 @@ mod tests {
             assert_eq!((runs, total_delta), (31, 37));
             assert_eq!(heap.source_allocation_calls(), 1);
             assert_eq!(heap.live_allocation_count(), fixture_allocations);
-            assert_eq!(
-                heap.slice(edges.as_const()).unwrap(),
-                &[BNS_EDGE::default()]
-            );
+            assert_eq!(heap.slice(edges.as_const()).unwrap(), &[BNS_EDGE::default()]);
         }
     }
 }

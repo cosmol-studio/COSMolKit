@@ -3,15 +3,13 @@
 use crate::FingerprintError;
 
 use super::AvalonFingerprintFlags;
-use super::fingerprint_state::{
-    FingerprintPreprocessingState, avalon_atomic_number, with_prepared_fingerprint_state,
-};
+use super::fingerprint_state::{FingerprintPreprocessingState, avalon_atomic_number, with_prepared_fingerprint_state};
 use super::hash::next_hash;
 use super::reaccs::MoleculeState;
 use super::symbols::atom_symbol_match;
 use super::traversal::{
-    CLASS_SPIDER_SEED, DEGREE_PATH_SEED, PathFlags, RING_SIZE_SEED, add_bit, add_bit_count,
-    build_path_length_matrix, collect_special_neighbours, set_feature_bits, set_path_bits_rec,
+    CLASS_SPIDER_SEED, DEGREE_PATH_SEED, PathFlags, RING_SIZE_SEED, add_bit, add_bit_count, build_path_length_matrix,
+    collect_special_neighbours, set_feature_bits, set_path_bits_rec,
 };
 
 const SUB_AS_IS: i32 = -2;
@@ -119,11 +117,9 @@ pub(super) fn count_high_flag_families_prepared(
     // Avalon❗✔️:           touched_indices[i] = 0; /* down-dating */
     // Avalon❗✔️:       }
     // Avalon❗✔️:    }
-    let feature_mask =
-        AvalonFingerprintFlags::CLASS_SPIDERS | AvalonFingerprintFlags::FEATURE_PAIRS;
+    let feature_mask = AvalonFingerprintFlags::CLASS_SPIDERS | AvalonFingerprintFlags::FEATURE_PAIRS;
     let feature_active = which_bits.bits() & feature_mask.bits() != 0;
-    let length_matrix = feature_active
-        .then(|| build_path_length_matrix(working, &state.neighbours, 12, exclude_atom));
+    let length_matrix = feature_active.then(|| build_path_length_matrix(working, &state.neighbours, 12, exclude_atom));
 
     if feature_active {
         prepare_class_spider_state(working, state, exclude_atom);
@@ -277,18 +273,14 @@ fn count_ring_size_counts(molecule: &MoleculeState, counts: &mut [i32], exclude_
             result += 1;
             // Avalon❗✔️:             /* more special links => more bits */
             // Avalon❗✔️:             if (rscounts[j][k]==1  ||  j==6  ||  k==6) continue;
-            if ring_size_counts[first_size][second_size] == 1 || first_size == 6 || second_size == 6
-            {
+            if ring_size_counts[first_size][second_size] == 1 || first_size == 6 || second_size == 6 {
                 continue;
             }
             // Avalon❗✔️:             seed = 2*RING_SIZE_SEED+23;
             // Avalon❗✔️:             seed = NEXT_SEED(seed, (j+k)*11);
             // Avalon❗✔️:             seed = NEXT_SEED(seed, j*k*13);
             // Avalon❗✔️:             seed = NEXT_SEED(seed, 19);
-            seed = next_hash(
-                2 * RING_SIZE_SEED + 23,
-                ((first_size + second_size) * 11) as u64,
-            );
+            seed = next_hash(2 * RING_SIZE_SEED + 23, ((first_size + second_size) * 11) as u64);
             seed = next_hash(seed, (first_size * second_size * 13) as u64);
             seed = next_hash(seed, 19);
             // Avalon❗✔️:             ADD_BIT(fp_counts, ncounts, seed);
@@ -407,10 +399,7 @@ fn count_degree_paths(
         // Avalon❗✔️:              atom_status[i] <= 2  &&	// include if ring fusion
         // Avalon❗✔️:              degree[i] != 1)		// include if terminal atom
         // Avalon❗✔️:             continue;
-        if state.degree[atom_index] <= 3
-            && state.atom_status[atom_index] <= 2
-            && state.degree[atom_index] != 1
-        {
+        if state.degree[atom_index] <= 3 && state.atom_status[atom_index] <= 2 && state.degree[atom_index] != 1 {
             continue;
         }
         // Avalon❗✔️:          /* only keep terminals if methyl */
@@ -562,11 +551,7 @@ fn count_degree_paths(
     result
 }
 
-fn prepare_class_spider_state(
-    molecule: &mut MoleculeState,
-    state: &FingerprintPreprocessingState,
-    exclude_atom: i32,
-) {
+fn prepare_class_spider_state(molecule: &mut MoleculeState, state: &FingerprintPreprocessingState, exclude_atom: i32) {
     // Avalon❗✔️:    /*
     // Avalon❗✔️:     * This screen class will catch non-linear fragments composed of rather
     // Avalon❗✔️:     * frequent linear sub-fragments
@@ -663,13 +648,8 @@ fn count_class_spiders(
         // Avalon❗✔️:                                  exclude_atom,
         // Avalon❗✔️: 				 prefix);
         // Avalon❗✔️:          }
-        let (csp3, hetero) = collect_special_neighbours(
-            molecule,
-            &state.neighbours,
-            atom_index,
-            MAX_SPIDER,
-            exclude_atom,
-        );
+        let (csp3, hetero) =
+            collect_special_neighbours(molecule, &state.neighbours, atom_index, MAX_SPIDER, exclude_atom);
         // Avalon❗✔️:          touched_indices[i] = 0; /* down-dating */
         // Avalon❗✔️:          /* set bits for spiders with one CSP3 atom and two heteros */
         // Avalon❗✔️:          if (which_bits & USE_CLASS_SPIDERS)
@@ -695,10 +675,7 @@ fn count_class_spiders(
             // Avalon❗✔️:                seed = NEXT_SEED(seed, 6*8);
             // Avalon❗✔️:                seed = NEXT_SEED(seed, CSP3*11);
             // Avalon❗✔️:             }
-            seed = next_hash(
-                seed,
-                (if atom.color == HETERO { HETERO } else { 6 } * 8) as u64,
-            );
+            seed = next_hash(seed, (if atom.color == HETERO { HETERO } else { 6 } * 8) as u64);
             seed = next_hash(seed, (CSP3 * 11) as u64);
             // Avalon❗✔️:             for (j1=1; j1<=MAX_SPIDER; j1++)
             // Avalon❗✔️:             {
@@ -771,10 +748,7 @@ fn count_class_spiders(
             // Avalon❗✔️:                seed = NEXT_SEED(seed, 6*8);
             // Avalon❗✔️:                seed = NEXT_SEED(seed, HETERO*11);
             // Avalon❗✔️:             }
-            seed = next_hash(
-                seed,
-                (if atom.color == HETERO { HETERO } else { 6 } * 8) as u64,
-            );
+            seed = next_hash(seed, (if atom.color == HETERO { HETERO } else { 6 } * 8) as u64);
             seed = next_hash(seed, (HETERO * 11) as u64);
             // Avalon❗✔️:             for (j1=j; j1<=MAX_SPIDER; j1++)
             // Avalon❗✔️:             {
@@ -808,10 +782,7 @@ fn count_class_spiders(
                     }
                     // Avalon❗✔️:                   old_seed = seed;
                     // Avalon❗✔️:                   seed = NEXT_SEED(seed, j*j1*j2);
-                    let branch_seed = next_hash(
-                        seed,
-                        (first_distance * second_distance * third_distance) as u64,
-                    );
+                    let branch_seed = next_hash(seed, (first_distance * second_distance * third_distance) as u64);
                     // Avalon❗✔️:                   ADD_BIT(fp_counts, ncounts, seed);
                     add_bit(counts, branch_seed);
                     // Avalon❗✔️: 		  result++;
@@ -836,11 +807,7 @@ fn count_class_spiders(
     result
 }
 
-fn prepare_feature_pair_state(
-    molecule: &mut MoleculeState,
-    state: &FingerprintPreprocessingState,
-    exclude_atom: i32,
-) {
+fn prepare_feature_pair_state(molecule: &mut MoleculeState, state: &FingerprintPreprocessingState, exclude_atom: i32) {
     // Avalon❗✔️:       /**
     // Avalon❗✔️:        * Collect bits that represent feature/path_length/feature triples.
     // Avalon❗✔️:        */
@@ -1239,8 +1206,7 @@ high_boundary=ring9_10_mask_0800_q0_dy0 result=2 counts=10:9,31:9, bits=00040080
     fn high_matrix_fixture() -> MoleculeState {
         molecule(
             &[
-                "C", "C", "C", "C", "Cl", "N", "O", "S", "C", "C", "C", "C", "C", "C", "C", "C",
-                "C",
+                "C", "C", "C", "C", "Cl", "N", "O", "S", "C", "C", "C", "C", "C", "C", "C", "C", "C",
             ],
             &[
                 [1, 2],
@@ -1329,18 +1295,10 @@ high_boundary=ring9_10_mask_0800_q0_dy0 result=2 counts=10:9,31:9, bits=00040080
                 bytes[index / 8] |= 1 << (index % 8);
             }
         }
-        bytes
-            .into_iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+        bytes.into_iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
-    fn run_case(
-        mut molecule: MoleculeState,
-        mask: u32,
-        as_query: bool,
-        daylight: bool,
-    ) -> (i32, String, String) {
+    fn run_case(mut molecule: MoleculeState, mask: u32, as_query: bool, daylight: bool) -> (i32, String, String) {
         let mut counts = vec![0_i32; 64];
         let result = count_high_flag_families(
             &mut molecule,
@@ -1355,34 +1313,19 @@ high_boundary=ring9_10_mask_0800_q0_dy0 result=2 counts=10:9,31:9, bits=00040080
     }
 
     fn expected_lines(prefix: &str) -> impl Iterator<Item = &'static str> + '_ {
-        NATIVE_GOLDENS
-            .lines()
-            .filter(move |line| line.starts_with(prefix))
+        NATIVE_GOLDENS.lines().filter(move |line| line.starts_with(prefix))
     }
 
     #[test]
     fn high_single_and_pairwise_matrix_matches_native_counts_and_bits() {
         assert_eq!(HIGH_MASKS.len(), 10);
-        assert_eq!(
-            HIGH_MASKS
-                .iter()
-                .filter(|mask| mask.count_ones() == 1)
-                .count(),
-            4
-        );
-        assert_eq!(
-            HIGH_MASKS
-                .iter()
-                .filter(|mask| mask.count_ones() == 2)
-                .count(),
-            6
-        );
+        assert_eq!(HIGH_MASKS.iter().filter(|mask| mask.count_ones() == 1).count(), 4);
+        assert_eq!(HIGH_MASKS.iter().filter(|mask| mask.count_ones() == 2).count(), 6);
         let mut expected = expected_lines("high_matrix=");
         for daylight in [false, true] {
             for as_query in [false, true] {
                 for &mask in HIGH_MASKS {
-                    let (result, counts, bits) =
-                        run_case(high_matrix_fixture(), mask, as_query, daylight);
+                    let (result, counts, bits) = run_case(high_matrix_fixture(), mask, as_query, daylight);
                     let actual = format!(
                         "high_matrix=spiro_mask_{mask:04x}_q{}_dy{} result={result} counts={counts} bits={bits}",
                         u8::from(as_query),
@@ -1406,9 +1349,8 @@ high_boundary=ring9_10_mask_0800_q0_dy0 result=2 counts=10:9,31:9, bits=00040080
         let mut expected = expected_lines("high_boundary=");
         for (fixture, mask, molecule) in cases {
             let (result, counts, bits) = run_case(molecule, mask, false, false);
-            let actual = format!(
-                "high_boundary={fixture}_mask_{mask:04x}_q0_dy0 result={result} counts={counts} bits={bits}"
-            );
+            let actual =
+                format!("high_boundary={fixture}_mask_{mask:04x}_q0_dy0 result={result} counts={counts} bits={bits}");
             assert_eq!(Some(actual.as_str()), expected.next(), "{actual}");
         }
         assert_eq!(expected.next(), None);

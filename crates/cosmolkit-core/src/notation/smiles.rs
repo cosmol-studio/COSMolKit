@@ -3,20 +3,18 @@ use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder,
-    BondQueryPredicate, BondSpec, BondStereo, ChiralTag, Conformer3D, Element, Molecule,
-    MoleculeBuilder, QueryNode, RemoveHsParams, SmilesParseError, StereoError, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate,
+    BondSpec, BondStereo, ChiralTag, Conformer3D, Element, Molecule, MoleculeBuilder, QueryNode, RemoveHsParams,
+    SmilesParseError, StereoError, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
 };
 
 mod cx;
 mod stereo;
 
 pub(crate) use self::stereo::{
-    assign_chiral_types_from_3d, assign_chiral_types_from_bond_dirs,
-    assign_double_bond_stereo_after_smiles_parse, assign_stereochemistry_cleanup_subset,
-    clear_all_bond_dir_flags, set_bond_stereo_from_directions, set_double_bond_neighbor_directions,
-    set_double_bond_neighbor_directions_from_stereo,
+    assign_chiral_types_from_3d, assign_chiral_types_from_bond_dirs, assign_double_bond_stereo_after_smiles_parse,
+    assign_stereochemistry_cleanup_subset, clear_all_bond_dir_flags, set_bond_stereo_from_directions,
+    set_double_bond_neighbor_directions, set_double_bond_neighbor_directions_from_stereo,
 };
 use self::{cx::*, stereo::*};
 
@@ -149,18 +147,10 @@ pub(crate) fn get_unspecified_query_bond(
     } else {
         BondOrder::Aromatic
     };
-    (
-        order,
-        crate::search::query::make_single_or_aromatic_bond_query(),
-    )
+    (order, crate::search::query::make_single_or_aromatic_bond_query())
 }
 
-fn print_syntax_error_message(
-    input: &str,
-    error_message: &str,
-    bad_token_position: usize,
-    input_type: &str,
-) -> String {
+fn print_syntax_error_message(input: &str, error_message: &str, bad_token_position: usize, input_type: &str) -> String {
     // RDKit✔️✔️: static constexpr unsigned int error_size{41};
     // RDKit✔️✔️: static constexpr unsigned int prefix_size{error_size / 2};
     // RDKit✔️✔️: static auto truncate_input = [=](const auto &input, const unsigned int pos) {
@@ -668,16 +658,10 @@ impl<'a> SmilesLexer<'a> {
     fn match_next_token(&mut self, remaining: &str) -> (usize, SmilesToken) {
         if self.in_atom_state {
             if let Some((symbol, atomic_number)) = match_bracket_atom_symbol(remaining) {
-                return (
-                    symbol.len(),
-                    SmilesToken::Atom(SmilesAtomToken::new(atomic_number)),
-                );
+                return (symbol.len(), SmilesToken::Atom(SmilesAtomToken::new(atomic_number)));
             }
             if let Some((symbol, atomic_number)) = match_quoted_biovia_atom_symbol(remaining) {
-                return (
-                    symbol.len(),
-                    SmilesToken::Atom(SmilesAtomToken::new(atomic_number)),
-                );
+                return (symbol.len(), SmilesToken::Atom(SmilesAtomToken::new(atomic_number)));
             }
             if let Some((symbol, atomic_number)) = match_bracket_aromatic_atom_symbol(remaining) {
                 return (
@@ -716,16 +700,10 @@ impl<'a> SmilesLexer<'a> {
             return (1, SmilesToken::OrganicAtom(SmilesAtomToken::dummy()));
         }
         if remaining.starts_with("->") {
-            return (
-                2,
-                SmilesToken::Bond(SmilesBondToken::new(BondOrder::DativeRight)),
-            );
+            return (2, SmilesToken::Bond(SmilesBondToken::new(BondOrder::DativeRight)));
         }
         if remaining.starts_with("<-") {
-            return (
-                2,
-                SmilesToken::Bond(SmilesBondToken::new(BondOrder::DativeLeft)),
-            );
+            return (2, SmilesToken::Bond(SmilesBondToken::new(BondOrder::DativeLeft)));
         }
         if remaining.starts_with('\\') {
             let len = if remaining.starts_with("\\\\") { 2 } else { 1 };
@@ -741,26 +719,14 @@ impl<'a> SmilesLexer<'a> {
             );
         }
 
-        let ch = remaining
-            .chars()
-            .next()
-            .expect("remaining input is non-empty");
+        let ch = remaining.chars().next().expect("remaining input is non-empty");
         match ch {
-            '=' => (
-                1,
-                SmilesToken::Bond(SmilesBondToken::new(BondOrder::Double)),
-            ),
+            '=' => (1, SmilesToken::Bond(SmilesBondToken::new(BondOrder::Double))),
             '#' if self.in_atom_state => (1, SmilesToken::Hash),
-            '#' => (
-                1,
-                SmilesToken::Bond(SmilesBondToken::new(BondOrder::Triple)),
-            ),
+            '#' => (1, SmilesToken::Bond(SmilesBondToken::new(BondOrder::Triple))),
             ':' if self.in_atom_state => (1, SmilesToken::Colon),
             ':' => (1, SmilesToken::Bond(SmilesBondToken::aromatic())),
-            '$' => (
-                1,
-                SmilesToken::Bond(SmilesBondToken::new(BondOrder::Quadruple)),
-            ),
+            '$' => (1, SmilesToken::Bond(SmilesBondToken::new(BondOrder::Quadruple))),
             '~' => (1, SmilesToken::Bond(SmilesBondToken::null_query())),
             '-' => (1, SmilesToken::Minus),
             '+' => (1, SmilesToken::Plus),
@@ -1187,8 +1153,7 @@ impl SmilesAtomToken {
 
     fn aromatic(atomic_number: u8) -> Self {
         Self {
-            spec: AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap())
-                .with_aromatic(true),
+            spec: AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap()).with_aromatic(true),
         }
     }
 
@@ -1260,10 +1225,7 @@ struct SmilesParser<'a> {
 
 impl<'a> SmilesParser<'a> {
     fn new(lexer: SmilesLexer<'a>) -> Self {
-        Self {
-            lexer,
-            lookahead: None,
-        }
+        Self { lexer, lookahead: None }
     }
 
     fn parse_mol(&mut self, state: &mut SmilesBuildState) -> Result<(), SmilesParseError> {
@@ -1352,13 +1314,9 @@ impl<'a> SmilesParser<'a> {
                     if state.branch_stack.is_empty() {
                         return Ok(());
                     }
-                    return Err(SmilesParseError::ParseError(
-                        "extra open parentheses".to_string(),
-                    ));
+                    return Err(SmilesParseError::ParseError("extra open parentheses".to_string()));
                 }
-                SmilesToken::OrganicAtom(atom)
-                | SmilesToken::AromaticAtom(atom)
-                | SmilesToken::Atom(atom) => {
+                SmilesToken::OrganicAtom(atom) | SmilesToken::AromaticAtom(atom) | SmilesToken::Atom(atom) => {
                     state.add_atom_connected_to_active(atom)?;
                 }
                 SmilesToken::AtomOpen => {
@@ -1388,8 +1346,7 @@ impl<'a> SmilesParser<'a> {
                     state.add_disconnected_atom(atom)?;
                 }
                 SmilesToken::GroupOpen => {
-                    let open_position =
-                        SmilesBuildState::branch_open_token(self.lexer.current_token_position);
+                    let open_position = SmilesBuildState::branch_open_token(self.lexer.current_token_position);
                     match self.next_token()? {
                         SmilesToken::Bond(bond) => {
                             let atom = self.parse_simple_atomd()?;
@@ -1399,9 +1356,7 @@ impl<'a> SmilesParser<'a> {
                             let atom = self.parse_simple_atomd()?;
                             state.add_branch_single_bond(open_position, atom)?;
                         }
-                        SmilesToken::OrganicAtom(atom)
-                        | SmilesToken::AromaticAtom(atom)
-                        | SmilesToken::Atom(atom) => {
+                        SmilesToken::OrganicAtom(atom) | SmilesToken::AromaticAtom(atom) | SmilesToken::Atom(atom) => {
                             state.add_branch_atom_connected_to_active(open_position, atom)?;
                         }
                         SmilesToken::AtomOpen => {
@@ -1432,9 +1387,7 @@ impl<'a> SmilesParser<'a> {
                     return Err(SmilesParseError::ParseError("syntax error".to_string()));
                 }
                 _ => {
-                    return Err(SmilesParseError::ParseError(
-                        "unrecognized SMILES token".to_string(),
-                    ));
+                    return Err(SmilesParseError::ParseError("unrecognized SMILES token".to_string()));
                 }
             }
         }
@@ -1458,13 +1411,9 @@ impl<'a> SmilesParser<'a> {
         // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy atomd/simple_atom
         match self.next_token()? {
-            SmilesToken::OrganicAtom(atom)
-            | SmilesToken::AromaticAtom(atom)
-            | SmilesToken::Atom(atom) => Ok(atom),
+            SmilesToken::OrganicAtom(atom) | SmilesToken::AromaticAtom(atom) | SmilesToken::Atom(atom) => Ok(atom),
             SmilesToken::AtomOpen => self.parse_bracket_atomd(),
-            SmilesToken::BadCharacter(_) => {
-                Err(SmilesParseError::ParseError("syntax error".to_string()))
-            }
+            SmilesToken::BadCharacter(_) => Err(SmilesParseError::ParseError("syntax error".to_string())),
             other => Err(SmilesParseError::ParseError(format!(
                 "expected atom token, got {other:?}"
             ))),
@@ -1482,10 +1431,7 @@ impl<'a> SmilesParser<'a> {
         if self.lookahead.is_none() {
             self.lookahead = Some(self.lexer.next_token()?);
         }
-        Ok(self
-            .lookahead
-            .clone()
-            .expect("lookahead was just initialized"))
+        Ok(self.lookahead.clone().expect("lookahead was just initialized"))
     }
 
     fn parse_bracket_atomd(&mut self) -> Result<SmilesAtomToken, SmilesParseError> {
@@ -1507,11 +1453,8 @@ impl<'a> SmilesParser<'a> {
         match self.next_token()? {
             SmilesToken::Colon => {
                 let map_number = self.parse_number()?;
-                let map_number = u32::try_from(map_number).map_err(|_| {
-                    SmilesParseError::ParseError(format!(
-                        "atom map number out of range: {map_number}"
-                    ))
-                })?;
+                let map_number = u32::try_from(map_number)
+                    .map_err(|_| SmilesParseError::ParseError(format!("atom map number out of range: {map_number}")))?;
                 atom.spec = atom.spec.with_atom_map(map_number);
                 self.expect_atom_close()?;
                 Ok(atom)
@@ -1582,14 +1525,12 @@ impl<'a> SmilesParser<'a> {
                 let mut atom = SmilesAtomToken::new(1);
                 if matches!(self.peek_token()?, SmilesToken::H) {
                     self.next_token()?;
-                    let explicit_hydrogens = if matches!(
-                        self.peek_token()?,
-                        SmilesToken::Zero | SmilesToken::NonzeroDigit(_)
-                    ) {
-                        self.parse_number()?
-                    } else {
-                        1
-                    };
+                    let explicit_hydrogens =
+                        if matches!(self.peek_token()?, SmilesToken::Zero | SmilesToken::NonzeroDigit(_)) {
+                            self.parse_number()?
+                        } else {
+                            1
+                        };
                     atom.spec = atom
                         .spec
                         .with_explicit_hydrogens(u8_from_rdkit_int(explicit_hydrogens)?);
@@ -1604,14 +1545,12 @@ impl<'a> SmilesParser<'a> {
                     atom.spec = atom.spec.with_isotope(u16_from_rdkit_int(number)?);
                     if matches!(self.peek_token()?, SmilesToken::H) {
                         self.next_token()?;
-                        let explicit_hydrogens = if matches!(
-                            self.peek_token()?,
-                            SmilesToken::Zero | SmilesToken::NonzeroDigit(_)
-                        ) {
-                            self.parse_number()?
-                        } else {
-                            1
-                        };
+                        let explicit_hydrogens =
+                            if matches!(self.peek_token()?, SmilesToken::Zero | SmilesToken::NonzeroDigit(_)) {
+                                self.parse_number()?
+                            } else {
+                                1
+                            };
                         atom.spec = atom
                             .spec
                             .with_explicit_hydrogens(u8_from_rdkit_int(explicit_hydrogens)?);
@@ -1635,10 +1574,7 @@ impl<'a> SmilesParser<'a> {
     ) -> Result<SmilesAtomToken, SmilesParseError> {
         if matches!(self.peek_token()?, SmilesToken::H) {
             self.next_token()?;
-            let explicit_hydrogens = if matches!(
-                self.peek_token()?,
-                SmilesToken::Zero | SmilesToken::NonzeroDigit(_)
-            ) {
+            let explicit_hydrogens = if matches!(self.peek_token()?, SmilesToken::Zero | SmilesToken::NonzeroDigit(_)) {
                 self.parse_number()?
             } else {
                 1
@@ -1671,18 +1607,12 @@ impl<'a> SmilesParser<'a> {
         self.parse_chiral_suffix(atom)
     }
 
-    fn parse_chiral_element_after_leading_number(
-        &mut self,
-        number: i32,
-    ) -> Result<SmilesAtomToken, SmilesParseError> {
+    fn parse_chiral_element_after_leading_number(&mut self, number: i32) -> Result<SmilesAtomToken, SmilesParseError> {
         let atom = self.parse_element_after_leading_number(number)?;
         self.parse_chiral_suffix(atom)
     }
 
-    fn parse_chiral_suffix(
-        &mut self,
-        mut atom: SmilesAtomToken,
-    ) -> Result<SmilesAtomToken, SmilesParseError> {
+    fn parse_chiral_suffix(&mut self, mut atom: SmilesAtomToken) -> Result<SmilesAtomToken, SmilesParseError> {
         match self.peek_token()? {
             SmilesToken::At => {
                 self.next_token()?;
@@ -1695,14 +1625,8 @@ impl<'a> SmilesParser<'a> {
             }
             SmilesToken::ChiralClass(chiral_tag) => {
                 self.next_token()?;
-                atom.spec = atom
-                    .spec
-                    .with_chiral_tag(chiral_tag)
-                    .with_chiral_permutation(0);
-                if matches!(
-                    self.peek_token()?,
-                    SmilesToken::Zero | SmilesToken::NonzeroDigit(_)
-                ) {
+                atom.spec = atom.spec.with_chiral_tag(chiral_tag).with_chiral_permutation(0);
+                if matches!(self.peek_token()?, SmilesToken::Zero | SmilesToken::NonzeroDigit(_)) {
                     let permutation = self.parse_number()?;
                     if permutation == 0 {
                         return Err(SmilesParseError::ParseError(
@@ -1710,8 +1634,7 @@ impl<'a> SmilesParser<'a> {
                         ));
                     }
                     atom.spec = atom.spec.with_chiral_permutation(
-                        u32::try_from(permutation)
-                            .expect("SMILES number parser returns non-negative values"),
+                        u32::try_from(permutation).expect("SMILES number parser returns non-negative values"),
                     );
                 }
             }
@@ -1730,9 +1653,7 @@ impl<'a> SmilesParser<'a> {
         // RDKit✔️✔️: 		|	number HASH_TOKEN	number   { $$ = new Atom($3); $$->setIsotope($1); }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy element
         match self.next_token()? {
-            SmilesToken::OrganicAtom(atom)
-            | SmilesToken::AromaticAtom(atom)
-            | SmilesToken::Atom(atom) => Ok(atom),
+            SmilesToken::OrganicAtom(atom) | SmilesToken::AromaticAtom(atom) | SmilesToken::Atom(atom) => Ok(atom),
             SmilesToken::Hash => {
                 let atomic_number = self.parse_number()?;
                 Ok(SmilesAtomToken::new(u8_from_rdkit_int(atomic_number)?))
@@ -1745,22 +1666,14 @@ impl<'a> SmilesParser<'a> {
         }
     }
 
-    fn parse_number_tail_then_element(
-        &mut self,
-        first_digit: i32,
-    ) -> Result<SmilesAtomToken, SmilesParseError> {
+    fn parse_number_tail_then_element(&mut self, first_digit: i32) -> Result<SmilesAtomToken, SmilesParseError> {
         let number = self.parse_number_tail(first_digit)?;
         self.parse_element_after_leading_number(number)
     }
 
-    fn parse_element_after_leading_number(
-        &mut self,
-        number: i32,
-    ) -> Result<SmilesAtomToken, SmilesParseError> {
+    fn parse_element_after_leading_number(&mut self, number: i32) -> Result<SmilesAtomToken, SmilesParseError> {
         match self.next_token()? {
-            SmilesToken::OrganicAtom(mut atom)
-            | SmilesToken::AromaticAtom(mut atom)
-            | SmilesToken::Atom(mut atom) => {
+            SmilesToken::OrganicAtom(mut atom) | SmilesToken::AromaticAtom(mut atom) | SmilesToken::Atom(mut atom) => {
                 atom.spec = atom.spec.with_isotope(u16_from_rdkit_int(number)?);
                 Ok(atom)
             }
@@ -1792,9 +1705,7 @@ impl<'a> SmilesParser<'a> {
         match self.next_token()? {
             SmilesToken::Zero => Ok(0),
             SmilesToken::NonzeroDigit(digit) => self.parse_number_tail(digit),
-            other => Err(SmilesParseError::ParseError(format!(
-                "expected number, got {other:?}"
-            ))),
+            other => Err(SmilesParseError::ParseError(format!("expected number, got {other:?}"))),
         }
     }
 
@@ -1842,9 +1753,7 @@ impl<'a> SmilesParser<'a> {
         // END RDKIT CPP GRAMMAR ACTION smiles.yy ring_number
         match self.next_token()? {
             SmilesToken::Zero => Ok(0),
-            SmilesToken::NonzeroDigit(digit) => {
-                Ok(u32::try_from(digit).expect("digit is non-negative"))
-            }
+            SmilesToken::NonzeroDigit(digit) => Ok(u32::try_from(digit).expect("digit is non-negative")),
             SmilesToken::Percent => self.parse_percent_ring_number(),
             other => Err(SmilesParseError::ParseError(format!(
                 "expected ring number, got {other:?}"
@@ -1862,26 +1771,20 @@ impl<'a> SmilesParser<'a> {
                 let mut digits = Vec::new();
                 while !matches!(self.peek_token()?, SmilesToken::GroupClose) {
                     if digits.len() == 5 {
-                        return Err(SmilesParseError::ParseError(
-                            "ring number too large".to_string(),
-                        ));
+                        return Err(SmilesParseError::ParseError("ring number too large".to_string()));
                     }
                     digits.push(self.parse_digit()?);
                 }
                 self.next_token()?;
                 if digits.is_empty() {
-                    return Err(SmilesParseError::ParseError(
-                        "empty ring number".to_string(),
-                    ));
+                    return Err(SmilesParseError::ParseError("empty ring number".to_string()));
                 }
                 let mut value = 0_u32;
                 for digit in digits {
                     value = value
                         .checked_mul(10)
                         .and_then(|value| value.checked_add(u32::try_from(digit).ok()?))
-                        .ok_or_else(|| {
-                            SmilesParseError::ParseError("ring number too large".to_string())
-                        })?;
+                        .ok_or_else(|| SmilesParseError::ParseError("ring number too large".to_string()))?;
                 }
                 Ok(value)
             }
@@ -1895,36 +1798,27 @@ impl<'a> SmilesParser<'a> {
         match self.next_token()? {
             SmilesToken::Zero => Ok(0),
             SmilesToken::NonzeroDigit(digit) => Ok(digit),
-            other => Err(SmilesParseError::ParseError(format!(
-                "expected digit, got {other:?}"
-            ))),
+            other => Err(SmilesParseError::ParseError(format!("expected digit, got {other:?}"))),
         }
     }
 }
 
 fn i8_from_rdkit_int(value: i32) -> Result<i8, SmilesParseError> {
-    i8::try_from(value)
-        .map_err(|_| SmilesParseError::ParseError(format!("value out of i8 range: {value}")))
+    i8::try_from(value).map_err(|_| SmilesParseError::ParseError(format!("value out of i8 range: {value}")))
 }
 
 fn u8_from_rdkit_int(value: i32) -> Result<u8, SmilesParseError> {
-    u8::try_from(value)
-        .map_err(|_| SmilesParseError::ParseError(format!("value out of u8 range: {value}")))
+    u8::try_from(value).map_err(|_| SmilesParseError::ParseError(format!("value out of u8 range: {value}")))
 }
 
 fn u16_from_rdkit_int(value: i32) -> Result<u16, SmilesParseError> {
-    u16::try_from(value)
-        .map_err(|_| SmilesParseError::ParseError(format!("value out of u16 range: {value}")))
+    u16::try_from(value).map_err(|_| SmilesParseError::ParseError(format!("value out of u16 range: {value}")))
 }
 
 fn canonical_bond_pair(begin: AtomId, end: AtomId) -> (usize, usize) {
     let begin = begin.index();
     let end = end.index();
-    if begin <= end {
-        (begin, end)
-    } else {
-        (end, begin)
-    }
+    if begin <= end { (begin, end) } else { (end, begin) }
 }
 
 fn chiral_permutation_limit(chiral_tag: ChiralTag) -> Option<i32> {
@@ -1948,8 +1842,7 @@ pub(crate) fn check_chiral_permutation(chiral_tag: ChiralTag, permutation: i32) 
     // RDKit✔️✔️: }
     // Local complexity review: enum matching replaces the O(log 5) map lookup
     // with O(1) dispatch and performs the same two signed comparisons.
-    chiral_permutation_limit(chiral_tag)
-        .is_none_or(|limit| permutation >= 0 && permutation <= limit)
+    chiral_permutation_limit(chiral_tag).is_none_or(|limit| permutation >= 0 && permutation <= limit)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2027,11 +1920,7 @@ impl SmilesBuildState {
     }
 
     fn from_molecule(molecule: &Molecule) -> Self {
-        let atom_aromatic = molecule
-            .atoms()
-            .iter()
-            .map(crate::Atom::is_aromatic)
-            .collect();
+        let atom_aromatic = molecule.atoms().iter().map(crate::Atom::is_aromatic).collect();
         let bond_pairs = molecule
             .bonds()
             .iter()
@@ -2130,10 +2019,7 @@ impl SmilesBuildState {
                 .with_direction(bond.direction())
                 .with_stereo(bond.stereo());
             if let Some([stereo_begin, stereo_end]) = bond.stereo_atoms() {
-                spec = spec.with_stereo_atoms(
-                    atom_mapping[stereo_begin.index()],
-                    atom_mapping[stereo_end.index()],
-                );
+                spec = spec.with_stereo_atoms(atom_mapping[stereo_begin.index()], atom_mapping[stereo_end.index()]);
             }
             if bond.unknown_stereo() {
                 spec = spec.with_unknown_stereo(true);
@@ -2206,11 +2092,7 @@ impl SmilesBuildState {
             let mut token = SmilesBondToken::new(bond_order);
             token.direction = bond_dir;
             if bond_order == BondOrder::Unspecified {
-                let begin_aromatic = self
-                    .atom_aromatic
-                    .get(last_active.index())
-                    .copied()
-                    .unwrap_or(false);
+                let begin_aromatic = self.atom_aromatic.get(last_active.index()).copied().unwrap_or(false);
                 let end_aromatic = self
                     .atom_aromatic
                     .get(atom_mapping[first_old_atom.index()].index())
@@ -2219,8 +2101,7 @@ impl SmilesBuildState {
                 token.order = get_unspecified_bond_type_for_atoms(begin_aromatic, end_aromatic);
                 token.explicit_unspecified_order = true;
             }
-            let bond_id =
-                self.add_bond_from_token(last_active, atom_mapping[first_old_atom.index()], token)?;
+            let bond_id = self.add_bond_from_token(last_active, atom_mapping[first_old_atom.index()], token)?;
             self.cx_bond_order.push(bond_id);
             self.active_atom = Some(atom_mapping[first_old_atom.index()]);
         } else {
@@ -2249,10 +2130,7 @@ impl SmilesBuildState {
         Ok(())
     }
 
-    fn add_atom_connected_to_active(
-        &mut self,
-        atom: SmilesAtomToken,
-    ) -> Result<(), SmilesParseError> {
+    fn add_atom_connected_to_active(&mut self, atom: SmilesAtomToken) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol atomd
         // RDKit✔️✔️: | mol atomd       {
         // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
@@ -2268,11 +2146,7 @@ impl SmilesBuildState {
         let begin = self
             .active_atom
             .ok_or_else(|| SmilesParseError::ParseError("no active atom".to_string()))?;
-        let begin_aromatic = self
-            .atom_aromatic
-            .get(begin.index())
-            .copied()
-            .unwrap_or(false);
+        let begin_aromatic = self.atom_aromatic.get(begin.index()).copied().unwrap_or(false);
         let end_aromatic = atom.spec.is_aromatic();
         let end = self.append_atom(atom);
         let order = get_unspecified_bond_type_for_atoms(begin_aromatic, end_aromatic);
@@ -2430,11 +2304,7 @@ impl SmilesBuildState {
         Ok(())
     }
 
-    fn add_branch_single_bond(
-        &mut self,
-        open_position: usize,
-        atom: SmilesAtomToken,
-    ) -> Result<(), SmilesParseError> {
+    fn add_branch_single_bond(&mut self, open_position: usize, atom: SmilesAtomToken) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token MINUS_TOKEN atomd
         // RDKit✔️✔️: | mol branch_open_token MINUS_TOKEN atomd {
         // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
@@ -2601,9 +2471,9 @@ impl SmilesBuildState {
             self.next_cx_smiles_bond_idx += 1;
         }
         if let Some(opening) = self.ring_openings.remove(&ring_number) {
-            let opening_pending_bond = opening.pending_bond.ok_or_else(|| {
-                SmilesParseError::ParseError(format!("missing ring bond {ring_number}"))
-            })?;
+            let opening_pending_bond = opening
+                .pending_bond
+                .ok_or_else(|| SmilesParseError::ParseError(format!("missing ring bond {ring_number}")))?;
             self.pending_ring_closures.push(PendingRingClosure {
                 ring_number,
                 opening_atom: opening.atom,
@@ -2683,16 +2553,8 @@ impl SmilesBuildState {
                 closing_atom.index()
             )));
         }
-        let opening_aromatic = self
-            .atom_aromatic
-            .get(opening_atom.index())
-            .copied()
-            .unwrap_or(false);
-        let closing_aromatic = self
-            .atom_aromatic
-            .get(closing_atom.index())
-            .copied()
-            .unwrap_or(false);
+        let opening_aromatic = self.atom_aromatic.get(opening_atom.index()).copied().unwrap_or(false);
+        let closing_aromatic = self.atom_aromatic.get(closing_atom.index()).copied().unwrap_or(false);
         let use_closing_token = opening_pending_bond.token.explicit_unspecified_order;
         let opening_token = opening_pending_bond.token;
         let closing_token = current_pending_bond.token;
@@ -2707,19 +2569,9 @@ impl SmilesBuildState {
             (opening_atom, closing_atom)
         };
         token.direction = if use_closing_token {
-            swap_bond_direction_if_needed(
-                token.direction,
-                opening_token.direction,
-                closing_atom,
-                opening_atom,
-            )
+            swap_bond_direction_if_needed(token.direction, opening_token.direction, closing_atom, opening_atom)
         } else {
-            swap_bond_direction_if_needed(
-                token.direction,
-                closing_token.direction,
-                opening_atom,
-                closing_atom,
-            )
+            swap_bond_direction_if_needed(token.direction, closing_token.direction, opening_atom, closing_atom)
         };
         if token.order == BondOrder::Unspecified {
             token.order = get_unspecified_bond_type_for_atoms(opening_aromatic, closing_aromatic);
@@ -2736,8 +2588,7 @@ impl SmilesBuildState {
         let cx_smiles_bond_idx = current_pending_bond
             .cx_smiles_bond_idx
             .or(opening_pending_bond.cx_smiles_bond_idx);
-        let bond_id =
-            self.add_bond_from_token_with_cx_idx(begin_atom, end_atom, token, cx_smiles_bond_idx)?;
+        let bond_id = self.add_bond_from_token_with_cx_idx(begin_atom, end_atom, token, cx_smiles_bond_idx)?;
         self.cx_bond_order.push(bond_id);
         Ok(bond_id)
     }
@@ -2762,9 +2613,7 @@ impl SmilesBuildState {
         let num_atoms = self.builder.atoms().len();
         let degree = self.atom_degree(atom);
         let should_invert = atom.index() != num_atoms.saturating_sub(1)
-            && (degree == 1
-                || (degree == 2 && atom.index() != 0)
-                || (degree == 3 && atom.index() == 0));
+            && (degree == 1 || (degree == 2 && atom.index() != 0) || (degree == 3 && atom.index() == 0));
         if !should_invert {
             return Ok(());
         }
@@ -2851,16 +2700,16 @@ impl SmilesBuildState {
                 closure.closing_pending_bond,
             )?;
             if let Some(records) = self.ring_closures_by_atom.get_mut(&closure.opening_atom)
-                && let Some(record) = records.iter_mut().find(|record| {
-                    record.ring_number == closure.ring_number && record.bond.is_none()
-                })
+                && let Some(record) = records
+                    .iter_mut()
+                    .find(|record| record.ring_number == closure.ring_number && record.bond.is_none())
             {
                 record.bond = Some(bond_id);
             }
             if let Some(records) = self.ring_closures_by_atom.get_mut(&closure.closing_atom)
-                && let Some(record) = records.iter_mut().find(|record| {
-                    record.ring_number == closure.ring_number && record.bond.is_none()
-                })
+                && let Some(record) = records
+                    .iter_mut()
+                    .find(|record| record.ring_number == closure.ring_number && record.bond.is_none())
             {
                 record.bond = Some(bond_id);
             }
@@ -2958,21 +2807,14 @@ impl SmilesBuildState {
         // END RDKIT CPP FUNCTION SetUnspecifiedBondTypes
         for bond_id in self.explicit_unspecified_bonds.iter().copied() {
             let (begin, end) = {
-                let bond = self.builder.bond(bond_id).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing bond {bond_id}"))
-                })?;
+                let bond = self
+                    .builder
+                    .bond(bond_id)
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {bond_id}")))?;
                 (bond.begin(), bond.end())
             };
-            let begin_aromatic = self
-                .atom_aromatic
-                .get(begin.index())
-                .copied()
-                .unwrap_or(false);
-            let end_aromatic = self
-                .atom_aromatic
-                .get(end.index())
-                .copied()
-                .unwrap_or(false);
+            let begin_aromatic = self.atom_aromatic.get(begin.index()).copied().unwrap_or(false);
+            let end_aromatic = self.atom_aromatic.get(end.index()).copied().unwrap_or(false);
             let order = get_unspecified_bond_type_for_atoms(begin_aromatic, end_aromatic);
             let bond = self
                 .builder
@@ -3064,10 +2906,11 @@ impl SmilesBuildState {
         let mut atoms_to_invert = Vec::new();
         let mut nontetra_permutations = Vec::new();
         for atom_id in atom_ids {
-            let atom =
-                self.builder.atoms().get(atom_id.index()).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing atom {atom_id}"))
-                })?;
+            let atom = self
+                .builder
+                .atoms()
+                .get(atom_id.index())
+                .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
             match atom.chiral_tag() {
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
                     let (bond_ordering, num_closures) = self.get_bond_ordering(atom_id)?;
@@ -3079,9 +2922,7 @@ impl SmilesBuildState {
                         atoms_to_invert.push(atom_id);
                     }
                 }
-                ChiralTag::SquarePlanar
-                | ChiralTag::TrigonalBipyramidal
-                | ChiralTag::Octahedral => {
+                ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
                     let (mut bond_ordering, _) = self.get_bond_ordering(atom_id)?;
                     let Some(ref_max) = nontetrahedral_max_neighbors(atom.chiral_tag()) else {
                         continue;
@@ -3095,8 +2936,7 @@ impl SmilesBuildState {
                         };
                         bond_ordering.splice(insert_at..insert_at, vec![-1; missing_count]);
                     }
-                    let permutation =
-                        self.nontetrahedral_chiral_permutation(atom_id, &bond_ordering, true)?;
+                    let permutation = self.nontetrahedral_chiral_permutation(atom_id, &bond_ordering, true)?;
                     nontetra_permutations.push((atom_id, permutation));
                 }
                 _ => {}
@@ -3198,11 +3038,7 @@ impl SmilesBuildState {
         Ok((bond_ordering, ring_closures.len()))
     }
 
-    fn perturbation_order(
-        &self,
-        atom_id: AtomId,
-        probe: &[i32],
-    ) -> Result<usize, SmilesParseError> {
+    fn perturbation_order(&self, atom_id: AtomId, probe: &[i32]) -> Result<usize, SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION Atom::getPerturbationOrder / countSwapsToInterconvert
         // RDKit✔️✔️: int Atom::getPerturbationOrder(const INT_LIST &probe) const {
         // RDKit✔️✔️:   INT_LIST ref;
@@ -3257,9 +3093,7 @@ impl SmilesBuildState {
                 .position(|value| *value == expected)
                 .map(|offset| idx + offset)
             else {
-                return Err(SmilesParseError::ParseError(
-                    "could not find probe element".to_string(),
-                ));
+                return Err(SmilesParseError::ParseError("could not find probe element".to_string()));
             };
             storage_order.swap(idx, found_idx);
             swaps = swaps.saturating_add(1);
@@ -3267,11 +3101,7 @@ impl SmilesBuildState {
         Ok(swaps)
     }
 
-    fn chiral_atom_needs_tag_inversion(
-        &self,
-        atom_id: AtomId,
-        num_closures: usize,
-    ) -> Result<bool, SmilesParseError> {
+    fn chiral_atom_needs_tag_inversion(&self, atom_id: AtomId, num_closures: usize) -> Result<bool, SmilesParseError> {
         let atom = self
             .builder
             .atoms()
@@ -3320,15 +3150,11 @@ impl SmilesBuildState {
         // RDKit✔️✔️:   return false;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Canon::details::isUnsaturated
-        self.builder
-            .neighbor_bonds(atom_id)
-            .iter()
-            .copied()
-            .any(|bond_id| {
-                self.builder
-                    .bond(bond_id)
-                    .is_some_and(|bond| bond_order_as_double(bond.order()) > 1.0)
-            })
+        self.builder.neighbor_bonds(atom_id).iter().copied().any(|bond_id| {
+            self.builder
+                .bond(bond_id)
+                .is_some_and(|bond| bond_order_as_double(bond.order()) > 1.0)
+        })
     }
 
     fn nontetrahedral_chiral_permutation(
@@ -3539,10 +3365,7 @@ impl SmilesBuildState {
     }
 }
 
-pub(crate) fn mol_from_smiles(
-    smiles: &str,
-    params: &SmilesParseParams,
-) -> Result<Molecule, SmilesParseError> {
+pub(crate) fn mol_from_smiles(smiles: &str, params: &SmilesParseParams) -> Result<Molecule, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles
     // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
     // RDKit✔️✔️:                                      const SmilesParserParams &params) {
@@ -3583,11 +3406,11 @@ pub(crate) fn mol_from_smiles(
     // RDKit MolOps::sanitizeMol runs through the registered operations.
     // COSMolKit applies equivalent operations on the built Molecule.
     if params.sanitize {
-        mol = mol.sanitize_with_ops(crate::SanitizeOps::ALL).map_err(
-            |e: crate::OperationError| {
+        mol = mol
+            .sanitize_with_ops(crate::SanitizeOps::ALL)
+            .map_err(|e: crate::OperationError| {
                 SmilesParseError::ParseError(format!("sanitize during smiles parse failed: {e}"))
-            },
-        )?;
+            })?;
     }
 
     let (first_2d_conf_id, first_3d_conf_id) = first_2d_and_3d_conformer_ids(&mol);
@@ -3661,12 +3484,8 @@ pub(crate) fn mol_from_smiles(
     if first_2d_conf_id.is_none()
         && let Some(conf_id) = first_3d_conf_id
     {
-        crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(
-            &mut mol,
-            conf_id as i32,
-            true,
-        )
-        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+        crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(&mut mol, conf_id as i32, true)
+            .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
     }
 
     // RDKit✔️✔️: Atropisomer detection
@@ -3714,10 +3533,7 @@ pub(crate) fn mol_from_smiles(
             if first_2d_conf_id.is_some() || first_3d_conf_id.is_some() {
                 clear_single_bond_dir_flags(&mut mol, false);
             }
-            let _ = set_double_bond_neighbor_directions_impl(
-                &mut mol,
-                first_2d_conf_id.or(first_3d_conf_id),
-            );
+            let _ = set_double_bond_neighbor_directions_impl(&mut mol, first_2d_conf_id.or(first_3d_conf_id));
         }
         mol.properties_mut().clear_prop("_needsDetectBondStereo");
         let _ = assign_stereochemistry_cleanup_subset(&mut mol, true);
@@ -3745,10 +3561,7 @@ pub(crate) fn mol_from_smiles(
             // SMILES queries.
         }
         mol.properties_mut().clear_prop("_NeedsQueryScan");
-        crate::search::query::complete_mol_queries(
-            &mut mol,
-            crate::search::query::QUERY_SCAN_MAGIC_VALUE,
-        );
+        crate::search::query::complete_mol_queries(&mut mol, crate::search::query::QUERY_SCAN_MAGIC_VALUE);
     }
 
     Ok(mol)
@@ -3777,18 +3590,14 @@ pub(crate) fn apply_cx_part_and_name_to_molecule(
     Ok(())
 }
 
-pub(crate) fn cleanup_after_parsing_molecule(
-    molecule: &mut Molecule,
-) -> Result<(), SmilesParseError> {
+pub(crate) fn cleanup_after_parsing_molecule(molecule: &mut Molecule) -> Result<(), SmilesParseError> {
     let mut state = SmilesBuildState::from_molecule(molecule);
     state.cleanup_after_parsing();
     *molecule = state.into_molecule()?;
     Ok(())
 }
 
-pub(crate) fn apply_bond_stereo_from_directions_to_molecule(
-    molecule: &mut Molecule,
-) -> Result<(), crate::StereoError> {
+pub(crate) fn apply_bond_stereo_from_directions_to_molecule(molecule: &mut Molecule) -> Result<(), crate::StereoError> {
     set_bond_stereo_from_directions(molecule)
 }
 
@@ -3865,10 +3674,7 @@ fn to_mol(inp: &str) -> Result<SmilesBuildState, SmilesParseError> {
     }
 }
 
-fn preprocess_smiles(
-    smiles: &str,
-    params: &SmilesParseParams,
-) -> Result<PreprocessedSmiles, SmilesParseError> {
+fn preprocess_smiles(smiles: &str, params: &SmilesParseParams) -> Result<PreprocessedSmiles, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION preprocessSmiles
     // RDKit✔️✔️: template <typename T>
     // RDKit✔️✔️: void preprocessSmiles(const std::string &smiles, const T &params,
@@ -4003,10 +3809,7 @@ fn apply_smiles_postprocessing(
 }
 
 impl SmilesBuildState {
-    fn remove_hs_update_explicit_count(
-        &mut self,
-        params: &RemoveHsParams,
-    ) -> Result<(), SmilesParseError> {
+    fn remove_hs_update_explicit_count(&mut self, params: &RemoveHsParams) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION removeHs / molRemoveH / shouldRemoveH
         // RDKit✔️✔️: void removeHs(RWMol &mol, const RemoveHsParameters &ps, bool sanitize) {
         // RDKit✔️✔️:   if (ps.removeAndTrackIsotopes) {
@@ -4173,9 +3976,10 @@ impl SmilesBuildState {
                 }
             }
             for (atom_id, isotopes) in isotopic_hydrogens {
-                let atom = self.builder.atom_mut(atom_id).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing atom {atom_id}"))
-                })?;
+                let atom = self
+                    .builder
+                    .atom_mut(atom_id)
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
                 atom.set_tracked_isotopic_hydrogens(isotopes);
             }
         }
@@ -4208,23 +4012,20 @@ impl SmilesBuildState {
         let mut atoms_to_increment_explicit_h = Vec::new();
         for atom_id in &atoms_to_remove {
             for (neighbor, removed_bond) in &neighbors[atom_id.index()] {
-                let hydrogen_bond = self.builder.bond(*removed_bond).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing bond {removed_bond}"))
-                })?;
+                let hydrogen_bond = self
+                    .builder
+                    .bond(*removed_bond)
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {removed_bond}")))?;
                 let chiral_tag = self
                     .builder
                     .atoms()
                     .get(neighbor.index())
-                    .ok_or_else(|| {
-                        SmilesParseError::ParseError(format!("missing atom {neighbor}"))
-                    })?
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {neighbor}")))?
                     .chiral_tag();
                 if chiral_tag != ChiralTag::Unspecified {
                     let mut neighbor_indices = neighbors[neighbor.index()]
                         .iter()
-                        .filter_map(|(_, bond_id)| {
-                            (*bond_id != *removed_bond).then_some(bond_id.index() as i32)
-                        })
+                        .filter_map(|(_, bond_id)| (*bond_id != *removed_bond).then_some(bond_id.index() as i32))
                         .collect::<Vec<_>>();
                     neighbor_indices.push(removed_bond.index() as i32);
                     if self.perturbation_order(*neighbor, &neighbor_indices)? % 2 == 1 {
@@ -4235,9 +4036,10 @@ impl SmilesBuildState {
                     if let Some((_, remaining_bond)) = neighbors[neighbor.index()]
                         .iter()
                         .find(|(_, bond_id)| *bond_id != *removed_bond)
-                        && self.builder.bond(*remaining_bond).is_some_and(|bond| {
-                            !matches!(bond.stereo(), BondStereo::None | BondStereo::Any)
-                        })
+                        && self
+                            .builder
+                            .bond(*remaining_bond)
+                            .is_some_and(|bond| !matches!(bond.stereo(), BondStereo::None | BondStereo::Any))
                     {
                         bonds_to_clear_stereo.push(*remaining_bond);
                     }
@@ -4263,12 +4065,9 @@ impl SmilesBuildState {
                     | BondDirection::BeginDash
                     | BondDirection::EitherDouble => {}
                 }
-                if let Some(update) = smiles_adjust_stereo_atoms_if_required(
-                    &self.builder,
-                    &neighbors,
-                    *atom_id,
-                    *neighbor,
-                )? {
+                if let Some(update) =
+                    smiles_adjust_stereo_atoms_if_required(&self.builder, &neighbors, *atom_id, *neighbor)?
+                {
                     bond_stereo_updates.push(update);
                 }
                 if smiles_should_increment_explicit_hydrogens(
@@ -4459,9 +4258,9 @@ fn smiles_should_remove_hydrogen(
                 only_h_neighbors = false;
             }
             if !params.remove_with_wedged_bond {
-                let hydrogen_bond = builder.bond(*bond_id).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing bond {bond_id}"))
-                })?;
+                let hydrogen_bond = builder
+                    .bond(*bond_id)
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {bond_id}")))?;
                 if matches!(
                     hydrogen_bond.direction(),
                     BondDirection::BeginDash | BondDirection::BeginWedge
@@ -4470,13 +4269,13 @@ fn smiles_should_remove_hydrogen(
                 }
             }
             if !params.remove_defining_bond_stereo && neighbors[neighbor.index()].len() == 2 {
-                let hydrogen_bond = builder.bond(*bond_id).ok_or_else(|| {
-                    SmilesParseError::ParseError(format!("missing bond {bond_id}"))
-                })?;
+                let hydrogen_bond = builder
+                    .bond(*bond_id)
+                    .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {bond_id}")))?;
                 for (_, neighbor_bond_id) in &neighbors[neighbor.index()] {
-                    let neighbor_bond = builder.bond(*neighbor_bond_id).ok_or_else(|| {
-                        SmilesParseError::ParseError(format!("missing bond {neighbor_bond_id}"))
-                    })?;
+                    let neighbor_bond = builder
+                        .bond(*neighbor_bond_id)
+                        .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {neighbor_bond_id}")))?;
                     if neighbor_bond.order() == BondOrder::Double
                         && (!matches!(neighbor_bond.stereo(), BondStereo::None | BondStereo::Any)
                             || hydrogen_bond.direction() != BondDirection::None)
@@ -4493,9 +4292,7 @@ fn smiles_should_remove_hydrogen(
     Ok(true)
 }
 
-fn smiles_cached_total_valence(
-    builder: &MoleculeBuilder,
-) -> Result<Option<Vec<i32>>, SmilesParseError> {
+fn smiles_cached_total_valence(builder: &MoleculeBuilder) -> Result<Option<Vec<i32>>, SmilesParseError> {
     if builder.atoms().is_empty() {
         return Ok(None);
     }
@@ -4503,9 +4300,8 @@ fn smiles_cached_total_valence(
         .clone()
         .build()
         .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
-    let assignment =
-        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
-            .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+    let assignment = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
     Ok(Some(
         assignment
             .explicit_valence
@@ -4530,15 +4326,13 @@ fn smiles_should_increment_explicit_hydrogens(
     if update_explicit_count || atom.no_implicit() || atom.chiral_tag() != ChiralTag::Unspecified {
         return Ok(true);
     }
-    let Some(total_valence) =
-        cached_total_valence.and_then(|values| values.get(heavy_atom.index()))
-    else {
+    let Some(total_valence) = cached_total_valence.and_then(|values| values.get(heavy_atom.index())) else {
         return Ok(false);
     };
     let default_valences = crate::rdkit_valence_list(atom.atomic_number())
         .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
-    let non_default_valence = default_valences
-        .is_some_and(|values| values.iter().skip(1).any(|value| *value == *total_valence));
+    let non_default_valence =
+        default_valences.is_some_and(|values| values.iter().skip(1).any(|value| *value == *total_valence));
     Ok(((atom.atomic_number() == 7
         || atom.atomic_number() == 15
         || smiles_may_need_extra_h(builder, heavy_atom, cached_total_valence, neighbors)?)
@@ -4599,9 +4393,7 @@ fn smiles_adjust_stereo_atoms_if_required(
         let bond = builder
             .bond(*bond_id)
             .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {bond_id}")))?;
-        if bond.order() != BondOrder::Double
-            || matches!(bond.stereo(), BondStereo::None | BondStereo::Any)
-        {
+        if bond.order() != BondOrder::Double || matches!(bond.stereo(), BondStereo::None | BondStereo::Any) {
             continue;
         }
         let Some(mut stereo_atoms) = bond.stereo_atoms() else {
@@ -4641,8 +4433,7 @@ fn smiles_may_need_extra_h(
     cached_total_valence: Option<&[i32]>,
     neighbors: &[Vec<(AtomId, BondId)>],
 ) -> Result<bool, SmilesParseError> {
-    let Some(total_valence) = cached_total_valence.and_then(|values| values.get(atom_id.index()))
-    else {
+    let Some(total_valence) = cached_total_valence.and_then(|values| values.get(atom_id.index())) else {
         return Ok(false);
     };
     let mut single_bonds = 0usize;
@@ -4661,9 +4452,7 @@ fn smiles_may_need_extra_h(
     Ok(single_bonds == 1 && aromatic_bonds == 2 && *total_valence == 3)
 }
 
-fn tracked_smiles_isotopic_hydrogens(
-    builder: &MoleculeBuilder,
-) -> Result<Vec<(AtomId, Vec<u16>)>, SmilesParseError> {
+fn tracked_smiles_isotopic_hydrogens(builder: &MoleculeBuilder) -> Result<Vec<(AtomId, Vec<u16>)>, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
     // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
     // RDKit✔️✔️:     if (atom->hasProp(common_properties::_isotopicHs)) {
@@ -4673,10 +4462,7 @@ fn tracked_smiles_isotopic_hydrogens(
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
     // The builder-owned clear loop is applied by `remove_hs_update_explicit_count`.
     crate::source_port_helpers::rdkit_get_iso_map(
-        builder
-            .bonds()
-            .iter()
-            .map(|bond| (bond.begin(), bond.end())),
+        builder.bonds().iter().map(|bond| (bond.begin(), bond.end())),
         |atom_id| {
             builder
                 .atoms()
@@ -4719,9 +4505,9 @@ fn smiles_hydrogen_has_special_sgroup_role(
             return Ok(true);
         }
         for cstate in substance_group.cstates() {
-            let bond = builder.bond(cstate.bond).ok_or_else(|| {
-                SmilesParseError::ParseError(format!("missing bond {}", cstate.bond))
-            })?;
+            let bond = builder
+                .bond(cstate.bond)
+                .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {}", cstate.bond)))?;
             if bond.begin() == hydrogen || bond.end() == hydrogen {
                 return Ok(true);
             }
@@ -4733,15 +4519,13 @@ fn smiles_hydrogen_has_special_sgroup_role(
 fn smiles_sgroup_includes_atom(substance_group: &SubstanceGroup, atom: AtomId) -> bool {
     substance_group.atoms().contains(&atom)
         || substance_group.parent_atoms().contains(&atom)
-        || substance_group.attach_points().iter().any(|attach_point| {
-            attach_point.atom == atom || attach_point.leaving_atom == Some(atom)
-        })
+        || substance_group
+            .attach_points()
+            .iter()
+            .any(|attach_point| attach_point.atom == atom || attach_point.leaving_atom == Some(atom))
 }
 
-fn filter_smiles_sgroup_emptying_hydrogens(
-    builder: &MoleculeBuilder,
-    atoms_to_remove: &mut Vec<AtomId>,
-) {
+fn filter_smiles_sgroup_emptying_hydrogens(builder: &MoleculeBuilder, atoms_to_remove: &mut Vec<AtomId>) {
     let original_atoms_to_remove = atoms_to_remove.clone();
     atoms_to_remove.retain(|atom| {
         builder.substance_groups().iter().all(|substance_group| {

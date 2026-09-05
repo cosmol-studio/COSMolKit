@@ -430,15 +430,13 @@ pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
     }
 
     if remaining > 0 {
-        ctx.buffer[left..left + remaining]
-            .copy_from_slice(&input[input_offset..input_offset + remaining]);
+        ctx.buffer[left..left + remaining].copy_from_slice(&input[input_offset..input_offset + remaining]);
     }
 }
 
 const SHA2_PADDING: [u8; 64] = [
-    0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0,
+    0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 pub(crate) fn sha2_finish(ctx: &mut Sha2Context, output: &mut [u8; 32]) {
@@ -578,14 +576,12 @@ mod tests {
     #[test]
     fn source_port__sha2__sha2_csum__line_312() {
         const EMPTY_SHA256: [u8; 32] = [
-            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f,
-            0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b,
-            0x78, 0x52, 0xb8, 0x55,
+            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae,
+            0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
         ];
         const ABC_SHA256: [u8; 32] = [
-            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
-            0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
-            0xf2, 0x00, 0x15, 0xad,
+            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03,
+            0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
         ];
 
         let mut output = [0xa5_u8; 32];
@@ -646,8 +642,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -669,12 +664,8 @@ mod tests {
             };
             let input = parse_u8_array(&official["input"]["bytes"], 1024);
             let input_before = input.clone();
-            let ilen = i32::try_from(
-                official["input"]["ilen"]
-                    .as_i64()
-                    .expect("ilen must be signed"),
-            )
-            .unwrap_or_else(|_| panic!("{case_id}: ilen exceeds i32"));
+            let ilen = i32::try_from(official["input"]["ilen"].as_i64().expect("ilen must be signed"))
+                .unwrap_or_else(|_| panic!("{case_id}: ilen exceeds i32"));
             let input_pointer_null = official["input"]["input_pointer_null"]
                 .as_bool()
                 .expect("input_pointer_null must be boolean");
@@ -682,17 +673,9 @@ mod tests {
                 .try_into()
                 .unwrap_or_else(|_| panic!("{case_id}: output length changed"));
 
-            sha2_csum(
-                if input_pointer_null { &[] } else { &input },
-                ilen,
-                &mut digest,
-            );
+            sha2_csum(if input_pointer_null { &[] } else { &input }, ilen, &mut digest);
 
-            assert_eq!(
-                input,
-                parse_u8_array(&official["output"]["bytes"], 1024),
-                "{case_id}"
-            );
+            assert_eq!(input, parse_u8_array(&official["output"]["bytes"], 1024), "{case_id}");
             assert_eq!(input, input_before, "{case_id}");
             assert_eq!(official["output"]["input_unchanged"], true, "{case_id}");
             assert_eq!(
@@ -730,8 +713,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -751,9 +733,7 @@ mod tests {
             let parse_u8_array = |value: &Value, expected_length: usize| {
                 parse_u64_array(value, expected_length)
                     .into_iter()
-                    .map(|value| {
-                        u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8"))
-                    })
+                    .map(|value| u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8")))
                     .collect::<Vec<_>>()
             };
             let mut ctx = Sha2Context {
@@ -860,8 +840,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -881,9 +860,7 @@ mod tests {
             let parse_u8_array = |value: &Value, expected_length: usize| {
                 parse_u64_array(value, expected_length)
                     .into_iter()
-                    .map(|value| {
-                        u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8"))
-                    })
+                    .map(|value| u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8")))
                     .collect::<Vec<_>>()
             };
             let input_total = parse_u64_array(&official["input"]["total"], 2);
@@ -960,8 +937,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -981,9 +957,7 @@ mod tests {
             let parse_u8_array = |value: &Value, expected_length: usize| {
                 parse_u64_array(value, expected_length)
                     .into_iter()
-                    .map(|value| {
-                        u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8"))
-                    })
+                    .map(|value| u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8")))
                     .collect::<Vec<_>>()
             };
             let mut ctx = Sha2Context {
@@ -999,12 +973,8 @@ mod tests {
             };
             let input = parse_u8_array(&official["input"]["bytes"], 256);
             let input_before = input.clone();
-            let ilen = i32::try_from(
-                official["input"]["ilen"]
-                    .as_i64()
-                    .expect("ilen must be signed"),
-            )
-            .unwrap_or_else(|_| panic!("{case_id}: ilen exceeds i32"));
+            let ilen = i32::try_from(official["input"]["ilen"].as_i64().expect("ilen must be signed"))
+                .unwrap_or_else(|_| panic!("{case_id}: ilen exceeds i32"));
 
             sha2_update(&mut ctx, &input, ilen);
 
@@ -1023,11 +993,7 @@ mod tests {
                 parse_u8_array(&official["output"]["buffer"], 64),
                 "{case_id}"
             );
-            assert_eq!(
-                input,
-                parse_u8_array(&official["output"]["bytes"], 256),
-                "{case_id}"
-            );
+            assert_eq!(input, parse_u8_array(&official["output"]["bytes"], 256), "{case_id}");
             assert_eq!(input, input_before, "{case_id}");
             assert_eq!(official["output"]["input_unchanged"], true, "{case_id}");
             record_count += 1;
@@ -1060,8 +1026,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -1081,9 +1046,7 @@ mod tests {
             let parse_u8_array = |value: &Value, expected_length: usize| {
                 parse_u64_array(value, expected_length)
                     .into_iter()
-                    .map(|value| {
-                        u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8"))
-                    })
+                    .map(|value| u8::try_from(value).unwrap_or_else(|_| panic!("{case_id}: byte exceeds u8")))
                     .collect::<Vec<_>>()
             };
             let mut ctx = Sha2Context {
@@ -1209,9 +1172,8 @@ mod tests {
         assert_eq!(
             empty_output,
             [
-                0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f,
-                0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b,
-                0x78, 0x52, 0xb8, 0x55,
+                0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27,
+                0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
             ]
         );
         assert_eq!(empty.total, [64, 0]);
@@ -1224,9 +1186,8 @@ mod tests {
         assert_eq!(
             abc_output,
             [
-                0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
-                0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
-                0xf2, 0x00, 0x15, 0xad,
+                0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0,
+                0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
             ]
         );
         assert_eq!(abc.total, [64, 0]);
@@ -1248,12 +1209,7 @@ mod tests {
             for (word, bytes) in ctx.state.iter().zip(output.chunks_exact(4)) {
                 assert_eq!(
                     bytes,
-                    [
-                        (word >> 24) as u8,
-                        (word >> 16) as u8,
-                        (word >> 8) as u8,
-                        *word as u8,
-                    ],
+                    [(word >> 24) as u8, (word >> 16) as u8, (word >> 8) as u8, *word as u8,],
                     "initial_total={initial_total:?}"
                 );
             }

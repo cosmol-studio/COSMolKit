@@ -14,11 +14,10 @@ pub(super) fn with_kekulized_bonds_impl(clear_aromatic_flags: bool) -> Result<()
     // RDKit✔️✔️: }
     let valence = parts.with_topology_mut(|parts, topology| {
         let rings = parts.with_topology_read_parts(topology.clone(), |read| {
-            read.symmetrize_sssr()
-                .map_err(|source| OperationError::RingFinding {
-                    operation: &WITH_KEKULIZED_BONDS_SPEC,
-                    source,
-                })
+            read.symmetrize_sssr().map_err(|source| OperationError::RingFinding {
+                operation: &WITH_KEKULIZED_BONDS_SPEC,
+                source,
+            })
         })?;
         parts.set_rings_cache(rings);
         let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
@@ -68,12 +67,10 @@ pub(super) fn assigned_valence_impl(strict: bool) -> Result<(), OperationError> 
 #[mol_op_body(assigned_rings, parts)]
 pub(super) fn assigned_rings_impl() -> Result<(), OperationError> {
     let read = parts.begin_topology_read()?;
-    let rings = read
-        .symmetrize_sssr()
-        .map_err(|source| OperationError::RingFinding {
-            operation: &ASSIGNED_RINGS_SPEC,
-            source,
-        })?;
+    let rings = read.symmetrize_sssr().map_err(|source| OperationError::RingFinding {
+        operation: &ASSIGNED_RINGS_SPEC,
+        source,
+    })?;
     parts.set_rings_cache(rings);
     Ok(())
 }
@@ -81,12 +78,12 @@ pub(super) fn assigned_rings_impl() -> Result<(), OperationError> {
 #[mol_op_body(assigned_ring_families, parts)]
 pub(super) fn assigned_ring_families_impl() -> Result<(), OperationError> {
     let read = parts.begin_topology_read()?;
-    let ring_families =
-        read.find_ring_families(false, false)
-            .map_err(|source| OperationError::RingFinding {
-                operation: &ASSIGNED_RING_FAMILIES_SPEC,
-                source,
-            })?;
+    let ring_families = read
+        .find_ring_families(false, false)
+        .map_err(|source| OperationError::RingFinding {
+            operation: &ASSIGNED_RING_FAMILIES_SPEC,
+            source,
+        })?;
     parts.set_ring_families_cache(ring_families);
     Ok(())
 }
@@ -95,11 +92,10 @@ pub(super) fn assigned_ring_families_impl() -> Result<(), OperationError> {
 pub(super) fn assigned_aromaticity_impl() -> Result<(), OperationError> {
     let valence = parts.with_topology_mut(|parts, topology| {
         let rings = parts.with_topology_read_parts(topology.clone(), |read| {
-            read.symmetrize_sssr()
-                .map_err(|source| OperationError::RingFinding {
-                    operation: &ASSIGNED_AROMATICITY_SPEC,
-                    source,
-                })
+            read.symmetrize_sssr().map_err(|source| OperationError::RingFinding {
+                operation: &ASSIGNED_AROMATICITY_SPEC,
+                source,
+            })
         })?;
         parts.set_rings_cache(rings);
         let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
@@ -109,25 +105,12 @@ pub(super) fn assigned_aromaticity_impl() -> Result<(), OperationError> {
                     source,
                 })
         })?;
-        for (atom, is_aromatic) in topology
-            .atoms
-            .iter_mut()
-            .zip(assignment.atom_aromatic.iter().copied())
-        {
+        for (atom, is_aromatic) in topology.atoms.iter_mut().zip(assignment.atom_aromatic.iter().copied()) {
             atom.set_aromatic(is_aromatic);
         }
-        for (bond, is_aromatic) in topology
-            .bonds
-            .iter_mut()
-            .zip(assignment.bond_aromatic.iter().copied())
-        {
+        for (bond, is_aromatic) in topology.bonds.iter_mut().zip(assignment.bond_aromatic.iter().copied()) {
             bond.set_aromatic(is_aromatic);
-            if is_aromatic
-                && matches!(
-                    bond.order(),
-                    crate::BondOrder::Single | crate::BondOrder::Double
-                )
-            {
+            if is_aromatic && matches!(bond.order(), crate::BondOrder::Single | crate::BondOrder::Double) {
                 bond.set_order(crate::BondOrder::Aromatic);
             }
         }
@@ -150,12 +133,10 @@ pub(super) fn assigned_aromaticity_impl() -> Result<(), OperationError> {
 pub(super) fn assigned_radicals_impl() -> Result<(), OperationError> {
     let valence = parts.with_topology_mut(|parts, topology| {
         let (radicals, changed) = parts.with_topology_read_parts(topology.clone(), |read| {
-            let radicals = read
-                .assign_radicals()
-                .map_err(|source| OperationError::Valence {
-                    operation: &ASSIGNED_RADICALS_SPEC,
-                    source,
-                })?;
+            let radicals = read.assign_radicals().map_err(|source| OperationError::Valence {
+                operation: &ASSIGNED_RADICALS_SPEC,
+                source,
+            })?;
             let changed = read
                 .atoms()
                 .iter()
@@ -253,29 +234,21 @@ pub(super) fn with_chiral_tags_from_structure_impl(
 }
 
 #[mol_op_body(assigned_cip_labels, parts)]
-pub(super) fn assigned_cip_labels_impl(
-    options: crate::CipLabelOptions,
-) -> Result<(), OperationError> {
-    let assignment_error =
-        parts.with_topology_and_properties_mut(|parts, topology, properties| {
-            let transition = parts.with_borrowed_optional_block_read_parts(
-                topology,
-                None,
-                Some(properties),
-                |read| {
-                    crate::chemistry::ciplabeler::assign_cip_labels_from_read_parts(read, &options)
-                        .map_err(|source| OperationError::CipLabeler {
-                            operation: &ASSIGNED_CIP_LABELS_SPEC,
-                            source,
-                        })
-                },
-            )?;
-            let (assigned_topology, assigned_properties, assignment_error) =
-                transition.into_parts();
-            *topology = assigned_topology;
-            *properties = assigned_properties;
-            Ok(assignment_error)
+pub(super) fn assigned_cip_labels_impl(options: crate::CipLabelOptions) -> Result<(), OperationError> {
+    let assignment_error = parts.with_topology_and_properties_mut(|parts, topology, properties| {
+        let transition = parts.with_borrowed_optional_block_read_parts(topology, None, Some(properties), |read| {
+            crate::chemistry::ciplabeler::assign_cip_labels_from_read_parts(read, &options).map_err(|source| {
+                OperationError::CipLabeler {
+                    operation: &ASSIGNED_CIP_LABELS_SPEC,
+                    source,
+                }
+            })
         })?;
+        let (assigned_topology, assigned_properties, assignment_error) = transition.into_parts();
+        *topology = assigned_topology;
+        *properties = assigned_properties;
+        Ok(assignment_error)
+    })?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT);
     match assignment_error {
@@ -288,9 +261,7 @@ pub(super) fn assigned_cip_labels_impl(
 }
 
 #[mol_op_body(with_2d_coordinates, parts)]
-pub(super) fn with_2d_coordinates_impl(
-    params: crate::With2DCoordinatesParams,
-) -> Result<(), OperationError> {
+pub(super) fn with_2d_coordinates_impl(params: crate::With2DCoordinatesParams) -> Result<(), OperationError> {
     let coords = parts.with_coordinate_update_read_parts(|read| {
         crate::coordinates::compute_2d_coords_with_properties_and_params(
             read.atoms(),
@@ -299,30 +270,23 @@ pub(super) fn with_2d_coordinates_impl(
             &params.as_compute_params(),
         )
         .map_err(|source| match source {
-            crate::coordinates::Coordinate2DError::InvalidInput(message) => {
-                OperationError::InvalidInput {
-                    operation: &WITH_2D_COORDINATES_SPEC,
-                    message,
-                }
-            }
-            crate::coordinates::Coordinate2DError::UnsupportedFeature(_) => {
-                OperationError::UnsupportedFeature {
-                    operation: &WITH_2D_COORDINATES_SPEC,
-                    source: crate::UnsupportedFeatureError::from_spec(
-                        &crate::COORDINATE_2D_FEATURE,
-                    ),
-                }
-            }
+            crate::coordinates::Coordinate2DError::InvalidInput(message) => OperationError::InvalidInput {
+                operation: &WITH_2D_COORDINATES_SPEC,
+                message,
+            },
+            crate::coordinates::Coordinate2DError::UnsupportedFeature(_) => OperationError::UnsupportedFeature {
+                operation: &WITH_2D_COORDINATES_SPEC,
+                source: crate::UnsupportedFeatureError::from_spec(&crate::COORDINATE_2D_FEATURE),
+            },
         })
     })?;
     parts.with_coordinates_mut(|_parts, coord_block| {
         if params.clear_confs {
             coord_block.conformers_2d.clear();
         }
-        coord_block.conformers_2d.push(crate::Conformer2D::new(
-            coord_block.conformers_2d.len(),
-            coords,
-        ));
+        coord_block
+            .conformers_2d
+            .push(crate::Conformer2D::new(coord_block.conformers_2d.len(), coords));
         coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
         Ok(())
     })?;
@@ -345,9 +309,7 @@ pub(super) fn with_2d_coordinate_block_impl(coords: Vec<[f64; 2]>) -> Result<(),
 
     parts.with_coordinates_mut(|_parts, coord_block| {
         coord_block.conformers_2d.clear();
-        coord_block
-            .conformers_2d
-            .push(crate::Conformer2D::new(0, coords));
+        coord_block.conformers_2d.push(crate::Conformer2D::new(0, coords));
         coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
         Ok(())
     })?;
@@ -355,14 +317,8 @@ pub(super) fn with_2d_coordinate_block_impl(coords: Vec<[f64; 2]>) -> Result<(),
     Ok(())
 }
 
-fn source_coordinate_dim_for_block(
-    coord_block: &CoordinateBlock,
-) -> Option<crate::CoordinateDimension> {
-    if coord_block
-        .conformers_3d
-        .iter()
-        .any(crate::Conformer3D::is_3d)
-    {
+fn source_coordinate_dim_for_block(coord_block: &CoordinateBlock) -> Option<crate::CoordinateDimension> {
+    if coord_block.conformers_3d.iter().any(crate::Conformer3D::is_3d) {
         Some(crate::CoordinateDimension::ThreeD)
     } else if !coord_block.conformers_2d.is_empty() || !coord_block.conformers_3d.is_empty() {
         Some(crate::CoordinateDimension::TwoD)
@@ -372,16 +328,15 @@ fn source_coordinate_dim_for_block(
 }
 
 #[mol_op_body(with_3d_conformer, parts)]
-pub(super) fn with_3d_conformer_impl(
-    mut params: crate::EmbedParameters,
-) -> Result<(), OperationError> {
+pub(super) fn with_3d_conformer_impl(mut params: crate::EmbedParameters) -> Result<(), OperationError> {
     parts.with_coordinates_mut(|parts, coord_block| {
         parts.with_coordinate_update_read_parts(|read| {
-            crate::distgeom::embed_molecule_coordinate_update(read, coord_block, &mut params)
-                .map_err(|source| OperationError::DistanceGeometry {
+            crate::distgeom::embed_molecule_coordinate_update(read, coord_block, &mut params).map_err(|source| {
+                OperationError::DistanceGeometry {
                     operation: &WITH_3D_CONFORMER_SPEC,
                     source,
-                })
+                }
+            })
         })
     })?;
     parts.clear_cache(DerivedState::DRAWING);
@@ -389,10 +344,7 @@ pub(super) fn with_3d_conformer_impl(
 }
 
 #[mol_op_body(with_3d_coordinates, parts)]
-pub(super) fn with_3d_coordinates_impl(
-    coords: Vec<[f64; 3]>,
-    conformer_index: usize,
-) -> Result<(), OperationError> {
+pub(super) fn with_3d_coordinates_impl(coords: Vec<[f64; 3]>, conformer_index: usize) -> Result<(), OperationError> {
     let atom_count = {
         let read = parts.begin_topology_read()?;
         read.num_atoms()
@@ -412,8 +364,7 @@ pub(super) fn with_3d_coordinates_impl(
             });
         }
         let existing = &coord_block.conformers_3d[conformer_index];
-        coord_block.conformers_3d[conformer_index] =
-            crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
+        coord_block.conformers_3d[conformer_index] = crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
         coord_block.source_coordinate_dim = source_coordinate_dim_for_block(coord_block);
         Ok(())
     })?;
@@ -427,11 +378,12 @@ pub(super) fn with_aligned_conformers_impl(
 ) -> Result<crate::ConformerAlignmentReport, OperationError> {
     let atom_count = parts.begin_topology_read()?.num_atoms();
     let rmsds = parts.with_coordinates_mut(|_parts, coordinates| {
-        crate::mol_align::align_conformers_in_coordinate_block(coordinates, atom_count, &params)
-            .map_err(|source| OperationError::Alignment {
+        crate::mol_align::align_conformers_in_coordinate_block(coordinates, atom_count, &params).map_err(|source| {
+            OperationError::Alignment {
                 operation: &WITH_ALIGNED_CONFORMERS_SPEC,
                 source,
-            })
+            }
+        })
     })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(crate::ConformerAlignmentReport { rmsds })
@@ -443,23 +395,19 @@ pub(super) fn with_alignment_to_impl(
     params: &crate::AlignmentParameters,
 ) -> Result<crate::AlignmentResult, OperationError> {
     let result = parts.with_coordinate_update_read_parts(|read| {
-        crate::mol_align::alignment_result_from_read_parts(read, reference, params).map_err(
-            |source| OperationError::Alignment {
+        crate::mol_align::alignment_result_from_read_parts(read, reference, params).map_err(|source| {
+            OperationError::Alignment {
                 operation: &WITH_ALIGNMENT_TO_SPEC,
                 source,
-            },
-        )
+            }
+        })
     })?;
     parts.with_coordinates_mut(|_parts, coordinates| {
-        crate::mol_align::apply_alignment_result_to_coordinate_block(
-            coordinates,
-            params.probe_conformer_id,
-            &result,
-        )
-        .map_err(|source| OperationError::Alignment {
-            operation: &WITH_ALIGNMENT_TO_SPEC,
-            source,
-        })
+        crate::mol_align::apply_alignment_result_to_coordinate_block(coordinates, params.probe_conformer_id, &result)
+            .map_err(|source| OperationError::Alignment {
+                operation: &WITH_ALIGNMENT_TO_SPEC,
+                source,
+            })
     })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(result)
@@ -482,16 +430,11 @@ pub(super) fn with_atom_position_impl(
         });
     }
     parts.with_coordinates_mut(|_parts, coordinates| {
-        crate::mol_transforms::set_atom_position_in_coordinate_block(
-            coordinates,
-            atom,
-            position,
-            conformer_index,
-        )
-        .map_err(|source| OperationError::MolTransform {
-            operation: &WITH_ATOM_POSITION_SPEC,
-            source,
-        })
+        crate::mol_transforms::set_atom_position_in_coordinate_block(coordinates, atom, position, conformer_index)
+            .map_err(|source| OperationError::MolTransform {
+                operation: &WITH_ATOM_POSITION_SPEC,
+                source,
+            })
     })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(())
@@ -519,16 +462,12 @@ pub(super) fn with_3d_conformers_impl(
     })?;
     parts.with_coordinates_mut(|parts, coord_block| {
         parts.with_coordinate_update_read_parts(|read| {
-            crate::distgeom::embed_multiple_confs_coordinate_update(
-                read,
-                coord_block,
-                num_confs,
-                &mut params,
+            crate::distgeom::embed_multiple_confs_coordinate_update(read, coord_block, num_confs, &mut params).map_err(
+                |source| OperationError::DistanceGeometry {
+                    operation: &WITH_3D_CONFORMERS_SPEC,
+                    source,
+                },
             )
-            .map_err(|source| OperationError::DistanceGeometry {
-                operation: &WITH_3D_CONFORMERS_SPEC,
-                source,
-            })
         })
     })?;
     parts.clear_cache(DerivedState::DRAWING);
@@ -536,10 +475,7 @@ pub(super) fn with_3d_conformers_impl(
 }
 
 #[mol_op_body(with_added_3d_conformer, parts)]
-pub(super) fn with_added_3d_conformer_impl(
-    coords: Vec<[f64; 3]>,
-    is_3d: bool,
-) -> Result<(), OperationError> {
+pub(super) fn with_added_3d_conformer_impl(coords: Vec<[f64; 3]>, is_3d: bool) -> Result<(), OperationError> {
     let atom_count = {
         let read = parts.begin_topology_read()?;
         read.num_atoms()
@@ -569,10 +505,7 @@ pub(super) fn with_added_3d_conformer_impl(
 }
 
 #[mol_op_body(with_only_3d_conformer, parts)]
-pub(super) fn with_only_3d_conformer_impl(
-    coords: Vec<[f64; 3]>,
-    is_3d: bool,
-) -> Result<(), OperationError> {
+pub(super) fn with_only_3d_conformer_impl(coords: Vec<[f64; 3]>, is_3d: bool) -> Result<(), OperationError> {
     let atom_count = {
         let read = parts.begin_topology_read()?;
         read.num_atoms()

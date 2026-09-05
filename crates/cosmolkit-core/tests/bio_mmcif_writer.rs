@@ -16,20 +16,14 @@ fn fixture_text(name: &str) -> String {
 
 #[test]
 fn pdb_to_mmcif_preserves_hierarchy_coordinates_identifiers_and_metadata() {
-    let structure = BioStructure::from_pdb_str(&fixture_text("gemmi_full_feature_sample.pdb"))
-        .expect("PDB fixture should parse");
+    let structure =
+        BioStructure::from_pdb_str(&fixture_text("gemmi_full_feature_sample.pdb")).expect("PDB fixture should parse");
     let source = structure.clone();
 
-    let output = structure
-        .to_mmcif()
-        .expect("PDB structure should write as mmCIF");
-    let reparsed =
-        BioStructure::from_mmcif_str(&output, "roundtrip.cif").expect("written mmCIF should parse");
+    let output = structure.to_mmcif().expect("PDB structure should write as mmCIF");
+    let reparsed = BioStructure::from_mmcif_str(&output, "roundtrip.cif").expect("written mmCIF should parse");
 
-    assert_eq!(
-        structure, source,
-        "writing must not mutate the source structure"
-    );
+    assert_eq!(structure, source, "writing must not mutate the source structure");
     assert_eq!(reparsed.num_models(), structure.num_models());
     assert_eq!(reparsed.num_chains(), structure.num_chains());
     assert_eq!(reparsed.num_residues(), structure.num_residues());
@@ -54,8 +48,7 @@ fn mmcif_roundtrip_preserves_assembly_connection_and_multimodel_state() {
     )
     .expect("mmCIF fixture should parse");
     let output = structure.to_mmcif().expect("mmCIF fixture should write");
-    let reparsed = BioStructure::from_mmcif_str(&output, "rewritten.cif")
-        .expect("rewritten fixture should parse");
+    let reparsed = BioStructure::from_mmcif_str(&output, "rewritten.cif").expect("rewritten fixture should parse");
     assert_eq!(reparsed.num_atoms(), structure.num_atoms());
     assert_eq!(reparsed.assemblies(), structure.assemblies());
     assert_eq!(reparsed.connections().len(), structure.connections().len());
@@ -87,14 +80,11 @@ ATOM 2 C CA . ALA A 1 4 5 6 1 ALA X 2
     )
     .expect("multi-model fixture should parse");
     let multi_output = multi.to_mmcif().expect("multi-model fixture should write");
-    let multi_reparsed = BioStructure::from_mmcif_str(&multi_output, "multi-out.cif")
-        .expect("multi-model output should parse");
+    let multi_reparsed =
+        BioStructure::from_mmcif_str(&multi_output, "multi-out.cif").expect("multi-model output should parse");
     assert_eq!(multi_reparsed.num_models(), 2);
     assert_eq!(multi_reparsed.num_atoms(), 2);
-    assert_eq!(
-        multi_reparsed.atom_position(BioAtomId::new(1)),
-        Some([4.0, 5.0, 6.0])
-    );
+    assert_eq!(multi_reparsed.atom_position(BioAtomId::new(1)), Some([4.0, 5.0, 6.0]));
 }
 
 #[test]
@@ -129,9 +119,7 @@ fn file_writer_matches_string_writer_and_reports_io_errors() {
     let expected = structure.to_mmcif().expect("string writer should succeed");
     let file = tempfile::NamedTempFile::new().expect("temporary file should be created");
 
-    structure
-        .write_mmcif(file.path())
-        .expect("file writer should succeed");
+    structure.write_mmcif(file.path()).expect("file writer should succeed");
     assert_eq!(std::fs::read_to_string(file.path()).unwrap(), expected);
 
     let options = MmcifWriteOptions {
@@ -144,10 +132,7 @@ fn file_writer_matches_string_writer_and_reports_io_errors() {
     structure
         .write_mmcif_with_options(file.path(), options)
         .expect("configured file writer should succeed");
-    assert_eq!(
-        std::fs::read_to_string(file.path()).unwrap(),
-        expected_with_options
-    );
+    assert_eq!(std::fs::read_to_string(file.path()).unwrap(), expected_with_options);
 
     let error = structure
         .write_mmcif(file.path().parent().unwrap())

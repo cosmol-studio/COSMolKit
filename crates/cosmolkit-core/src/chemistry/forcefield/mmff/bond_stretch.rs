@@ -54,10 +54,7 @@ impl BondStretchContrib {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.atom1_indices.is_empty()
-            && self.atom2_indices.is_empty()
-            && self.r0.is_empty()
-            && self.kb.is_empty()
+        self.atom1_indices.is_empty() && self.atom2_indices.is_empty() && self.r0.is_empty() && self.kb.is_empty()
     }
 
     pub fn add_term(&mut self, idx1: usize, idx2: usize, mmff_bond_params: &MmffBond) {
@@ -282,9 +279,7 @@ mod tests {
         let c1 = 143.9325;
         let cs = -2.0;
         let c3 = 7.0 / 12.0;
-        c1 * kb
-            * dist_term
-            * (1.0 + 1.5 * cs * dist_term + 2.0 * c3 * cs * cs * dist_term * dist_term)
+        c1 * kb * dist_term * (1.0 + 1.5 * cs * dist_term + 2.0 * c3 * cs * cs * dist_term * dist_term)
     }
 
     fn assert_close(actual: f64, expected: f64) {
@@ -337,10 +332,7 @@ mod tests {
     fn mmff_bondstretchcontrib_add_term_pushes_source_fields() {
         let force_field = force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
 
         contrib.add_term(0, 1, &params);
 
@@ -354,14 +346,8 @@ mod tests {
     fn mmff_bondstretchcontrib_add_term_appends_multiple_terms() {
         let force_field = force_field_with_positions(3);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let first = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
-        let second = MmffBond {
-            kb: 5.084,
-            r0: 1.451,
-        };
+        let first = MmffBond { kb: 4.258, r0: 1.508 };
+        let second = MmffBond { kb: 5.084, r0: 1.451 };
 
         contrib.add_term(0, 1, &first);
         contrib.add_term(1, 2, &second);
@@ -377,10 +363,7 @@ mod tests {
     fn mmff_bondstretchcontrib_add_term_rejects_first_index_out_of_range() {
         let force_field = force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
 
         contrib.add_term(2, 1, &params);
     }
@@ -390,10 +373,7 @@ mod tests {
     fn mmff_bondstretchcontrib_add_term_rejects_second_index_out_of_range() {
         let force_field = force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
 
         contrib.add_term(0, 2, &params);
     }
@@ -410,10 +390,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_energy_uses_source_formula_for_single_term() {
         let force_field = initialized_force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
 
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0];
@@ -426,20 +403,13 @@ mod tests {
     fn mmff_bondstretchcontrib_get_energy_sums_multiple_terms() {
         let force_field = initialized_force_field_with_positions(3);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let first = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
-        let second = MmffBond {
-            kb: 5.084,
-            r0: 1.451,
-        };
+        let first = MmffBond { kb: 4.258, r0: 1.508 };
+        let second = MmffBond { kb: 5.084, r0: 1.451 };
         contrib.add_term(0, 1, &first);
         contrib.add_term(1, 2, &second);
 
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 2.9, 0.0, 0.0];
-        let expected = source_bond_stretch_energy(1.508, 4.258, 1.6)
-            + source_bond_stretch_energy(1.451, 5.084, 1.3);
+        let expected = source_bond_stretch_energy(1.508, 4.258, 1.6) + source_bond_stretch_energy(1.451, 5.084, 1.3);
 
         assert_close(contrib.get_energy(&pos), expected);
     }
@@ -448,10 +418,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_energy_uses_supplied_position_vector() {
         let force_field = initialized_force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
 
         let pos = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
@@ -465,10 +432,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_energy_requires_initialized_force_field_for_terms() {
         let force_field = force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
 
         let _ = contrib.get_energy(&[0.0, 0.0, 0.0, 1.6, 0.0, 0.0]);
@@ -489,10 +453,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_grad_accumulates_nonzero_distance_gradient() {
         let force_field = initialized_force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0];
         let mut grad = [0.0; 6];
@@ -507,10 +468,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_grad_uses_zero_distance_fallback() {
         let force_field = initialized_force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
         let pos = [0.0; 6];
         let mut grad = [0.0; 6];
@@ -518,26 +476,15 @@ mod tests {
         contrib.get_grad(&pos, &mut grad);
 
         let fallback = 4.258 * 0.01;
-        assert_slice_close(
-            &grad,
-            &[
-                fallback, fallback, fallback, -fallback, -fallback, -fallback,
-            ],
-        );
+        assert_slice_close(&grad, &[fallback, fallback, fallback, -fallback, -fallback, -fallback]);
     }
 
     #[test]
     fn mmff_bondstretchcontrib_get_grad_accumulates_multiple_terms() {
         let force_field = initialized_force_field_with_positions(3);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let first = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
-        let second = MmffBond {
-            kb: 5.084,
-            r0: 1.451,
-        };
+        let first = MmffBond { kb: 4.258, r0: 1.508 };
+        let second = MmffBond { kb: 5.084, r0: 1.451 };
         contrib.add_term(0, 1, &first);
         contrib.add_term(1, 2, &second);
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 2.9, 0.0, 0.0];
@@ -568,10 +515,7 @@ mod tests {
     fn mmff_bondstretchcontrib_get_grad_requires_initialized_force_field_for_terms() {
         let force_field = force_field_with_positions(2);
         let mut contrib = BondStretchContrib::new(&force_field);
-        let params = MmffBond {
-            kb: 4.258,
-            r0: 1.508,
-        };
+        let params = MmffBond { kb: 4.258, r0: 1.508 };
         contrib.add_term(0, 1, &params);
         let mut grad = [0.0; 6];
 

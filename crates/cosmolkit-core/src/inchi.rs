@@ -13,19 +13,18 @@
 //! entry points are outside this public boundary.
 
 pub use cosmolkit_inchi::{
-    InchiDiagnostic, InchiDiagnosticLevel, InchiError, InchiErrorKind, InchiReturnValues,
-    InchiToInchiKeyOutput, MolToInchiKeyOutput, MolToInchiOutput,
+    InchiDiagnostic, InchiDiagnosticLevel, InchiError, InchiErrorKind, InchiReturnValues, InchiToInchiKeyOutput,
+    MolToInchiKeyOutput, MolToInchiOutput,
 };
 
 use cosmolkit_inchi::{
-    InchiAtom, InchiBond, InchiBondDirection, InchiBondStereo, InchiBondType, InchiChiralTag,
-    InchiMolecule, InchiToMolToolkit, InchiToolkitError, MolToInchiToolkit,
+    InchiAtom, InchiBond, InchiBondDirection, InchiBondStereo, InchiBondType, InchiChiralTag, InchiMolecule,
+    InchiToMolToolkit, InchiToolkitError, MolToInchiToolkit,
 };
 
 use crate::{
-    AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, ChiralTag,
-    CoordinateDimension, Element, Molecule, MoleculeBuilder, TopologyTrust, ValenceAssignment,
-    ValenceModel, read_parts::MoleculeReadParts,
+    AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, ChiralTag, CoordinateDimension, Element,
+    Molecule, MoleculeBuilder, TopologyTrust, ValenceAssignment, ValenceModel, read_parts::MoleculeReadParts,
 };
 
 /// Exact-parity contract for one public scalar InChI API.
@@ -88,11 +87,7 @@ pub struct MolFromInchiOutput {
     pub diagnostics: Vec<InchiDiagnostic>,
 }
 
-fn bridge_error(
-    operation: &'static str,
-    kind: InchiErrorKind,
-    detail: impl Into<String>,
-) -> InchiError {
+fn bridge_error(operation: &'static str, kind: InchiErrorKind, detail: impl Into<String>) -> InchiError {
     InchiError {
         operation,
         kind,
@@ -266,17 +261,12 @@ fn validate_supported_source(read: MoleculeReadParts<'_>) -> Result<(), String> 
     }
     let coordinates = read.coordinates();
     if !coordinates.conformers_2d.is_empty() && !coordinates.conformers_3d.is_empty() {
-        return Err(
-            "InChI bridge cannot recover source conformer ordering from mixed 2D and 3D stores"
-                .to_owned(),
-        );
+        return Err("InChI bridge cannot recover source conformer ordering from mixed 2D and 3D stores".to_owned());
     }
     Ok(())
 }
 
-fn adapter_from_read_parts(
-    read: MoleculeReadParts<'_>,
-) -> Result<(InchiMolecule, Vec<CoordinateDimension>), String> {
+fn adapter_from_read_parts(read: MoleculeReadParts<'_>) -> Result<(InchiMolecule, Vec<CoordinateDimension>), String> {
     let cached_valence = read.derived_cache().valence.as_ref();
     let atoms = read
         .atoms()
@@ -291,22 +281,16 @@ fn adapter_from_read_parts(
             num_radical_electrons: u32::from(atom.radical_electrons()),
             no_implicit: atom.no_implicit(),
             chiral_tag: adapter_chiral_tag(atom.chiral_tag()),
-            cip_rank: atom
-                .prop("_CIPRank")
-                .and_then(|rank| rank.parse::<u32>().ok()),
-            cached_explicit_valence: cached_valence
-                .map(|assignment| assignment.explicit_valence[index]),
-            cached_implicit_valence: cached_valence
-                .map(|assignment| assignment.implicit_hydrogens[index]),
+            cip_rank: atom.prop("_CIPRank").and_then(|rank| rank.parse::<u32>().ok()),
+            cached_explicit_valence: cached_valence.map(|assignment| assignment.explicit_valence[index]),
+            cached_implicit_valence: cached_valence.map(|assignment| assignment.implicit_hydrogens[index]),
         })
         .collect::<Vec<_>>();
 
     let mut bonds = Vec::with_capacity(read.num_bonds());
     for bond in read.bonds() {
-        let begin = u32::try_from(bond.begin().index())
-            .map_err(|_| "bond begin atom index exceeds u32".to_owned())?;
-        let end = u32::try_from(bond.end().index())
-            .map_err(|_| "bond end atom index exceeds u32".to_owned())?;
+        let begin = u32::try_from(bond.begin().index()).map_err(|_| "bond begin atom index exceeds u32".to_owned())?;
+        let end = u32::try_from(bond.end().index()).map_err(|_| "bond end atom index exceeds u32".to_owned())?;
         let mut converted = InchiBond::new(begin, end, adapter_bond_type(bond.order()));
         converted.direction = adapter_bond_direction(bond.direction(), bond.unknown_stereo());
         converted.is_aromatic = bond.is_aromatic();
@@ -317,8 +301,7 @@ fn adapter_from_read_parts(
                 atoms
                     .into_iter()
                     .map(|atom| {
-                        u32::try_from(atom.index())
-                            .map_err(|_| "bond stereo atom index exceeds u32".to_owned())
+                        u32::try_from(atom.index()).map_err(|_| "bond stereo atom index exceeds u32".to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()
             })
@@ -371,18 +354,12 @@ fn core_from_adapter(
         let atomic_number = u8::try_from(atom.atomic_number)
             .ok()
             .filter(|number| *number <= 118)
-            .ok_or_else(|| {
-                format!(
-                    "atom {index} has unsupported atomic number {}",
-                    atom.atomic_number
-                )
-            })?;
-        let formal_charge = i8::try_from(atom.formal_charge)
-            .map_err(|_| format!("atom {index} formal charge exceeds i8"))?;
+            .ok_or_else(|| format!("atom {index} has unsupported atomic number {}", atom.atomic_number))?;
+        let formal_charge =
+            i8::try_from(atom.formal_charge).map_err(|_| format!("atom {index} formal charge exceeds i8"))?;
         let explicit_hydrogens = u8::try_from(atom.num_explicit_hydrogens)
             .map_err(|_| format!("atom {index} explicit hydrogen count exceeds u8"))?;
-        let isotope =
-            u16::try_from(atom.isotope).map_err(|_| format!("atom {index} isotope exceeds u16"))?;
+        let isotope = u16::try_from(atom.isotope).map_err(|_| format!("atom {index} isotope exceeds u16"))?;
         let radical_electrons = u8::try_from(atom.num_radical_electrons)
             .map_err(|_| format!("atom {index} radical electron count exceeds u8"))?;
         let element = Element::from_atomic_number(atomic_number)
@@ -409,24 +386,20 @@ fn core_from_adapter(
     for (index, bond) in molecule.bonds().iter().enumerate() {
         let begin = usize::try_from(bond.begin_atom_index())
             .map_err(|_| format!("bond {index} begin atom index exceeds usize"))?;
-        let end = usize::try_from(bond.end_atom_index())
-            .map_err(|_| format!("bond {index} end atom index exceeds usize"))?;
-        let mut spec = BondSpec::new(
-            AtomId::new(begin),
-            AtomId::new(end),
-            core_bond_order(bond.bond_type),
-        )
-        .with_aromatic(bond.is_aromatic)
-        .with_direction(core_bond_direction(bond.direction))
-        .with_stereo(core_bond_stereo(bond.stereo))
-        .with_unknown_stereo(bond.direction == InchiBondDirection::Unknown);
+        let end =
+            usize::try_from(bond.end_atom_index()).map_err(|_| format!("bond {index} end atom index exceeds usize"))?;
+        let mut spec = BondSpec::new(AtomId::new(begin), AtomId::new(end), core_bond_order(bond.bond_type))
+            .with_aromatic(bond.is_aromatic)
+            .with_direction(core_bond_direction(bond.direction))
+            .with_stereo(core_bond_stereo(bond.stereo))
+            .with_unknown_stereo(bond.direction == InchiBondDirection::Unknown);
         match bond.stereo_atoms.as_slice() {
             [] => {}
             [left, right] => {
-                let left = usize::try_from(*left)
-                    .map_err(|_| format!("bond {index} left stereo atom exceeds usize"))?;
-                let right = usize::try_from(*right)
-                    .map_err(|_| format!("bond {index} right stereo atom exceeds usize"))?;
+                let left =
+                    usize::try_from(*left).map_err(|_| format!("bond {index} left stereo atom exceeds usize"))?;
+                let right =
+                    usize::try_from(*right).map_err(|_| format!("bond {index} right stereo atom exceeds usize"))?;
                 spec = spec.with_stereo_atoms(AtomId::new(left), AtomId::new(right));
             }
             _ => {
@@ -441,11 +414,7 @@ fn core_from_adapter(
             .map_err(|error| format!("bond {index} cannot be built: {error}"))?;
     }
 
-    for (conformer, dimension) in molecule
-        .conformers()
-        .iter()
-        .zip(coordinate_dimensions.iter().copied())
-    {
+    for (conformer, dimension) in molecule.conformers().iter().zip(coordinate_dimensions.iter().copied()) {
         match dimension {
             CoordinateDimension::TwoD => builder
                 .add_2d_conformer(
@@ -483,10 +452,7 @@ fn core_from_adapter(
         }
         (None, None) => {}
         _ => {
-            return Err(
-                "adapter molecule has only one half of the source property-cache valence"
-                    .to_owned(),
-            );
+            return Err("adapter molecule has only one half of the source property-cache valence".to_owned());
         }
     }
     Ok(core)
@@ -525,24 +491,15 @@ impl CoreInchiToolkit {
         Ok(())
     }
 
-    fn take_cached_or_build(
-        &mut self,
-        adapter: &InchiMolecule,
-    ) -> Result<Molecule, InchiToolkitError> {
-        self.structure_cache
-            .take()
-            .map_or_else(|| self.molecule(adapter), Ok)
+    fn take_cached_or_build(&mut self, adapter: &InchiMolecule) -> Result<Molecule, InchiToolkitError> {
+        self.structure_cache.take().map_or_else(|| self.molecule(adapter), Ok)
     }
 
     fn finish_structure(&mut self, adapter: &InchiMolecule) -> Result<Molecule, InchiToolkitError> {
         self.take_cached_or_build(adapter)
     }
 
-    fn replace_adapter(
-        &mut self,
-        adapter: &mut InchiMolecule,
-        molecule: Molecule,
-    ) -> Result<(), InchiToolkitError> {
+    fn replace_adapter(&mut self, adapter: &mut InchiMolecule, molecule: Molecule) -> Result<(), InchiToolkitError> {
         // BEGIN RDKIT C++ SOURCE: External/INCHI-API/inchi.cpp:1651-1668
         // RDKit✔️❌:     cleanUp(*m);
         // RDKit✔️✔️:     if (sanitize) {
@@ -559,8 +516,8 @@ impl CoreInchiToolkit {
         // performance-negative because the adapter materialization itself has
         // no RDKit counterpart.
         let read = MoleculeReadParts::from_molecule(&molecule);
-        let (replacement, dimensions) = adapter_from_read_parts(read)
-            .map_err(|detail| toolkit_error("COSMolKit adapter conversion", detail))?;
+        let (replacement, dimensions) =
+            adapter_from_read_parts(read).map_err(|detail| toolkit_error("COSMolKit adapter conversion", detail))?;
         adapter
             .replace_graph(
                 replacement.atoms().to_vec(),
@@ -588,24 +545,13 @@ impl CoreInchiToolkit {
             .map_err(|error| toolkit_error("COSMolKit valence error", error.to_string()))
     }
 
-    fn atom_index(
-        &self,
-        molecule: &InchiMolecule,
-        atom_index: u32,
-    ) -> Result<usize, InchiToolkitError> {
-        let index = usize::try_from(atom_index).map_err(|_| {
-            toolkit_error(
-                "Range Error",
-                format!("atom index {atom_index} exceeds usize"),
-            )
-        })?;
+    fn atom_index(&self, molecule: &InchiMolecule, atom_index: u32) -> Result<usize, InchiToolkitError> {
+        let index = usize::try_from(atom_index)
+            .map_err(|_| toolkit_error("Range Error", format!("atom index {atom_index} exceeds usize")))?;
         if index >= molecule.atoms().len() {
             return Err(toolkit_error(
                 "Range Error",
-                format!(
-                    "atom index {atom_index} is outside {} atoms",
-                    molecule.atoms().len()
-                ),
+                format!("atom index {atom_index} is outside {} atoms", molecule.atoms().len()),
             ));
         }
         Ok(index)
@@ -613,18 +559,11 @@ impl CoreInchiToolkit {
 }
 
 impl MolToInchiToolkit for CoreInchiToolkit {
-    fn needs_update_property_cache(
-        &mut self,
-        _molecule: &InchiMolecule,
-    ) -> Result<bool, InchiToolkitError> {
+    fn needs_update_property_cache(&mut self, _molecule: &InchiMolecule) -> Result<bool, InchiToolkitError> {
         Ok(self.source_needs_property_cache_update)
     }
 
-    fn update_property_cache(
-        &mut self,
-        molecule: &mut InchiMolecule,
-        strict: bool,
-    ) -> Result<(), InchiToolkitError> {
+    fn update_property_cache(&mut self, molecule: &mut InchiMolecule, strict: bool) -> Result<(), InchiToolkitError> {
         let mut core = self.take_cached_or_build(molecule)?;
         core.assign_valence_strict_(strict)
             .map_err(|error| toolkit_error("COSMolKit property cache error", error.to_string()))?;
@@ -643,11 +582,7 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         Ok(())
     }
 
-    fn kekulize(
-        &mut self,
-        molecule: &mut InchiMolecule,
-        clear_aromatic_flags: bool,
-    ) -> Result<(), InchiToolkitError> {
+    fn kekulize(&mut self, molecule: &mut InchiMolecule, clear_aromatic_flags: bool) -> Result<(), InchiToolkitError> {
         let mut core = self.take_cached_or_build(molecule)?;
         core.kekulize_(clear_aromatic_flags)
             .map_err(|error| toolkit_error("COSMolKit kekulize error", error.to_string()))?;
@@ -670,22 +605,13 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         Ok(crate::valence::rdkit_atomic_mass(atomic_number, None))
     }
 
-    fn total_num_hydrogens(
-        &mut self,
-        molecule: &InchiMolecule,
-        atom_index: u32,
-    ) -> Result<u32, InchiToolkitError> {
+    fn total_num_hydrogens(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
         let index = self.atom_index(molecule, atom_index)?;
         let implicit = self.valence(molecule)?.implicit_hydrogens[index].max(0) as u32;
         molecule.atoms()[index]
             .num_explicit_hydrogens
             .checked_add(implicit)
-            .ok_or_else(|| {
-                toolkit_error(
-                    "COSMolKit integer range error",
-                    "total hydrogen count overflows u32",
-                )
-            })
+            .ok_or_else(|| toolkit_error("COSMolKit integer range error", "total hydrogen count overflows u32"))
     }
 
     fn calc_implicit_valence(
@@ -697,63 +623,36 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         Ok(self.valence(molecule)?.implicit_hydrogens[index])
     }
 
-    fn total_degree(
-        &mut self,
-        molecule: &InchiMolecule,
-        atom_index: u32,
-    ) -> Result<u32, InchiToolkitError> {
+    fn total_degree(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
         let index = self.atom_index(molecule, atom_index)?;
         let core = self.molecule(molecule)?;
         let read = MoleculeReadParts::from_molecule(&core);
-        let graph_degree =
-            u32::try_from(read.adjacency().neighbors_of(index).len()).map_err(|_| {
-                toolkit_error("COSMolKit integer range error", "atom degree exceeds u32")
-            })?;
+        let graph_degree = u32::try_from(read.adjacency().neighbors_of(index).len())
+            .map_err(|_| toolkit_error("COSMolKit integer range error", "atom degree exceeds u32"))?;
         graph_degree
             .checked_add(self.total_num_hydrogens(molecule, atom_index)?)
-            .ok_or_else(|| {
-                toolkit_error(
-                    "COSMolKit integer range error",
-                    "total degree overflows u32",
-                )
-            })
+            .ok_or_else(|| toolkit_error("COSMolKit integer range error", "total degree overflows u32"))
     }
 }
 
 impl InchiToMolToolkit for CoreInchiToolkit {
     fn atomic_number(&mut self, element: &[u8]) -> Result<i32, InchiToolkitError> {
-        let element = std::str::from_utf8(element).map_err(|_| {
-            toolkit_error(
-                "Post-condition Violation",
-                "element symbol is not valid UTF-8",
-            )
-        })?;
+        let element = std::str::from_utf8(element)
+            .map_err(|_| toolkit_error("Post-condition Violation", "element symbol is not valid UTF-8"))?;
         crate::rdkit_atomic_number_from_symbol(element)
             .map(i32::from)
-            .ok_or_else(|| {
-                toolkit_error(
-                    "Post-condition Violation",
-                    format!("Element '{element}' not found"),
-                )
-            })
+            .ok_or_else(|| toolkit_error("Post-condition Violation", format!("Element '{element}' not found")))
     }
 
     fn average_atomic_weight(&mut self, atomic_number: i32) -> Result<f64, InchiToolkitError> {
         <Self as MolToInchiToolkit>::atomic_weight(self, atomic_number)
     }
 
-    fn update_property_cache(
-        &mut self,
-        molecule: &mut InchiMolecule,
-        strict: bool,
-    ) -> Result<(), InchiToolkitError> {
+    fn update_property_cache(&mut self, molecule: &mut InchiMolecule, strict: bool) -> Result<(), InchiToolkitError> {
         <Self as MolToInchiToolkit>::update_property_cache(self, molecule, strict)
     }
 
-    fn assign_atom_cip_ranks(
-        &mut self,
-        molecule: &mut InchiMolecule,
-    ) -> Result<Vec<u32>, InchiToolkitError> {
+    fn assign_atom_cip_ranks(&mut self, molecule: &mut InchiMolecule) -> Result<Vec<u32>, InchiToolkitError> {
         let core = self.take_cached_or_build(molecule)?;
         let ranks = crate::stereo::assign_atom_cip_ranks(&core)
             .map_err(|error| toolkit_error("COSMolKit CIP rank error", error.to_string()))?;
@@ -765,9 +664,7 @@ impl InchiToMolToolkit for CoreInchiToolkit {
         let mut core = self.take_cached_or_build(molecule)?;
         core.remove_hydrogens_with_sanitize_(true)
             .map_err(|error| match error {
-                crate::OperationError::Sanitize { .. } => {
-                    toolkit_error("MolSanitizeException", error.to_string())
-                }
+                crate::OperationError::Sanitize { .. } => toolkit_error("MolSanitizeException", error.to_string()),
                 _ => toolkit_error("COSMolKit remove hydrogens error", error.to_string()),
             })?;
         self.replace_adapter(molecule, core)
@@ -776,18 +673,13 @@ impl InchiToMolToolkit for CoreInchiToolkit {
     fn sanitize_molecule(&mut self, molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
         let mut core = self.take_cached_or_build(molecule)?;
         core.sanitize_().map_err(|error| match error {
-            crate::OperationError::Sanitize { .. } => {
-                toolkit_error("MolSanitizeException", error.to_string())
-            }
+            crate::OperationError::Sanitize { .. } => toolkit_error("MolSanitizeException", error.to_string()),
             _ => toolkit_error("COSMolKit sanitize error", error.to_string()),
         })?;
         self.replace_adapter(molecule, core)
     }
 
-    fn synchronize_after_cleanup(
-        &mut self,
-        molecule: &InchiMolecule,
-    ) -> Result<(), InchiToolkitError> {
+    fn synchronize_after_cleanup(&mut self, molecule: &InchiMolecule) -> Result<(), InchiToolkitError> {
         // RDKit's `cleanUp`, `removeHs`/`sanitizeMol`, and
         // `assignStereochemistry` all mutate the same RWMol. The adapter cleanup
         // runs in the source crate, so this explicit boundary moves its exact
@@ -818,10 +710,7 @@ impl InchiToMolToolkit for CoreInchiToolkit {
 }
 
 /// Generates an InChI from a COSMolKit molecule without mutating it.
-pub fn mol_to_inchi(
-    molecule: &Molecule,
-    options: Option<&[u8]>,
-) -> Result<MolToInchiOutput, InchiError> {
+pub fn mol_to_inchi(molecule: &Molecule, options: Option<&[u8]>) -> Result<MolToInchiOutput, InchiError> {
     let read = MoleculeReadParts::from_molecule(molecule);
     validate_supported_source(read)
         .map_err(|detail| bridge_error("mol_to_inchi", InchiErrorKind::UnsupportedState, detail))?;
@@ -832,14 +721,10 @@ pub fn mol_to_inchi(
 }
 
 /// Generates an InChIKey from a COSMolKit molecule without mutating it.
-pub fn mol_to_inchi_key(
-    molecule: &Molecule,
-    options: Option<&[u8]>,
-) -> Result<MolToInchiKeyOutput, InchiError> {
+pub fn mol_to_inchi_key(molecule: &Molecule, options: Option<&[u8]>) -> Result<MolToInchiKeyOutput, InchiError> {
     let read = MoleculeReadParts::from_molecule(molecule);
-    validate_supported_source(read).map_err(|detail| {
-        bridge_error("mol_to_inchi_key", InchiErrorKind::UnsupportedState, detail)
-    })?;
+    validate_supported_source(read)
+        .map_err(|detail| bridge_error("mol_to_inchi_key", InchiErrorKind::UnsupportedState, detail))?;
     let (adapter, dimensions) = adapter_from_read_parts(read)
         .map_err(|detail| bridge_error("mol_to_inchi_key", InchiErrorKind::InvalidInput, detail))?;
     let mut toolkit = CoreInchiToolkit::for_generation(read, dimensions);
@@ -852,11 +737,7 @@ pub fn inchi_to_inchi_key(inchi: &[u8]) -> Result<InchiToInchiKeyOutput, InchiEr
 }
 
 /// Parses an InChI into a COSMolKit molecule through the source-backed bridge.
-pub fn mol_from_inchi(
-    inchi: &[u8],
-    sanitize: bool,
-    remove_hs: bool,
-) -> Result<MolFromInchiOutput, InchiError> {
+pub fn mol_from_inchi(inchi: &[u8], sanitize: bool, remove_hs: bool) -> Result<MolFromInchiOutput, InchiError> {
     let mut toolkit = CoreInchiToolkit::for_structure();
     let output = cosmolkit_inchi::mol_from_inchi(&mut toolkit, inchi, sanitize, remove_hs)?;
     let molecule = output
@@ -864,13 +745,7 @@ pub fn mol_from_inchi(
         .as_ref()
         .map(|molecule| toolkit.finish_structure(molecule))
         .transpose()
-        .map_err(|error| {
-            bridge_error(
-                "mol_from_inchi",
-                InchiErrorKind::InvalidSourceOutput,
-                error.message,
-            )
-        })?;
+        .map_err(|error| bridge_error("mol_from_inchi", InchiErrorKind::InvalidSourceOutput, error.message))?;
     Ok(MolFromInchiOutput {
         molecule,
         return_values: output.return_values,
@@ -881,9 +756,7 @@ pub fn mol_from_inchi(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        AtomQueryPredicate, BondId, QueryNode, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
-    };
+    use crate::{AtomQueryPredicate, BondId, QueryNode, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind};
 
     #[test]
     fn inchi_api_parity_matrix_covers_exactly_the_four_public_scalar_apis() {
@@ -1010,10 +883,9 @@ mod tests {
         ];
 
         for (row, smiles, expected_inchi, expected_key) in cases {
-            let molecule = Molecule::from_smiles(smiles)
-                .unwrap_or_else(|error| panic!("row {row} SMILES: {error}"));
-            let output = mol_to_inchi(&molecule, None)
-                .unwrap_or_else(|error| panic!("row {row} InChI generation: {error}"));
+            let molecule = Molecule::from_smiles(smiles).unwrap_or_else(|error| panic!("row {row} SMILES: {error}"));
+            let output =
+                mol_to_inchi(&molecule, None).unwrap_or_else(|error| panic!("row {row} InChI generation: {error}"));
             assert_eq!(output.inchi, expected_inchi.as_bytes(), "row {row} InChI");
             assert_eq!(output.return_values.return_code, 1, "row {row} return code");
 
@@ -1025,8 +897,7 @@ mod tests {
 
     #[test]
     fn inchi_core_bridge_parsed_graph_matches_source_stereo_cleanup_for_isotopic_center() {
-        let output =
-            mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false).unwrap();
+        let output = mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false).unwrap();
         assert_eq!(output.return_values.return_code, 1);
         let molecule = output.molecule.unwrap();
 
@@ -1057,9 +928,7 @@ mod tests {
             true,
         )
         .expect("source-defined double-bond stereo InChI must parse");
-        let molecule = output
-            .molecule
-            .expect("successful parse must return a graph");
+        let molecule = output.molecule.expect("successful parse must return a graph");
         let bond = molecule
             .bonds()
             .iter()
@@ -1070,10 +939,7 @@ mod tests {
             .expect("audited double bond must be present");
 
         assert_eq!(bond.stereo(), BondStereo::Z);
-        assert_eq!(
-            bond.stereo_atoms(),
-            Some([AtomId::new(13), AtomId::new(24)])
-        );
+        assert_eq!(bond.stereo_atoms(), Some([AtomId::new(13), AtomId::new(24)]));
         assert_eq!(
             molecule.to_smiles(true).unwrap(),
             "CC(/C=C1\\SC(=S)N(CCCCCC(=O)O)C1=O)=C\\c1ccccc1"
@@ -1101,8 +967,8 @@ mod tests {
                 })
                 .collect::<Vec<_>>(),
             [
-                0, 0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 16, 17, 14, 15, 18, 24,
-                19, 25, 22, 23, 20, 21,
+                0, 0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 16, 17, 14, 15, 18, 24, 19, 25, 22, 23, 20,
+                21,
             ]
         );
 
@@ -1113,10 +979,7 @@ mod tests {
             .expect("first audited double bond is present");
         assert_eq!(first.order(), BondOrder::Double);
         assert_eq!(first.stereo(), BondStereo::Z);
-        assert_eq!(
-            first.stereo_atoms(),
-            Some([AtomId::new(28), AtomId::new(26)])
-        );
+        assert_eq!(first.stereo_atoms(), Some([AtomId::new(28), AtomId::new(26)]));
 
         let second = molecule
             .bonds()
@@ -1125,10 +988,7 @@ mod tests {
             .expect("second audited double bond is present");
         assert_eq!(second.order(), BondOrder::Double);
         assert_eq!(second.stereo(), BondStereo::E);
-        assert_eq!(
-            second.stereo_atoms(),
-            Some([AtomId::new(29), AtomId::new(27)])
-        );
+        assert_eq!(second.stereo_atoms(), Some([AtomId::new(29), AtomId::new(27)]));
     }
 
     #[test]
@@ -1143,14 +1003,8 @@ mod tests {
                 <CoreInchiToolkit as InchiToMolToolkit>::atomic_number(&mut self.inner, element)
             }
 
-            fn average_atomic_weight(
-                &mut self,
-                atomic_number: i32,
-            ) -> Result<f64, InchiToolkitError> {
-                <CoreInchiToolkit as InchiToMolToolkit>::average_atomic_weight(
-                    &mut self.inner,
-                    atomic_number,
-                )
+            fn average_atomic_weight(&mut self, atomic_number: i32) -> Result<f64, InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::average_atomic_weight(&mut self.inner, atomic_number)
             }
 
             fn update_property_cache(
@@ -1158,48 +1012,23 @@ mod tests {
                 molecule: &mut InchiMolecule,
                 strict: bool,
             ) -> Result<(), InchiToolkitError> {
-                <CoreInchiToolkit as InchiToMolToolkit>::update_property_cache(
-                    &mut self.inner,
-                    molecule,
-                    strict,
-                )
+                <CoreInchiToolkit as InchiToMolToolkit>::update_property_cache(&mut self.inner, molecule, strict)
             }
 
-            fn assign_atom_cip_ranks(
-                &mut self,
-                molecule: &mut InchiMolecule,
-            ) -> Result<Vec<u32>, InchiToolkitError> {
-                <CoreInchiToolkit as InchiToMolToolkit>::assign_atom_cip_ranks(
-                    &mut self.inner,
-                    molecule,
-                )
+            fn assign_atom_cip_ranks(&mut self, molecule: &mut InchiMolecule) -> Result<Vec<u32>, InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::assign_atom_cip_ranks(&mut self.inner, molecule)
             }
 
-            fn remove_hydrogens(
-                &mut self,
-                molecule: &mut InchiMolecule,
-            ) -> Result<(), InchiToolkitError> {
+            fn remove_hydrogens(&mut self, molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
                 <CoreInchiToolkit as InchiToMolToolkit>::remove_hydrogens(&mut self.inner, molecule)
             }
 
-            fn sanitize_molecule(
-                &mut self,
-                molecule: &mut InchiMolecule,
-            ) -> Result<(), InchiToolkitError> {
-                <CoreInchiToolkit as InchiToMolToolkit>::sanitize_molecule(
-                    &mut self.inner,
-                    molecule,
-                )
+            fn sanitize_molecule(&mut self, molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::sanitize_molecule(&mut self.inner, molecule)
             }
 
-            fn synchronize_after_cleanup(
-                &mut self,
-                molecule: &InchiMolecule,
-            ) -> Result<(), InchiToolkitError> {
-                <CoreInchiToolkit as InchiToMolToolkit>::synchronize_after_cleanup(
-                    &mut self.inner,
-                    molecule,
-                )
+            fn synchronize_after_cleanup(&mut self, molecule: &InchiMolecule) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::synchronize_after_cleanup(&mut self.inner, molecule)
             }
 
             fn assign_stereochemistry(
@@ -1237,9 +1066,7 @@ mod tests {
             false,
         )
         .expect("the toolkit-neutral source path must parse");
-        let before = toolkit
-            .before_assign
-            .expect("the source calls assignStereochemistry");
+        let before = toolkit.before_assign.expect("the source calls assignStereochemistry");
         let after = output.molecule.expect("successful parse returns a graph");
 
         let first_before = audited_bond(&before, (14, 20));
@@ -1267,7 +1094,8 @@ mod tests {
 
     #[test]
     fn mol_from_inchi_unsanitized_legacy_stereo_uses_source_fast_ring_basis() {
-        const INCHI: &[u8] = b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
+        const INCHI: &[u8] =
+            b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
 
         for remove_hs in [false, true] {
             let output = mol_from_inchi(INCHI, false, remove_hs).expect("audited InChI");
@@ -1277,10 +1105,7 @@ mod tests {
             assert_eq!((bond.begin().index(), bond.end().index()), (11, 13));
             assert_eq!(bond.order(), BondOrder::Double);
             assert_eq!(bond.stereo(), BondStereo::Z);
-            assert_eq!(
-                bond.stereo_atoms(),
-                Some([AtomId::new(15), AtomId::new(19)])
-            );
+            assert_eq!(bond.stereo_atoms(), Some([AtomId::new(15), AtomId::new(19)]));
         }
     }
 
@@ -1318,8 +1143,7 @@ mod tests {
 
         for sanitize in [false, true] {
             for remove_hs in [false, true] {
-                let output = mol_from_inchi(INCHI, sanitize, remove_hs)
-                    .expect("the source-defined InChI must parse");
+                let output = mol_from_inchi(INCHI, sanitize, remove_hs).expect("the source-defined InChI must parse");
                 let molecule = output.molecule.expect("successful parse returns a graph");
                 let nitrogen = molecule
                     .atoms()
@@ -1454,10 +1278,7 @@ mod tests {
         assert_eq!(round_trip.atoms(), molecule.atoms());
         assert_eq!(round_trip.bonds(), molecule.bonds());
         assert_eq!(round_trip.conformers_3d(), molecule.conformers_3d());
-        assert_eq!(
-            round_trip.source_coordinate_dim(),
-            Some(CoordinateDimension::ThreeD)
-        );
+        assert_eq!(round_trip.source_coordinate_dim(), Some(CoordinateDimension::ThreeD));
     }
 
     #[test]
@@ -1468,9 +1289,7 @@ mod tests {
         builder
             .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single))
             .unwrap();
-        builder
-            .set_2d_coordinates(vec![[0.0, -0.0], [1.0, 0.0]])
-            .unwrap();
+        builder.set_2d_coordinates(vec![[0.0, -0.0], [1.0, 0.0]]).unwrap();
         let molecule = builder.build().unwrap();
         let read = MoleculeReadParts::from_molecule(&molecule);
         let (mut adapter, dimensions) = adapter_from_read_parts(read).unwrap();
@@ -1522,9 +1341,7 @@ mod tests {
         assert!(error.detail.contains("trusted"));
 
         let mut query_builder = MoleculeBuilder::new();
-        query_builder.add_atom(
-            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
-        );
+        query_builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)));
         let query = query_builder.build().unwrap();
         let error = mol_to_inchi(&query, None).unwrap_err();
         assert_eq!(error.kind, InchiErrorKind::UnsupportedState);
@@ -1533,10 +1350,7 @@ mod tests {
         let mut sgroup_builder = MoleculeBuilder::new();
         sgroup_builder.add_atom(AtomSpec::new(Element::C));
         sgroup_builder
-            .add_substance_group(SubstanceGroup::new(
-                SubstanceGroupId::new(0),
-                SubstanceGroupKind::Data,
-            ))
+            .add_substance_group(SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data))
             .unwrap();
         let sgroup = sgroup_builder.build().unwrap();
         let error = mol_to_inchi(&sgroup, None).unwrap_err();
@@ -1546,9 +1360,7 @@ mod tests {
         let mut mixed_builder = MoleculeBuilder::new();
         mixed_builder.add_atom(AtomSpec::new(Element::C));
         mixed_builder.set_2d_coordinates(vec![[0.0, 0.0]]).unwrap();
-        mixed_builder
-            .add_3d_conformer(vec![[0.0, 0.0, 0.0]])
-            .unwrap();
+        mixed_builder.add_3d_conformer(vec![[0.0, 0.0, 0.0]]).unwrap();
         let mixed = mixed_builder.build().unwrap();
         let error = mol_to_inchi(&mixed, None).unwrap_err();
         assert_eq!(error.kind, InchiErrorKind::UnsupportedState);
@@ -1586,11 +1398,7 @@ mod tests {
 
     #[test]
     fn inchi_core_bridge_preserves_structured_allocation_error_category() {
-        let error = bridge_error(
-            "mol_to_inchi",
-            InchiErrorKind::AllocationFailed,
-            "AllocationFailed",
-        );
+        let error = bridge_error("mol_to_inchi", InchiErrorKind::AllocationFailed, "AllocationFailed");
         assert_eq!(error.operation, "mol_to_inchi");
         assert_eq!(error.kind, InchiErrorKind::AllocationFailed);
         assert_eq!(error.detail, "AllocationFailed");
@@ -1608,8 +1416,7 @@ mod tests {
                 .unwrap();
         }
         let molecule = builder.build().unwrap();
-        let (adapter, dimensions) =
-            adapter_from_read_parts(MoleculeReadParts::from_molecule(&molecule)).unwrap();
+        let (adapter, dimensions) = adapter_from_read_parts(MoleculeReadParts::from_molecule(&molecule)).unwrap();
         let round_trip = core_from_adapter(&adapter, &dimensions).unwrap();
 
         for (index, bond) in round_trip.bonds().iter().enumerate() {

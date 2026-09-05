@@ -17,10 +17,7 @@ pub enum MoleculeBuildError {
     #[error("3D conformer row count mismatch: rows={rows}, atom_count={atom_count}")]
     ConformerRowCount { rows: usize, atom_count: usize },
     #[error("3D conformer index out of range: index={index}, conformer_count={conformer_count}")]
-    ConformerIndexOutOfRange {
-        index: usize,
-        conformer_count: usize,
-    },
+    ConformerIndexOutOfRange { index: usize, conformer_count: usize },
     #[error("substance group atom out of range: {atom}, atom_count={atom_count}")]
     SubstanceGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("substance group bond out of range: {bond}, bond_count={bond_count}")]
@@ -37,13 +34,8 @@ pub enum InvariantError {
     AtomIndexMismatch { row: usize, actual: AtomId },
     #[error("bond table index mismatch: row {row} contains bond id {actual}")]
     BondIndexMismatch { row: usize, actual: BondId },
-    #[error(
-        "substance group table index mismatch: row {row} contains substance group id {actual:?}"
-    )]
-    SubstanceGroupIndexMismatch {
-        row: usize,
-        actual: SubstanceGroupId,
-    },
+    #[error("substance group table index mismatch: row {row} contains substance group id {actual:?}")]
+    SubstanceGroupIndexMismatch { row: usize, actual: SubstanceGroupId },
     #[error("invalid bond endpoint on bond {bond}: {begin}-{end}, atom_count={atom_count}")]
     InvalidBondEndpoint {
         bond: BondId,
@@ -63,17 +55,13 @@ pub enum InvariantError {
         rows: usize,
         atom_count: usize,
     },
-    #[error(
-        "invalid atom reference in substance group {sgroup:?}: {atom}, atom_count={atom_count}"
-    )]
+    #[error("invalid atom reference in substance group {sgroup:?}: {atom}, atom_count={atom_count}")]
     InvalidSubstanceGroupAtom {
         sgroup: SubstanceGroupId,
         atom: AtomId,
         atom_count: usize,
     },
-    #[error(
-        "invalid bond reference in substance group {sgroup:?}: {bond}, bond_count={bond_count}"
-    )]
+    #[error("invalid bond reference in substance group {sgroup:?}: {bond}, bond_count={bond_count}")]
     InvalidSubstanceGroupBond {
         sgroup: SubstanceGroupId,
         bond: BondId,

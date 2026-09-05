@@ -13,11 +13,10 @@ pub(super) fn calc_mqns_core(molecule: &Molecule) -> DescriptorResult<[u32; 42]>
     // RDKit✔️✔️:   // FIX: use force value to enable caching
     // RDKit✔️✔️:   std::vector<unsigned int> res(42, 0);
     let mut result = [0_u32; 42];
-    let rings =
-        super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
-            function: "calc_mqns",
-            rdkit_function: "MolOps::symmetrizeSSSR/RingInfo",
-        })?;
+    let rings = super::descriptor_ring_info(molecule, false).map_err(|_| DescriptorError::Unsupported {
+        function: "calc_mqns",
+        rdkit_function: "MolOps::symmetrizeSSSR/RingInfo",
+    })?;
 
     // RDKit✔️✔️:   // ---------------------------------------------------
     // RDKit✔️✔️:   // atom-centered things
@@ -32,11 +31,12 @@ pub(super) fn calc_mqns_core(molecule: &Molecule) -> DescriptorResult<[u32; 42]>
         // RDKit✔️✔️:     const Atom *at = mol[*atBegin];
         // RDKit✔️✔️:     ++atBegin;
         // RDKit✔️✔️:     unsigned int nHs = at->getTotalNumHs();
-        let hydrogen_count = crate::valence::total_num_hydrogens(molecule, atom.id(), false)
-            .map_err(|_| DescriptorError::Unsupported {
+        let hydrogen_count = crate::valence::total_num_hydrogens(molecule, atom.id(), false).map_err(|_| {
+            DescriptorError::Unsupported {
                 function: "calc_mqns",
                 rdkit_function: "Atom::getTotalNumHs",
-            })?;
+            }
+        })?;
         // RDKit✔️✔️:     unsigned int nRings = mol.getRingInfo()->numAtomRings(at->getIdx());
         let ring_count = rings.num_atom_rings(atom.id());
         let degree = molecule.adjacency().neighbors_of(atom.id().index()).len();
@@ -346,40 +346,36 @@ mod tests {
             (
                 "CCO",
                 [
-                    2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 3, 2, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 0, 0, 2,
-                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 3, 2, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0,
                 ],
             ),
             (
                 "c1ccccc1",
                 [
-                    6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 6, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+                    6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0,
+                    0, 0, 1, 0, 0, 0, 0, 0, 0,
                 ],
             ),
             (
                 "[Na+].[Cl-]",
                 [
-                    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0,
                 ],
             ),
             (
                 "C1CC2CCC1C2",
                 [
-                    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 5, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 3, 2,
+                    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 0, 0,
+                    0, 2, 0, 0, 0, 0, 0, 3, 2,
                 ],
             ),
         ];
 
         for (smiles, expected) in CASES {
             let molecule = Molecule::from_smiles(smiles).expect("focused MQN fixture");
-            assert_eq!(
-                calc_mqns_core(&molecule),
-                Ok(expected),
-                "{smiles:?} MQN vector"
-            );
+            assert_eq!(calc_mqns_core(&molecule), Ok(expected), "{smiles:?} MQN vector");
         }
     }
 
@@ -391,8 +387,8 @@ mod tests {
             "C1CCCC1.C1CCCCCC1.C1CCCCCCC1.C1CCCCCCCC1.C1CCCCCCCCCC1.CCCC.CS"
         );
         const EXPECTED: [u32; 42] = [
-            93, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 105, 13, 2, 1, 82, 3, 1, 1, 10, 6, 4, 2, 1, 1, 15, 5,
-            1, 1, 78, 4, 1, 2, 1, 1, 8, 1, 1, 1, 1, 11, 12,
+            93, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 105, 13, 2, 1, 82, 3, 1, 1, 10, 6, 4, 2, 1, 1, 15, 5, 1, 1, 78, 4, 1, 2,
+            1, 1, 8, 1, 1, 1, 1, 11, 12,
         ];
 
         assert!(EXPECTED.iter().all(|&value| value != 0));

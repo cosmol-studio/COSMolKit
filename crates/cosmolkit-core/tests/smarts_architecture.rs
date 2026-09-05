@@ -146,8 +146,7 @@ fn without_cfg_test_modules(source: &str) -> String {
 }
 
 fn production_source(path: &Path) -> String {
-    let source = fs::read_to_string(path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     without_cfg_test_modules(&source)
 }
 
@@ -159,12 +158,9 @@ fn function_name(line: &str) -> Option<&str> {
     let function = line.find("fn ")?;
     let prefix = line[..function].trim();
     if !prefix.is_empty()
-        && !prefix.split_whitespace().all(|part| {
-            matches!(
-                part,
-                "pub" | "pub(crate)" | "pub(super)" | "async" | "unsafe"
-            )
-        })
+        && !prefix
+            .split_whitespace()
+            .all(|part| matches!(part, "pub" | "pub(crate)" | "pub(super)" | "async" | "unsafe"))
     {
         return None;
     }
@@ -298,10 +294,7 @@ fn smarts_single_core_architecture() {
     let root = core_root();
     let mut files = Vec::new();
     collect_rust_files(&root.join("src"), &mut files);
-    let production = files
-        .iter()
-        .map(|path| production_source(path))
-        .collect::<String>();
+    let production = files.iter().map(|path| production_source(path)).collect::<String>();
 
     assert!(!production.contains("SmartsMolecule"));
     assert!(!production.contains("build_query_molecule"));
@@ -313,14 +306,8 @@ fn smarts_single_core_architecture() {
 fn smarts_existing_consumer_regression_matrix() {
     let root = core_root();
     let required = [
-        (
-            "src/properties/descriptors.rs",
-            "smarts_consumer_descriptor_patterns",
-        ),
-        (
-            "src/properties/fingerprint.rs",
-            "smarts_consumer_fingerprint_patterns",
-        ),
+        ("src/properties/descriptors.rs", "smarts_consumer_descriptor_patterns"),
+        ("src/properties/fingerprint.rs", "smarts_consumer_fingerprint_patterns"),
         (
             "src/chemistry/forcefield/torsion_query.rs",
             "smarts_consumer_torsion_query",

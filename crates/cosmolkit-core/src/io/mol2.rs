@@ -7,8 +7,8 @@
 use std::{fs, path::Path};
 
 use crate::{
-    AdjacencyList, AtomId, AtomQueryPredicate, AtomSpec, BondOrder, BondSpec, Conformer3D, Element,
-    Molecule, MoleculeBuilder, QueryNode, UnsupportedFeatureError, rdkit_valence_list,
+    AdjacencyList, AtomId, AtomQueryPredicate, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Molecule,
+    MoleculeBuilder, QueryNode, UnsupportedFeatureError, rdkit_valence_list,
     rings::find_sssr_from_parts,
     valence::{bond_valence_contrib, periodic_table_outer_electrons},
 };
@@ -148,10 +148,7 @@ fn rdkit_get_line_at<'a>(input: &'a str, offset: &mut usize) -> &'a str {
     rdkit_get_line_at_with_eof(input, offset).0
 }
 
-fn rdkit_get_line_at_checked<'a>(
-    input: &'a str,
-    offset: &mut usize,
-) -> Result<&'a str, Mol2ReadError> {
+fn rdkit_get_line_at_checked<'a>(input: &'a str, offset: &mut usize) -> Result<&'a str, Mol2ReadError> {
     let (line, eof_after_read) = rdkit_get_line_at_with_eof(input, offset);
     if eof_after_read {
         return Err(Mol2ReadError::Parse("premature EOF".to_string()));
@@ -228,20 +225,16 @@ fn parse_mol2_molecule_header_like_rdkit(
         .to_string();
 
     let counts_line = rdkit_get_line_at(input, &mut offset);
-    let mut tokens = counts_line
-        .split([' ', '\t', '\n'])
-        .filter(|token| !token.is_empty());
+    let mut tokens = counts_line.split([' ', '\t', '\n']).filter(|token| !token.is_empty());
     let atom_token = tokens
         .next()
         .ok_or_else(|| Mol2ReadError::Parse("Empty counts line".to_string()))?;
-    let n_atoms = parse_rdkit_unsigned_int_token(atom_token).ok_or_else(|| {
-        Mol2ReadError::Parse(format!("Cannot convert {atom_token} to unsigned int"))
-    })?;
+    let n_atoms = parse_rdkit_unsigned_int_token(atom_token)
+        .ok_or_else(|| Mol2ReadError::Parse(format!("Cannot convert {atom_token} to unsigned int")))?;
 
     let n_bonds = if let Some(bond_token) = tokens.next() {
-        parse_rdkit_unsigned_int_token(bond_token).ok_or_else(|| {
-            Mol2ReadError::Parse(format!("Cannot convert {bond_token} to unsigned int"))
-        })?
+        parse_rdkit_unsigned_int_token(bond_token)
+            .ok_or_else(|| Mol2ReadError::Parse(format!("Cannot convert {bond_token} to unsigned int")))?
     } else {
         0
     };
@@ -267,9 +260,7 @@ fn rdkit_atomic_number_for_symbol_like_rdkit(symbol: &str) -> Result<u8, Mol2Rea
     crate::rdkit_atomic_number_from_symbol(symbol)
         .ok_or_else(|| Mol2ReadError::Parse(format!("Element '{symbol}' not found")))
 }
-fn mol2_atom_spec_from_sybyl_symbol_like_rdkit(
-    symbol: &str,
-) -> Result<Option<AtomSpec>, Mol2ReadError> {
+fn mol2_atom_spec_from_sybyl_symbol_like_rdkit(symbol: &str) -> Result<Option<AtomSpec>, Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: ParseMol2FileAtomLine atom type handling
     // RDKit✔️✔️:   // bad symbols:
     // RDKit✔️✔️:   // LP is not an atom so remove it ...
@@ -310,18 +301,16 @@ fn mol2_atom_spec_from_sybyl_symbol_like_rdkit(
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: ParseMol2FileAtomLine atom type handling
     let spec = match symbol {
         "LP" => return Ok(None),
-        "ANY" | "Du" => {
-            AtomSpec::new(Element::DUMMY).with_query(QueryNode::predicate(AtomQueryPredicate::Any))
-        }
+        "ANY" | "Du" => AtomSpec::new(Element::DUMMY).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
         "HEV" => AtomSpec::new(Element::H).with_query(QueryNode::not(QueryNode::predicate(
             AtomQueryPredicate::AtomicNumber(1),
         ))),
-        "HET" => AtomSpec::new(Element::N).with_query(QueryNode::predicate(
-            AtomQueryPredicate::AtomicNumberIn(vec![7, 8, 15, 16]),
-        )),
-        "HAL" => AtomSpec::new(Element::F).with_query(QueryNode::predicate(
-            AtomQueryPredicate::AtomicNumberIn(vec![9, 17, 35, 53]),
-        )),
+        "HET" => AtomSpec::new(Element::N).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![
+            7, 8, 15, 16,
+        ]))),
+        "HAL" => AtomSpec::new(Element::F).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![
+            9, 17, 35, 53,
+        ]))),
         _ => {
             let atomic_number = rdkit_atomic_number_for_symbol_like_rdkit(symbol)?;
             AtomSpec::new(Element::from_atomic_number(atomic_number).expect("u8 atomic number"))
@@ -413,9 +402,7 @@ fn parse_mol2_atom_line_like_rdkit(atom_line: &str) -> Result<Option<Mol2AtomLin
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: ParseMol2FileAtomLine base fields
-    let mut tokens = atom_line
-        .split([' ', '\t', '\n'])
-        .filter(|token| !token.is_empty());
+    let mut tokens = atom_line.split([' ', '\t', '\n']).filter(|token| !token.is_empty());
     let _tripos_atom_id = tokens
         .next()
         .ok_or_else(|| Mol2ReadError::Parse("no info in mol2 atom line".to_string()))?;
@@ -569,9 +556,7 @@ fn parse_mol2_atom_block_like_rdkit(
     let actual_atoms = builder.atoms().len();
     let expected_atoms = idx_corresp.iter().filter(|atom| atom.is_some()).count();
     if actual_atoms != expected_atoms {
-        return Err(Mol2ReadError::Parse(
-            "Wrong number of atoms in molecule".to_string(),
-        ));
+        return Err(Mol2ReadError::Parse("Wrong number of atoms in molecule".to_string()));
     }
 
     Ok(Mol2AtomBlock {
@@ -663,9 +648,7 @@ fn parse_mol2_bond_line_like_rdkit(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: ParseMol2FileBondLine
-    let mut tokens = bond_line
-        .split([' ', '\t', '\n'])
-        .filter(|token| !token.is_empty());
+    let mut tokens = bond_line.split([' ', '\t', '\n']).filter(|token| !token.is_empty());
     let _tripos_bond_id = tokens
         .next()
         .ok_or_else(|| Mol2ReadError::Parse("no info in mol2 bond line".to_string()))?;
@@ -689,10 +672,8 @@ fn parse_mol2_bond_line_like_rdkit(
 
     let idx1 = idx1.wrapping_sub(1);
     let idx2 = idx2.wrapping_sub(1);
-    let idx1_usize =
-        usize::try_from(idx1).map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
-    let idx2_usize =
-        usize::try_from(idx2).map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
+    let idx1_usize = usize::try_from(idx1).map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
+    let idx2_usize = usize::try_from(idx2).map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
 
     let Some(begin) = idx_corresp.get(idx1_usize).copied().flatten() else {
         if idx1_usize >= idx_corresp.len() {
@@ -768,9 +749,7 @@ fn parse_mol2_bond_block_like_rdkit(
 
     for _ in 0..n_bonds {
         let temp_str = rdkit_get_line_at_checked(input, &mut offset)?;
-        let Some(mut bond_line) =
-            parse_mol2_bond_line_like_rdkit(temp_str, &atom_block.idx_corresp)?
-        else {
+        let Some(mut bond_line) = parse_mol2_bond_line_like_rdkit(temp_str, &atom_block.idx_corresp)? else {
             n_bad_bonds = n_bad_bonds.wrapping_add(1);
             continue;
         };
@@ -797,15 +776,10 @@ fn parse_mol2_bond_block_like_rdkit(
     let expected_bonds = usize::try_from(n_bonds.wrapping_sub(n_bad_bonds))
         .map_err(|_| Mol2ReadError::Parse("bond count does not fit platform usize".to_string()))?;
     if builder.bonds().len() != expected_bonds {
-        return Err(Mol2ReadError::Parse(
-            "Wrong number of atoms in molecule".to_string(),
-        ));
+        return Err(Mol2ReadError::Parse("Wrong number of atoms in molecule".to_string()));
     }
 
-    Ok(Mol2BondBlock {
-        builder,
-        n_bad_bonds,
-    })
+    Ok(Mol2BondBlock { builder, n_bad_bonds })
 }
 
 fn read_formal_charges_from_attr_like_rdkit(
@@ -881,46 +855,37 @@ fn read_formal_charges_from_attr_like_rdkit(
     let mut temp_str = rdkit_get_line_at_checked(input, &mut offset)?;
 
     loop {
-        let mut tokens = temp_str
-            .split([' ', '\t', '\n'])
-            .filter(|token| !token.is_empty());
-        let atom_idx_token = tokens.next().ok_or_else(|| {
-            Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string())
-        })?;
-        let atom_idx = parse_rdkit_unsigned_int_token(atom_idx_token).ok_or_else(|| {
-            Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string())
-        })?;
-        let no_atom_attr_token = tokens.next().ok_or_else(|| {
-            Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string())
-        })?;
-        let no_atom_attr = parse_rdkit_unsigned_int_token(no_atom_attr_token).ok_or_else(|| {
-            Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string())
-        })?;
+        let mut tokens = temp_str.split([' ', '\t', '\n']).filter(|token| !token.is_empty());
+        let atom_idx_token = tokens
+            .next()
+            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string()))?;
+        let atom_idx = parse_rdkit_unsigned_int_token(atom_idx_token)
+            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string()))?;
+        let no_atom_attr_token = tokens
+            .next()
+            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string()))?;
+        let no_atom_attr = parse_rdkit_unsigned_int_token(no_atom_attr_token)
+            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 UnityAtomAttr.".to_string()))?;
 
         for _ in 0..no_atom_attr {
             let attr_line = rdkit_get_line_at_checked(input, &mut offset)?;
-            let mut attr_tokens = attr_line
-                .split([' ', '\t', '\n'])
-                .filter(|token| !token.is_empty());
+            let mut attr_tokens = attr_line.split([' ', '\t', '\n']).filter(|token| !token.is_empty());
             let Some(attr_name) = attr_tokens.next() else {
                 continue;
             };
             if attr_name == "AtomExpr" {
                 let Some(charge_token) = attr_tokens.next() else {
-                    return Err(Mol2ReadError::Parse(
-                        "Cannot process mol2 formal charge.".to_string(),
-                    ));
+                    return Err(Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_string()));
                 };
                 if !charge_token.contains('=') {
-                    let form_charge = charge_token.parse::<i32>().map_err(|_| {
-                        Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_string())
-                    })?;
-                    let form_charge = i8::try_from(form_charge).map_err(|_| {
-                        Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_string())
-                    })?;
+                    let form_charge = charge_token
+                        .parse::<i32>()
+                        .map_err(|_| Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_string()))?;
+                    let form_charge = i8::try_from(form_charge)
+                        .map_err(|_| Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_string()))?;
                     let atom_idx = atom_idx.wrapping_sub(1);
-                    let atom_idx = usize::try_from(atom_idx)
-                        .map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
+                    let atom_idx =
+                        usize::try_from(atom_idx).map_err(|_| Mol2ReadError::Parse("index mismatch".to_string()))?;
                     let Some(atom) = builder.atom_mut(AtomId::new(atom_idx)) else {
                         return Err(Mol2ReadError::Parse("index mismatch".to_string()));
                     };
@@ -1000,10 +965,8 @@ fn fix_nitro_substructure_and_charge_like_rdkit(
     }
 
     if no_o_double_neighbors == 2 {
-        let to_mod_bond =
-            to_mod_bond.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
-        let to_mod_idx =
-            to_mod_idx.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
+        let to_mod_bond = to_mod_bond.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
+        let to_mod_idx = to_mod_idx.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
         builder
             .set_bond_order(to_mod_bond, BondOrder::Single)
             .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
@@ -1165,8 +1128,7 @@ fn guess_formal_charges_like_rdkit(builder: &mut MoleculeBuilder) -> Result<(), 
             let bond = builder
                 .bond(bond_id)
                 .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
-            accum += bond_valence_contrib(bond, atom_id)
-                .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
+            accum += bond_valence_contrib(bond, atom_id).map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
             if bond.order() == BondOrder::Aromatic {
                 no_aromatic_bonds += 1;
             }
@@ -1177,9 +1139,8 @@ fn guess_formal_charges_like_rdkit(builder: &mut MoleculeBuilder) -> Result<(), 
         }
 
         if ring_info.is_none() {
-            let adjacency =
-                AdjacencyList::try_from_topology(builder.atoms().len(), builder.bonds())
-                    .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
+            let adjacency = AdjacencyList::try_from_topology(builder.atoms().len(), builder.bonds())
+                .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
             ring_info = Some(
                 find_sssr_from_parts(builder.atoms().len(), builder.bonds(), &adjacency)
                     .map_err(|err| Mol2ReadError::Parse(err.to_string()))?,
@@ -1222,9 +1183,7 @@ fn guess_formal_charges_like_rdkit(builder: &mut MoleculeBuilder) -> Result<(), 
             }
         }
         if assign_charge != 0 {
-            let formal_charge = if builder.atoms()[idx].is_aromatic()
-                && assign_charge.unsigned_abs() > 1
-            {
+            let formal_charge = if builder.atoms()[idx].is_aromatic() && assign_charge.unsigned_abs() > 1 {
                 (assign_charge > 0) as i8 - (assign_charge < 0) as i8
             } else {
                 i8::try_from(assign_charge)
@@ -1234,10 +1193,7 @@ fn guess_formal_charges_like_rdkit(builder: &mut MoleculeBuilder) -> Result<(), 
                 return Err(Mol2ReadError::Parse("index mismatch".to_string()));
             };
             atom.set_formal_charge(formal_charge);
-            if assign_charge == 2
-                && explicit_valence == 5
-                && builder.atoms()[idx].atomic_number() == 7
-            {
+            if assign_charge == 2 && explicit_valence == 5 && builder.atoms()[idx].atomic_number() == 7 {
                 fix_nitro_substructure_and_charge_like_rdkit(builder, atom_id)?;
             }
         }
@@ -1301,9 +1257,7 @@ fn check_no_h_neighbors_n_oxide_like_rdkit(
     Ok(no_h_neighbors)
 }
 
-fn clean_up_mol2_substructures_like_rdkit(
-    builder: &mut MoleculeBuilder,
-) -> Result<bool, Mol2ReadError> {
+fn clean_up_mol2_substructures_like_rdkit(builder: &mut MoleculeBuilder) -> Result<bool, Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: cleanUpMol2Substructures
     // RDKit✔️✔️: bool cleanUpMol2Substructures(RWMol *res) {
     // RDKit✔️✔️:   // NOTE: check the nitro fix in guess formal charges!
@@ -1687,20 +1641,17 @@ fn clean_up_mol2_substructures_like_rdkit(
                 for (neighbor_id, bond_id) in neighbor_pairs.iter().copied() {
                     if !is_fixed[neighbor_id.index()] {
                         let mut heavy_atom_degree = 0_u32;
-                        for neighbor_bond_id in builder.neighbor_bonds(neighbor_id).iter().copied()
-                        {
-                            let neighbor_bond =
-                                builder.bond(neighbor_bond_id).ok_or_else(|| {
-                                    Mol2ReadError::Parse("index mismatch".to_string())
-                                })?;
+                        for neighbor_bond_id in builder.neighbor_bonds(neighbor_id).iter().copied() {
+                            let neighbor_bond = builder
+                                .bond(neighbor_bond_id)
+                                .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
                             let neighbor_neighbor_id = if neighbor_bond.begin() == neighbor_id {
                                 neighbor_bond.end()
                             } else {
                                 neighbor_bond.begin()
                             };
                             if builder.atoms()[neighbor_neighbor_id.index()].atomic_number() > 1 {
-                                if builder.atoms()[neighbor_neighbor_id.index()]
-                                    .prop("_TriposAtomType")
+                                if builder.atoms()[neighbor_neighbor_id.index()].prop("_TriposAtomType")
                                     == Some("C.cat")
                                 {
                                     heavy_atom_degree = heavy_atom_degree.wrapping_add(2);
@@ -1732,10 +1683,8 @@ fn clean_up_mol2_substructures_like_rdkit(
                         bond.set_aromatic(false);
                     }
                 }
-                let to_mod_idx =
-                    to_mod_idx.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
-                let to_mod_bond = to_mod_bond
-                    .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
+                let to_mod_idx = to_mod_idx.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
+                let to_mod_bond = to_mod_bond.ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_string()))?;
                 let Some(bond) = builder.bond_mut(to_mod_bond) else {
                     return Err(Mol2ReadError::Parse("index mismatch".to_string()));
                 };
@@ -1766,10 +1715,8 @@ fn clean_up_mol2_substructures_like_rdkit(
                 }
 
                 let mut to_mod_idx = None;
-                let no_h_neighbors_1 =
-                    check_no_h_neighbors_n_oxide_like_rdkit(builder, first_n_id, &mut to_mod_idx)?;
-                let no_h_neighbors_2 =
-                    check_no_h_neighbors_n_oxide_like_rdkit(builder, second_n_id, &mut to_mod_idx)?;
+                let no_h_neighbors_1 = check_no_h_neighbors_n_oxide_like_rdkit(builder, first_n_id, &mut to_mod_idx)?;
+                let no_h_neighbors_2 = check_no_h_neighbors_n_oxide_like_rdkit(builder, second_n_id, &mut to_mod_idx)?;
                 let to_mod_id = if let Some(to_mod_idx) = to_mod_idx {
                     to_mod_idx
                 } else if no_h_neighbors_1 != no_h_neighbors_2 {
@@ -1779,12 +1726,10 @@ fn clean_up_mol2_substructures_like_rdkit(
                         second_n_id
                     }
                 } else {
-                    let adjacency =
-                        AdjacencyList::try_from_topology(builder.atoms().len(), builder.bonds())
-                            .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
-                    let ring_info =
-                        find_sssr_from_parts(builder.atoms().len(), builder.bonds(), &adjacency)
-                            .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
+                    let adjacency = AdjacencyList::try_from_topology(builder.atoms().len(), builder.bonds())
+                        .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
+                    let ring_info = find_sssr_from_parts(builder.atoms().len(), builder.bonds(), &adjacency)
+                        .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
                     let first_ring_count = ring_info.num_atom_rings(first_n_id);
                     let second_ring_count = ring_info.num_atom_rings(second_n_id);
                     if first_ring_count > second_ring_count {
@@ -1887,10 +1832,9 @@ fn scan_mol2_sections_like_rdkit(input: &str) -> Result<Mol2SectionOffsets, Mol2
         offset = end_offset;
     }
 
-    let molecule_start = molecule_start
-        .ok_or_else(|| Mol2ReadError::Parse("No MOLECULE block found in Mol2 data".to_string()))?;
-    let atom_start = atom_start
-        .ok_or_else(|| Mol2ReadError::Parse("No ATOM block found in Mol2 data".to_string()))?;
+    let molecule_start =
+        molecule_start.ok_or_else(|| Mol2ReadError::Parse("No MOLECULE block found in Mol2 data".to_string()))?;
+    let atom_start = atom_start.ok_or_else(|| Mol2ReadError::Parse("No ATOM block found in Mol2 data".to_string()))?;
 
     Ok(Mol2SectionOffsets {
         molecule_start,
@@ -1998,9 +1942,7 @@ pub fn mol_from_mol2_data_stream_like_rdkit(
     let builder = if let Some(charge_start) = offsets.charge_start {
         read_formal_charges_from_attr_like_rdkit(input, charge_start, bond_block)?.builder
     } else {
-        if params.cleanup_substructures
-            && !clean_up_mol2_substructures_like_rdkit(&mut bond_block.builder)?
-        {
+        if params.cleanup_substructures && !clean_up_mol2_substructures_like_rdkit(&mut bond_block.builder)? {
             return Ok(None);
         }
         guess_formal_charges_like_rdkit(&mut bond_block.builder)?;
@@ -2014,10 +1956,7 @@ pub fn mol_from_mol2_data_stream_like_rdkit(
     Ok(Some(Mol2Record { molecule }))
 }
 
-fn finish_mol2_read_like_rdkit(
-    mut record: Mol2Record,
-    params: Mol2ReadParams,
-) -> Result<Mol2Record, Mol2ReadError> {
+fn finish_mol2_read_like_rdkit(mut record: Mol2Record, params: Mol2ReadParams) -> Result<Mol2Record, Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream finalization order
     // RDKit✔️✔️:   // set chirality prior to sanitization since it happens from 3D and it's not
     // RDKit✔️✔️:   // possible anymore once the hydrogens are removed
@@ -2071,8 +2010,7 @@ pub fn mol_from_mol2_file_like_rdkit(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2File
     let path = path.as_ref();
-    let text = fs::read_to_string(path)
-        .map_err(|_| Mol2ReadError::Io(format!("Bad input file {}", path.display())))?;
+    let text = fs::read_to_string(path).map_err(|_| Mol2ReadError::Io(format!("Bad input file {}", path.display())))?;
     if text.is_empty() {
         Ok(None)
     } else {
@@ -2084,10 +2022,7 @@ pub fn read_mol2_from_str(s: &str) -> Result<Option<Mol2Record>, Mol2ReadError> 
     read_mol2_from_str_with_params(s, Mol2ReadParams::default())
 }
 
-pub fn read_mol2_from_str_with_params(
-    s: &str,
-    params: Mol2ReadParams,
-) -> Result<Option<Mol2Record>, Mol2ReadError> {
+pub fn read_mol2_from_str_with_params(s: &str, params: Mol2ReadParams) -> Result<Option<Mol2Record>, Mol2ReadError> {
     // BEGIN RDKIT CPP INLINE third_party/rdkit/Code/GraphMol/FileParsers/FileParsers.h :: Mol2BlockToMol
     // RDKit✔️✔️: inline RWMol *Mol2BlockToMol(const std::string &molBlock, bool sanitize = true,
     // RDKit✔️✔️:                              bool removeHs = true,
@@ -2128,9 +2063,7 @@ pub fn read_mol2_file_with_params(
     mol_from_mol2_file_like_rdkit(path, params)
 }
 
-fn assign_chiral_types_from_3d_for_mol2_like_rdkit(
-    molecule: &mut Molecule,
-) -> Result<(), Mol2ReadError> {
+fn assign_chiral_types_from_3d_for_mol2_like_rdkit(molecule: &mut Molecule) -> Result<(), Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream 3D chirality call
     // RDKit✔️✔️:   // set chirality prior to sanitization since it happens from 3D and it's not
     // RDKit✔️✔️:   // possible anymore once the hydrogens are removed
@@ -2142,10 +2075,7 @@ fn assign_chiral_types_from_3d_for_mol2_like_rdkit(
         .map_err(|error| Mol2ReadError::Parse(error.to_string()))
 }
 
-fn sanitize_mol2_molecule_like_rdkit(
-    molecule: Molecule,
-    params: Mol2ReadParams,
-) -> Result<Molecule, Mol2ReadError> {
+fn sanitize_mol2_molecule_like_rdkit(molecule: Molecule, params: Mol2ReadParams) -> Result<Molecule, Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream sanitized removeHs branch
     // RDKit✔️✔️:   if (res && params.sanitize) {
     // RDKit✔️✔️:     MolOps::cleanUp(*res);
@@ -2181,9 +2111,7 @@ fn sanitize_mol2_molecule_like_rdkit(
     if params.remove_hs {
         if let Some(conf_id) = molecule.conformers_3d().first().map(|conf| conf.id()) {
             crate::notation::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id)
-                .map_err(|err| {
-                    Mol2ReadError::Parse(format!("bond stereo detection failed: {err}"))
-                })?;
+                .map_err(|err| Mol2ReadError::Parse(format!("bond stereo detection failed: {err}")))?;
         }
         molecule = molecule
             .without_hydrogens_with_sanitize(false)
@@ -2204,9 +2132,7 @@ fn sanitize_mol2_molecule_like_rdkit(
             .map_err(mol2_operation_error)?;
         if let Some(conf_id) = molecule.conformers_3d().first().map(|conf| conf.id()) {
             crate::notation::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id)
-                .map_err(|err| {
-                    Mol2ReadError::Parse(format!("bond stereo detection failed: {err}"))
-                })?;
+                .map_err(|err| Mol2ReadError::Parse(format!("bond stereo detection failed: {err}")))?;
         }
     }
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream sanitized finalization
@@ -2234,9 +2160,7 @@ fn mol2_sanitize_flags_like_rdkit() -> crate::SanitizeOps {
 
 fn mol2_operation_error(error: crate::OperationError) -> Mol2ReadError {
     match error {
-        crate::OperationError::UnsupportedFeature { source, .. } => {
-            Mol2ReadError::UnsupportedFeature(source)
-        }
+        crate::OperationError::UnsupportedFeature { source, .. } => Mol2ReadError::UnsupportedFeature(source),
         other => Mol2ReadError::Parse(other.to_string()),
     }
 }
@@ -2254,18 +2178,10 @@ mod tests {
                 atomic_number
             );
         }
+        assert_eq!(rdkit_atomic_number_for_symbol_like_rdkit("Uut").unwrap(), 113);
+        assert_eq!(rdkit_atomic_number_for_symbol_like_rdkit("Uup").unwrap(), 115);
         assert_eq!(
-            rdkit_atomic_number_for_symbol_like_rdkit("Uut").unwrap(),
-            113
-        );
-        assert_eq!(
-            rdkit_atomic_number_for_symbol_like_rdkit("Uup").unwrap(),
-            115
-        );
-        assert_eq!(
-            rdkit_atomic_number_for_symbol_like_rdkit("Xx")
-                .unwrap_err()
-                .to_string(),
+            rdkit_atomic_number_for_symbol_like_rdkit("Xx").unwrap_err().to_string(),
             "MOL2 parse failed: Element 'Xx' not found"
         );
     }
@@ -2299,18 +2215,14 @@ mod tests {
         };
         read_formal_charges_from_attr_like_rdkit(
             input,
-            offsets.charge_start.ok_or_else(|| {
-                Mol2ReadError::Parse("No UNITY_ATOM_ATTR block found".to_string())
-            })?,
+            offsets
+                .charge_start
+                .ok_or_else(|| Mol2ReadError::Parse("No UNITY_ATOM_ATTR block found".to_string()))?,
             bond_block,
         )
     }
 
-    fn parse_bond_block_from_block(
-        input: &str,
-        n_atoms: u32,
-        n_bonds: u32,
-    ) -> Result<Mol2BondBlock, Mol2ReadError> {
+    fn parse_bond_block_from_block(input: &str, n_atoms: u32, n_bonds: u32) -> Result<Mol2BondBlock, Mol2ReadError> {
         let offsets = scan_mol2_sections_like_rdkit(input)?;
         let atom_block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, n_atoms)?;
         parse_mol2_bond_block_like_rdkit(
@@ -2356,10 +2268,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\nabc 1\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n";
         let err = parse_header_from_block(input).unwrap_err();
 
-        assert_eq!(
-            err.to_string(),
-            "MOL2 parse failed: Cannot convert abc to unsigned int"
-        );
+        assert_eq!(err.to_string(), "MOL2 parse failed: Cannot convert abc to unsigned int");
     }
 
     #[test]
@@ -2381,8 +2290,7 @@ mod tests {
 
     #[test]
     fn mol2_header_ignores_molecule_type_line_like_rdkit() {
-        let input =
-            "@<TRIPOS>MOLECULE\nmol\n2 1\nUNRECOGNIZED_MOL_TYPE\nGASTEIGER\n@<TRIPOS>ATOM\n";
+        let input = "@<TRIPOS>MOLECULE\nmol\n2 1\nUNRECOGNIZED_MOL_TYPE\nGASTEIGER\n@<TRIPOS>ATOM\n";
         let header = parse_header_from_block(input).unwrap();
 
         assert_eq!(header.n_atoms, 2);
@@ -2416,17 +2324,12 @@ mod tests {
     fn mol2_atom_line_rejects_coordinate_errors_like_rdkit() {
         let err = parse_mol2_atom_line_like_rdkit("1 C1 not-a-number 0 0 C.3").unwrap_err();
 
-        assert_eq!(
-            err.to_string(),
-            "MOL2 parse failed: Cannot process mol2 coordinates."
-        );
+        assert_eq!(err.to_string(), "MOL2 parse failed: Cannot process mol2 coordinates.");
     }
 
     #[test]
     fn mol2_atom_line_retains_tripos_atom_name_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 Zn42 0 0 0 Zn")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 Zn42 0 0 0 Zn").unwrap().unwrap();
 
         assert_eq!(atom.atom_name, "Zn42");
         assert_eq!(atom.atom_spec.prop("_TriposAtomName"), Some("Zn42"));
@@ -2434,9 +2337,7 @@ mod tests {
 
     #[test]
     fn mol2_atom_line_retains_tripos_atom_type_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 N1 0 0 0 N.am")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 N1 0 0 0 N.am").unwrap().unwrap();
 
         assert_eq!(atom.sybyl_atom_type, "N.am");
         assert_eq!(atom.sybyl_symbol, "N");
@@ -2455,9 +2356,7 @@ mod tests {
 
     #[test]
     fn mol2_atom_line_sets_no_implicit_hydrogen_state_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 H1 0 0 0 H")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 H1 0 0 0 H").unwrap().unwrap();
 
         assert!(atom.no_implicit);
         assert!(atom.atom_spec.no_implicit());
@@ -2472,9 +2371,7 @@ mod tests {
 
     #[test]
     fn mol2_atom_type_any_query_matches_anything_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 A1 0 0 0 ANY")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 A1 0 0 0 ANY").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::DUMMY);
         assert_eq!(
@@ -2485,9 +2382,7 @@ mod tests {
 
     #[test]
     fn mol2_atom_type_du_query_matches_anything_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 DU1 0 0 0 Du")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 DU1 0 0 0 Du").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::DUMMY);
         assert_eq!(
@@ -2498,54 +2393,46 @@ mod tests {
 
     #[test]
     fn mol2_atom_type_hev_query_matches_non_hydrogen_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 Q1 0 0 0 HEV")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 Q1 0 0 0 HEV").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::H);
         assert_eq!(
             atom.atom_spec.query(),
-            Some(&QueryNode::not(QueryNode::predicate(
-                AtomQueryPredicate::AtomicNumber(1)
-            )))
+            Some(&QueryNode::not(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(
+                1
+            ))))
         );
     }
 
     #[test]
     fn mol2_atom_type_het_query_matches_n_o_p_s_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 HET1 0 0 0 HET")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 HET1 0 0 0 HET").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::N);
         assert_eq!(
             atom.atom_spec.query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
-                vec![7, 8, 15, 16]
-            )))
+            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![
+                7, 8, 15, 16
+            ])))
         );
     }
 
     #[test]
     fn mol2_atom_type_hal_query_matches_f_cl_br_i_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 HAL1 0 0 0 HAL")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 HAL1 0 0 0 HAL").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::F);
         assert_eq!(
             atom.atom_spec.query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
-                vec![9, 17, 35, 53]
-            )))
+            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![
+                9, 17, 35, 53
+            ])))
         );
     }
 
     #[test]
     fn mol2_atom_type_ordinary_symbols_use_periodic_table_like_rdkit() {
-        let atom = parse_mol2_atom_line_like_rdkit("1 CL1 0 0 0 Cl")
-            .unwrap()
-            .unwrap();
+        let atom = parse_mol2_atom_line_like_rdkit("1 CL1 0 0 0 Cl").unwrap().unwrap();
 
         assert_eq!(atom.atom_spec.element(), Element::CL);
         assert_eq!(atom.atom_spec.query(), None);
@@ -2577,7 +2464,8 @@ mod tests {
 
     #[test]
     fn mol2_atom_block_creates_3d_conformer_like_rdkit() {
-        let input = "@<TRIPOS>MOLECULE\nmol\n2 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 -1.25 2.5 0 C.3\n2 O1 3 4.5 -6 O.2\n";
+        let input =
+            "@<TRIPOS>MOLECULE\nmol\n2 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 -1.25 2.5 0 C.3\n2 O1 3 4.5 -6 O.2\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 2).unwrap();
         let molecule = block.builder.build().unwrap();
@@ -2593,17 +2481,13 @@ mod tests {
 
     #[test]
     fn mol2_atom_block_detects_explicit_hydrogen_atoms_like_rdkit() {
-        let without_h =
-            "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n";
+        let without_h = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n";
         let without_h_offsets = scan_mol2_sections_like_rdkit(without_h).unwrap();
-        let without_h_block =
-            parse_mol2_atom_block_like_rdkit(without_h, without_h_offsets.atom_start, 1).unwrap();
+        let without_h_block = parse_mol2_atom_block_like_rdkit(without_h, without_h_offsets.atom_start, 1).unwrap();
 
-        let with_h =
-            "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 H1 0 0 0 H\n";
+        let with_h = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 H1 0 0 0 H\n";
         let with_h_offsets = scan_mol2_sections_like_rdkit(with_h).unwrap();
-        let with_h_block =
-            parse_mol2_atom_block_like_rdkit(with_h, with_h_offsets.atom_start, 1).unwrap();
+        let with_h_block = parse_mol2_atom_block_like_rdkit(with_h, with_h_offsets.atom_start, 1).unwrap();
 
         assert!(!without_h_block.has_h_atoms);
         assert!(with_h_block.has_h_atoms);
@@ -2611,8 +2495,7 @@ mod tests {
 
     #[test]
     fn mol2_atom_block_rejects_premature_eof_like_rdkit() {
-        let input =
-            "@<TRIPOS>MOLECULE\nmol\n2 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n";
+        let input = "@<TRIPOS>MOLECULE\nmol\n2 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let err = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 2).unwrap_err();
 
@@ -2627,14 +2510,7 @@ mod tests {
         let molecule = block.builder.build().unwrap();
 
         assert_eq!(molecule.num_atoms(), 2);
-        assert_eq!(
-            block
-                .idx_corresp
-                .iter()
-                .filter(|atom| atom.is_some())
-                .count(),
-            2
-        );
+        assert_eq!(block.idx_corresp.iter().filter(|atom| atom.is_some()).count(), 2);
         assert_eq!(
             molecule.conformers_3d()[0].coordinates(),
             &[[1.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
@@ -2658,14 +2534,8 @@ mod tests {
     fn mol2_bond_line_skips_lp_endpoints_like_rdkit() {
         let idx_corresp = vec![Some(AtomId::new(0)), None, Some(AtomId::new(1))];
 
-        assert_eq!(
-            parse_mol2_bond_line_like_rdkit("1 1 2 1", &idx_corresp).unwrap(),
-            None
-        );
-        assert_eq!(
-            parse_mol2_bond_line_like_rdkit("2 2 3 1", &idx_corresp).unwrap(),
-            None
-        );
+        assert_eq!(parse_mol2_bond_line_like_rdkit("1 1 2 1", &idx_corresp).unwrap(), None);
+        assert_eq!(parse_mol2_bond_line_like_rdkit("2 2 3 1", &idx_corresp).unwrap(), None);
     }
 
     #[test]
@@ -2691,9 +2561,7 @@ mod tests {
 
         for (sybyl_type, expected_order) in cases {
             let line = format!("1 1 2 {sybyl_type}");
-            let bond = parse_mol2_bond_line_like_rdkit(&line, &idx_corresp)
-                .unwrap()
-                .unwrap();
+            let bond = parse_mol2_bond_line_like_rdkit(&line, &idx_corresp).unwrap().unwrap();
 
             assert_eq!(bond.bond_spec.order(), expected_order);
             assert_eq!(bond.sybyl_bond_type, sybyl_type);
@@ -2704,10 +2572,7 @@ mod tests {
     fn mol2_bond_line_skips_nc_and_unsupported_types_like_rdkit() {
         let idx_corresp = vec![Some(AtomId::new(0)), Some(AtomId::new(1))];
 
-        assert_eq!(
-            parse_mol2_bond_line_like_rdkit("1 1 2 nc", &idx_corresp).unwrap(),
-            None
-        );
+        assert_eq!(parse_mol2_bond_line_like_rdkit("1 1 2 nc", &idx_corresp).unwrap(), None);
         assert_eq!(
             parse_mol2_bond_line_like_rdkit("2 1 2 weird", &idx_corresp).unwrap(),
             None
@@ -2719,9 +2584,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n2 1\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.ar\n2 C2 1 0 0 C.ar\n@<TRIPOS>BOND\n1 1 2 ar\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let atom_block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 2).unwrap();
-        let bond_block =
-            parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 1, atom_block)
-                .unwrap();
+        let bond_block = parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 1, atom_block).unwrap();
         let molecule = bond_block.builder.build().unwrap();
 
         assert_eq!(molecule.num_bonds(), 1);
@@ -2736,9 +2599,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n3 2\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 LP1 1 0 0 LP\n3 O1 2 0 0 O.2\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 nc\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let atom_block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 3).unwrap();
-        let bond_block =
-            parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 2, atom_block)
-                .unwrap();
+        let bond_block = parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 2, atom_block).unwrap();
         let molecule = bond_block.builder.build().unwrap();
 
         assert_eq!(bond_block.n_bad_bonds, 2);
@@ -2750,9 +2611,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n2 2\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 O1 1 0 0 O.2\n@<TRIPOS>BOND\n1 1 2 1\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let atom_block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 2).unwrap();
-        let err =
-            parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 2, atom_block)
-                .unwrap_err();
+        let err = parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 2, atom_block).unwrap_err();
 
         assert_eq!(err.to_string(), "MOL2 parse failed: premature EOF");
     }
@@ -2762,9 +2621,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n3 3\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 C2 1 0 0 C.3\n3 O1 2 0 0 O.2\n@<TRIPOS>BOND\n1 1 2 1\n2 2 3 weird\n3 1 3 2\n";
         let offsets = scan_mol2_sections_like_rdkit(input).unwrap();
         let atom_block = parse_mol2_atom_block_like_rdkit(input, offsets.atom_start, 3).unwrap();
-        let bond_block =
-            parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 3, atom_block)
-                .unwrap();
+        let bond_block = parse_mol2_bond_block_like_rdkit(input, offsets.bond_start.unwrap(), 3, atom_block).unwrap();
         let molecule = bond_block.builder.build().unwrap();
 
         assert_eq!(bond_block.n_bad_bonds, 1);
@@ -2788,10 +2645,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n@<TRIPOS>UNITY_ATOM_ATTR\nnot-an-index 1\nAtomExpr 1\n";
         let err = read_unity_atom_attr_from_block(input, 1, 0).unwrap_err();
 
-        assert_eq!(
-            err.to_string(),
-            "MOL2 parse failed: Cannot process mol2 UnityAtomAttr."
-        );
+        assert_eq!(err.to_string(), "MOL2 parse failed: Cannot process mol2 UnityAtomAttr.");
     }
 
     #[test]
@@ -2799,10 +2653,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr not-a-charge\n@<TRIPOS>SUBSTRUCTURE\n";
         let err = read_unity_atom_attr_from_block(input, 1, 0).unwrap_err();
 
-        assert_eq!(
-            err.to_string(),
-            "MOL2 parse failed: Cannot process mol2 formal charge."
-        );
+        assert_eq!(err.to_string(), "MOL2 parse failed: Cannot process mol2 formal charge.");
     }
 
     #[test]
@@ -2862,12 +2713,9 @@ mod tests {
     #[test]
     fn mol2_guess_charges_skips_query_atoms_like_rdkit() {
         let input = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 Q1 0 0 0 Du\n@<TRIPOS>BOND\n";
-        let mut atom_block = parse_mol2_atom_block_like_rdkit(
-            input,
-            scan_mol2_sections_like_rdkit(input).unwrap().atom_start,
-            1,
-        )
-        .unwrap();
+        let mut atom_block =
+            parse_mol2_atom_block_like_rdkit(input, scan_mol2_sections_like_rdkit(input).unwrap().atom_start, 1)
+                .unwrap();
 
         guess_formal_charges_like_rdkit(&mut atom_block.builder).unwrap();
 
@@ -2883,10 +2731,7 @@ mod tests {
         guess_formal_charges_like_rdkit(&mut bond_block.builder).unwrap();
 
         assert!(bond_block.builder.atoms()[0].is_aromatic());
-        assert_eq!(
-            bond_block.builder.atoms()[0].prop("_TriposAtomType"),
-            Some("O.2")
-        );
+        assert_eq!(bond_block.builder.atoms()[0].prop("_TriposAtomType"), Some("O.2"));
         assert_eq!(bond_block.builder.atoms()[0].formal_charge(), 0);
     }
 
@@ -2946,22 +2791,10 @@ mod tests {
 
         assert_eq!(record.molecule.num_atoms(), 2);
         assert_eq!(record.molecule.properties().name(), Some("mol"));
-        assert_eq!(
-            record.molecule.prop("_TriposChargeType"),
-            Some("NO_CHARGES")
-        );
-        assert_eq!(
-            record.molecule.atoms()[0].prop("_TriposAtomName"),
-            Some("C1")
-        );
-        assert_eq!(
-            record.molecule.atoms()[1].prop("_TriposAtomType"),
-            Some("N.3")
-        );
-        assert_eq!(
-            record.molecule.conformers_3d()[0].coordinates()[1],
-            [1.0, 0.0, 0.0]
-        );
+        assert_eq!(record.molecule.prop("_TriposChargeType"), Some("NO_CHARGES"));
+        assert_eq!(record.molecule.atoms()[0].prop("_TriposAtomName"), Some("C1"));
+        assert_eq!(record.molecule.atoms()[1].prop("_TriposAtomType"), Some("N.3"));
+        assert_eq!(record.molecule.conformers_3d()[0].coordinates()[1], [1.0, 0.0, 0.0]);
     }
 
     #[test]
@@ -2978,8 +2811,7 @@ mod tests {
 
     #[test]
     fn mol2_data_stream_unsanitized_accepts_no_bonds_like_rdkit() {
-        let input =
-            "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 O1 0 0 0 O.3\n";
+        let input = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 O1 0 0 0 O.3\n";
 
         let record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
 
@@ -3011,9 +2843,7 @@ mod tests {
             cleanup_substructures: false,
         };
 
-        let record = mol_from_mol2_data_stream_like_rdkit(input, params)
-            .unwrap()
-            .unwrap();
+        let record = mol_from_mol2_data_stream_like_rdkit(input, params).unwrap().unwrap();
 
         assert_eq!(record.molecule.atoms()[1].formal_charge(), -1);
         assert_eq!(record.molecule.atoms()[2].formal_charge(), 0);
@@ -3045,10 +2875,7 @@ mod tests {
         let mut record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
 
         assert_eq!(record.molecule.num_atoms(), 5);
-        assert_eq!(
-            record.molecule.atoms()[0].chiral_tag(),
-            crate::ChiralTag::Unspecified
-        );
+        assert_eq!(record.molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
         assert_eq!(record.molecule.atoms()[4].atomic_number(), 1);
 
         assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule).unwrap();
@@ -3059,10 +2886,7 @@ mod tests {
             record.molecule.atoms()[0].chiral_tag(),
             crate::ChiralTag::TetrahedralCcw
         );
-        assert_eq!(
-            record.molecule.atoms()[0].prop("_NonExplicit3DChirality"),
-            Some("1")
-        );
+        assert_eq!(record.molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
     }
 
     #[test]
@@ -3070,8 +2894,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n4 3\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n2 O1 1 0 0 O.2\n3 O2 -1 0 0 O.2\n4 H1 0 1 0 H\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 2\n3 1 4 1\n";
         let record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
 
-        let sanitized =
-            sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
+        let sanitized = sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
 
         assert_eq!(sanitized.num_atoms(), 3);
         assert_eq!(sanitized.atoms()[0].formal_charge(), 1);
@@ -3086,8 +2909,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n6 5\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.2\n2 C2 1 0 0 C.2\n3 F1 0 1 1 F\n4 Cl1 1 -1 -1 Cl\n5 H1 0 -1 -1 H\n6 H2 1 1 1 H\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 1\n3 2 4 1\n4 1 5 1\n5 2 6 1\n";
         let record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
 
-        let sanitized =
-            sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
+        let sanitized = sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
 
         assert_eq!(sanitized.num_atoms(), 4);
         assert!(matches!(
@@ -3122,8 +2944,7 @@ mod tests {
         );
         assert!(cleanup_then_remove_hs.derived_cache().rings.is_none());
 
-        let sanitized =
-            sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
+        let sanitized = sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
 
         assert_eq!(sanitized.num_atoms(), 1);
         assert!(sanitized.derived_cache().valence.is_some());
@@ -3146,17 +2967,13 @@ mod tests {
         let mut record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
         assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule).unwrap();
 
-        let sanitized =
-            sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
+        let sanitized = sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
 
         assert_eq!(sanitized.num_atoms(), 4);
         assert!(sanitized.derived_cache().valence.is_some());
         assert!(sanitized.derived_cache().rings.is_some());
         assert_eq!(sanitized.prop("_StereochemDone"), Some("1"));
-        assert_eq!(
-            sanitized.atoms()[0].chiral_tag(),
-            crate::ChiralTag::TetrahedralCcw
-        );
+        assert_eq!(sanitized.atoms()[0].chiral_tag(), crate::ChiralTag::TetrahedralCcw);
     }
 
     #[test]
@@ -3227,10 +3044,7 @@ mod tests {
         assert!(sanitized.derived_cache().valence.is_some());
         assert!(sanitized.derived_cache().rings.is_some());
         assert_eq!(sanitized.prop("_StereochemDone"), Some("1"));
-        assert_eq!(
-            sanitized.atoms()[0].chiral_tag(),
-            crate::ChiralTag::TetrahedralCcw
-        );
+        assert_eq!(sanitized.atoms()[0].chiral_tag(), crate::ChiralTag::TetrahedralCcw);
     }
 
     #[test]
@@ -3238,8 +3052,7 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\nmol\n4 3\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n2 O1 1 0 0 O.2\n3 O2 -1 0 0 O.2\n4 C1 0 1 0 C.3\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 2\n3 1 4 1\n";
         let mut bond_block = parse_bond_block_from_block(input, 4, 3).unwrap();
 
-        fix_nitro_substructure_and_charge_like_rdkit(&mut bond_block.builder, AtomId::new(0))
-            .unwrap();
+        fix_nitro_substructure_and_charge_like_rdkit(&mut bond_block.builder, AtomId::new(0)).unwrap();
 
         assert_eq!(bond_block.builder.atoms()[0].formal_charge(), 1);
         assert_eq!(bond_block.builder.atoms()[1].formal_charge(), 0);
@@ -3254,46 +3067,26 @@ mod tests {
         let one_double = "@<TRIPOS>MOLECULE\nmol\n3 2\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n2 O1 1 0 0 O.2\n3 O2 -1 0 0 O.2\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 1\n";
         let mut one_double_block = parse_bond_block_from_block(one_double, 3, 2).unwrap();
 
-        fix_nitro_substructure_and_charge_like_rdkit(&mut one_double_block.builder, AtomId::new(0))
-            .unwrap();
+        fix_nitro_substructure_and_charge_like_rdkit(&mut one_double_block.builder, AtomId::new(0)).unwrap();
 
         assert_eq!(one_double_block.builder.atoms()[0].formal_charge(), 0);
         assert_eq!(one_double_block.builder.atoms()[1].formal_charge(), 0);
         assert_eq!(one_double_block.builder.atoms()[2].formal_charge(), 0);
-        assert_eq!(
-            one_double_block.builder.bonds()[0].order(),
-            BondOrder::Double
-        );
-        assert_eq!(
-            one_double_block.builder.bonds()[1].order(),
-            BondOrder::Single
-        );
+        assert_eq!(one_double_block.builder.bonds()[0].order(), BondOrder::Double);
+        assert_eq!(one_double_block.builder.bonds()[1].order(), BondOrder::Single);
 
         let three_double = "@<TRIPOS>MOLECULE\nmol\n4 3\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.3\n2 O1 1 0 0 O.2\n3 O2 -1 0 0 O.2\n4 O3 0 1 0 O.2\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 2\n3 1 4 2\n";
         let mut three_double_block = parse_bond_block_from_block(three_double, 4, 3).unwrap();
 
-        fix_nitro_substructure_and_charge_like_rdkit(
-            &mut three_double_block.builder,
-            AtomId::new(0),
-        )
-        .unwrap();
+        fix_nitro_substructure_and_charge_like_rdkit(&mut three_double_block.builder, AtomId::new(0)).unwrap();
 
         assert_eq!(three_double_block.builder.atoms()[0].formal_charge(), 0);
         assert_eq!(three_double_block.builder.atoms()[1].formal_charge(), 0);
         assert_eq!(three_double_block.builder.atoms()[2].formal_charge(), 0);
         assert_eq!(three_double_block.builder.atoms()[3].formal_charge(), 0);
-        assert_eq!(
-            three_double_block.builder.bonds()[0].order(),
-            BondOrder::Double
-        );
-        assert_eq!(
-            three_double_block.builder.bonds()[1].order(),
-            BondOrder::Double
-        );
-        assert_eq!(
-            three_double_block.builder.bonds()[2].order(),
-            BondOrder::Double
-        );
+        assert_eq!(three_double_block.builder.bonds()[0].order(), BondOrder::Double);
+        assert_eq!(three_double_block.builder.bonds()[1].order(), BondOrder::Double);
+        assert_eq!(three_double_block.builder.bonds()[2].order(), BondOrder::Double);
     }
 
     #[test]
@@ -3302,12 +3095,8 @@ mod tests {
         let bond_block = parse_bond_block_from_block(input, 4, 3).unwrap();
         let mut to_mod_idx = None;
 
-        let no_h_neighbors = check_no_h_neighbors_n_oxide_like_rdkit(
-            &bond_block.builder,
-            AtomId::new(0),
-            &mut to_mod_idx,
-        )
-        .unwrap();
+        let no_h_neighbors =
+            check_no_h_neighbors_n_oxide_like_rdkit(&bond_block.builder, AtomId::new(0), &mut to_mod_idx).unwrap();
 
         assert_eq!(no_h_neighbors, 2);
         assert_eq!(to_mod_idx, None);
@@ -3319,12 +3108,9 @@ mod tests {
         let terminal_block = parse_bond_block_from_block(terminal_input, 2, 1).unwrap();
         let mut terminal_to_mod_idx = None;
 
-        let terminal_h_neighbors = check_no_h_neighbors_n_oxide_like_rdkit(
-            &terminal_block.builder,
-            AtomId::new(0),
-            &mut terminal_to_mod_idx,
-        )
-        .unwrap();
+        let terminal_h_neighbors =
+            check_no_h_neighbors_n_oxide_like_rdkit(&terminal_block.builder, AtomId::new(0), &mut terminal_to_mod_idx)
+                .unwrap();
 
         assert_eq!(terminal_h_neighbors, 0);
         assert_eq!(terminal_to_mod_idx, Some(AtomId::new(0)));
@@ -3347,12 +3133,9 @@ mod tests {
     #[test]
     fn mol2_cleanup_o_co2_assigns_n4_formal_charge_like_rdkit() {
         let input = "@<TRIPOS>MOLECULE\nmol\n1 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.4\n@<TRIPOS>BOND\n";
-        let mut atom_block = parse_mol2_atom_block_like_rdkit(
-            input,
-            scan_mol2_sections_like_rdkit(input).unwrap().atom_start,
-            1,
-        )
-        .unwrap();
+        let mut atom_block =
+            parse_mol2_atom_block_like_rdkit(input, scan_mol2_sections_like_rdkit(input).unwrap().atom_start, 1)
+                .unwrap();
 
         assert!(clean_up_mol2_substructures_like_rdkit(&mut atom_block.builder).unwrap());
         assert_eq!(atom_block.builder.atoms()[0].formal_charge(), 1);
@@ -3540,10 +3323,7 @@ mod tests {
     #[test]
     fn mol2_section_rejects_missing_atom_block_like_rdkit() {
         let err = scan_mol2_sections_like_rdkit("@<TRIPOS>MOLECULE\nname\n").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "MOL2 parse failed: No ATOM block found in Mol2 data"
-        );
+        assert_eq!(err.to_string(), "MOL2 parse failed: No ATOM block found in Mol2 data");
     }
 
     #[test]

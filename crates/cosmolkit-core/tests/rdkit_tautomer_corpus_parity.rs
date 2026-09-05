@@ -9,36 +9,17 @@ use rayon::prelude::*;
 mod common;
 use common::{
     parity_data,
-    tautomer_parity::{
-        GoldenBranch, GoldenRecord, assert_branch, configured_enumerator, molecule_state,
-        parse_record,
-    },
+    tautomer_parity::{GoldenBranch, GoldenRecord, assert_branch, configured_enumerator, molecule_state, parse_record},
 };
 
 fn profile_records(profile: &str) -> impl Iterator<Item = GoldenRecord> {
-    let path =
-        parity_data::expected_path_for_profile("tautomer", "rdkit", profile, "tautomer.jsonl");
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
-    BufReader::new(file)
-        .lines()
-        .enumerate()
-        .map(move |(index, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            })
-        })
+    let path = parity_data::expected_path_for_profile("tautomer", "rdkit", profile, "tautomer.jsonl");
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    BufReader::new(file).lines().enumerate().map(move |(index, line)| {
+        let line = line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), index + 1));
+        serde_json::from_str(&line)
+            .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1))
+    })
 }
 
 fn assert_record(record: &GoldenRecord, expected_branch_count: usize) {
@@ -78,8 +59,8 @@ fn assert_composition(record: &GoldenRecord, branch_name: &str, branch: &GoldenB
     if !branch.ok {
         return;
     }
-    let molecule = parse_record(record)
-        .unwrap_or_else(|error| panic!("row {} composition parse failed: {error}", record.row));
+    let molecule =
+        parse_record(record).unwrap_or_else(|error| panic!("row {} composition parse failed: {error}", record.row));
     let source_state = molecule_state(&molecule);
     let enumerator = configured_enumerator(&branch.parameters);
     let result = enumerator.enumerate(&molecule).unwrap_or_else(|error| {
@@ -90,9 +71,7 @@ fn assert_composition(record: &GoldenRecord, branch_name: &str, branch: &GoldenB
     });
     assert_eq!(result.len(), branch.molecule_states.len());
 
-    for (index, (tautomer, expected_state)) in
-        result.iter().zip(branch.molecule_states.iter()).enumerate()
-    {
+    for (index, (tautomer, expected_state)) in result.iter().zip(branch.molecule_states.iter()).enumerate() {
         assert_eq!(
             molecule_state(tautomer),
             *expected_state,
@@ -117,9 +96,7 @@ fn assert_composition(record: &GoldenRecord, branch_name: &str, branch: &GoldenB
                     record.row
                 )
             });
-        let second_fingerprint = tautomer
-            .maccs_fingerprint(&MaccsFingerprintParams::default())
-            .unwrap();
+        let second_fingerprint = tautomer.maccs_fingerprint(&MaccsFingerprintParams::default()).unwrap();
         assert_eq!(first_fingerprint, second_fingerprint);
 
         let binary = mol_to_binary(tautomer).unwrap_or_else(|error| {

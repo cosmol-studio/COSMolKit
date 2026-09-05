@@ -1,14 +1,11 @@
 use cosmolkit_core::{
-    AtomSpec, Element, EmbedParameters, Molecule, MoleculeBuilder, OperationError,
-    SemanticPrecondition, SemanticPreconditionSet, TopologyTrust, WITH_3D_CONFORMER_SPEC,
-    WITH_3D_CONFORMERS_SPEC, WITH_HYDROGENS_SPEC,
+    AtomSpec, Element, EmbedParameters, Molecule, MoleculeBuilder, OperationError, SemanticPrecondition,
+    SemanticPreconditionSet, TopologyTrust, WITH_3D_CONFORMER_SPEC, WITH_3D_CONFORMERS_SPEC, WITH_HYDROGENS_SPEC,
 };
 
 fn xyz_water() -> Molecule {
-    Molecule::from_xyz_block(
-        "3\nwater\nO 0.000 0.000 0.000\nH 0.958 0.000 0.000\nH -0.239 0.927 0.000\n",
-    )
-    .expect("xyz water should parse")
+    Molecule::from_xyz_block("3\nwater\nO 0.000 0.000 0.000\nH 0.958 0.000 0.000\nH -0.239 0.927 0.000\n")
+        .expect("xyz water should parse")
 }
 
 #[test]
@@ -97,11 +94,7 @@ fn trusted_smiles_graph_without_explicit_hydrogens_allows_3d_conformer_generatio
 
     assert_eq!(molecule.topology_trust(), TopologyTrust::TrustedGraph);
     assert_eq!(
-        molecule
-            .atoms()
-            .iter()
-            .filter(|atom| atom.atomic_number() == 1)
-            .count(),
+        molecule.atoms().iter().filter(|atom| atom.atomic_number() == 1).count(),
         0
     );
 
@@ -111,10 +104,7 @@ fn trusted_smiles_graph_without_explicit_hydrogens_allows_3d_conformer_generatio
 
     assert_eq!(embedded.num_atoms(), molecule.num_atoms());
     assert_eq!(embedded.conformers_3d().len(), 1);
-    assert_eq!(
-        embedded.conformers_3d()[0].coordinates().len(),
-        molecule.num_atoms()
-    );
+    assert_eq!(embedded.conformers_3d()[0].coordinates().len(), molecule.num_atoms());
 }
 
 #[test]

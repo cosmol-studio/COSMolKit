@@ -24,10 +24,7 @@ pub struct AdjacencyList {
 }
 
 impl AdjacencyList {
-    pub fn try_from_topology<Q: Clone>(
-        atom_count: usize,
-        bonds: &[Bond<Q>],
-    ) -> Result<Self, AdjacencyError> {
+    pub fn try_from_topology<Q: Clone>(atom_count: usize, bonds: &[Bond<Q>]) -> Result<Self, AdjacencyError> {
         let mut degrees = vec![0usize; atom_count];
         for bond in bonds {
             let begin = bond.begin();
@@ -89,8 +86,7 @@ impl AdjacencyList {
 
     #[must_use]
     pub fn from_topology<Q: Clone>(atom_count: usize, bonds: &[Bond<Q>]) -> Self {
-        Self::try_from_topology(atom_count, bonds)
-            .expect("topology must be valid before building adjacency")
+        Self::try_from_topology(atom_count, bonds).expect("topology must be valid before building adjacency")
     }
 
     #[must_use]

@@ -19,11 +19,7 @@ pub(crate) enum TorsionBondQueryError {
     #[error(
         "torsion bond SMARTS must describe exactly two atoms joined by one bond, got {atoms} atoms and {bonds} bonds: {smarts:?}"
     )]
-    QueryShape {
-        smarts: String,
-        atoms: usize,
-        bonds: usize,
-    },
+    QueryShape { smarts: String, atoms: usize, bonds: usize },
     #[error(transparent)]
     SubstructMatch(#[from] SubstructMatchError),
     #[error("torsion bond SMARTS match did not map both query atoms: {smarts:?}")]
@@ -65,9 +61,7 @@ fn match_default_torsion_bonds(mol: &Molecule) -> Vec<TorsionBondMatch> {
             continue;
         }
         for neighbor in mol.topology_block().adjacency.neighbors_of(atom_index) {
-            if neighbor.atom_index <= atom_index
-                || !matches_default_torsion_atom(mol, neighbor.atom_index)
-            {
+            if neighbor.atom_index <= atom_index || !matches_default_torsion_atom(mol, neighbor.atom_index) {
                 continue;
             }
             matches.push(TorsionBondMatch {
@@ -103,13 +97,12 @@ fn match_parsed_torsion_bonds(
     // Local complexity review: canonical compilation is linear in the SMARTS
     // input and matching retains the existing VF2 graph traversal. This path
     // no longer performs a compatibility conversion or alternate parse.
-    let query =
-        mol_from_smarts(torsion_bond_smarts, &SmartsParseParams::default()).map_err(|error| {
-            TorsionBondQueryError::QueryBuild {
-                smarts: torsion_bond_smarts.to_owned(),
-                detail: error.to_string(),
-            }
-        })?;
+    let query = mol_from_smarts(torsion_bond_smarts, &SmartsParseParams::default()).map_err(|error| {
+        TorsionBondQueryError::QueryBuild {
+            smarts: torsion_bond_smarts.to_owned(),
+            detail: error.to_string(),
+        }
+    })?;
     if query.num_atoms() != 2 || query.num_bonds() != 1 {
         return Err(TorsionBondQueryError::QueryShape {
             smarts: torsion_bond_smarts.to_owned(),
@@ -153,9 +146,7 @@ fn match_to_torsion_bond(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DEFAULT_TORSION_BOND_SMARTS, TorsionBondMatch, TorsionBondQueryError, match_torsion_bonds,
-    };
+    use super::{DEFAULT_TORSION_BOND_SMARTS, TorsionBondMatch, TorsionBondQueryError, match_torsion_bonds};
     use crate::{AtomSpec, BondOrder, BondSpec, Element, Molecule, MoleculeBuilder};
 
     fn chain(bond_orders: &[BondOrder]) -> Molecule {
@@ -165,11 +156,7 @@ mod tests {
             .collect();
         for (atom_index, &bond_order) in bond_orders.iter().enumerate() {
             builder
-                .add_bond(BondSpec::new(
-                    atoms[atom_index],
-                    atoms[atom_index + 1],
-                    bond_order,
-                ))
+                .add_bond(BondSpec::new(atoms[atom_index], atoms[atom_index + 1], bond_order))
                 .expect("chain bond should build");
         }
         builder.build().expect("chain should build")
@@ -182,9 +169,8 @@ mod tests {
 
     #[test]
     fn default_query_matches_only_the_internal_chain_bond() {
-        let matches =
-            match_torsion_bonds(&chain(&[BondOrder::Single; 3]), DEFAULT_TORSION_BOND_SMARTS)
-                .expect("default query should match");
+        let matches = match_torsion_bonds(&chain(&[BondOrder::Single; 3]), DEFAULT_TORSION_BOND_SMARTS)
+            .expect("default query should match");
 
         assert_eq!(
             matches,
@@ -199,9 +185,7 @@ mod tests {
     #[test]
     fn default_query_preserves_rdkit_ring_match_order() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (begin, end) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
             builder
                 .add_bond(BondSpec::new(atoms[begin], atoms[end], BondOrder::Single))
@@ -209,8 +193,7 @@ mod tests {
         }
         let mol = builder.build().expect("ring should build");
 
-        let matches = match_torsion_bonds(&mol, DEFAULT_TORSION_BOND_SMARTS)
-            .expect("default query should match");
+        let matches = match_torsion_bonds(&mol, DEFAULT_TORSION_BOND_SMARTS).expect("default query should match");
         let atom_pairs: Vec<_> = matches
             .iter()
             .map(|matched| (matched.begin_atom_index, matched.end_atom_index))
@@ -249,8 +232,8 @@ mod tests {
     fn default_query_stops_at_rdkit_default_match_limit() {
         let mol = chain(&vec![BondOrder::Single; 1004]);
 
-        let matches = match_torsion_bonds(&mol, DEFAULT_TORSION_BOND_SMARTS)
-            .expect("default query should match the long chain");
+        let matches =
+            match_torsion_bonds(&mol, DEFAULT_TORSION_BOND_SMARTS).expect("default query should match the long chain");
 
         assert_eq!(matches.len(), 1000);
         assert_eq!(matches.first().map(|matched| matched.bond_index), Some(1));
@@ -264,11 +247,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            TorsionBondQueryError::QueryShape {
-                atoms: 3,
-                bonds: 2,
-                ..
-            }
+            TorsionBondQueryError::QueryShape { atoms: 3, bonds: 2, .. }
         ));
     }
 

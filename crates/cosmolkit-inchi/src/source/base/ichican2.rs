@@ -11,20 +11,18 @@ use crate::source::base::{
     util::{inchi_calloc, inchi_free},
 };
 use crate::source_types::local_ichican2::{
-    BASE_H_NUMBER, Cell, ConTable, EMPTY_CT, EMPTY_H_NUMBER, INCHI_CANON_INFINITY, MAX_LAYERS,
-    MAX_SET_SIZE, NORMALLY_ALLOWED_MAX_SET_SIZE, Node, Transposition, UnorderedPartition, kLeast,
+    BASE_H_NUMBER, Cell, ConTable, EMPTY_CT, EMPTY_H_NUMBER, INCHI_CANON_INFINITY, MAX_LAYERS, MAX_SET_SIZE,
+    NORMALLY_ALLOWED_MAX_SET_SIZE, Node, Transposition, UnorderedPartition, kLeast,
 };
 use crate::source_types::{
-    AT_FLAG_ISO_H_POINT, AT_ISO_SORT_KEY, AT_NUMB, AT_RANK, ATOM_INVARIANT2, ATOM_SIZES, BCN,
-    CANON_COUNTS, CANON_DATA, CANON_FLAG_ISO_FIXED_H_DIFF, CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF,
-    CANON_FLAG_ISO_TAUT_DIFF, CANON_FLAG_NO_H_RECANON, CANON_FLAG_NO_TAUT_H_DIFF, CANON_GLOBALS,
-    CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN, CT_ISOCOUNT_ERR, CT_OUT_OF_RAM, CT_TIMEOUT_ERR,
-    CT_UNKNOWN_ERR, CT_USER_QUIT_ERR, FLAG_NORM_CONSIDER_TAUT, INCHI_CLOCK, MAXVAL, NEIGH_LIST,
-    NUM_CHEM_ELEMENTS, NUM_H, NodeSet, Partition, SourceConstPointer, SourceHeap, SourceHeapError,
-    SourceMutPointer, StableSourceSlice, T_GROUP, T_GROUP_INFO, T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC,
-    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
-    USER_ACTION_QUIT, Vertex, bitWord, clock_t, inchiTime, sp_ATOM,
-    tagAtInvariantIndexes_AT_INV_HILL_ORDER, tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS,
+    AT_FLAG_ISO_H_POINT, AT_ISO_SORT_KEY, AT_NUMB, AT_RANK, ATOM_INVARIANT2, ATOM_SIZES, BCN, CANON_COUNTS, CANON_DATA,
+    CANON_FLAG_ISO_FIXED_H_DIFF, CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF, CANON_FLAG_ISO_TAUT_DIFF, CANON_FLAG_NO_H_RECANON,
+    CANON_FLAG_NO_TAUT_H_DIFF, CANON_GLOBALS, CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN, CT_ISOCOUNT_ERR, CT_OUT_OF_RAM,
+    CT_TIMEOUT_ERR, CT_UNKNOWN_ERR, CT_USER_QUIT_ERR, FLAG_NORM_CONSIDER_TAUT, INCHI_CLOCK, MAXVAL, NEIGH_LIST,
+    NUM_CHEM_ELEMENTS, NUM_H, NodeSet, Partition, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    StableSourceSlice, T_GROUP, T_GROUP_INFO, T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC, TAUT_NON, TAUT_NUM, TAUT_YES,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, USER_ACTION_QUIT, Vertex, bitWord, clock_t,
+    inchiTime, sp_ATOM, tagAtInvariantIndexes_AT_INV_HILL_ORDER, tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS,
     tagAtInvariantIndexes_AT_INV_NUM_H, tagAtInvariantIndexes_AT_INV_NUM_H_FIX,
     tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS, tagAtInvariantIndexes_AT_INV_TAUT_ISO,
     tagAtInvariantIndexes_AT_INV_TG_NUMBERS,
@@ -90,13 +88,8 @@ pub(crate) fn NodeSetCreate(
     // INCHI✔️✔️:         (long long)len * (long long)L, sizeof( pSet->bitword[0][0] ) );
     let storage = match u64::try_from(storage_count)
         .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)
-        .and_then(|count| {
-            crate::source::base::util::inchi_calloc::<bitWord>(
-                heap,
-                count,
-                size_of::<bitWord>() as u64,
-            )
-        }) {
+        .and_then(|count| crate::source::base::util::inchi_calloc::<bitWord>(heap, count, size_of::<bitWord>() as u64))
+    {
         Ok(pointer) => pointer,
         // INCHI✔️✔️:     if (!pSet->bitword[0])
         // INCHI✔️✔️:     {
@@ -115,11 +108,8 @@ pub(crate) fn NodeSetCreate(
 
     {
         let rows = heap.slice_mut(pSet.bitword)?;
-        let row_count =
-            usize::try_from(L).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let rows = rows
-            .get_mut(..row_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let row_count = usize::try_from(L).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let rows = rows.get_mut(..row_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if rows.is_empty() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -130,8 +120,7 @@ pub(crate) fn NodeSetCreate(
         // exclusively borrowed for the source loop below.
         unsafe { *rows_pointer = storage };
         let mut previous = storage;
-        let row_length =
-            u64::try_from(len).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let row_length = u64::try_from(len).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         // INCHI✔️✔️:     for (i = 1; i < L; i++)
         // INCHI✔️✔️:     {
         let mut i = 1_usize;
@@ -192,10 +181,7 @@ pub(crate) fn NodeSetFree(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn SetBitFree(
-    heap: &mut SourceHeap,
-    globals: &mut CANON_GLOBALS,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn SetBitFree(heap: &mut SourceHeap, globals: &mut CANON_GLOBALS) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3259 SetBitFree
     // INCHI✔️❌: int SetBitFree( CANON_GLOBALS *pCG )
     // INCHI✔️❌: {
@@ -222,10 +208,7 @@ pub(crate) fn SetBitFree(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn SetBitCreate(
-    heap: &mut SourceHeap,
-    globals: &mut CANON_GLOBALS,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn SetBitCreate(heap: &mut SourceHeap, globals: &mut CANON_GLOBALS) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3205 SetBitCreate
     // INCHI✔️✔️: int SetBitCreate( CANON_GLOBALS *pCG )
     // INCHI✔️✔️: {
@@ -312,8 +295,8 @@ pub(crate) fn SetBitCreate(
     {
         let bits = heap.slice_mut(globals.m_bBit)?;
         let mut mask: bitWord = 1;
-        for index in 0..usize::try_from(globals.m_num_bit)
-            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+        for index in
+            0..usize::try_from(globals.m_num_bit).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
         {
             bits[index] = mask;
             mask = mask.wrapping_shl(1);
@@ -419,8 +402,7 @@ pub(crate) fn NodeSetFromVertices(
     // END INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromVertices
 
     let bits = pointer_array_get(heap, cur_nodes.bitword, l.wrapping_sub(1))?;
-    let len_set =
-        usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let len_set = usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(bits)?
         .get_mut(..len_set)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -435,10 +417,8 @@ pub(crate) fn NodeSetFromVertices(
     let mut i = 0_i32;
     while i < num_v {
         // INCHI✔️✔️:         j = (int)v[i] - 1;
-        let j = i32::from(
-            *vertices.get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
-        )
-        .wrapping_sub(1);
+        let j = i32::from(*vertices.get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?)
+            .wrapping_sub(1);
         let word_index = j
             .checked_div(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -446,11 +426,8 @@ pub(crate) fn NodeSetFromVertices(
             .checked_rem(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         Bits[j / pCG->m_num_bit] |= pCG->m_bBit[j % pCG->m_num_bit];
-        let mask = *masks
-            .get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-        let word = bit_words.get_mut(
-            usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )?;
+        let mask = *masks.get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let word = bit_words.get_mut(usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         *word |= mask;
         i = i.wrapping_add(1);
     }
@@ -598,8 +575,7 @@ pub(crate) fn PartitionGetMcrAndFixSet(
         let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (r == ( r1 = ( rank_mask_bit&p->Rank[j1 = (int) p->AtNumber[i]] ) ))
         let mut j1 = i32::from(*atoms.get(atom_index)?);
-        let r1 = rank_mask
-            & *ranks.get(usize::try_from(j1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let r1 = rank_mask & *ranks.get(usize::try_from(j1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if r == r1 {
             // INCHI✔️✔️:             FixBits[j1 / pCG->m_num_bit] |= pCG->m_bBit[j1 % pCG->m_num_bit];
             let word_index = j1
@@ -608,11 +584,8 @@ pub(crate) fn PartitionGetMcrAndFixSet(
             let bit_index = j1
                 .checked_rem(pCG.m_num_bit)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mask = *masks.get(
-                usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )?;
-            let word_offset =
-                usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let mask = *masks.get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            let word_offset = usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             *fix_words.get_mut(word_offset)? |= mask;
             // INCHI✔️✔️:             McrBits[j1 / pCG->m_num_bit] |= pCG->m_bBit[j1 % pCG->m_num_bit];
             *mcr_words.get_mut(word_offset)? |= mask;
@@ -620,13 +593,10 @@ pub(crate) fn PartitionGetMcrAndFixSet(
             // INCHI✔️✔️:             for (r = r1; i + 1 < n && r == ( rank_mask_bit&p->Rank[j2 = (int) p->AtNumber[i + 1]] ); i++)
             r = r1;
             while i.wrapping_add(1) < n {
-                let next_index = usize::try_from(i.wrapping_add(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let next_index = usize::try_from(i.wrapping_add(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let j2 = i32::from(*atoms.get(next_index)?);
-                let next_rank = rank_mask
-                    & *ranks.get(
-                        usize::try_from(j2).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )?;
+                let next_rank =
+                    rank_mask & *ranks.get(usize::try_from(j2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
                 if r != next_rank {
                     break;
                 }
@@ -644,12 +614,8 @@ pub(crate) fn PartitionGetMcrAndFixSet(
             let bit_index = j1
                 .checked_rem(pCG.m_num_bit)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mask = *masks.get(
-                usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )?;
-            *mcr_words.get_mut(
-                usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )? |= mask;
+            let mask = *masks.get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            *mcr_words.get_mut(usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? |= mask;
         }
         i = i.wrapping_add(1);
         r = r.wrapping_add(1);
@@ -889,19 +855,14 @@ pub(crate) fn UnorderedPartitionJoin(
             i = i.wrapping_add(1);
             continue;
         }
-        nNumChanges =
-            nNumChanges.wrapping_add(nJoin2Mcrs2(heap, p2.equ2, i as AT_NUMB, j as AT_NUMB)?);
+        nNumChanges = nNumChanges.wrapping_add(nJoin2Mcrs2(heap, p2.equ2, i as AT_NUMB, j as AT_NUMB)?);
         i = i.wrapping_add(1);
     }
     Ok(nNumChanges)
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn PartitionSatisfiesLemma_2_25(
-    heap: &SourceHeap,
-    p: &Partition,
-    n: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn PartitionSatisfiesLemma_2_25(heap: &SourceHeap, p: &Partition, n: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1407 PartitionSatisfiesLemma_2_25
     // INCHI✔️❌: int PartitionSatisfiesLemma_2_25( Partition *p, int n )
     // INCHI✔️❌: {
@@ -981,9 +942,7 @@ pub(crate) fn PartitionSatisfiesLemma_2_25(
     // INCHI✔️✔️:          n == nPartitionSize + nNumNonTrivialCells + 1)
     if n <= nPartitionSize.wrapping_add(4)
         || n == nPartitionSize.wrapping_add(nNumNonTrivialCells)
-        || n == nPartitionSize
-            .wrapping_add(nNumNonTrivialCells)
-            .wrapping_add(1)
+        || n == nPartitionSize.wrapping_add(nNumNonTrivialCells).wrapping_add(1)
     {
         // INCHI✔️✔️:         return 1;
         return Ok(1);
@@ -1019,8 +978,7 @@ pub(crate) fn PartitionCopy(
         return Ok(());
     }
     let count = usize::try_from(n).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let source_atoms_are_bounded =
-        heap.has_proven_index_bound(From.AtNumber.as_const(), count, count);
+    let source_atoms_are_bounded = heap.has_proven_index_bound(From.AtNumber.as_const(), count, count);
     // SAFETY: CanonGraph partitions own distinct arrays that remain live and
     // fixed-size throughout this source call, matching memcpy's C precondition.
     let source_atoms = unsafe { heap.stable_slice(From.AtNumber.as_const())? };
@@ -1220,9 +1178,7 @@ pub(crate) fn PartitionColorVertex(
     }
 
     let (source_storage, remaining) = p.split_at_mut(1);
-    let source = source_storage
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let source = source_storage.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let (destination_storage, temporary_storage) = remaining.split_at_mut(1);
     let destination = destination_storage
         .first_mut()
@@ -1242,9 +1198,8 @@ pub(crate) fn PartitionColorVertex(
     // PartitionCopy propagated the source permutation bound, every write below
     // only moves an existing member inside that same prefix.
     let atom_count = usize::try_from(n_tg).ok();
-    let atoms_are_bounded = atom_count.is_some_and(|count| {
-        heap.has_proven_index_bound(destination.AtNumber.as_const(), count, count)
-    });
+    let atoms_are_bounded =
+        atom_count.is_some_and(|count| heap.has_proven_index_bound(destination.AtNumber.as_const(), count, count));
     let mut atoms = if atoms_are_bounded {
         let count = atom_count.expect("a proved non-negative prefix has a valid count");
         unsafe { heap.stable_index_bounded_slice_mut(destination.AtNumber, count, count)? }
@@ -1536,10 +1491,7 @@ pub(crate) fn CellGetMinNode(
             let atom_number = i32::from(v).wrapping_sub(1);
             (
                 atom_number,
-                *aux_ranks.get(
-                    usize::try_from(atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )?,
+                *aux_ranks.get(usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
             )
         } else {
             (-1, 0)
@@ -1548,22 +1500,16 @@ pub(crate) fn CellGetMinNode(
         while i32::from(i) < W.next {
             let current_atom_number = i32::from(*atoms.get(usize::from(i))?);
             // INCHI✔️✔️:             if (!( p->Rank[nCurAtNumb] & rank_mark_bit ))
-            if *ranks.get(
-                usize::try_from(current_atom_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )? & rank_mark_bit()
+            if *ranks.get(usize::try_from(current_atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?
+                & rank_mark_bit()
                 == 0
             {
-                let current_aux_rank = *aux_ranks.get(
-                    usize::try_from(current_atom_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )?;
+                let current_aux_rank = *aux_ranks
+                    .get(usize::try_from(current_atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
                 if (current_aux_rank == input_aux_rank && current_atom_number > input_atom_number)
                     || current_aux_rank > input_aux_rank
                 {
-                    if current_aux_rank == minimum_aux_rank
-                        && current_atom_number < minimum_atom_number
-                    {
+                    if current_aux_rank == minimum_aux_rank && current_atom_number < minimum_atom_number {
                         minimum_atom_number = current_atom_number;
                     } else if current_aux_rank < minimum_aux_rank {
                         minimum_aux_rank = current_aux_rank;
@@ -1601,11 +1547,7 @@ pub(crate) fn CellGetMinNode(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CellGetNumberOfNodes(
-    heap: &SourceHeap,
-    p: &Partition,
-    W: &Cell,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn CellGetNumberOfNodes(heap: &SourceHeap, p: &Partition, W: &Cell) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1748 CellGetNumberOfNodes
     // INCHI✔️❌: int CellGetNumberOfNodes( Partition *p, Cell *W )
     // INCHI✔️❌: {
@@ -1718,10 +1660,8 @@ pub(crate) fn CellIntersectWithSet(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (!( McrBits[j / pCG->m_num_bit] &
         // INCHI✔️✔️:                pCG->m_bBit[j % pCG->m_num_bit] ))
-        let word = *mcr_words
-            .get(usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-        let mask = *masks
-            .get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let word = *mcr_words.get(usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let mask = *masks.get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if word & mask == 0 {
             let rank_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             k += !( p->Rank[j] & rank_mark_bit );
@@ -1736,11 +1676,7 @@ pub(crate) fn CellIntersectWithSet(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CtPartClear(
-    heap: &mut SourceHeap,
-    Ct: &mut ConTable,
-    k: i32,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn CtPartClear(heap: &mut SourceHeap, Ct: &mut ConTable, k: i32) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1798 CtPartClear
     // INCHI✔️✔️: void CtPartClear( ConTable *Ct, int k )
     // INCHI✔️✔️: {
@@ -1767,10 +1703,8 @@ pub(crate) fn CtPartClear(
     };
     let len = Ct.lenCt.wrapping_sub(start);
     if len > 0 {
-        let start_index =
-            usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let end_index =
-            usize::try_from(Ct.lenCt).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let start_index = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let end_index = usize::try_from(Ct.lenCt).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         heap.slice_mut(Ct.Ctbl)?
             .get_mut(start_index..end_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1818,8 +1752,7 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS2(
         if rj < max_rj {
             // INCHI✔️✔️:             while (j > base && rj < ( rank_mask_bit & nRank[(int) *i] ))
             while j > 1 {
-                let i_index =
-                    usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let i_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let i_atom = *neighbors.get(i_index)?;
                 if rj >= rank_mask_bit() & *ranks.get(usize::from(i_atom))? {
                     break;
@@ -1828,9 +1761,7 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS2(
                 // INCHI✔️✔️:                 *i = *j;
                 *neighbors.get_mut(i_index)? = j_atom;
                 // INCHI✔️✔️:                 *j = tmp;
-                *neighbors.get_mut(
-                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )? = i_atom;
+                *neighbors.get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = i_atom;
                 // INCHI✔️✔️:                 j = i--;
                 j = i;
                 i = i.wrapping_sub(1);
@@ -1862,10 +1793,7 @@ fn try_sort_neighbor_row_source_layout(
     let Ok(row) = neighbors.prefix_mut(row_len) else {
         return Ok(None);
     };
-    if row[1..]
-        .iter()
-        .any(|&atom| usize::from(atom) >= ranks.len())
-    {
+    if row[1..].iter().any(|&atom| usize::from(atom) >= ranks.len()) {
         return Ok(None);
     }
 
@@ -2218,14 +2146,13 @@ pub(crate) fn CtPartFill(
         // SAFETY: graph and rank use the same checked unsigned atom index.
         let neighbors = unsafe { *graph.get_unchecked(m_index) };
         // INCHI✔️✔️:             insertions_sort_NeighList_AT_NUMBERS2(G[m], p->Rank, r);
-        let mut neighbor_storage =
-            match try_sort_neighbor_row_source_layout(heap, neighbors, ranks, r, rank_mask)? {
-                Some(storage) => storage,
-                None => {
-                    insertions_sort_NeighList_AT_NUMBERS2(heap, neighbors, p.Rank, r)?;
-                    unsafe { heap.stable_slice_mut(neighbors)? }
-                }
-            };
+        let mut neighbor_storage = match try_sort_neighbor_row_source_layout(heap, neighbors, ranks, r, rank_mask)? {
+            Some(storage) => storage,
+            None => {
+                insertions_sort_NeighList_AT_NUMBERS2(heap, neighbors, p.Rank, r)?;
+                unsafe { heap.stable_slice_mut(neighbors)? }
+            }
+        };
         let neighbor_len = neighbor_storage.len();
         let neighbors = neighbor_storage.prefix_mut(neighbor_len)?;
         // INCHI✔️✔️:             nn = G[m][0];
@@ -2303,14 +2230,12 @@ pub(crate) fn CtPartFill(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
             // INCHI✔️✔️:                 int data_pos = n + T_NUM_NO_ISOTOPIC * ((int)p->AtNumber[j] - n);
-            let mut data_pos = n.wrapping_add(
-                (crate::source_types::T_NUM_NO_ISOTOPIC as i32).wrapping_mul(atom.wrapping_sub(n)),
-            );
+            let mut data_pos =
+                n.wrapping_add((crate::source_types::T_NUM_NO_ISOTOPIC as i32).wrapping_mul(atom.wrapping_sub(n)));
             // INCHI✔️✔️:                 for (m = 0; m < T_NUM_NO_ISOTOPIC; m++)
             let mut m = 0_i32;
             while m < crate::source_types::T_NUM_NO_ISOTOPIC as i32 {
-                let source_index =
-                    usize::try_from(data_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let source_index = usize::try_from(data_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 // INCHI✔️✔️:                     Ct->NumH[nn++] = pCD->NumH[data_pos++];
                 *target_h
                     .get_mut(usize::from(nn))
@@ -2475,9 +2400,7 @@ pub(crate) fn CtPartINCHI_CANON_INFINITY(
     } else {
         0
     };
-    if start_ctbl == 0
-        || source_get(heap, Ct.Ctbl, start_ctbl.wrapping_sub(1))? != EMPTY_CT as AT_RANK
-    {
+    if start_ctbl == 0 || source_get(heap, Ct.Ctbl, start_ctbl.wrapping_sub(1))? != EMPTY_CT as AT_RANK {
         source_set(heap, Ct.Ctbl, start_ctbl, EMPTY_CT as AT_RANK)?;
     }
     Ok(())
@@ -3029,10 +2952,8 @@ pub(crate) fn CtPartCompare(
         }
         // INCHI✔️✔️:         if (i < k)
         if i < k {
-            let source_index =
-                usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index =
-                usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             cmp[k] = cmp[i];
             let value = *values.get(source_index)?;
             *values.get_mut(target_index)? = value;
@@ -3053,8 +2974,7 @@ pub(crate) fn CtPartCompare(
     let atom_positions1 = unsafe { heap.stable_slice(Ct1.nextAtRank.as_const())? };
     let atom_positions2 = unsafe { heap.stable_slice(Ct2.nextAtRank.as_const())? };
     let (mut sc1, mut sa1, sc2, mut sa2) = if k != 0 {
-        let previous =
-            usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let previous = usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         startCt1 = Ct1->nextCtblPos[k - 1];
         let start_ct1 = i32::from(*ct_positions1.get(previous)?);
         // INCHI✔️✔️:         startCt2 = Ct2->nextCtblPos[k - 1];
@@ -3094,13 +3014,9 @@ pub(crate) fn CtPartCompare(
             if bOnlyCommon != 0 && sc1 >= Ct1.nLenCTAtOnly && sc2 >= Ct2.nLenCTAtOnly {
                 let tables1 = unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? };
                 let tables2 = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
-                let start1 =
-                    usize::try_from(sc1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let start2 =
-                    usize::try_from(sc2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *tables1.get(start1)? == EMPTY_CT as AT_RANK
-                    && *tables2.get(start2)? == EMPTY_CT as AT_RANK
-                {
+                let start1 = usize::try_from(sc1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let start2 = usize::try_from(sc2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if *tables1.get(start1)? == EMPTY_CT as AT_RANK && *tables2.get(start2)? == EMPTY_CT as AT_RANK {
                     // INCHI✔️✔️:             return 0;
                     return Ok(0);
                 }
@@ -3152,20 +3068,13 @@ pub(crate) fn CtPartCompare(
             }
         }
         if table_views.is_none() {
-            table_views = Some(
-                (unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? }, unsafe {
-                    heap.stable_slice(Ct2.Ctbl.as_const())?
-                }),
-            );
+            table_views = Some((unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? }, unsafe {
+                heap.stable_slice(Ct2.Ctbl.as_const())?
+            }));
         }
-        let (tables1, tables2) = table_views
-            .as_ref()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let (tables1, tables2) = table_views.as_ref().ok_or(SourceHeapError::PointerOutOfBounds)?;
         let (mid_ct, mid_at) = if bSplitTautCompare != 0 {
-            (
-                Ct1.nLenCTAtOnly.min(Ct2.nLenCTAtOnly).min(ec1),
-                max_vert.min(ea1),
-            )
+            (Ct1.nLenCTAtOnly.min(Ct2.nLenCTAtOnly).min(ec1), max_vert.min(ea1))
         } else {
             (ec1, ea1)
         };
@@ -3220,8 +3129,7 @@ pub(crate) fn CtPartCompare(
             if i < mid_h {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
-                diff = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                diff = i32::from(*hydrogens1.get(index)?).wrapping_sub(i32::from(*hydrogens2.get(index)?));
                 break 'compare (diff, i, layer);
             }
             hydrogen_views = Some((hydrogens1, hydrogens2));
@@ -3257,8 +3165,7 @@ pub(crate) fn CtPartCompare(
             if i < len_h {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
-                diff = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                diff = i32::from(*hydrogens1.get(index)?).wrapping_sub(i32::from(*hydrogens2.get(index)?));
                 // INCHI✔️✔️:             i += endCt1 - midCt;
                 i = i.wrapping_add(ec1.wrapping_sub(mid_ct));
                 break 'compare (diff, i, layer);
@@ -3282,8 +3189,7 @@ pub(crate) fn CtPartCompare(
             if i < mid_at {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 // INCHI✔️✔️:             diff = (int) Ct1->NumHfixed[i] - (int) Ct2->NumHfixed[i];
-                diff = i32::from(*fixed_hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
+                diff = i32::from(*fixed_hydrogens1.get(index)?).wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
                 break 'compare (diff, i, layer);
             }
         }
@@ -3352,13 +3258,9 @@ pub(crate) fn CtPartCompare(
         };
         if let Some(values) = kLeastForLayer.as_mut() {
             let index = usize::try_from(layer).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let value = values
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let value = values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if value.k == 0 {
-                *values
-                    .get_mut(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = kLeast {
+                *values.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = kLeast {
                     k: if diff > 0 {
                         k.wrapping_add(1)
                     } else {
@@ -3651,30 +3553,22 @@ pub(crate) fn CtFullCompare(
     // the corresponding fields.
     let ct_positions1 = unsafe { heap.stable_slice(Ct1.nextCtblPos.as_const())? };
     // INCHI✔️✔️:     endCt1 = Ct1->nextCtblPos[k1];
-    let mut end_ct1 = i32::from(
-        *ct_positions1
-            .get(usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
-    );
+    let mut end_ct1 =
+        i32::from(*ct_positions1.get(usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
     let ct_positions2 = unsafe { heap.stable_slice(Ct2.nextCtblPos.as_const())? };
     // INCHI✔️✔️:     endCt2 = Ct2->nextCtblPos[k2];
-    let mut end_ct2 = i32::from(
-        *ct_positions2
-            .get(usize::try_from(k2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
-    );
+    let mut end_ct2 =
+        i32::from(*ct_positions2.get(usize::try_from(k2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
     let atom_positions1 = unsafe { heap.stable_slice(Ct1.nextAtRank.as_const())? };
     // INCHI✔️✔️:     endAt1 = (int) Ct1->nextAtRank[k1] - 1;
-    let mut end_at1 = i32::from(
-        *atom_positions1
-            .get(usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
-    )
-    .wrapping_sub(1);
+    let mut end_at1 =
+        i32::from(*atom_positions1.get(usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?)
+            .wrapping_sub(1);
     let atom_positions2 = unsafe { heap.stable_slice(Ct2.nextAtRank.as_const())? };
     // INCHI✔️✔️:     endAt2 = (int) Ct2->nextAtRank[k2] - 1;
-    let end_at2 = i32::from(
-        *atom_positions2
-            .get(usize::try_from(k2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
-    )
-    .wrapping_sub(1);
+    let end_at2 =
+        i32::from(*atom_positions2.get(usize::try_from(k2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?)
+            .wrapping_sub(1);
     // INCHI✔️✔️:     maxVert = inchi_min( Ct1->maxVert, Ct2->maxVert );
     let max_vert = Ct1.maxVert.min(Ct2.maxVert);
 
@@ -3687,12 +3581,9 @@ pub(crate) fn CtFullCompare(
         end_ct1 = end_ct1.min(Ct1.lenCt);
         end_ct2 = end_ct1;
         end_at1 = end_at1.min(end_at2);
-        let end_index =
-            usize::try_from(end_ct1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let end_index = usize::try_from(end_ct1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (Ct1->Ctbl[endCt1] == EMPTY_CT || Ct2->Ctbl[endCt1] == EMPTY_CT)
-        if *table1.get(end_index)? == EMPTY_CT as AT_RANK
-            || *table2.get(end_index)? == EMPTY_CT as AT_RANK
-        {
+        if *table1.get(end_index)? == EMPTY_CT as AT_RANK || *table2.get(end_index)? == EMPTY_CT as AT_RANK {
             end_ct1 = end_ct1.wrapping_sub(1);
             end_ct2 = end_ct1;
         }
@@ -3701,14 +3592,12 @@ pub(crate) fn CtFullCompare(
         len_iso1 = Ct1.len_iso_sort_key.min(Ct1.len_iso_sort_key);
         len_iso2 = len_iso1;
     } else {
-        let end_index1 = usize::try_from(end_ct1.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let end_index1 = usize::try_from(end_ct1.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (Ct1->Ctbl[endCt1 - 1] == EMPTY_CT)
         if *table1.get(end_index1)? == EMPTY_CT as AT_RANK {
             end_ct1 = end_ct1.wrapping_sub(1);
         }
-        let end_index2 = usize::try_from(end_ct2.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let end_index2 = usize::try_from(end_ct2.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (Ct2->Ctbl[endCt2 - 1] == EMPTY_CT)
         if *table2.get(end_index2)? == EMPTY_CT as AT_RANK {
             end_ct2 = end_ct2.wrapping_sub(1);
@@ -3781,8 +3670,7 @@ pub(crate) fn CtFullCompare(
             }
             if i < mid_h {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                value = i32::from(*hydrogens1.get(index)?).wrapping_sub(i32::from(*hydrogens2.get(index)?));
                 break 'compare value;
             }
             hydrogen_views = Some((hydrogens1, hydrogens2));
@@ -3814,8 +3702,7 @@ pub(crate) fn CtFullCompare(
             }
             if i < len_h1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                value = i32::from(*hydrogens1.get(index)?).wrapping_sub(i32::from(*hydrogens2.get(index)?));
                 break 'compare value;
             }
         }
@@ -3835,8 +3722,7 @@ pub(crate) fn CtFullCompare(
             }
             if i < end_at1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*fixed_hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
+                value = i32::from(*fixed_hydrogens1.get(index)?).wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
                 break 'compare value;
             }
         }
@@ -3906,11 +3792,7 @@ pub(crate) fn CtFullCompareLayers(kLeastForLayer: &KLeastLayers) -> Result<i32, 
             let layer = i32::try_from(layer)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                 .wrapping_add(1);
-            return Ok(if value.k > 0 {
-                layer
-            } else {
-                layer.wrapping_neg()
-            });
+            return Ok(if value.k > 0 { layer } else { layer.wrapping_neg() });
         }
     }
     Ok(0)
@@ -4019,13 +3901,7 @@ pub(crate) fn CtPartCompareLayers(
     // END INCHI C FUNCTION: CtPartCompareLayers
 
     let (mut layer, mut item, mut k) = (0_i32, 0_i32, 0_i32);
-    if CtCompareLayersGetFirstDiff(
-        kLeast_rho,
-        nOneAdditionalLayer,
-        &mut layer,
-        &mut item,
-        &mut k,
-    )? > 0
+    if CtCompareLayersGetFirstDiff(kLeast_rho, nOneAdditionalLayer, &mut layer, &mut item, &mut k)? > 0
         && layer <= L_rho_fix_prev
     {
         let result = layer.wrapping_add(1);
@@ -4035,10 +3911,7 @@ pub(crate) fn CtPartCompareLayers(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn UpdateCompareLayers(
-    kLeastForLayer: Option<&mut KLeastLayers>,
-    hzz: i32,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn UpdateCompareLayers(kLeastForLayer: Option<&mut KLeastLayers>, hzz: i32) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:2947 UpdateCompareLayers
     // INCHI✔️✔️: void UpdateCompareLayers( kLeast kLeastForLayer[], int hzz )
     // INCHI✔️✔️: {
@@ -4165,8 +4038,7 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
 
     let mcr_bits = pointer_array_get(heap, McrSet.bitword, l.wrapping_sub(1))?;
     let fix_bits = pointer_array_get(heap, FixSet.bitword, l.wrapping_sub(1))?;
-    let set_len =
-        usize::try_from(McrSet.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let set_len = usize::try_from(McrSet.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     // SAFETY: CanonGraph creates the McrSet and FixSet rows as distinct,
     // fixed-size allocations and keeps both live for this complete call.
     let mut mcr_words = unsafe { heap.stable_slice_mut(mcr_bits)? };
@@ -4209,10 +4081,8 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
         if j == i {
             let word = i.wrapping_div(pCG.m_num_bit);
             let bit_index = i.wrapping_rem(pCG.m_num_bit);
-            let word_index =
-                usize::try_from(word).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let mask_index =
-                usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let word_index = usize::try_from(word).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let mask_index = usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let bit = *masks.get(mask_index)?;
             // INCHI✔️✔️:             FixBits[i / pCG->m_num_bit] |= pCG->m_bBit[i % pCG->m_num_bit];
             *fix_words.get_mut(word_index)? |= bit;
@@ -4228,8 +4098,7 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
             let mut mcr = j.min(i);
             // INCHI✔️✔️:             while (!( rank_mark_bit & ( next = gamma->nAtNumb[j] ) ))
             loop {
-                let cycle_index =
-                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let cycle_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let cycle_next = *permutation.get(cycle_index)?;
                 if rank_mark_bit() & cycle_next != 0 {
                     break;
@@ -4246,30 +4115,25 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
             }
             let word = mcr.wrapping_div(pCG.m_num_bit);
             let bit_index = mcr.wrapping_rem(pCG.m_num_bit);
-            let word_index =
-                usize::try_from(word).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let mask_index =
-                usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let word_index = usize::try_from(word).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let mask_index = usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let bit = *masks.get(mask_index)?;
             // INCHI✔️✔️:             McrBits[mcr / pCG->m_num_bit] |= pCG->m_bBit[mcr % pCG->m_num_bit];
             *mcr_words.get_mut(word_index)? |= bit;
-            let mcr_index =
-                usize::try_from(mcr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let mcr_index = usize::try_from(mcr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             p->equ2[mcr] = mcr;
             *equivalences.get_mut(mcr_index)? = mcr as AT_NUMB;
             // INCHI✔️✔️:             for (k = mcr; mcr != (j = (int)(rank_mask_bit & gamma->nAtNumb[k])); k = j)
             let mut k = mcr;
             loop {
-                let cycle_index =
-                    usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let cycle_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 j = i32::from(rank_mask_bit() & *permutation.get(cycle_index)?);
                 if mcr == j {
                     break;
                 }
                 // INCHI✔️✔️:                 p->equ2[j] = mcr;
-                *equivalences.get_mut(
-                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )? = mcr as AT_NUMB;
+                *equivalences.get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? =
+                    mcr as AT_NUMB;
                 k = j;
             }
         }
@@ -4289,10 +4153,7 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
 
 #[allow(non_snake_case)]
 #[allow(non_snake_case)]
-pub(crate) fn GetOneAdditionalLayer(
-    pCD: Option<&CANON_DATA>,
-    pzb_rho_fix: Option<&ConTable>,
-) -> i32 {
+pub(crate) fn GetOneAdditionalLayer(pCD: Option<&CANON_DATA>, pzb_rho_fix: Option<&ConTable>) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3566 GetOneAdditionalLayer
     // INCHI✔️✔️: int GetOneAdditionalLayer( CANON_DATA *pCD, ConTable *pzb_rho_fix )
     // INCHI✔️✔️: {
@@ -5469,11 +5330,9 @@ pub(crate) fn CanonGraph(
     if pzb_rho_fix.is_some_and(|fixed| fixed.nLenCTAtOnly != pCD.nLenCTAtOnly) {
         return Ok(-2);
     }
-    let (mut theta, mut theta_from_gamma) =
-        (UnorderedPartition::default(), UnorderedPartition::default());
+    let (mut theta, mut theta_from_gamma) = (UnorderedPartition::default(), UnorderedPartition::default());
     let (mut Lambda, mut zf_zeta) = (ConTable::default(), ConTable::default());
-    let (mut Omega, mut Phi, mut cur_nodes) =
-        (NodeSet::default(), NodeSet::default(), NodeSet::default());
+    let (mut Omega, mut Phi, mut cur_nodes) = (NodeSet::default(), NodeSet::default(), NodeSet::default());
     let (mut zeta, mut rho) = (Partition::default(), Partition::default());
     let mut gamma = Transposition::default();
     // INCHI✔️✔️:     kLeast kLeast_rho[MAX_LAYERS];
@@ -5483,18 +5342,10 @@ pub(crate) fn CanonGraph(
     let mut ok = 1_i32;
     ok &= UnorderedPartitionCreate(heap, &mut theta, n_tg)?;
     ok &= UnorderedPartitionCreate(heap, &mut theta_from_gamma, n_tg)?;
-    let W_pointer = crate::source::base::util::inchi_calloc::<Cell>(
-        heap,
-        n_tg as u64,
-        size_of::<Cell>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
-    let v = crate::source::base::util::inchi_calloc::<Node>(
-        heap,
-        n_tg as u64,
-        size_of::<Node>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
+    let W_pointer = crate::source::base::util::inchi_calloc::<Cell>(heap, n_tg as u64, size_of::<Cell>() as u64)
+        .unwrap_or_else(|_| SourceMutPointer::null());
+    let v = crate::source::base::util::inchi_calloc::<Node>(heap, n_tg as u64, size_of::<Node>() as u64)
+        .unwrap_or_else(|_| SourceMutPointer::null());
     let e = crate::source::base::util::inchi_calloc::<crate::source_types::S_CHAR>(
         heap,
         n_tg as u64,
@@ -5527,11 +5378,9 @@ pub(crate) fn CanonGraph(
         ok &= CTableCreate(heap, storage.get_mut(0)?, n, pCD)?;
         Some(storage)
     };
-    let pzb_rho_is_usable = pzb_rho_storage.as_ref().is_some_and(|storage| {
-        storage
-            .get(0)
-            .is_ok_and(|table| con_table_is_usable(table, pCD))
-    });
+    let pzb_rho_is_usable = pzb_rho_storage
+        .as_ref()
+        .is_some_and(|storage| storage.get(0).is_ok_and(|table| con_table_is_usable(table, pCD)));
     if !con_table_is_usable(&Lambda, pCD)
         || !con_table_is_usable(&zf_zeta, pCD)
         || (!pzb_rho_pointer.is_null() && !pzb_rho_is_usable)
@@ -5590,8 +5439,7 @@ pub(crate) fn CanonGraph(
         // INCHI✔️✔️:     memset( kLeast_rho, 0, sizeof( kLeast_rho ) );
         let kLeast_rho = kLeast_rho_storage.write(std::array::from_fn(|_| kLeast::default()));
         // INCHI✔️✔️:     memset( kLeast_rho_fix, 0, sizeof( kLeast_rho_fix ) );
-        let kLeast_rho_fix =
-            kLeast_rho_fix_storage.write(std::array::from_fn(|_| kLeast::default()));
+        let kLeast_rho_fix = kLeast_rho_fix_storage.write(std::array::from_fn(|_| kLeast::default()));
         let mut label = CanonGraphLabel::InitialDescent;
         'machine: loop {
             match label {
@@ -5609,38 +5457,22 @@ pub(crate) fn CanonGraph(
                             n_tg,
                             n_max,
                         )?;
-                        CtPartINCHI_CANON_INFINITY(
-                            heap,
-                            &mut *pzb_rho,
-                            SourceMutPointer::null(),
-                            2,
-                        )?;
+                        CtPartINCHI_CANON_INFINITY(heap, &mut *pzb_rho, SourceMutPointer::null(), 2)?;
                         pCC.lNumTotCT += 1;
                         label = CanonGraphLabel::ExitFunction;
                         continue;
                     }
-                    if dig == 0 && PartitionSatisfiesLemma_2_25(heap, partition_at(pi, 1)?, n)? != 0
-                    {
+                    if dig == 0 && PartitionSatisfiesLemma_2_25(heap, partition_at(pi, 1)?, n)? != 0 {
                         t_Lemma = 1;
                     }
                     CtPartClear(heap, &mut Lambda, 1)?;
                     while k != 0 {
-                        PartitionGetFirstCell(
-                            heap,
-                            partition_at(pi, k)?,
-                            W.prefix_mut(W_len)?,
-                            k,
-                            n,
-                        )?;
-                        let wi = usize::try_from(k - 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let minimum =
-                            CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
+                        PartitionGetFirstCell(heap, partition_at(pi, k)?, W.prefix_mut(W_len)?, k, n)?;
+                        let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let minimum = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
                         source_set(heap, v, k - 1, minimum)?;
                         source_set(heap, e, k - 1, 0)?;
-                        if dig != 0
-                            || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0
-                        {
+                        if dig != 0 || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0 {
                             t_Lemma = k + 1;
                         }
                         let vv = source_get(heap, v, k - 1)?;
@@ -5648,8 +5480,7 @@ pub(crate) fn CanonGraph(
                             heap,
                             pCG,
                             G,
-                            pi.get_mut(wi..)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                            pi.get_mut(wi..).ok_or(SourceHeapError::PointerOutOfBounds)?,
                             vv,
                             n,
                             n_tg,
@@ -5705,8 +5536,7 @@ pub(crate) fn CanonGraph(
                     PartitionCopy(heap, &zeta, partition_at(pi, k)?, n_tg)?;
                     if let Some(fixed) = pzb_rho_fix {
                         if qzb_rho_fix == 0 {
-                            qzb_rho_fix =
-                                CtFullCompare(heap, &Lambda, fixed, 1, bSplitTautCompare)?;
+                            qzb_rho_fix = CtFullCompare(heap, &Lambda, fixed, 1, bSplitTautCompare)?;
                             if qzb_rho_fix > 0 {
                                 hzb_rho_fix = 1;
                             }
@@ -5718,12 +5548,7 @@ pub(crate) fn CanonGraph(
                         h_rho = hzb_rho_fix;
                         bRhoIsDiscrete = i32::from(hzb_rho_fix == k);
                         if bRhoIsDiscrete != 0 {
-                            CtPartINCHI_CANON_INFINITY(
-                                heap,
-                                &mut *pzb_rho,
-                                SourceMutPointer::null(),
-                                k,
-                            )?;
+                            CtPartINCHI_CANON_INFINITY(heap, &mut *pzb_rho, SourceMutPointer::null(), k)?;
                             pzb_rho_fix_reached = i32::from(qzb_rho_fix == 0);
                             CtCompareLayersGetFirstDiff(
                                 Some(kLeast_rho_fix),
@@ -5737,12 +5562,7 @@ pub(crate) fn CanonGraph(
                         PartitionCopy(heap, &rho, partition_at(pi, k)?, n_tg)?;
                         hz_rho = k;
                         h_rho = k;
-                        CtPartINCHI_CANON_INFINITY(
-                            heap,
-                            &mut *pzb_rho,
-                            SourceMutPointer::null(),
-                            k,
-                        )?;
+                        CtPartINCHI_CANON_INFINITY(heap, &mut *pzb_rho, SourceMutPointer::null(), k)?;
                     }
                     qzb_rho = 0;
                     r = k;
@@ -5753,14 +5573,12 @@ pub(crate) fn CanonGraph(
                 }
                 CanonGraphLabel::L2 => {
                     let vv = source_get(heap, v, k - 1)?;
-                    let wi =
-                        usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let result = PartitionColorVertex(
                         heap,
                         pCG,
                         G,
-                        pi.get_mut(wi..)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        pi.get_mut(wi..).ok_or(SourceHeapError::PointerOutOfBounds)?,
                         vv,
                         n,
                         n_tg,
@@ -5814,24 +5632,15 @@ pub(crate) fn CanonGraph(
                             bSplitTautCompare,
                         )?;
                         if qzb_rho_fix == 0 && bRhoIsDiscrete != 0 {
-                            qzb_rho_fix = CtPartCompareLayers(
-                                Some(kLeast_rho_fix),
-                                L_rho_fix_prev,
-                                nOneAdditionalLayer,
-                            )?;
+                            qzb_rho_fix =
+                                CtPartCompareLayers(Some(kLeast_rho_fix), L_rho_fix_prev, nOneAdditionalLayer)?;
                             if qzb_rho_fix != 0 {
                                 let layer = qzb_rho_fix.abs() - 1;
                                 let value = kLeast_rho_fix
-                                    .get(
-                                        usize::try_from(layer)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                    )
+                                    .get(usize::try_from(layer).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if layer < L_rho_fix_prev
-                                    || layer
-                                        == i32::from(
-                                            L_rho_fix_prev != 0 && value.i < I_rho_fix_prev,
-                                        )
+                                    || layer == i32::from(L_rho_fix_prev != 0 && value.i < I_rho_fix_prev)
                                 {
                                     qzb_rho_fix = layer + 1;
                                 }
@@ -5861,16 +5670,10 @@ pub(crate) fn CanonGraph(
                                 if qzb_rho != 0 {
                                     let layer = qzb_rho.abs() - 1;
                                     let value = kLeast_rho
-                                        .get(
-                                            usize::try_from(layer)
-                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                        )
+                                        .get(usize::try_from(layer).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     if layer < L_rho_fix_prev
-                                        || layer
-                                            == i32::from(
-                                                L_rho_fix_prev != 0 && value.i < I_rho_fix_prev,
-                                            )
+                                        || layer == i32::from(L_rho_fix_prev != 0 && value.i < I_rho_fix_prev)
                                     {
                                         qzb_rho = -(layer + 1);
                                     }
@@ -5882,8 +5685,7 @@ pub(crate) fn CanonGraph(
                                 pCC.lNumRejectedCT += 1;
                             }
                         }
-                        if (qzb_rho > 0 || (qzb_rho == 0 && bRhoIsDiscrete == 0)) && nNumLayers == 0
-                        {
+                        if (qzb_rho > 0 || (qzb_rho == 0 && bRhoIsDiscrete == 0)) && nNumLayers == 0 {
                             CtPartCopy(heap, &mut *pzb_rho, &Lambda, k - 1)?;
                         }
                     }
@@ -5892,26 +5694,11 @@ pub(crate) fn CanonGraph(
                             pCC.lNumTotCT += 1;
                             label = CanonGraphLabel::L7;
                         } else {
-                            PartitionGetFirstCell(
-                                heap,
-                                partition_at(pi, k)?,
-                                W.prefix_mut(W_len)?,
-                                k,
-                                n,
-                            )?;
-                            let wi = usize::try_from(k - 1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let minimum = CellGetMinNode(
-                                heap,
-                                partition_at(pi, k)?,
-                                W.get(wi)?,
-                                0,
-                                Some(pCD),
-                            )?;
+                            PartitionGetFirstCell(heap, partition_at(pi, k)?, W.prefix_mut(W_len)?, k, n)?;
+                            let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let minimum = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
                             source_set(heap, v, k - 1, minimum)?;
-                            if dig != 0
-                                || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0
-                            {
+                            if dig != 0 || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0 {
                                 t_Lemma = k + 1;
                             }
                             source_set(heap, e, k - 1, 0)?;
@@ -5928,15 +5715,7 @@ pub(crate) fn CanonGraph(
                         label = CanonGraphLabel::L13;
                     } else {
                         l = (l + 1).min(max_set_size);
-                        PartitionGetMcrAndFixSet(
-                            heap,
-                            pCG,
-                            partition_at(pi, t_Lemma)?,
-                            &Omega,
-                            &Phi,
-                            n_tg,
-                            l,
-                        )?;
+                        PartitionGetMcrAndFixSet(heap, pCG, partition_at(pi, t_Lemma)?, &Omega, &Phi, n_tg, l)?;
                         label = CanonGraphLabel::L12;
                     }
                 }
@@ -5998,13 +5777,7 @@ pub(crate) fn CanonGraph(
                             label = CanonGraphLabel::L6;
                         } else {
                             r = k;
-                            PartitionGetTransposition(
-                                heap,
-                                partition_at(pi, k)?,
-                                &rho,
-                                n_tg,
-                                &gamma,
-                            )?;
+                            PartitionGetTransposition(heap, partition_at(pi, k)?, &rho, n_tg, &gamma)?;
                             bZetaIsomorph = 0;
                             pCC.lNumEqualCT += 1;
                             label = CanonGraphLabel::L10;
@@ -6035,8 +5808,7 @@ pub(crate) fn CanonGraph(
                     label = CanonGraphLabel::L6;
                 }
                 CanonGraphLabel::L10 => {
-                    pCC.lNumEqualCT +=
-                        i64::from(bZetaEqRho != 0 || !(bZetaIsomorph != 0 || qzb_rho != 0));
+                    pCC.lNumEqualCT += i64::from(bZetaEqRho != 0 || !(bZetaIsomorph != 0 || qzb_rho != 0));
                     l = (l + 1).min(max_set_size);
                     TranspositionGetMcrAndFixSetAndUnorderedPartition(
                         heap,
@@ -6065,19 +5837,9 @@ pub(crate) fn CanonGraph(
                     label = CanonGraphLabel::L12;
                 }
                 CanonGraphLabel::L12 => {
-                    if source_get(heap, e, k - 1)? == 1
-                        && source_get(heap, v, k - 1)? != INCHI_CANON_INFINITY as Node
-                    {
-                        let wi = usize::try_from(k - 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        CellIntersectWithSet(
-                            heap,
-                            pCG,
-                            partition_at(pi, k)?,
-                            W.get(wi)?,
-                            &Omega,
-                            l,
-                        )?;
+                    if source_get(heap, e, k - 1)? == 1 && source_get(heap, v, k - 1)? != INCHI_CANON_INFINITY as Node {
+                        let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        CellIntersectWithSet(heap, pCG, partition_at(pi, k)?, W.get(wi)?, &Omega, l)?;
                     }
                     label = CanonGraphLabel::L13;
                 }
@@ -6093,12 +5855,7 @@ pub(crate) fn CanonGraph(
                     } else {
                         Some(source_clone(heap, pCD.ulTimeOutTime, 0)?)
                     };
-                    if crate::source::base::ichicano::bInchiTimeIsOver(
-                        ic,
-                        timeout.as_ref(),
-                        clock_result,
-                    ) != 0
-                    {
+                    if crate::source::base::ichicano::bInchiTimeIsOver(ic, timeout.as_ref(), clock_result) != 0 {
                         ret = CT_TIMEOUT_ERR;
                         break 'machine;
                     }
@@ -6121,8 +5878,7 @@ pub(crate) fn CanonGraph(
                         label = CanonGraphLabel::L14;
                     } else {
                         h_zeta = k;
-                        let wi = usize::try_from(k - 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         tvh = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
                         tvc = tvh;
                         label = CanonGraphLabel::L14;
@@ -6135,10 +5891,8 @@ pub(crate) fn CanonGraph(
                     {
                         index += 1;
                     }
-                    let wi =
-                        usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let minimum =
-                        CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
+                    let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let minimum = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
                     source_set(heap, v, k - 1, minimum)?;
                     if minimum == INCHI_CANON_INFINITY as Node {
                         label = CanonGraphLabel::L16;
@@ -6170,11 +5924,8 @@ pub(crate) fn CanonGraph(
                     label = CanonGraphLabel::L2;
                 }
                 CanonGraphLabel::L16 => {
-                    let wi =
-                        usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if t_eq_zeta == k + 1
-                        && index == CellGetNumberOfNodes(heap, partition_at(pi, k)?, W.get(wi)?)?
-                    {
+                    let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if t_eq_zeta == k + 1 && index == CellGetNumberOfNodes(heap, partition_at(pi, k)?, W.get(wi)?)? {
                         t_eq_zeta = k;
                     }
                     size *= f64::from(index);
@@ -6183,33 +5934,21 @@ pub(crate) fn CanonGraph(
                     label = CanonGraphLabel::L13;
                 }
                 CanonGraphLabel::L17 => {
-                    if source_get(heap, e, k - 1)? == 0
-                        && source_get(heap, v, k - 1)? != INCHI_CANON_INFINITY as Node
-                    {
+                    if source_get(heap, e, k - 1)? == 0 && source_get(heap, v, k - 1)? != INCHI_CANON_INFINITY as Node {
                         NodeSetFromVertices(heap, pCG, &cur_nodes, 1, v, k - 1)?;
-                        let wi = usize::try_from(k - 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let mut set_index = 1_i32;
                         while set_index <= l {
                             if AllNodesAreInSet(heap, &cur_nodes, 1, &Phi, set_index)? != 0 {
-                                CellIntersectWithSet(
-                                    heap,
-                                    pCG,
-                                    partition_at(pi, k)?,
-                                    W.get(wi)?,
-                                    &Omega,
-                                    set_index,
-                                )?;
+                                CellIntersectWithSet(heap, pCG, partition_at(pi, k)?, W.get(wi)?, &Omega, set_index)?;
                             }
                             set_index += 1;
                         }
                     }
                     source_set(heap, e, k - 1, 1)?;
-                    let wi =
-                        usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let wi = usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let current = source_get(heap, v, k - 1)?;
-                    let minimum =
-                        CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
+                    let minimum = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
                     source_set(heap, v, k - 1, minimum)?;
                     if minimum != INCHI_CANON_INFINITY as Node {
                         label = CanonGraphLabel::L15;
@@ -6229,8 +5968,7 @@ pub(crate) fn CanonGraph(
                             break 'machine;
                         }
                     }
-                    let count =
-                        usize::try_from(n_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let count = usize::try_from(n_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     heap.slice_mut(nSymmRank)?
                         .get_mut(..count)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -6238,11 +5976,8 @@ pub(crate) fn CanonGraph(
                     let mut i = 0_i32;
                     while i < n_tg {
                         let atom = i32::from(source_get(heap, rho.AtNumber, i)?);
-                        let representative = i32::from(GetUnorderedPartitionMcrNode(
-                            heap,
-                            &theta,
-                            (atom + 1) as AT_NUMB,
-                        )?) - 1;
+                        let representative =
+                            i32::from(GetUnorderedPartitionMcrNode(heap, &theta, (atom + 1) as AT_NUMB)?) - 1;
                         let old = source_get(heap, nSymmRank, representative)?;
                         let rank = source_get(heap, rho.Rank, atom)?;
                         if old == 0 || old > rank {
@@ -6253,28 +5988,15 @@ pub(crate) fn CanonGraph(
                     i = 0;
                     while i < n_tg {
                         let atom = i32::from(source_get(heap, rho.AtNumber, i)?);
-                        let representative = i32::from(GetUnorderedPartitionMcrNode(
-                            heap,
-                            &theta,
-                            (atom + 1) as AT_NUMB,
-                        )?) - 1;
-                        source_set(
-                            heap,
-                            nSymmRank,
-                            atom,
-                            source_get(heap, nSymmRank, representative)?,
-                        )?;
+                        let representative =
+                            i32::from(GetUnorderedPartitionMcrNode(heap, &theta, (atom + 1) as AT_NUMB)?) - 1;
+                        source_set(heap, nSymmRank, atom, source_get(heap, nSymmRank, representative)?)?;
                         i += 1;
                     }
                     i = 0;
                     while i < n_tg {
                         source_set(heap, nCanonRank, i, source_get(heap, rho.Rank, i)?)?;
-                        source_set(
-                            heap,
-                            nAtomNumberCanon,
-                            i,
-                            source_get(heap, rho.AtNumber, i)?,
-                        )?;
+                        source_set(heap, nAtomNumberCanon, i, source_get(heap, rho.AtNumber, i)?)?;
                         i += 1;
                     }
                     pCD.nLenLinearCT = pzb_rho.lenCt - 1;
@@ -6466,55 +6188,31 @@ pub(crate) fn CTableCreate(
     Ct.maxVert = n;
     let allocation_n = n.wrapping_add(1);
 
-    Ct.Ctbl = crate::source::base::util::inchi_calloc::<AT_RANK>(
-        heap,
-        max_len_ct as u64,
-        size_of::<AT_RANK>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
-    Ct.nextCtblPos = crate::source::base::util::inchi_calloc::<AT_NUMB>(
-        heap,
-        allocation_n as u64,
-        size_of::<AT_NUMB>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
-    Ct.nextAtRank = crate::source::base::util::inchi_calloc::<AT_RANK>(
-        heap,
-        allocation_n as u64,
-        size_of::<AT_RANK>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
-    if max_len_h != 0 {
-        Ct.NumH = crate::source::base::util::inchi_calloc(
-            heap,
-            max_len_h as u64,
-            size_of::<NUM_H>() as u64,
-        )
+    Ct.Ctbl = crate::source::base::util::inchi_calloc::<AT_RANK>(heap, max_len_ct as u64, size_of::<AT_RANK>() as u64)
         .unwrap_or_else(|_| SourceMutPointer::null());
+    Ct.nextCtblPos =
+        crate::source::base::util::inchi_calloc::<AT_NUMB>(heap, allocation_n as u64, size_of::<AT_NUMB>() as u64)
+            .unwrap_or_else(|_| SourceMutPointer::null());
+    Ct.nextAtRank =
+        crate::source::base::util::inchi_calloc::<AT_RANK>(heap, allocation_n as u64, size_of::<AT_RANK>() as u64)
+            .unwrap_or_else(|_| SourceMutPointer::null());
+    if max_len_h != 0 {
+        Ct.NumH = crate::source::base::util::inchi_calloc(heap, max_len_h as u64, size_of::<NUM_H>() as u64)
+            .unwrap_or_else(|_| SourceMutPointer::null());
     }
     if max_len_fixed_h != 0 {
-        Ct.NumHfixed = crate::source::base::util::inchi_calloc(
-            heap,
-            max_len_fixed_h as u64,
-            size_of::<NUM_H>() as u64,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
+        Ct.NumHfixed = crate::source::base::util::inchi_calloc(heap, max_len_fixed_h as u64, size_of::<NUM_H>() as u64)
+            .unwrap_or_else(|_| SourceMutPointer::null());
     }
     if max_len_iso != 0 {
-        Ct.iso_sort_key = crate::source::base::util::inchi_calloc(
-            heap,
-            max_len_iso as u64,
-            size_of::<AT_ISO_SORT_KEY>() as u64,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
+        Ct.iso_sort_key =
+            crate::source::base::util::inchi_calloc(heap, max_len_iso as u64, size_of::<AT_ISO_SORT_KEY>() as u64)
+                .unwrap_or_else(|_| SourceMutPointer::null());
     }
     if max_len_iso_exchange != 0 {
-        Ct.iso_exchg_atnos = crate::source::base::util::inchi_calloc(
-            heap,
-            max_len_iso_exchange as u64,
-            size_of::<i8>() as u64,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
+        Ct.iso_exchg_atnos =
+            crate::source::base::util::inchi_calloc(heap, max_len_iso_exchange as u64, size_of::<i8>() as u64)
+                .unwrap_or_else(|_| SourceMutPointer::null());
     }
 
     Ct.lenCt = 0;
@@ -6550,10 +6248,7 @@ pub(crate) fn CTableCreate(
 
 #[allow(non_snake_case)]
 #[allow(non_snake_case)]
-pub(crate) fn CTableFree(
-    heap: &mut SourceHeap,
-    Ct: Option<&mut ConTable>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn CTableFree(heap: &mut SourceHeap, Ct: Option<&mut ConTable>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:851 CTableFree
     // INCHI✔️❌: void CTableFree( ConTable *Ct )
     // INCHI✔️❌: {
@@ -6657,11 +6352,7 @@ pub(crate) fn TranspositionCreate(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: TranspositionCreate
 
-    p.nAtNumb = match crate::source::base::util::inchi_calloc::<AT_NUMB>(
-        heap,
-        n as u64,
-        size_of::<AT_NUMB>() as u64,
-    ) {
+    p.nAtNumb = match crate::source::base::util::inchi_calloc::<AT_NUMB>(heap, n as u64, size_of::<AT_NUMB>() as u64) {
         Ok(pointer) => pointer,
         Err(_) => SourceMutPointer::null(),
     };
@@ -6669,10 +6360,7 @@ pub(crate) fn TranspositionCreate(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn TranspositionFree(
-    heap: &mut SourceHeap,
-    p: Option<&mut Transposition>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn TranspositionFree(heap: &mut SourceHeap, p: Option<&mut Transposition>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:707 TranspositionFree
     // INCHI✔️✔️: void TranspositionFree( Transposition *p )
     // INCHI✔️✔️: {
@@ -6715,20 +6403,13 @@ pub(crate) fn UnorderedPartitionCreate(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: UnorderedPartitionCreate
 
-    p.equ2 = crate::source::base::util::inchi_calloc::<AT_NUMB>(
-        heap,
-        n as u64,
-        size_of::<AT_NUMB>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
+    p.equ2 = crate::source::base::util::inchi_calloc::<AT_NUMB>(heap, n as u64, size_of::<AT_NUMB>() as u64)
+        .unwrap_or_else(|_| SourceMutPointer::null());
     Ok(if p.equ2.is_null() { 0 } else { 1 })
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn UnorderedPartitionFree(
-    heap: &mut SourceHeap,
-    p: &mut UnorderedPartition,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn UnorderedPartitionFree(heap: &mut SourceHeap, p: &mut UnorderedPartition) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:919 UnorderedPartitionFree
     // INCHI✔️✔️: void UnorderedPartitionFree( UnorderedPartition *p )
     // INCHI✔️✔️: {
@@ -6778,11 +6459,7 @@ pub(crate) fn UnorderedPartitionMakeDiscrete(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn PartitionCreate(
-    heap: &mut SourceHeap,
-    p: &mut Partition,
-    n: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn PartitionCreate(heap: &mut SourceHeap, p: &mut Partition, n: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:946 PartitionCreate
     // INCHI✔️✔️: int PartitionCreate( Partition *p, int n )
     // INCHI✔️✔️: {
@@ -6796,18 +6473,10 @@ pub(crate) fn PartitionCreate(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: PartitionCreate
 
-    p.AtNumber = crate::source::base::util::inchi_calloc::<AT_NUMB>(
-        heap,
-        n as u64,
-        size_of::<AT_NUMB>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
-    p.Rank = crate::source::base::util::inchi_calloc::<AT_RANK>(
-        heap,
-        n as u64,
-        size_of::<AT_RANK>() as u64,
-    )
-    .unwrap_or_else(|_| SourceMutPointer::null());
+    p.AtNumber = crate::source::base::util::inchi_calloc::<AT_NUMB>(heap, n as u64, size_of::<AT_NUMB>() as u64)
+        .unwrap_or_else(|_| SourceMutPointer::null());
+    p.Rank = crate::source::base::util::inchi_calloc::<AT_RANK>(heap, n as u64, size_of::<AT_RANK>() as u64)
+        .unwrap_or_else(|_| SourceMutPointer::null());
     Ok(if !p.AtNumber.is_null() && !p.Rank.is_null() {
         1
     } else {
@@ -6816,11 +6485,7 @@ pub(crate) fn PartitionCreate(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn PartitionIsDiscrete(
-    heap: &SourceHeap,
-    p: &Partition,
-    n: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn PartitionIsDiscrete(heap: &SourceHeap, p: &Partition, n: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:978 PartitionIsDiscrete
     // INCHI✔️✔️: int PartitionIsDiscrete( Partition *p, int n )
     // INCHI✔️✔️: {
@@ -6858,10 +6523,7 @@ pub(crate) fn PartitionIsDiscrete(
     while i < count {
         let atom = usize::from(atoms[i]);
         // INCHI✔️✔️:         if (r != ( rank_mask_bit & p->Rank[p->AtNumber[i]] ))
-        let atom_rank = ranks
-            .get(atom)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom_rank = ranks.get(atom).copied().ok_or(SourceHeapError::PointerOutOfBounds)?;
         if rank != rank_mask & atom_rank {
             // INCHI✔️✔️:             return 0;
             return Ok(0);
@@ -6923,14 +6585,10 @@ pub(crate) fn PartitionGetFirstCell(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: PartitionGetFirstCell
 
-    let target =
-        usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let _ = baseW
-        .get(target)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let target = usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let _ = baseW.get(target).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut i = if k > 1 {
-        let previous =
-            usize::try_from(k.wrapping_sub(2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let previous = usize::try_from(k.wrapping_sub(2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         baseW
             .get(previous)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -6952,10 +6610,7 @@ pub(crate) fn PartitionGetFirstCell(
     }
     if i < n {
         let first = i;
-        baseW
-            .get_mut(target)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .first = first;
+        baseW.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)?.first = first;
         let atom = source_get(heap, p.AtNumber, i)?;
         let rank = rank_mask_bit() & source_get(heap, p.Rank, i32::from(atom))?;
         i = i.wrapping_add(1);
@@ -6966,15 +6621,11 @@ pub(crate) fn PartitionGetFirstCell(
             }
             i = i.wrapping_add(1);
         }
-        let cell = baseW
-            .get_mut(target)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let cell = baseW.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)?;
         cell.next = i;
         return Ok(cell.next.wrapping_sub(first));
     }
-    let cell = baseW
-        .get_mut(target)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let cell = baseW.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)?;
     cell.first = INCHI_CANON_INFINITY as i32;
     cell.next = 0;
     Ok(0)
@@ -7014,13 +6665,10 @@ pub(crate) fn NodeSetFromRadEndpoints(
     // END INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromRadEndpoints
 
     let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
-    let len_set =
-        usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let len_set = usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     {
         let target = heap.slice_mut(bits)?;
-        let clear_len = target
-            .get_mut(..len_set)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let clear_len = target.get_mut(..len_set).ok_or(SourceHeapError::PointerOutOfBounds)?;
         clear_len.fill(0);
     }
 
@@ -7034,12 +6682,9 @@ pub(crate) fn NodeSetFromRadEndpoints(
             .checked_rem(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mask = source_get(heap, pCG.m_bBit, bit_index)?;
-        let word_offset =
-            usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let word_offset = usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let target = heap.slice_mut(bits)?;
-        let word = target
-            .get_mut(word_offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let word = target.get_mut(word_offset).ok_or(SourceHeapError::PointerOutOfBounds)?;
         *word |= mask;
         i = i.wrapping_add(2);
     }
@@ -7092,12 +6737,9 @@ pub(crate) fn RemoveFromNodeSet(
             .checked_rem(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mask = source_get(heap, pCG.m_bBit, bit_index)?;
-        let word_offset =
-            usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let word_offset = usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let target = heap.slice_mut(bits)?;
-        let word = target
-            .get_mut(word_offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let word = target.get_mut(word_offset).ok_or(SourceHeapError::PointerOutOfBounds)?;
         *word &= !mask;
         i = i.wrapping_add(1);
     }
@@ -7140,19 +6782,12 @@ pub(crate) fn DoNodeSetsIntersect(
     }
     let bits1 = pointer_array_get(heap, cur_nodes.bitword, k1)?;
     let bits2 = pointer_array_get(heap, cur_nodes.bitword, k2)?;
-    let len =
-        usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let len = usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let slice1 = heap.slice(bits1.as_const())?;
     let slice2 = heap.slice(bits2.as_const())?;
     for i in 0..len {
-        if slice1
-            .get(i)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            & slice2
-                .get(i)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        if slice1.get(i).copied().ok_or(SourceHeapError::PointerOutOfBounds)?
+            & slice2.get(i).copied().ok_or(SourceHeapError::PointerOutOfBounds)?
             != 0
         {
             return Ok(1);
@@ -7163,11 +6798,7 @@ pub(crate) fn DoNodeSetsIntersect(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn IsNodeSetEmpty(
-    heap: &SourceHeap,
-    cur_nodes: &NodeSet,
-    k: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn IsNodeSetEmpty(heap: &SourceHeap, cur_nodes: &NodeSet, k: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1201 IsNodeSetEmpty
     // INCHI✔️❌: int IsNodeSetEmpty( NodeSet *cur_nodes, int k )
     // INCHI✔️❌: {
@@ -7194,16 +6825,10 @@ pub(crate) fn IsNodeSetEmpty(
         return Ok(1);
     }
     let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
-    let len =
-        usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let len = usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let slice = heap.slice(bits.as_const())?;
     for i in 0..len {
-        if slice
-            .get(i)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            != 0
-        {
+        if slice.get(i).copied().ok_or(SourceHeapError::PointerOutOfBounds)? != 0 {
             return Ok(0);
         }
     }
@@ -7247,9 +6872,7 @@ pub(crate) fn AddNodeSet2ToNodeSet1(
         let source = source_get(heap, bits2, i)?;
         let offset = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let target = heap.slice_mut(bits1)?;
-        let word = target
-            .get_mut(offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let word = target.get_mut(offset).ok_or(SourceHeapError::PointerOutOfBounds)?;
         *word |= source;
         i = i.wrapping_add(1);
     }
@@ -7334,15 +6957,13 @@ pub(crate) fn AddNodesToRadEndpoints(
                     if n >= nLen {
                         return Ok(-1);
                     }
-                    let first_offset =
-                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let first_offset = usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     heap.slice_mut(RadEndpoints)?
                         .get_mut(first_offset)
                         .ok_or(SourceHeapError::PointerOutOfBounds)
                         .map(|slot| *slot = vRad)?;
                     n = n.wrapping_add(1);
-                    let second_offset =
-                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let second_offset = usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     heap.slice_mut(RadEndpoints)?
                         .get_mut(second_offset)
                         .ok_or(SourceHeapError::PointerOutOfBounds)
@@ -7550,10 +7171,10 @@ pub(crate) fn CtPartCopy(
     // INCHI✔️✔️:     for (i = 0; i < len2; i++)
     let mut i = 0_i32;
     while i < len2 {
-        let source_index = usize::try_from(start_ct2.wrapping_add(i))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let target_index = usize::try_from(start_ct1.wrapping_add(i))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let source_index =
+            usize::try_from(start_ct2.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let target_index =
+            usize::try_from(start_ct1.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         Ct1->Ctbl[startCt1 + i] = Ct2->Ctbl[startCt2 + i];
         *target_ctbl.get_mut(target_index)? = *source_ctbl.get(source_index)?;
         i = i.wrapping_add(1);
@@ -7577,10 +7198,10 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2H; i++)
         i = 0;
         while i < len2_h {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_index =
+                usize::try_from(start_at2.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index =
+                usize::try_from(start_at1.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             Ct1->NumH[startAt1 + i] = Ct2->NumH[startAt2 + i];
             *target_h.get_mut(target_index)? = *source_h.get(source_index)?;
             i = i.wrapping_add(1);
@@ -7596,10 +7217,10 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2Hfixed; i++)
         i = 0;
         while i < len2_h_fixed {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_index =
+                usize::try_from(start_at2.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index =
+                usize::try_from(start_at1.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             Ct1->NumHfixed[startAt1 + i] = Ct2->NumHfixed[startAt2 + i];
             *target_fixed_h.get_mut(target_index)? = *source_fixed_h.get(source_index)?;
             i = i.wrapping_add(1);
@@ -7617,10 +7238,10 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2iso_sort_key; i++)
         i = 0;
         while i < len2_iso_sort_key {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_index =
+                usize::try_from(start_at2.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index =
+                usize::try_from(start_at1.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             Ct1->iso_sort_key[startAt1 + i] = Ct2->iso_sort_key[startAt2 + i];
             *target_iso.get_mut(target_index)? = *source_iso.get(source_index)?;
             i = i.wrapping_add(1);
@@ -7638,10 +7259,10 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2iso_exchg_atnos; i++)
         i = 0;
         while i < len2_iso_exchg_atnos {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_index =
+                usize::try_from(start_at2.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index =
+                usize::try_from(start_at1.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             Ct1->iso_exchg_atnos[startAt1 + i] = Ct2->iso_exchg_atnos[startAt2 + i];
             *target_exchange.get_mut(target_index)? = *source_exchange.get(source_index)?;
             i = i.wrapping_add(1);
@@ -7676,11 +7297,7 @@ pub(crate) fn CtPartCopy(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CtFullCopy(
-    heap: &mut SourceHeap,
-    Ct1: &mut ConTable,
-    Ct2: &ConTable,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn CtFullCopy(heap: &mut SourceHeap, Ct1: &mut ConTable, Ct2: &ConTable) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3113 CtFullCopy
     // INCHI✔️❌: void CtFullCopy( ConTable *Ct1, ConTable *Ct2 )
     // INCHI✔️❌: {
@@ -7726,10 +7343,7 @@ pub(crate) fn CellMakeEmpty(baseW: &mut [Cell], mut k: i32) -> Result<(), Source
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn PartitionFree(
-    heap: &mut SourceHeap,
-    p: Option<&mut Partition>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn PartitionFree(heap: &mut SourceHeap, p: Option<&mut Partition>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:959 PartitionFree
     // INCHI✔️❌: void PartitionFree( Partition *p )
     // INCHI✔️❌: {
@@ -7856,20 +7470,11 @@ pub(crate) fn SetInitialRanks2(
                 .checked_mul(size_of::<AT_RANK>())
                 .ok_or(SourceHeapError::AllocationSizeOverflow)?;
             // AT_RANK has no padding; this exposes the same contiguous records passed to C qsort.
-            let bytes = unsafe {
-                std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len)
-            };
+            let bytes = unsafe { std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len) };
             inchi_qsort(bytes, count, size_of::<AT_RANK>(), &mut |first, second| {
-                let first = AT_RANK::from_ne_bytes(
-                    first
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-                let second = AT_RANK::from_ne_bytes(
-                    second
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
+                let first = AT_RANK::from_ne_bytes(first.try_into().map_err(|_| SourceHeapError::PointerOutOfBounds)?);
+                let second =
+                    AT_RANK::from_ne_bytes(second.try_into().map_err(|_| SourceHeapError::PointerOutOfBounds)?);
                 // SAFETY: the source initialized every record to 0..count and
                 // inchi_qsort only permutes those records.
                 Ok(unsafe { invariant_workspace.compare_in_bounds(first, second) })
@@ -7885,9 +7490,7 @@ pub(crate) fn SetInitialRanks2(
     if count > 0 {
         heap.with_slice_mut_and_heap(nNewRank, |new_ranks, heap| {
             let atom_numbers = heap.slice(nAtomNumber.as_const())?;
-            let atom_numbers = atom_numbers
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom_numbers = atom_numbers.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut nCurrentRank = num_atoms as AT_RANK;
             let last_atom = usize::from(atom_numbers[count - 1]);
             *new_ranks
@@ -7908,9 +7511,7 @@ pub(crate) fn SetInitialRanks2(
                     nCurrentRank = i as AT_RANK;
                 }
                 let atom = usize::from(atom_numbers[i - 1]);
-                *new_ranks
-                    .get_mut(atom)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = nCurrentRank;
+                *new_ranks.get_mut(atom).ok_or(SourceHeapError::PointerOutOfBounds)? = nCurrentRank;
                 i -= 1;
             }
             Ok(())
@@ -8105,8 +7706,7 @@ pub(crate) fn FillOutAtomInvariant2(
 
     const ELEM_NAME_LEN: usize = 2;
     let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let total_count =
-        usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let total_count = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if total_count < atom_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -8147,10 +7747,7 @@ pub(crate) fn FillOutAtomInvariant2(
         let mut n_num_hydrogen_atoms = 0_i32;
         let mut n_num_carbon_atoms = 0_i32;
         let find_element = |elements: &[u8], pair: [u8; 2]| -> Option<usize> {
-            let end = elements
-                .iter()
-                .position(|byte| *byte == 0)
-                .unwrap_or(elements.len());
+            let end = elements.iter().position(|byte| *byte == 0).unwrap_or(elements.len());
             elements[..end].windows(2).position(|window| window == pair)
         };
 
@@ -8212,10 +7809,8 @@ pub(crate) fn FillOutAtomInvariant2(
                 let hill_order = find_element(&chem_elements, pair)
                     .map(|offset| offset / ELEM_NAME_LEN + 1)
                     .unwrap_or(n_num_chem_elements);
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
-                    hill_order as AT_NUMB;
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
-                    atom.valence as AT_NUMB;
+                invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] = hill_order as AT_NUMB;
+                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] = atom.valence as AT_NUMB;
                 if bHydrogensInRanks != 0 {
                     invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_H as usize] =
                         if t_groups.is_some() && atom.endpoint > 0 {
@@ -8241,22 +7836,16 @@ pub(crate) fn FillOutAtomInvariant2(
                     let group = groups
                         .get(group_index as usize)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
-                        group.nNumEndpoints;
+                    invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] = group.nNumEndpoints;
                     for j in 0..T_NUM_NO_ISOTOPIC as usize {
-                        invariants[index].val
-                            [tagAtInvariantIndexes_AT_INV_TG_NUMBERS as usize + j] = group.num[j];
+                        invariants[index].val[tagAtInvariantIndexes_AT_INV_TG_NUMBERS as usize + j] = group.num[j];
                     }
                     for j in 0..num_tautomer_iso as usize {
                         invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
                             group.num[j + T_NUM_NO_ISOTOPIC as usize];
                     }
                 }
-                invariants[index].iso_sort_key = if bIgnoreIsotopic != 0 {
-                    0
-                } else {
-                    atom.iso_sort_key
-                };
+                invariants[index].iso_sort_key = if bIgnoreIsotopic != 0 { 0 } else { atom.iso_sort_key };
             }
         } else {
             invariants.fill(ATOM_INVARIANT2::default());
@@ -8268,23 +7857,17 @@ pub(crate) fn FillOutAtomInvariant2(
             let Some(groups) = t_groups else {
                 continue;
             };
-            invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
-                if bTautGroupsOnly != 0 {
-                    num_at_tg as AT_NUMB
-                } else {
-                    (n_num_chem_elements + 1) as AT_NUMB
-                };
-            invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
-                (MAXVAL + 1) as AT_NUMB;
+            invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] = if bTautGroupsOnly != 0 {
+                num_at_tg as AT_NUMB
+            } else {
+                (n_num_chem_elements + 1) as AT_NUMB
+            };
+            invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] = (MAXVAL + 1) as AT_NUMB;
             if (group_index as i32) < num_t_groups {
-                let group = groups
-                    .get(group_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
-                    group.nNumEndpoints;
+                let group = groups.get(group_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] = group.nNumEndpoints;
                 for j in 0..T_NUM_NO_ISOTOPIC as usize {
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
-                        group.num[j];
+                    invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] = group.num[j];
                 }
                 for j in 0..num_tautomer_iso as usize {
                     invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
@@ -8297,11 +7880,7 @@ pub(crate) fn FillOutAtomInvariant2(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CleanNumH(
-    heap: &mut SourceHeap,
-    NumH: SourceMutPointer<NUM_H>,
-    len: i32,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn CleanNumH(heap: &mut SourceHeap, NumH: SourceMutPointer<NUM_H>, len: i32) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4881 CleanNumH
     // INCHI✔️✔️: void CleanNumH( NUM_H *NumH, int len )
     // INCHI✔️✔️: {
@@ -8333,9 +7912,7 @@ pub(crate) fn CleanNumH(
     }
     let count = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let values = heap.slice_mut(NumH)?;
-    let values = values
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let values = values.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for value in values {
         *value = if *value == EMPTY_H_NUMBER as NUM_H {
             0
@@ -8347,11 +7924,7 @@ pub(crate) fn CleanNumH(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CleanCt(
-    heap: &mut SourceHeap,
-    Ct: SourceMutPointer<AT_RANK>,
-    len: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn CleanCt(heap: &mut SourceHeap, Ct: SourceMutPointer<AT_RANK>, len: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4902 CleanCt
     // INCHI✔️✔️: int CleanCt( AT_RANK *Ct, int len )
     // INCHI✔️✔️: {
@@ -8415,9 +7988,7 @@ pub(crate) fn CleanIsoSortKeys(
     }
     let count = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let values = heap.slice_mut(isk)?;
-    let values = values
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let values = values.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for value in values {
         if *value == AT_ISO_SORT_KEY::MAX {
             *value = 0;
@@ -8427,10 +7998,7 @@ pub(crate) fn CleanIsoSortKeys(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn DeAllocBCN(
-    heap: &mut SourceHeap,
-    pBCN: Option<&mut BCN>,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn DeAllocBCN(heap: &mut SourceHeap, pBCN: Option<&mut BCN>) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4960 DeAllocBCN
     // INCHI✔️❌: void DeAllocBCN( BCN *pBCN )
     // INCHI✔️❌: {
@@ -8569,10 +8137,7 @@ fn con_table_is_usable(table: &ConTable, data: &CANON_DATA) -> bool {
         && (data.iso_exchg_atnos.is_null() || !table.iso_exchg_atnos.is_null())
 }
 
-fn free_con_table(
-    heap: &mut SourceHeap,
-    pointer: SourceMutPointer<ConTable>,
-) -> Result<(), SourceHeapError> {
+fn free_con_table(heap: &mut SourceHeap, pointer: SourceMutPointer<ConTable>) -> Result<(), SourceHeapError> {
     if pointer.is_null() {
         return Ok(());
     }
@@ -10531,18 +10096,14 @@ pub(crate) fn GetBaseCanonRanking(
                     || (info.tni.bNormalizationFlags & u64::from(FLAG_NORM_CONSIDER_TAUT)) != 0
                     || (info.nNumIsotopicEndpoints > 1
                         && (info.bTautFlagsDone
-                            & u64::from(
-                                TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-                            ))
+                            & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
                             != 0))
         });
 
         if has_taut_input && taut_info_is_active {
             i_base = taut_yes;
             b_req_taut = 1;
-            let info = t_group_info
-                .as_deref()
-                .ok_or(SourceHeapError::NullPointer)?;
+            let info = t_group_info.as_deref().ok_or(SourceHeapError::NullPointer)?;
             if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
                 i_other = taut_non;
                 b_req_non_taut = 1;
@@ -10550,8 +10111,7 @@ pub(crate) fn GetBaseCanonRanking(
                 i_other = i_base;
             }
             let use_iso_aux = sizes[i_base].nLenIsotopicEndpoints > 1
-                && (info.bTautFlagsDone
-                    & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
+                && (info.bTautFlagsDone & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
                     != 0;
             b_use_iso_aux_base[i_base] = use_iso_aux;
         } else if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
@@ -10572,9 +10132,7 @@ pub(crate) fn GetBaseCanonRanking(
         }
 
         if b_req_taut != 0 {
-            let info = t_group_info
-                .as_deref_mut()
-                .ok_or(SourceHeapError::NullPointer)?;
+            let info = t_group_info.as_deref_mut().ok_or(SourceHeapError::NullPointer)?;
             b_taut_ignore_isotopic = info.bIgnoreIsotopic;
             info.bIgnoreIsotopic = 1;
         }
@@ -10604,11 +10162,9 @@ pub(crate) fn GetBaseCanonRanking(
                 ret = CT_OUT_OF_RAM;
                 break 'source;
             }
-            neigh_list[taut_non] =
-                CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
+            neigh_list[taut_non] = CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
         } else {
-            neigh_list[taut_non] =
-                CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
+            neigh_list[taut_non] = CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
         }
         if neigh_list[taut_non].is_null() {
             ret = CT_OUT_OF_RAM;
@@ -10634,14 +10190,7 @@ pub(crate) fn GetBaseCanonRanking(
             0,
             None,
         )?;
-        let mut n_num_curr_ranks = SetInitialRanks2(
-            heap,
-            num_atoms,
-            p_atom_invariant,
-            n_rank,
-            n_atom_number,
-            pCG,
-        )?;
+        let mut n_num_curr_ranks = SetInitialRanks2(heap, num_atoms, p_atom_invariant, n_rank, n_atom_number, pCG)?;
         n_num_curr_ranks = DifferentiateRanks2(
             heap,
             pCG,
@@ -10667,8 +10216,8 @@ pub(crate) fn GetBaseCanonRanking(
         pBCN.nMaxLenRankStack = n_max_len_rank_stack;
         source_set(heap, pBCN.pRankStack, 0, n_rank)?;
         source_set(heap, pBCN.pRankStack, 1, n_atom_number)?;
-        let partition_count = usize::try_from(n_max_len_rank_stack / 2)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let partition_count =
+            usize::try_from(n_max_len_rank_stack / 2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut partitions = vec![Partition::default(); partition_count];
         partitions[0] = Partition {
             Rank: n_rank,
@@ -10765,8 +10314,7 @@ pub(crate) fn GetBaseCanonRanking(
         n_canon_rank_no_taut_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
         n_atom_number_canon_no_taut_h = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
         num_h_no_taut_h = alloc_or_exit!(NUM_H, max_len_num_h_no_taut_h, 2, 'source);
-        let atom_count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for index in 0..atom_count {
             let atom = heap
                 .slice(at_base.as_const())?
@@ -10986,12 +10534,7 @@ pub(crate) fn GetBaseCanonRanking(
                     num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
                     source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
                 } else {
-                    source_set(
-                        heap,
-                        iso_sort_key_no_taut_h,
-                        index as i32,
-                        AT_ISO_SORT_KEY::MAX,
-                    )?;
+                    source_set(heap, iso_sort_key_no_taut_h, index as i32, AT_ISO_SORT_KEY::MAX)?;
                 }
             }
 
@@ -11021,10 +10564,7 @@ pub(crate) fn GetBaseCanonRanking(
             if num_iso_no_taut_h != 0 {
                 for value in heap
                     .slice_mut(n_temp_rank)?
-                    .get_mut(
-                        ..usize::try_from(num_max)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                 {
                     *value = 0;
@@ -11167,9 +10707,7 @@ pub(crate) fn GetBaseCanonRanking(
 
         if b_req_taut != 0 {
             max_len_num_h = num_atoms
-                .wrapping_add(
-                    (T_NUM_NO_ISOTOPIC as i32).wrapping_mul(num_at_tg.wrapping_sub(num_atoms)),
-                )
+                .wrapping_add((T_NUM_NO_ISOTOPIC as i32).wrapping_mul(num_at_tg.wrapping_sub(num_atoms)))
                 .wrapping_add(1);
             n_symm_rank_base = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
             n_canon_rank_base = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
@@ -11188,9 +10726,7 @@ pub(crate) fn GetBaseCanonRanking(
                 };
                 source_set(heap, num_h, index as i32, value)?;
             }
-            let info = t_group_info
-                .as_deref()
-                .ok_or(SourceHeapError::NullPointer)?;
+            let info = t_group_info.as_deref().ok_or(SourceHeapError::NullPointer)?;
             let mut next_h = num_atoms;
             let mut index = num_atoms;
             while index < num_at_tg {
@@ -11250,14 +10786,7 @@ pub(crate) fn GetBaseCanonRanking(
                 let rank = source_get(heap, partitions[0].Rank, index as i32)?;
                 heap.slice_mut(p_atom_invariant)?[index].val[0] = rank;
             }
-            n_num_curr_ranks = SetInitialRanks2(
-                heap,
-                num_at_tg,
-                p_atom_invariant,
-                n_rank,
-                n_atom_number,
-                pCG,
-            )?;
+            n_num_curr_ranks = SetInitialRanks2(heap, num_at_tg, p_atom_invariant, n_rank, n_atom_number, pCG)?;
             n_num_curr_ranks = DifferentiateRanks4(
                 heap,
                 pCG,
@@ -11273,9 +10802,7 @@ pub(crate) fn GetBaseCanonRanking(
 
             for value in heap
                 .slice_mut(p_atom_invariant_aux)?
-                .get_mut(
-                    ..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
             {
                 *value = ATOM_INVARIANT2::default();
@@ -11287,11 +10814,9 @@ pub(crate) fn GetBaseCanonRanking(
                 invariant.val[0] = symmetry;
                 invariant.val[1] = hydrogen;
             }
-            let total_count =
-                usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let total_count = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             for index in atom_count..total_count {
-                heap.slice_mut(p_atom_invariant_aux)?[index].val[0] =
-                    source_get(heap, n_rank, index as i32)?;
+                heap.slice_mut(p_atom_invariant_aux)?[index].val[0] = source_get(heap, n_rank, index as i32)?;
             }
             n_num_curr_ranks = SetInitialRanks2(
                 heap,
@@ -11344,8 +10869,7 @@ pub(crate) fn GetBaseCanonRanking(
                 break 'source;
             }
 
-            let needs_taut_isotope = (sizes[i_base].num_isotopic_atoms != 0
-                && sizes[i_base].bIgnoreIsotopic == 0)
+            let needs_taut_isotope = (sizes[i_base].num_isotopic_atoms != 0 && sizes[i_base].bIgnoreIsotopic == 0)
                 || (sizes[i_base].bHasIsotopicTautGroups != 0 && b_taut_ignore_isotopic == 0)
                 || (b_use_iso_aux_base[i_base] && b_taut_ignore_isotopic == 0);
             if needs_taut_isotope {
@@ -11376,8 +10900,7 @@ pub(crate) fn GetBaseCanonRanking(
                 for index in 0..atom_count {
                     let atom = heap.slice(at_base.as_const())?[index].clone();
                     let key = if atom.endpoint != 0
-                        || (!iso_exchg_atnos.is_null()
-                            && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0)
+                        || (!iso_exchg_atnos.is_null() && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0)
                     {
                         if !iso_exchg_atnos.is_null() && atom.endpoint == 0 {
                             num_iso_no_aux_base = num_iso_no_aux_base.wrapping_add(1);
@@ -11403,22 +10926,14 @@ pub(crate) fn GetBaseCanonRanking(
                 }
 
                 if !iso_exchg_atnos.is_null() {
-                    let info = t_group_info
-                        .as_deref()
-                        .ok_or(SourceHeapError::NullPointer)?;
-                    if num_iso_no_aux_base
-                        != i32::from(source_get(heap, info.nIsotopicEndpointAtomNumber, 0)?)
-                    {
+                    let info = t_group_info.as_deref().ok_or(SourceHeapError::NullPointer)?;
+                    if num_iso_no_aux_base != i32::from(source_get(heap, info.nIsotopicEndpointAtomNumber, 0)?) {
                         ret = CT_ISOCOUNT_ERR;
                         break 'source;
                     }
                     let mut endpoint = 1_i32;
                     while endpoint <= num_iso_no_aux_base {
-                        let atom_index = i32::from(source_get(
-                            heap,
-                            info.nIsotopicEndpointAtomNumber,
-                            endpoint,
-                        )?);
+                        let atom_index = i32::from(source_get(heap, info.nIsotopicEndpointAtomNumber, endpoint)?);
                         let atom = source_clone(heap, at_base, atom_index)?;
                         if atom.endpoint != 0 || (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) == 0 {
                             ret = CT_ISOCOUNT_ERR;
@@ -11434,12 +10949,9 @@ pub(crate) fn GetBaseCanonRanking(
                         source_set(heap, iso_sort_key_base, index, AT_ISO_SORT_KEY::MAX)?;
                     }
                 } else {
-                    let info = t_group_info
-                        .as_deref()
-                        .ok_or(SourceHeapError::NullPointer)?;
+                    let info = t_group_info.as_deref().ok_or(SourceHeapError::NullPointer)?;
                     for index in num_atoms..num_at_tg {
-                        let group =
-                            source_clone(heap, info.t_group, index.wrapping_sub(num_atoms))?;
+                        let group = source_clone(heap, info.t_group, index.wrapping_sub(num_atoms))?;
                         if group.iWeight != 0 {
                             num_iso_base = num_iso_base.wrapping_add(1);
                             source_set(heap, iso_sort_key_base, index, group.iWeight)?;
@@ -11494,45 +11006,26 @@ pub(crate) fn GetBaseCanonRanking(
                     if num_iso_no_taut_h != 0 || num_iso_base != 0 || num_iso_no_aux_base != 0 {
                         for value in heap
                             .slice_mut(n_temp_rank)?
-                            .get_mut(
-                                ..usize::try_from(num_max)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                         {
                             *value = 0;
                         }
                         for index in 0..total_count {
                             let rank = source_get(heap, n_symm_rank_base, index as i32)?;
-                            if source_get(heap, n_temp_rank, i32::from(rank) - 1)?
-                                < index as AT_RANK
-                            {
-                                source_set(
-                                    heap,
-                                    n_temp_rank,
-                                    i32::from(rank) - 1,
-                                    index as AT_RANK,
-                                )?;
+                            if source_get(heap, n_temp_rank, i32::from(rank) - 1)? < index as AT_RANK {
+                                source_set(heap, n_temp_rank, i32::from(rank) - 1, index as AT_RANK)?;
                             }
                         }
                         for index in 0..total_count {
                             let rank = source_get(heap, n_symm_rank_base, index as i32)?;
-                            let representative =
-                                source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
+                            let representative = source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
                             let isotope_differs = !iso_sort_key_base.is_null()
                                 && source_get(heap, iso_sort_key_base, index as i32)?
-                                    != source_get(
-                                        heap,
-                                        iso_sort_key_base,
-                                        i32::from(representative),
-                                    )?;
+                                    != source_get(heap, iso_sort_key_base, i32::from(representative))?;
                             let exchange_differs = !iso_exchg_atnos.is_null()
                                 && source_get(heap, iso_exchg_atnos, index as i32)?
-                                    != source_get(
-                                        heap,
-                                        iso_exchg_atnos,
-                                        i32::from(representative),
-                                    )?;
+                                    != source_get(heap, iso_exchg_atnos, i32::from(representative))?;
                             if isotope_differs || exchange_differs {
                                 canon_data[i_base].nCanonFlags |= CANON_FLAG_ISO_TAUT_DIFF as i32;
                                 needs_iso_canon = true;
@@ -11544,10 +11037,7 @@ pub(crate) fn GetBaseCanonRanking(
                     if needs_iso_canon {
                         for value in heap
                             .slice_mut(p_atom_invariant_aux)?
-                            .get_mut(
-                                ..usize::try_from(num_max)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                         {
                             *value = ATOM_INVARIANT2::default();
@@ -11739,9 +11229,7 @@ pub(crate) fn GetBaseCanonRanking(
             }
             for value in heap
                 .slice_mut(p_atom_invariant_aux)?
-                .get_mut(
-                    ..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
             {
                 *value = ATOM_INVARIANT2::default();
@@ -11804,12 +11292,10 @@ pub(crate) fn GetBaseCanonRanking(
                 break 'source;
             }
 
-            let mut isotopic_fixed_h = (sizes[i_base].num_isotopic_atoms != 0
-                && sizes[i_base].bIgnoreIsotopic == 0)
+            let mut isotopic_fixed_h = (sizes[i_base].num_isotopic_atoms != 0 && sizes[i_base].bIgnoreIsotopic == 0)
                 || (sizes[i_base].bHasIsotopicTautGroups != 0 && b_taut_ignore_isotopic == 0);
             if bFixIsoFixedH != 0 {
-                isotopic_fixed_h |=
-                    sizes[i_other].num_isotopic_atoms != 0 && sizes[i_other].bIgnoreIsotopic == 0;
+                isotopic_fixed_h |= sizes[i_other].num_isotopic_atoms != 0 && sizes[i_other].bIgnoreIsotopic == 0;
             }
             if isotopic_fixed_h {
                 max_len_iso_sort_key_no_taut_h = num_atoms.wrapping_add(1);
@@ -11839,12 +11325,7 @@ pub(crate) fn GetBaseCanonRanking(
                         num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
                         source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
                     } else {
-                        source_set(
-                            heap,
-                            iso_sort_key_no_taut_h,
-                            index as i32,
-                            AT_ISO_SORT_KEY::MAX,
-                        )?;
+                        source_set(heap, iso_sort_key_no_taut_h, index as i32, AT_ISO_SORT_KEY::MAX)?;
                     }
                 }
                 len_iso_sort_key_no_taut_h = num_atoms;
@@ -11873,10 +11354,7 @@ pub(crate) fn GetBaseCanonRanking(
                 if num_iso_no_taut_h != 0 {
                     for value in heap
                         .slice_mut(n_temp_rank)?
-                        .get_mut(
-                            ..usize::try_from(num_max)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                     {
                         *value = 0;
@@ -11902,10 +11380,7 @@ pub(crate) fn GetBaseCanonRanking(
                     canon_data[i_other].nCanonFlags |= CANON_FLAG_ISO_FIXED_H_DIFF as i32;
                     for value in heap
                         .slice_mut(p_atom_invariant_aux)?
-                        .get_mut(
-                            ..usize::try_from(num_max)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                     {
                         *value = ATOM_INVARIANT2::default();
@@ -12019,8 +11494,8 @@ pub(crate) fn GetBaseCanonRanking(
         ret = 0;
         let no_h = source_clone(heap, ct_no_h, 0)?;
         let no_taut_h = source_clone(heap, ct_no_taut_h, 0)?;
-        let mut inconsistent = no_h.lenCt != no_taut_h.lenCt
-            || !source_prefix_equal(heap, no_h.Ctbl, no_taut_h.Ctbl, no_h.lenCt)?;
+        let mut inconsistent =
+            no_h.lenCt != no_taut_h.lenCt || !source_prefix_equal(heap, no_h.Ctbl, no_taut_h.Ctbl, no_h.lenCt)?;
         if b_req_taut != 0 {
             if !ct_fix_h.is_null() {
                 let fixed = source_clone(heap, ct_fix_h, 0)?;
@@ -12030,22 +11505,22 @@ pub(crate) fn GetBaseCanonRanking(
                     || !source_prefix_equal(heap, no_taut_h.NumH, fixed.NumH, no_taut_h.lenNumH)?;
             }
             let base = source_clone(heap, ct_base, 0)?;
-            inconsistent |= no_taut_h.lenCt > base.lenCt
-                || !source_prefix_equal(heap, no_taut_h.Ctbl, base.Ctbl, no_taut_h.lenCt)?;
+            inconsistent |=
+                no_taut_h.lenCt > base.lenCt || !source_prefix_equal(heap, no_taut_h.Ctbl, base.Ctbl, no_taut_h.lenCt)?;
             inconsistent |= no_taut_h.lenNumH > base.lenNumH
                 || !source_prefix_equal(heap, no_taut_h.NumH, base.NumH, no_taut_h.lenNumH)?;
         }
         if !ct_no_taut_h_iso.is_null() {
             let isotopic = source_clone(heap, ct_no_taut_h_iso, 0)?;
-            inconsistent |= no_h.lenCt != isotopic.lenCt
-                || !source_prefix_equal(heap, no_h.Ctbl, isotopic.Ctbl, no_h.lenCt)?;
+            inconsistent |=
+                no_h.lenCt != isotopic.lenCt || !source_prefix_equal(heap, no_h.Ctbl, isotopic.Ctbl, no_h.lenCt)?;
             inconsistent |= no_taut_h.lenNumH != isotopic.lenNumH
                 || !source_prefix_equal(heap, no_taut_h.NumH, isotopic.NumH, no_taut_h.lenNumH)?;
         } else if !ct_base_iso.is_null() {
             let base = source_clone(heap, ct_base, 0)?;
             let base_iso = source_clone(heap, ct_base_iso, 0)?;
-            inconsistent |= base_iso.lenCt != base.lenCt
-                || !source_prefix_equal(heap, base_iso.Ctbl, base.Ctbl, base_iso.lenCt)?;
+            inconsistent |=
+                base_iso.lenCt != base.lenCt || !source_prefix_equal(heap, base_iso.Ctbl, base.Ctbl, base_iso.lenCt)?;
             inconsistent |= base_iso.lenNumH != base.lenNumH
                 || !source_prefix_equal(heap, base_iso.NumH, base.NumH, base_iso.lenNumH)?;
             if !ct_fix_h_iso.is_null() {
@@ -12053,12 +11528,7 @@ pub(crate) fn GetBaseCanonRanking(
                 inconsistent |= fixed_iso.lenCt > base_iso.lenCt
                     || !source_prefix_equal(heap, fixed_iso.Ctbl, base_iso.Ctbl, fixed_iso.lenCt)?;
                 inconsistent |= fixed_iso.lenNumH > base_iso.lenNumH
-                    || !source_prefix_equal(
-                        heap,
-                        fixed_iso.NumH,
-                        base_iso.NumH,
-                        fixed_iso.lenNumH,
-                    )?;
+                    || !source_prefix_equal(heap, fixed_iso.NumH, base_iso.NumH, fixed_iso.lenNumH)?;
             }
         }
         if inconsistent {
@@ -12314,17 +11784,13 @@ mod tests {
             atom
         }
 
-        fn run_taut_aux_allocation_case(
-            failure_ordinal: Option<u64>,
-        ) -> (Result<i32, SourceHeapError>, u64, usize) {
+        fn run_taut_aux_allocation_case(failure_ordinal: Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize) {
             let mut heap = SourceHeap::default();
             let mut endpoint = atom(b"N", 0);
             endpoint.endpoint = 1;
             let mut exchange = atom(b"N", 0);
             exchange.cFlags = AT_FLAG_ISO_H_POINT as i8;
-            let atoms = heap
-                .allocate_model_storage(vec![endpoint, exchange])
-                .unwrap();
+            let atoms = heap.allocate_model_storage(vec![endpoint, exchange]).unwrap();
             let groups = heap
                 .allocate_model_storage(vec![T_GROUP {
                     num: [1, 0, 0, 0, 0],
@@ -12386,9 +11852,7 @@ mod tests {
             (result, allocation_calls, heap.live_allocation_count())
         }
 
-        fn run_fixed_iso_allocation_case(
-            failure_ordinal: Option<u64>,
-        ) -> (Result<i32, SourceHeapError>, u64, usize) {
+        fn run_fixed_iso_allocation_case(failure_ordinal: Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize) {
             let mut heap = SourceHeap::default();
             let mut base_first = atom(b"N", 0);
             base_first.endpoint = 1;
@@ -12398,12 +11862,8 @@ mod tests {
             other_first.num_H = 1;
             let mut other_second = other_first.clone();
             other_second.iso_atw_diff = 1;
-            let base_atoms = heap
-                .allocate_model_storage(vec![base_first, base_second])
-                .unwrap();
-            let other_atoms = heap
-                .allocate_model_storage(vec![other_first, other_second])
-                .unwrap();
+            let base_atoms = heap.allocate_model_storage(vec![base_first, base_second]).unwrap();
+            let other_atoms = heap.allocate_model_storage(vec![other_first, other_second]).unwrap();
             let groups = heap
                 .allocate_model_storage(vec![T_GROUP {
                     num: [2, 0, 0, 0, 0],
@@ -12534,31 +11994,16 @@ mod tests {
             let output = &bcn.ftcn[TAUT_NON as usize];
             assert_eq!((output.num_atoms, output.num_at_tg), (1, 1));
             assert_eq!(heap.slice(output.LinearCt.as_const()).unwrap()[0], 1);
-            assert_eq!(
-                heap.slice(output.PartitionCt.Rank.as_const()).unwrap(),
-                &[1]
-            );
-            assert_eq!(
-                heap.slice(output.PartitionCt.AtNumber.as_const()).unwrap(),
-                &[0]
-            );
+            assert_eq!(heap.slice(output.PartitionCt.Rank.as_const()).unwrap(), &[1]);
+            assert_eq!(heap.slice(output.PartitionCt.AtNumber.as_const()).unwrap(), &[0]);
             assert_eq!(heap.slice(output.nSymmRankCt.as_const()).unwrap(), &[1]);
             assert_eq!(heap.slice(output.nNumHOrig.as_const()).unwrap()[0], 0);
             assert_eq!(heap.slice(output.nNumH.as_const()).unwrap()[0], 0);
             if isotopic {
-                assert_eq!(
-                    heap.slice(output.PartitionCtIso.Rank.as_const()).unwrap(),
-                    &[1]
-                );
+                assert_eq!(heap.slice(output.PartitionCtIso.Rank.as_const()).unwrap(), &[1]);
                 assert_eq!(output.len_iso_sort_keys, 1);
-                assert_eq!(
-                    heap.slice(output.iso_sort_keys.as_const()).unwrap()[0],
-                    32768
-                );
-                assert_eq!(
-                    heap.slice(output.iso_sort_keysOrig.as_const()).unwrap()[0],
-                    32768
-                );
+                assert_eq!(heap.slice(output.iso_sort_keys.as_const()).unwrap()[0], 32768);
+                assert_eq!(heap.slice(output.iso_sort_keysOrig.as_const()).unwrap()[0], 32768);
             } else {
                 assert!(output.PartitionCtIso.Rank.is_null());
                 assert!(output.iso_sort_keys.is_null());
@@ -12622,9 +12067,7 @@ mod tests {
         let first = atom(b"C", 0);
         let mut second = atom(b"C", 1);
         second.num_H = 1;
-        let differentiated_atoms = differentiated_heap
-            .allocate_model_storage(vec![first, second])
-            .unwrap();
+        let differentiated_atoms = differentiated_heap.allocate_model_storage(vec![first, second]).unwrap();
         let mut differentiated_sizes = std::array::from_fn(|_| ATOM_SIZES::default());
         differentiated_sizes[TAUT_NON as usize] = ATOM_SIZES {
             num_isotopic_atoms: 1,
@@ -12655,10 +12098,7 @@ mod tests {
             Ok(0)
         );
         let differentiated_output = &differentiated_bcn.ftcn[TAUT_NON as usize];
-        assert_ne!(
-            differentiated_output.nCanonFlags & CANON_FLAG_NO_TAUT_H_DIFF as i32,
-            0
-        );
+        assert_ne!(differentiated_output.nCanonFlags & CANON_FLAG_NO_TAUT_H_DIFF as i32, 0);
         assert_eq!(
             differentiated_output.nCanonFlags & CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF as i32,
             0
@@ -12721,10 +12161,7 @@ mod tests {
             Ok(0)
         );
         let isotope_split_output = &isotope_split_bcn.ftcn[TAUT_NON as usize];
-        assert_eq!(
-            isotope_split_output.nCanonFlags & CANON_FLAG_NO_TAUT_H_DIFF as i32,
-            0
-        );
+        assert_eq!(isotope_split_output.nCanonFlags & CANON_FLAG_NO_TAUT_H_DIFF as i32, 0);
         assert_ne!(
             isotope_split_output.nCanonFlags & CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF as i32,
             0
@@ -12776,11 +12213,7 @@ mod tests {
                     None,
                     i64::from(timed_out),
                 ),
-                Ok(if timed_out {
-                    CT_TIMEOUT_ERR
-                } else {
-                    CT_USER_QUIT_ERR
-                })
+                Ok(if timed_out { CT_TIMEOUT_ERR } else { CT_USER_QUIT_ERR })
             );
             DeAllocBCN(&mut error_heap, Some(&mut error_bcn)).unwrap();
             SetBitFree(&mut error_heap, &mut error_globals).unwrap();
@@ -12788,20 +12221,14 @@ mod tests {
             if !timeout.is_null() {
                 inchi_free(&mut error_heap, timeout).unwrap();
             }
-            assert_eq!(
-                error_heap.live_allocation_count(),
-                0,
-                "timed_out={timed_out}"
-            );
+            assert_eq!(error_heap.live_allocation_count(), 0, "timed_out={timed_out}");
         }
 
         let mut taut_heap = SourceHeap::default();
         let mut endpoint_atom = atom(b"N", 0);
         endpoint_atom.endpoint = 1;
         endpoint_atom.num_H = 1;
-        let taut_atoms = taut_heap
-            .allocate_model_storage(vec![endpoint_atom])
-            .unwrap();
+        let taut_atoms = taut_heap.allocate_model_storage(vec![endpoint_atom]).unwrap();
         let groups = taut_heap
             .allocate_model_storage(vec![T_GROUP {
                 num: [1, 0, 0, 0, 0],
@@ -12858,9 +12285,7 @@ mod tests {
             &[1, 2, 1]
         );
         assert_eq!(
-            taut_heap
-                .slice(taut_output.PartitionCt.Rank.as_const())
-                .unwrap(),
+            taut_heap.slice(taut_output.PartitionCt.Rank.as_const()).unwrap(),
             &[1, 2]
         );
         assert_eq!(
@@ -12891,9 +12316,7 @@ mod tests {
                 ..T_GROUP::default()
             }])
             .unwrap();
-        let taut_isotope_endpoints = taut_isotope_heap
-            .allocate_model_storage(vec![0_u16, 1])
-            .unwrap();
+        let taut_isotope_endpoints = taut_isotope_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
         let mut taut_isotope_info = T_GROUP_INFO {
             t_group: taut_isotope_groups,
             nEndpointAtomNumber: taut_isotope_endpoints,
@@ -12932,10 +12355,7 @@ mod tests {
             Ok(0)
         );
         let taut_isotope_output = &taut_isotope_bcn.ftcn[TAUT_YES as usize];
-        assert_ne!(
-            taut_isotope_output.nCanonFlags & CANON_FLAG_ISO_TAUT_DIFF as i32,
-            0
-        );
+        assert_ne!(taut_isotope_output.nCanonFlags & CANON_FLAG_ISO_TAUT_DIFF as i32, 0);
         assert_eq!(taut_isotope_output.len_iso_sort_keys, 3);
         assert_eq!(
             &taut_isotope_heap
@@ -12963,12 +12383,8 @@ mod tests {
         fixed_base_atom.num_H = 1;
         let mut fixed_other_atom = atom(b"N", 1);
         fixed_other_atom.num_H = 2;
-        let fixed_base_atoms = fixed_heap
-            .allocate_model_storage(vec![fixed_base_atom])
-            .unwrap();
-        let fixed_other_atoms = fixed_heap
-            .allocate_model_storage(vec![fixed_other_atom])
-            .unwrap();
+        let fixed_base_atoms = fixed_heap.allocate_model_storage(vec![fixed_base_atom]).unwrap();
+        let fixed_other_atoms = fixed_heap.allocate_model_storage(vec![fixed_other_atom]).unwrap();
         let fixed_groups = fixed_heap
             .allocate_model_storage(vec![T_GROUP {
                 num: [1, 0, 0, 0, 0],
@@ -13022,39 +12438,22 @@ mod tests {
             Ok(0)
         );
         let fixed_taut_output = &fixed_bcn.ftcn[TAUT_YES as usize];
-        assert_eq!(
-            (fixed_taut_output.num_atoms, fixed_taut_output.num_at_tg),
-            (1, 2)
-        );
+        assert_eq!((fixed_taut_output.num_atoms, fixed_taut_output.num_at_tg), (1, 2));
         let fixed_non_output = &fixed_bcn.ftcn[TAUT_NON as usize];
-        assert_eq!(
-            (fixed_non_output.num_atoms, fixed_non_output.num_at_tg),
-            (1, 1)
-        );
+        assert_eq!((fixed_non_output.num_atoms, fixed_non_output.num_at_tg), (1, 1));
         assert_eq!(fixed_non_output.nLenNumHFixH, 1);
         assert_eq!(
-            fixed_heap
-                .slice(fixed_non_output.nNumHOrigFixH.as_const())
-                .unwrap()[0],
+            fixed_heap.slice(fixed_non_output.nNumHOrigFixH.as_const()).unwrap()[0],
             2
         );
-        assert_eq!(
-            fixed_heap
-                .slice(fixed_non_output.nNumHFixH.as_const())
-                .unwrap()[0],
-            2
-        );
+        assert_eq!(fixed_heap.slice(fixed_non_output.nNumHFixH.as_const()).unwrap()[0], 2);
         assert_eq!(fixed_non_output.len_iso_sort_keys, 1);
         assert_eq!(
-            fixed_heap
-                .slice(fixed_non_output.iso_sort_keys.as_const())
-                .unwrap()[0],
+            fixed_heap.slice(fixed_non_output.iso_sort_keys.as_const()).unwrap()[0],
             32768
         );
         assert_eq!(
-            fixed_heap
-                .slice(fixed_non_output.iso_sort_keysOrig.as_const())
-                .unwrap()[0],
+            fixed_heap.slice(fixed_non_output.iso_sort_keysOrig.as_const()).unwrap()[0],
             32768
         );
         DeAllocBCN(&mut fixed_heap, Some(&mut fixed_bcn)).unwrap();
@@ -13089,9 +12488,7 @@ mod tests {
                 ..T_GROUP::default()
             }])
             .unwrap();
-        let fixed_iso_endpoint_numbers = fixed_iso_heap
-            .allocate_model_storage(vec![0_u16, 1])
-            .unwrap();
+        let fixed_iso_endpoint_numbers = fixed_iso_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
         let mut fixed_iso_info = T_GROUP_INFO {
             t_group: fixed_iso_groups,
             nEndpointAtomNumber: fixed_iso_endpoint_numbers,
@@ -13135,10 +12532,7 @@ mod tests {
             Ok(0)
         );
         let fixed_iso_output = &fixed_iso_bcn.ftcn[TAUT_NON as usize];
-        assert_ne!(
-            fixed_iso_output.nCanonFlags & CANON_FLAG_ISO_FIXED_H_DIFF as i32,
-            0
-        );
+        assert_ne!(fixed_iso_output.nCanonFlags & CANON_FLAG_ISO_FIXED_H_DIFF as i32, 0);
         assert_eq!(fixed_iso_output.len_iso_sort_keys, 2);
         assert_eq!(
             &fixed_iso_heap
@@ -13228,9 +12622,7 @@ mod tests {
                 assert!(output.iso_sort_keys.is_null());
                 assert!(output.iso_sort_keysOrig.is_null());
                 assert_eq!(
-                    &aux_heap
-                        .slice(output.iso_exchg_atnosOrig.as_const())
-                        .unwrap()[..3],
+                    &aux_heap.slice(output.iso_exchg_atnosOrig.as_const()).unwrap()[..3],
                     &[0, 0, 0]
                 );
                 assert_eq!(
@@ -13260,13 +12652,11 @@ mod tests {
         for (name, run_case) in [
             (
                 "taut_aux",
-                run_taut_aux_allocation_case
-                    as fn(Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize),
+                run_taut_aux_allocation_case as fn(Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize),
             ),
             (
                 "fixed_iso",
-                run_fixed_iso_allocation_case
-                    as fn(Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize),
+                run_fixed_iso_allocation_case as fn(Option<u64>) -> (Result<i32, SourceHeapError>, u64, usize),
             ),
         ] {
             let (success, allocation_calls, success_live) = run_case(None);
@@ -13283,9 +12673,7 @@ mod tests {
         }
 
         let mut inactive_taut_heap = SourceHeap::default();
-        let inactive_taut_atoms = inactive_taut_heap
-            .allocate_model_storage(vec![atom(b"C", 0)])
-            .unwrap();
+        let inactive_taut_atoms = inactive_taut_heap.allocate_model_storage(vec![atom(b"C", 0)]).unwrap();
         let mut inactive_taut_sizes = std::array::from_fn(|_| ATOM_SIZES::default());
         inactive_taut_sizes[TAUT_YES as usize] = ATOM_SIZES {
             nLenCT: 1,
@@ -13314,20 +12702,10 @@ mod tests {
             ),
             Ok(0)
         );
-        assert!(
-            inactive_taut_bcn.ftcn[TAUT_NON as usize]
-                .NeighList
-                .is_null()
-        );
+        assert!(inactive_taut_bcn.ftcn[TAUT_NON as usize].NeighList.is_null());
         let inactive_taut_output = &inactive_taut_bcn.ftcn[TAUT_YES as usize];
         assert!(!inactive_taut_output.NeighList.is_null());
-        assert_eq!(
-            (
-                inactive_taut_output.num_atoms,
-                inactive_taut_output.num_at_tg
-            ),
-            (1, 1)
-        );
+        assert_eq!((inactive_taut_output.num_atoms, inactive_taut_output.num_at_tg), (1, 1));
         assert_eq!(
             inactive_taut_heap
                 .slice(inactive_taut_output.LinearCt.as_const())
@@ -13369,22 +12747,12 @@ mod tests {
         let one_number = one_heap.allocate_model_storage(vec![99_u16]).unwrap();
         let mut one_globals = CANON_GLOBALS::default();
         assert_eq!(
-            SetInitialRanks2(
-                &mut one_heap,
-                1,
-                one_invariant,
-                one_rank,
-                one_number,
-                &mut one_globals,
-            ),
+            SetInitialRanks2(&mut one_heap, 1, one_invariant, one_rank, one_number, &mut one_globals,),
             Ok(1)
         );
         assert_eq!(one_heap.slice(one_number.as_const()).unwrap(), &[0]);
         assert_eq!(one_heap.slice(one_rank.as_const()).unwrap(), &[1]);
-        assert_eq!(
-            one_globals.m_pAtomInvariant2ForSort,
-            one_invariant.as_const()
-        );
+        assert_eq!(one_globals.m_pAtomInvariant2ForSort, one_invariant.as_const());
 
         let mut heap = SourceHeap::default();
         let invariants = heap
@@ -13405,15 +12773,9 @@ mod tests {
         let mut second_loop_invariants = vec![ATOM_INVARIANT2::default(); 2];
         second_loop_invariants[0].val[7..].copy_from_slice(&[10, 20, 30]);
         second_loop_invariants[1].val[7..].copy_from_slice(&[40, 20, 60]);
-        let second_loop_invariants = second_loop_heap
-            .allocate_model_storage(second_loop_invariants)
-            .unwrap();
-        let second_loop_ranks = second_loop_heap
-            .allocate_model_storage(vec![99_u16; 2])
-            .unwrap();
-        let second_loop_numbers = second_loop_heap
-            .allocate_model_storage(vec![99_u16; 2])
-            .unwrap();
+        let second_loop_invariants = second_loop_heap.allocate_model_storage(second_loop_invariants).unwrap();
+        let second_loop_ranks = second_loop_heap.allocate_model_storage(vec![99_u16; 2]).unwrap();
+        let second_loop_numbers = second_loop_heap.allocate_model_storage(vec![99_u16; 2]).unwrap();
         let mut second_loop_globals = CANON_GLOBALS::default();
         // Official InChI continues past unequal slot 7, then returns zero at
         // equal slot 8. SetInitialRanks2 must therefore keep one rank.
@@ -13428,23 +12790,11 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            second_loop_heap
-                .slice(second_loop_numbers.as_const())
-                .unwrap(),
-            &[0, 1]
-        );
-        assert_eq!(
-            second_loop_heap
-                .slice(second_loop_ranks.as_const())
-                .unwrap(),
-            &[2, 2]
-        );
+        assert_eq!(second_loop_heap.slice(second_loop_numbers.as_const()).unwrap(), &[0, 1]);
+        assert_eq!(second_loop_heap.slice(second_loop_ranks.as_const()).unwrap(), &[2, 2]);
 
         let mut error_heap = SourceHeap::default();
-        let short_invariants = error_heap
-            .allocate_model_storage(vec![invariant(1)])
-            .unwrap();
+        let short_invariants = error_heap.allocate_model_storage(vec![invariant(1)]).unwrap();
         let untouched_ranks = error_heap.allocate_model_storage(vec![88_u16, 88]).unwrap();
         let initialized_numbers = error_heap.allocate_model_storage(vec![77_u16, 77]).unwrap();
         let mut error_globals = CANON_GLOBALS::default();
@@ -13459,14 +12809,8 @@ mod tests {
             ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            error_heap.slice(initialized_numbers.as_const()).unwrap(),
-            &[0, 1]
-        );
-        assert_eq!(
-            error_heap.slice(untouched_ranks.as_const()).unwrap(),
-            &[88, 88]
-        );
+        assert_eq!(error_heap.slice(initialized_numbers.as_const()).unwrap(), &[0, 1]);
+        assert_eq!(error_heap.slice(untouched_ranks.as_const()).unwrap(), &[88, 88]);
         assert_eq!(
             SetInitialRanks2(
                 &mut error_heap,
@@ -13509,20 +12853,7 @@ mod tests {
         let invariants = heap
             .allocate_model_storage(vec![ATOM_INVARIANT2::default(); 6])
             .unwrap();
-        FillOutAtomInvariant2(
-            &mut heap,
-            atoms.as_const(),
-            6,
-            6,
-            invariants,
-            0,
-            1,
-            1,
-            0,
-            0,
-            None,
-        )
-        .unwrap();
+        FillOutAtomInvariant2(&mut heap, atoms.as_const(), 6, 6, invariants, 0, 1, 1, 0, 0, None).unwrap();
         let values = heap.slice(invariants.as_const()).unwrap();
         assert_eq!(
             values.iter().map(|value| value.val).collect::<Vec<_>>(),
@@ -13536,10 +12867,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            values
-                .iter()
-                .map(|value| value.iso_sort_key)
-                .collect::<Vec<_>>(),
+            values.iter().map(|value| value.iso_sort_key).collect::<Vec<_>>(),
             vec![10, 20, 30, 40, 50, 60]
         );
 
@@ -13732,10 +13060,7 @@ mod tests {
 
         assert_eq!(CleanNumH(&mut heap, values, 0), Ok(()));
         assert_eq!(CleanNumH(&mut heap, values, -1), Ok(()));
-        assert_eq!(
-            CleanNumH(&mut heap, SourceMutPointer::null(), i32::MAX),
-            Ok(())
-        );
+        assert_eq!(CleanNumH(&mut heap, SourceMutPointer::null(), i32::MAX), Ok(()));
         assert_eq!(
             CleanNumH(&mut heap, values, 8),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -13753,10 +13078,7 @@ mod tests {
         assert_eq!(heap.slice(sentinel.as_const()).unwrap(), &[11, 22, 0, 44]);
         assert_eq!(CleanCt(&mut heap, sentinel, 2), Ok(1));
         assert_eq!(CleanCt(&mut heap, sentinel, 1), Ok(0));
-        assert_eq!(
-            CleanCt(&mut heap, SourceMutPointer::null(), i32::MIN),
-            Ok(0)
-        );
+        assert_eq!(CleanCt(&mut heap, SourceMutPointer::null(), i32::MIN), Ok(0));
         assert_eq!(
             CleanCt(&mut heap, sentinel, -1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -13780,10 +13102,7 @@ mod tests {
         );
         assert_eq!(CleanIsoSortKeys(&mut heap, values, 0), Ok(()));
         assert_eq!(CleanIsoSortKeys(&mut heap, values, -1), Ok(()));
-        assert_eq!(
-            CleanIsoSortKeys(&mut heap, SourceMutPointer::null(), i32::MAX),
-            Ok(())
-        );
+        assert_eq!(CleanIsoSortKeys(&mut heap, SourceMutPointer::null(), i32::MAX), Ok(()));
         assert_eq!(
             CleanIsoSortKeys(&mut heap, values, 6),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -13839,13 +13158,7 @@ mod tests {
             ..NodeSet::default()
         };
         assert_eq!(
-            NodeSetCreate(
-                &mut second_failure_heap,
-                &globals,
-                &mut second_failure,
-                33,
-                3
-            ),
+            NodeSetCreate(&mut second_failure_heap, &globals, &mut second_failure, 33, 3),
             Ok(0)
         );
         assert_eq!(second_failure_heap.source_allocation_calls(), 2);
@@ -13880,9 +13193,7 @@ mod tests {
             Err(SourceHeapError::MissingAllocation)
         );
 
-        let null_row_outer = heap
-            .allocate(vec![SourceMutPointer::<bitWord>::null()])
-            .unwrap();
+        let null_row_outer = heap.allocate(vec![SourceMutPointer::<bitWord>::null()]).unwrap();
         let mut null_row_set = NodeSet {
             bitword: null_row_outer,
             len_set: 5,
@@ -13909,9 +13220,7 @@ mod tests {
     #[test]
     fn source_port__ichican2__nodesetfromvertices__line_1052() {
         let mut heap = SourceHeap::default();
-        let masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
+        let masks = heap.allocate((0..16).map(|bit| 1_u16 << bit).collect()).unwrap();
         let globals = CANON_GLOBALS {
             m_bBit: masks,
             m_num_bit: 16,
@@ -13927,33 +13236,18 @@ mod tests {
         };
         let vertices = heap.allocate(vec![1_u16, 16, 17, 32, 33]).unwrap();
 
-        assert_eq!(
-            NodeSetFromVertices(&mut heap, &globals, &set, 2, vertices, 5),
-            Ok(())
-        );
+        assert_eq!(NodeSetFromVertices(&mut heap, &globals, &set, 2, vertices, 5), Ok(()));
         assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0x1111; 3]);
-        assert_eq!(
-            heap.slice(row1.as_const()).unwrap(),
-            &[0x8001, 0x8001, 0x0001]
-        );
+        assert_eq!(heap.slice(row1.as_const()).unwrap(), &[0x8001, 0x8001, 0x0001]);
 
         let duplicate = heap.allocate(vec![2_u16, 2]).unwrap();
-        assert_eq!(
-            NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 2),
-            Ok(())
-        );
+        assert_eq!(NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 2), Ok(()));
         assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0x0002, 0, 0]);
 
-        assert_eq!(
-            NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 0),
-            Ok(())
-        );
+        assert_eq!(NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 0), Ok(()));
         assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0; 3]);
         heap.slice_mut(row0).unwrap().fill(0x3333);
-        assert_eq!(
-            NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, -1),
-            Ok(())
-        );
+        assert_eq!(NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, -1), Ok(()));
         assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0; 3]);
 
         heap.slice_mut(row0).unwrap().fill(0x4444);
@@ -14020,10 +13314,7 @@ mod tests {
             num_set: 1,
             len_set: 1,
         };
-        assert_eq!(
-            AllNodesAreInSet(&heap, &short_cur, 1, &short_container, 1),
-            Ok(0)
-        );
+        assert_eq!(AllNodesAreInSet(&heap, &short_cur, 1, &short_container, 1), Ok(0));
         heap.slice_mut(short_set).unwrap()[0] = 0x0002;
         assert_eq!(
             AllNodesAreInSet(&heap, &short_cur, 1, &short_container, 1),
@@ -14049,9 +13340,7 @@ mod tests {
     #[test]
     fn source_port__ichican2__partitiongetmcrandfixset__line_1098() {
         let mut heap = SourceHeap::default();
-        let masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
+        let masks = heap.allocate((0..16).map(|bit| 1_u16 << bit).collect()).unwrap();
         let globals = CANON_GLOBALS {
             m_bBit: masks,
             m_num_bit: 16,
@@ -14146,22 +13435,13 @@ mod tests {
         let output = heap.allocate(vec![9_u16; 4]).unwrap();
         let gamma = Transposition { nAtNumb: output };
 
-        assert_eq!(
-            PartitionGetTransposition(&mut heap, &from, &to, 4, &gamma),
-            Ok(())
-        );
+        assert_eq!(PartitionGetTransposition(&mut heap, &from, &to, 4, &gamma), Ok(()));
         assert_eq!(heap.slice(output.as_const()).unwrap(), &[3, 2, 1, 0]);
 
         heap.slice_mut(output).unwrap().fill(8);
-        assert_eq!(
-            PartitionGetTransposition(&mut heap, &from, &to, 0, &gamma),
-            Ok(())
-        );
+        assert_eq!(PartitionGetTransposition(&mut heap, &from, &to, 0, &gamma), Ok(()));
         assert_eq!(heap.slice(output.as_const()).unwrap(), &[8; 4]);
-        assert_eq!(
-            PartitionGetTransposition(&mut heap, &from, &to, -1, &gamma),
-            Ok(())
-        );
+        assert_eq!(PartitionGetTransposition(&mut heap, &from, &to, -1, &gamma), Ok(()));
         assert_eq!(heap.slice(output.as_const()).unwrap(), &[8; 4]);
 
         let bad_from_atoms = heap.allocate(vec![1_u16, 4]).unwrap();
@@ -14175,9 +13455,7 @@ mod tests {
             ..Partition::default()
         };
         let short_output = heap.allocate(vec![5_u16; 3]).unwrap();
-        let short_gamma = Transposition {
-            nAtNumb: short_output,
-        };
+        let short_gamma = Transposition { nAtNumb: short_output };
         assert_eq!(
             PartitionGetTransposition(&mut heap, &bad_from, &bad_to, 2, &short_gamma),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -14199,16 +13477,10 @@ mod tests {
 
         let partly_compressed = heap.allocate(vec![0_u16, 0, 1, 1, 3, 3]).unwrap();
         assert_eq!(nGetMcr2(&mut heap, partly_compressed, 5), Ok(0));
-        assert_eq!(
-            heap.slice(partly_compressed.as_const()).unwrap(),
-            &[0, 0, 1, 0, 3, 0]
-        );
+        assert_eq!(heap.slice(partly_compressed.as_const()).unwrap(), &[0, 0, 1, 0, 3, 0]);
 
         let short = heap.allocate(vec![0_u16, 1]).unwrap();
-        assert_eq!(
-            nGetMcr2(&mut heap, short, 2),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(nGetMcr2(&mut heap, short, 2), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(heap.slice(short.as_const()).unwrap(), &[0, 1]);
     }
 
@@ -14218,17 +13490,11 @@ mod tests {
 
         let lower_first = heap.allocate(vec![0_u16, 0, 2, 2, 4]).unwrap();
         assert_eq!(nJoin2Mcrs2(&mut heap, lower_first, 1, 3), Ok(1));
-        assert_eq!(
-            heap.slice(lower_first.as_const()).unwrap(),
-            &[0, 0, 0, 2, 4]
-        );
+        assert_eq!(heap.slice(lower_first.as_const()).unwrap(), &[0, 0, 0, 2, 4]);
 
         let lower_second = heap.allocate(vec![0_u16, 1, 1, 3, 3]).unwrap();
         assert_eq!(nJoin2Mcrs2(&mut heap, lower_second, 4, 2), Ok(1));
-        assert_eq!(
-            heap.slice(lower_second.as_const()).unwrap(),
-            &[0, 1, 1, 1, 3]
-        );
+        assert_eq!(heap.slice(lower_second.as_const()).unwrap(), &[0, 1, 1, 1, 3]);
 
         let same = heap.allocate(vec![0_u16, 0, 1, 2, 3]).unwrap();
         assert_eq!(nJoin2Mcrs2(&mut heap, same, 4, 2), Ok(0));
@@ -14247,10 +13513,7 @@ mod tests {
         let mut heap = SourceHeap::default();
         let chain = heap.allocate(vec![0_u16, 0, 1, 2, 3, 4]).unwrap();
         let partition = UnorderedPartition { equ2: chain };
-        assert_eq!(
-            GetUnorderedPartitionMcrNode(&mut heap, &partition, 6),
-            Ok(1)
-        );
+        assert_eq!(GetUnorderedPartitionMcrNode(&mut heap, &partition, 6), Ok(1));
         assert_eq!(heap.slice(chain.as_const()).unwrap(), &[0, 0, 0, 0, 0, 0]);
 
         let short = heap.allocate(vec![0_u16, 1]).unwrap();
@@ -14264,10 +13527,7 @@ mod tests {
         boundary_values[usize::from(u16::MAX)] = u16::MAX;
         let boundary = heap.allocate(boundary_values).unwrap();
         let boundary_partition = UnorderedPartition { equ2: boundary };
-        assert_eq!(
-            GetUnorderedPartitionMcrNode(&mut heap, &boundary_partition, 0),
-            Ok(0)
-        );
+        assert_eq!(GetUnorderedPartitionMcrNode(&mut heap, &boundary_partition, 0), Ok(0));
         assert_eq!(
             heap.slice(boundary.as_const()).unwrap()[usize::from(u16::MAX)],
             u16::MAX
@@ -14282,10 +13542,7 @@ mod tests {
         let p1 = UnorderedPartition { equ2: p1_values };
         let p2 = UnorderedPartition { equ2: p2_values };
         assert_eq!(UnorderedPartitionJoin(&mut heap, &p1, &p2, 6), Ok(4));
-        assert_eq!(
-            heap.slice(p2_values.as_const()).unwrap(),
-            &[0, 0, 0, 3, 3, 3]
-        );
+        assert_eq!(heap.slice(p2_values.as_const()).unwrap(), &[0, 0, 0, 3, 3, 3]);
 
         let same_root_p1_values = heap.allocate(vec![0_u16, 0, 1]).unwrap();
         let same_root_p2_values = heap.allocate(vec![0_u16, 0, 1]).unwrap();
@@ -14299,10 +13556,7 @@ mod tests {
             UnorderedPartitionJoin(&mut heap, &same_root_p1, &same_root_p2, 3),
             Ok(0)
         );
-        assert_eq!(
-            heap.slice(same_root_p2_values.as_const()).unwrap(),
-            &[0, 0, 0]
-        );
+        assert_eq!(heap.slice(same_root_p2_values.as_const()).unwrap(), &[0, 0, 0]);
 
         let self_only = heap.allocate(vec![0_u16]).unwrap();
         let self_partition = UnorderedPartition { equ2: self_only };
@@ -14332,27 +13586,18 @@ mod tests {
             UnorderedPartitionJoin(&mut heap, &partial_p1, &partial_p2, 3),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            heap.slice(partial_p2_values.as_const()).unwrap(),
-            &[0, 0, 2]
-        );
+        assert_eq!(heap.slice(partial_p2_values.as_const()).unwrap(), &[0, 0, 2]);
     }
 
     #[test]
     fn source_port__ichican2__partitionsatisfieslemma_2_25__line_1407() {
-        fn partition(
-            heap: &mut SourceHeap,
-            ranks: Vec<AT_RANK>,
-            mark_indices: &[usize],
-        ) -> Partition {
+        fn partition(heap: &mut SourceHeap, ranks: Vec<AT_RANK>, mark_indices: &[usize]) -> Partition {
             let mark = !rank_mask_bit();
             let mut ranks = ranks;
             for &index in mark_indices {
                 ranks[index] |= mark;
             }
-            let atoms = heap
-                .allocate((0..ranks.len() as AT_NUMB).collect())
-                .unwrap();
+            let atoms = heap.allocate((0..ranks.len() as AT_NUMB).collect()).unwrap();
             Partition {
                 Rank: heap.allocate(ranks).unwrap(),
                 AtNumber: atoms,
@@ -14361,43 +13606,19 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let first_condition = partition(&mut heap, vec![5, 5, 5, 5, 5], &[0, 4]);
-        assert_eq!(
-            PartitionSatisfiesLemma_2_25(&heap, &first_condition, 5),
-            Ok(1)
-        );
+        assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &first_condition, 5), Ok(1));
 
-        let second_condition =
-            partition(&mut heap, vec![2, 2, 4, 4, 6, 6, 8, 8, 10, 10], &[1, 4, 8]);
-        assert_eq!(
-            PartitionSatisfiesLemma_2_25(&heap, &second_condition, 10),
-            Ok(1)
-        );
+        let second_condition = partition(&mut heap, vec![2, 2, 4, 4, 6, 6, 8, 8, 10, 10], &[1, 4, 8]);
+        assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &second_condition, 10), Ok(1));
 
-        let third_condition = partition(
-            &mut heap,
-            vec![3, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11],
-            &[2, 6, 10],
-        );
-        assert_eq!(
-            PartitionSatisfiesLemma_2_25(&heap, &third_condition, 11),
-            Ok(1)
-        );
+        let third_condition = partition(&mut heap, vec![3, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11], &[2, 6, 10]);
+        assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &third_condition, 11), Ok(1));
 
-        let false_case = partition(
-            &mut heap,
-            vec![4, 4, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12],
-            &[3, 7, 11],
-        );
+        let false_case = partition(&mut heap, vec![4, 4, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12], &[3, 7, 11]);
         assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &false_case, 12), Ok(0));
 
-        assert_eq!(
-            PartitionSatisfiesLemma_2_25(&heap, &Partition::default(), 0),
-            Ok(1)
-        );
-        assert_eq!(
-            PartitionSatisfiesLemma_2_25(&heap, &Partition::default(), -1),
-            Ok(1)
-        );
+        assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &Partition::default(), 0), Ok(1));
+        assert_eq!(PartitionSatisfiesLemma_2_25(&heap, &Partition::default(), -1), Ok(1));
 
         let short_atoms = heap.allocate(vec![0_u16]).unwrap();
         let short_ranks = heap.allocate(vec![1_u16]).unwrap();
@@ -14416,9 +13637,7 @@ mod tests {
         let mut heap = SourceHeap::default();
         let mark = !rank_mask_bit();
         let from_atoms = heap.allocate(vec![3_u16, 1, 2, 0, 4]).unwrap();
-        let from_ranks = heap
-            .allocate(vec![5_u16 | mark, 4, 3 | mark, 2, 1 | mark])
-            .unwrap();
+        let from_ranks = heap.allocate(vec![5_u16 | mark, 4, 3 | mark, 2, 1 | mark]).unwrap();
         let from = Partition {
             AtNumber: from_atoms,
             Rank: from_ranks,
@@ -14431,14 +13650,8 @@ mod tests {
         };
 
         assert_eq!(PartitionCopy(&mut heap, &to, &from, 4), Ok(()));
-        assert_eq!(
-            heap.slice(to_atoms.as_const()).unwrap(),
-            &[3, 1, 2, 0, 94, 95]
-        );
-        assert_eq!(
-            heap.slice(to_ranks.as_const()).unwrap(),
-            &[5, 4, 3, 2, 84, 85]
-        );
+        assert_eq!(heap.slice(to_atoms.as_const()).unwrap(), &[3, 1, 2, 0, 94, 95]);
+        assert_eq!(heap.slice(to_ranks.as_const()).unwrap(), &[5, 4, 3, 2, 84, 85]);
         assert_eq!(heap.slice(from_atoms.as_const()).unwrap(), &[3, 1, 2, 0, 4]);
         assert_eq!(
             heap.slice(from_ranks.as_const()).unwrap(),
@@ -14477,10 +13690,7 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(heap.slice(partial_to_atoms.as_const()).unwrap(), &[7, 6, 5]);
-        assert_eq!(
-            heap.slice(partial_to_ranks.as_const()).unwrap(),
-            &[21, 22, 23]
-        );
+        assert_eq!(heap.slice(partial_to_ranks.as_const()).unwrap(), &[21, 22, 23]);
     }
 
     #[test]
@@ -14511,13 +13721,8 @@ mod tests {
             )
         }
 
-        fn contiguous_empty_graph(
-            heap: &mut SourceHeap,
-            atom_count: usize,
-        ) -> SourceMutPointer<NEIGH_LIST> {
-            let storage = heap
-                .allocate_model_storage(vec![0_u16; atom_count])
-                .unwrap();
+        fn contiguous_empty_graph(heap: &mut SourceHeap, atom_count: usize) -> SourceMutPointer<NEIGH_LIST> {
+            let storage = heap.allocate_model_storage(vec![0_u16; atom_count]).unwrap();
             let rows = (0..atom_count)
                 .map(|index| storage.offset(index as i64).unwrap())
                 .collect();
@@ -14635,18 +13840,11 @@ mod tests {
             existing_heap.slice(first_ranks.as_const()).unwrap(),
             &[4, 4, 4, 4, 80, 80]
         );
-        assert_eq!(
-            existing_heap.slice(second_atoms.as_const()).unwrap(),
-            &[70; 6]
-        );
-        assert_eq!(
-            existing_heap.slice(second_ranks.as_const()).unwrap(),
-            &[60; 6]
-        );
+        assert_eq!(existing_heap.slice(second_atoms.as_const()).unwrap(), &[70; 6]);
+        assert_eq!(existing_heap.slice(second_ranks.as_const()).unwrap(), &[60; 6]);
 
         let mut zero_vertex_heap = SourceHeap::default();
-        let (zero_graph, mut zero_vertex) =
-            fixture(&mut zero_vertex_heap, vec![0, 1, 2, 3], vec![4, 4, 4, 4]);
+        let (zero_graph, mut zero_vertex) = fixture(&mut zero_vertex_heap, vec![0, 1, 2, 3], vec![4, 4, 4, 4]);
         assert_eq!(
             PartitionColorVertex(
                 &mut zero_vertex_heap,
@@ -14664,8 +13862,7 @@ mod tests {
         );
 
         let mut absent_heap = SourceHeap::default();
-        let (absent_graph, mut absent) =
-            fixture(&mut absent_heap, vec![0, 2, 3, 3], vec![4, 4, 4, 4]);
+        let (absent_graph, mut absent) = fixture(&mut absent_heap, vec![0, 2, 3, 3], vec![4, 4, 4, 4]);
         assert_eq!(
             PartitionColorVertex(
                 &mut absent_heap,
@@ -14681,14 +13878,8 @@ mod tests {
             ),
             Ok(CT_CANON_ERR)
         );
-        assert_eq!(
-            absent_heap.slice(absent[1].AtNumber.as_const()).unwrap(),
-            &[0, 2, 3, 3]
-        );
-        assert_eq!(
-            absent_heap.slice(absent[1].Rank.as_const()).unwrap(),
-            &[4, 4, 4, 4]
-        );
+        assert_eq!(absent_heap.slice(absent[1].AtNumber.as_const()).unwrap(), &[0, 2, 3, 3]);
+        assert_eq!(absent_heap.slice(absent[1].Rank.as_const()).unwrap(), &[4, 4, 4, 4]);
 
         let mut start_heap = SourceHeap::default();
         let start_atoms = start_heap.allocate(vec![0_u16, 1, 2, 3, 91, 92]).unwrap();
@@ -14702,9 +13893,7 @@ mod tests {
             Partition::default(),
             Partition::default(),
         ];
-        start_heap
-            .record_index_bound(start[0].AtNumber, 4, 4)
-            .unwrap();
+        start_heap.record_index_bound(start[0].AtNumber, 4, 4).unwrap();
         let mut start_globals = CANON_GLOBALS::default();
         assert_eq!(
             PartitionColorVertex(
@@ -14725,19 +13914,12 @@ mod tests {
             start_heap.slice(start[1].AtNumber.as_const()).unwrap(),
             &[1, 0, 2, 3, 0, 0]
         );
-        assert_eq!(
-            start_heap.slice(start[1].Rank.as_const()).unwrap(),
-            &[4, 1, 4, 4, 0, 0]
-        );
-        assert_eq!(
-            start_heap.slice(start[2].Rank.as_const()).unwrap(),
-            &[4, 1, 4, 4, 0, 0]
-        );
+        assert_eq!(start_heap.slice(start[1].Rank.as_const()).unwrap(), &[4, 1, 4, 4, 0, 0]);
+        assert_eq!(start_heap.slice(start[2].Rank.as_const()).unwrap(), &[4, 1, 4, 4, 0, 0]);
         assert!(start_heap.has_proven_index_bound(start[1].AtNumber.as_const(), 4, 4));
 
         let mut middle_heap = SourceHeap::default();
-        let (middle_graph, mut middle) =
-            fixture(&mut middle_heap, vec![0, 1, 2, 3], vec![1, 4, 4, 4]);
+        let (middle_graph, mut middle) = fixture(&mut middle_heap, vec![0, 1, 2, 3], vec![1, 4, 4, 4]);
         assert_eq!(
             PartitionColorVertex(
                 &mut middle_heap,
@@ -14753,22 +13935,12 @@ mod tests {
             ),
             Ok(3)
         );
-        assert_eq!(
-            middle_heap.slice(middle[1].AtNumber.as_const()).unwrap(),
-            &[0, 2, 1, 3]
-        );
-        assert_eq!(
-            middle_heap.slice(middle[1].Rank.as_const()).unwrap(),
-            &[1, 4, 2, 4]
-        );
-        assert_eq!(
-            middle_heap.slice(middle[2].Rank.as_const()).unwrap(),
-            &[1, 4, 2, 4]
-        );
+        assert_eq!(middle_heap.slice(middle[1].AtNumber.as_const()).unwrap(), &[0, 2, 1, 3]);
+        assert_eq!(middle_heap.slice(middle[1].Rank.as_const()).unwrap(), &[1, 4, 2, 4]);
+        assert_eq!(middle_heap.slice(middle[2].Rank.as_const()).unwrap(), &[1, 4, 2, 4]);
 
         let mut digraph_heap = SourceHeap::default();
-        let (digraph_graph, mut digraph) =
-            fixture(&mut digraph_heap, vec![0, 1, 2, 3], vec![4, 4, 4, 4]);
+        let (digraph_graph, mut digraph) = fixture(&mut digraph_heap, vec![0, 1, 2, 3], vec![4, 4, 4, 4]);
         let mut digraph_globals = CANON_GLOBALS::default();
         assert_eq!(
             PartitionColorVertex(
@@ -14786,10 +13958,7 @@ mod tests {
             Ok(2)
         );
         assert_eq!(digraph_globals.m_nMaxAtNeighRankForSort, 2);
-        assert_eq!(
-            digraph_heap.slice(digraph[2].Rank.as_const()).unwrap(),
-            &[4, 1, 4, 4]
-        );
+        assert_eq!(digraph_heap.slice(digraph[2].Rank.as_const()).unwrap(), &[4, 1, 4, 4]);
 
         let mut partial_heap = SourceHeap::default();
         let partial_atoms = partial_heap.allocate(vec![0_u16, 1, 2]).unwrap();
@@ -14817,14 +13986,8 @@ mod tests {
             ),
             Err(SourceHeapError::NullPointer)
         );
-        assert_eq!(
-            partial_heap.slice(partial[1].AtNumber.as_const()).unwrap(),
-            &[0, 1, 2]
-        );
-        assert_eq!(
-            partial_heap.slice(partial[1].Rank.as_const()).unwrap(),
-            &[1, 3, 3]
-        );
+        assert_eq!(partial_heap.slice(partial[1].AtNumber.as_const()).unwrap(), &[0, 1, 2]);
+        assert_eq!(partial_heap.slice(partial[1].Rank.as_const()).unwrap(), &[1, 3, 3]);
     }
 
     #[test]
@@ -14839,21 +14002,13 @@ mod tests {
             prev: 91,
         };
         assert_eq!(
-            CellGetMinNode(
-                &SourceHeap::default(),
-                &Partition::default(),
-                &empty,
-                0,
-                None,
-            ),
+            CellGetMinNode(&SourceHeap::default(), &Partition::default(), &empty, 0, None,),
             Ok(infinity)
         );
 
         let mut heap = SourceHeap::default();
         let atoms = heap.allocate(vec![3_u16, 1, 2, 0]).unwrap();
-        let ranks = heap
-            .allocate(vec![4_u16, 4 | rank_mark_bit(), 4, 4])
-            .unwrap();
+        let ranks = heap.allocate(vec![4_u16, 4 | rank_mark_bit(), 4, 4]).unwrap();
         let partition = Partition {
             Rank: ranks,
             AtNumber: atoms,
@@ -14866,31 +14021,19 @@ mod tests {
         assert_eq!(CellGetMinNode(&heap, &partition, &whole, 0, None), Ok(1));
         assert_eq!(CellGetMinNode(&heap, &partition, &whole, 2, None), Ok(3));
         assert_eq!(CellGetMinNode(&heap, &partition, &whole, 3, None), Ok(4));
-        assert_eq!(
-            CellGetMinNode(&heap, &partition, &whole, 4, None),
-            Ok(infinity)
-        );
+        assert_eq!(CellGetMinNode(&heap, &partition, &whole, 4, None), Ok(infinity));
 
         let null_aux = CANON_DATA::default();
-        assert_eq!(
-            CellGetMinNode(&heap, &partition, &whole, 2, Some(&null_aux)),
-            Ok(3)
-        );
+        assert_eq!(CellGetMinNode(&heap, &partition, &whole, 2, Some(&null_aux)), Ok(3));
         heap.slice_mut(ranks).unwrap()[3] |= rank_mark_bit();
-        assert_eq!(
-            CellGetMinNode(&heap, &partition, &whole, 4, None),
-            Ok(infinity)
-        );
+        assert_eq!(CellGetMinNode(&heap, &partition, &whole, 4, None), Ok(infinity));
 
         let wrapped_first = Cell {
             first: 65_536,
             next: 1,
             prev: 0,
         };
-        assert_eq!(
-            CellGetMinNode(&heap, &partition, &wrapped_first, 0, None),
-            Ok(infinity)
-        );
+        assert_eq!(CellGetMinNode(&heap, &partition, &wrapped_first, 0, None), Ok(infinity));
         let negative_first = Cell {
             first: -1,
             next: 4,
@@ -15049,8 +14192,8 @@ mod tests {
         let mut heap = SourceHeap::default();
         let masks = heap
             .allocate(vec![
-                0x0001_u16, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200,
-                0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000,
+                0x0001_u16, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800,
+                0x1000, 0x2000, 0x4000, 0x8000,
             ])
             .unwrap();
         let globals = CANON_GLOBALS {
@@ -15067,9 +14210,7 @@ mod tests {
             len_set: 1,
         };
         let atoms = heap.allocate(vec![1_u16, 2, 3, 4, 2, 0]).unwrap();
-        let ranks = heap
-            .allocate(vec![7_u16, 7, 7 | rank_mark_bit(), 7, 7, 7])
-            .unwrap();
+        let ranks = heap.allocate(vec![7_u16, 7, 7 | rank_mark_bit(), 7, 7, 7]).unwrap();
         let partition = Partition {
             Rank: ranks,
             AtNumber: atoms,
@@ -15092,14 +14233,7 @@ mod tests {
         );
         assert_eq!(
             heap.slice(ranks.as_const()).unwrap(),
-            &[
-                7 | rank_mark_bit(),
-                7,
-                7 | rank_mark_bit(),
-                7,
-                7 | rank_mark_bit(),
-                7
-            ]
+            &[7 | rank_mark_bit(), 7, 7 | rank_mark_bit(), 7, 7 | rank_mark_bit(), 7]
         );
 
         heap.slice_mut(ranks).unwrap().fill(7);
@@ -15160,10 +14294,7 @@ mod tests {
             ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            heap.slice(ranks.as_const()).unwrap()[0],
-            7 | rank_mark_bit()
-        );
+        assert_eq!(heap.slice(ranks.as_const()).unwrap()[0], 7 | rank_mark_bit());
     }
 
     #[test]
@@ -15181,10 +14312,7 @@ mod tests {
         };
 
         assert_eq!(CtPartClear(&mut heap, &mut ct, 2), Ok(()));
-        assert_eq!(
-            heap.slice(table.as_const()).unwrap(),
-            &[10, 11, 12, 13, 0, 0, 0]
-        );
+        assert_eq!(heap.slice(table.as_const()).unwrap(), &[10, 11, 12, 13, 0, 0, 0]);
         assert_eq!(ct.lenCt, 4);
         assert_eq!(ct.lenPos, 2);
         assert_eq!(ct.lenNumH, 92);
@@ -15203,10 +14331,7 @@ mod tests {
             .copy_from_slice(&[30, 31, 32, 33, 34, 35, 36]);
         ct.lenCt = 4;
         assert_eq!(CtPartClear(&mut heap, &mut ct, 3), Ok(()));
-        assert_eq!(
-            heap.slice(table.as_const()).unwrap(),
-            &[30, 31, 32, 33, 34, 35, 36]
-        );
+        assert_eq!(heap.slice(table.as_const()).unwrap(), &[30, 31, 32, 33, 34, 35, 36]);
         assert_eq!(ct.lenCt, 6);
         assert_eq!(ct.lenPos, 3);
 
@@ -15219,10 +14344,7 @@ mod tests {
         ct.nextCtblPos = SourceMutPointer::null();
         ct.lenCt = 5;
         ct.lenPos = 77;
-        assert_eq!(
-            CtPartClear(&mut heap, &mut ct, 2),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(CtPartClear(&mut heap, &mut ct, 2), Err(SourceHeapError::NullPointer));
         assert_eq!(ct.lenCt, 5);
         assert_eq!(ct.lenPos, 77);
     }
@@ -15257,12 +14379,7 @@ mod tests {
             Ok(())
         );
         assert_eq!(
-            insertions_sort_NeighList_AT_NUMBERS2(
-                &mut heap,
-                singleton,
-                SourceMutPointer::null(),
-                1,
-            ),
+            insertions_sort_NeighList_AT_NUMBERS2(&mut heap, singleton, SourceMutPointer::null(), 1,),
             Ok(())
         );
         assert_eq!(heap.slice(singleton.as_const()).unwrap(), &[1, 4]);
@@ -15292,9 +14409,7 @@ mod tests {
         let graph2 = heap.allocate(vec![0_u16]).unwrap();
         let graph3 = heap.allocate(vec![2_u16, 1, 0]).unwrap();
         let graph4 = heap.allocate(vec![0_u16]).unwrap();
-        let graph = heap
-            .allocate(vec![graph0, graph1, graph2, graph3, graph4])
-            .unwrap();
+        let graph = heap.allocate(vec![graph0, graph1, graph2, graph3, graph4]).unwrap();
 
         let source_h = heap.allocate(vec![100_i16, 101, 102, 130, 131]).unwrap();
         let source_fixed_h = heap.allocate(vec![200_i16, 201, 202, 230, 231]).unwrap();
@@ -15332,17 +14447,7 @@ mod tests {
         };
 
         assert_eq!(
-            CtPartFill(
-                &mut heap,
-                graph,
-                &canon,
-                &partition,
-                Some(&mut ct),
-                1,
-                3,
-                5,
-                5,
-            ),
+            CtPartFill(&mut heap, graph, &canon, &partition, Some(&mut ct), 1, 3, 5, 5,),
             Ok(())
         );
         assert_eq!(
@@ -15405,10 +14510,7 @@ mod tests {
         assert_eq!(continuation.len_iso_sort_key, 0);
         assert_eq!(continuation.len_iso_exchg_atnos, 0);
         assert_eq!(continuation.lenPos, 2);
-        assert_eq!(
-            heap.slice(continuation_positions.as_const()).unwrap(),
-            &[9, 9]
-        );
+        assert_eq!(heap.slice(continuation_positions.as_const()).unwrap(), &[9, 9]);
         assert_eq!(heap.slice(continuation_ranks.as_const()).unwrap(), &[5, 6]);
 
         assert_eq!(
@@ -15520,19 +14622,13 @@ mod tests {
             CtPartINCHI_CANON_INFINITY(&mut heap, &ct, SourceMutPointer::null(), 1),
             Ok(())
         );
-        assert_eq!(
-            heap.slice(table.as_const()).unwrap(),
-            &[0, 12, 13, 14, 15, 16]
-        );
+        assert_eq!(heap.slice(table.as_const()).unwrap(), &[0, 12, 13, 14, 15, 16]);
         assert_eq!(ct.lenCt, 6);
         assert_eq!(ct.lenPos, 3);
 
         assert_eq!(CtPartINCHI_CANON_INFINITY(&mut heap, &ct, cmp, 3), Ok(()));
         assert_eq!(heap.slice(cmp.as_const()).unwrap(), &[0, 0, 7, 6]);
-        assert_eq!(
-            heap.slice(table.as_const()).unwrap(),
-            &[0, 12, 13, 14, 0, 16]
-        );
+        assert_eq!(heap.slice(table.as_const()).unwrap(), &[0, 12, 13, 14, 0, 16]);
 
         heap.slice_mut(table).unwrap()[3] = 0;
         heap.slice_mut(table).unwrap()[4] = 55;
@@ -15635,10 +14731,7 @@ mod tests {
             nextAtRank: heap.allocate(vec![3_u16]).unwrap(),
             ..ConTable::default()
         };
-        assert_eq!(
-            CtFullCompare(&mut heap, &common_left, &common_right, 1, 1),
-            Ok(0)
-        );
+        assert_eq!(CtFullCompare(&mut heap, &common_left, &common_right, 1, 1), Ok(0));
 
         let invalid = ConTable {
             lenPos: 1,
@@ -15759,9 +14852,7 @@ mod tests {
             len_set: 1,
         };
         let permutation = heap.allocate(vec![0_u16, 2, 1, 4, 5, 3]).unwrap();
-        let mut gamma = Transposition {
-            nAtNumb: permutation,
-        };
+        let mut gamma = Transposition { nAtNumb: permutation };
         let equ2 = heap.allocate(vec![99_u16; 6]).unwrap();
         let mut partition = UnorderedPartition { equ2 };
 
@@ -15781,10 +14872,7 @@ mod tests {
         assert_eq!(heap.slice(mcr_row.as_const()).unwrap(), &[0b001011]);
         assert_eq!(heap.slice(fix_row.as_const()).unwrap(), &[0b000001]);
         assert_eq!(heap.slice(equ2.as_const()).unwrap(), &[0, 1, 1, 3, 3, 3]);
-        assert_eq!(
-            heap.slice(permutation.as_const()).unwrap(),
-            &[0, 2, 1, 4, 5, 3]
-        );
+        assert_eq!(heap.slice(permutation.as_const()).unwrap(), &[0, 2, 1, 4, 5, 3]);
 
         heap.slice_mut(permutation)
             .unwrap()
@@ -15859,10 +14947,7 @@ mod tests {
             NumH: num_h,
             ..CANON_DATA::default()
         };
-        assert_eq!(
-            GetOneAdditionalLayer(Some(&data_l1), Some(&ConTable::default())),
-            1
-        );
+        assert_eq!(GetOneAdditionalLayer(Some(&data_l1), Some(&ConTable::default())), 1);
 
         let data_l2 = CANON_DATA {
             nLenCTAtOnly: 1,
@@ -15880,29 +14965,20 @@ mod tests {
             NumHfixed: fixed_h,
             ..CANON_DATA::default()
         };
-        assert_eq!(
-            GetOneAdditionalLayer(Some(&data_l3), Some(&ConTable::default())),
-            3
-        );
+        assert_eq!(GetOneAdditionalLayer(Some(&data_l3), Some(&ConTable::default())), 3);
 
         let data_l4 = CANON_DATA {
             iso_sort_key: iso,
             ..CANON_DATA::default()
         };
-        assert_eq!(
-            GetOneAdditionalLayer(Some(&data_l4), Some(&ConTable::default())),
-            4
-        );
+        assert_eq!(GetOneAdditionalLayer(Some(&data_l4), Some(&ConTable::default())), 4);
 
         let multiple = CANON_DATA {
             NumH: num_h,
             NumHfixed: fixed_h,
             ..CANON_DATA::default()
         };
-        assert_eq!(
-            GetOneAdditionalLayer(Some(&multiple), Some(&ConTable::default())),
-            0
-        );
+        assert_eq!(GetOneAdditionalLayer(Some(&multiple), Some(&ConTable::default())), 0);
 
         let no_missing = ConTable {
             NumH: num_h,
@@ -15927,10 +15003,7 @@ mod tests {
 
         assert_eq!(TranspositionCreate(&mut heap, &mut transposition, 4), Ok(1));
         assert_ne!(transposition.nAtNumb, old);
-        assert_eq!(
-            heap.slice(transposition.nAtNumb.as_const()).unwrap(),
-            &[0, 0, 0, 0]
-        );
+        assert_eq!(heap.slice(transposition.nAtNumb.as_const()).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[7, 8]);
 
         let successful = transposition.nAtNumb;
@@ -15941,10 +15014,7 @@ mod tests {
 
         let mut negative_heap = SourceHeap::default();
         let mut negative = Transposition::default();
-        assert_eq!(
-            TranspositionCreate(&mut negative_heap, &mut negative, -1),
-            Ok(0)
-        );
+        assert_eq!(TranspositionCreate(&mut negative_heap, &mut negative, -1), Ok(0));
         assert!(negative.nAtNumb.is_null());
     }
 
@@ -15952,21 +15022,13 @@ mod tests {
     fn source_port__ichican2__transpositionfree__line_707() {
         let mut heap = SourceHeap::default();
         let allocation = heap.allocate(vec![1_u16, 2, 3]).unwrap();
-        let mut transposition = Transposition {
-            nAtNumb: allocation,
-        };
+        let mut transposition = Transposition { nAtNumb: allocation };
 
-        assert_eq!(
-            TranspositionFree(&mut heap, Some(&mut transposition)),
-            Ok(())
-        );
+        assert_eq!(TranspositionFree(&mut heap, Some(&mut transposition)), Ok(()));
         assert!(transposition.nAtNumb.is_null());
         assert!(heap.slice(allocation.as_const()).is_err());
 
-        assert_eq!(
-            TranspositionFree(&mut heap, Some(&mut transposition)),
-            Ok(())
-        );
+        assert_eq!(TranspositionFree(&mut heap, Some(&mut transposition)), Ok(()));
         assert_eq!(TranspositionFree(&mut heap, None), Ok(()));
     }
 
@@ -16010,10 +15072,7 @@ mod tests {
         assert_eq!(heap.slice(table.NumH.as_const()).unwrap(), &[0; 3]);
         assert_eq!(heap.slice(table.NumHfixed.as_const()).unwrap(), &[0; 2]);
         assert_eq!(heap.slice(table.iso_sort_key.as_const()).unwrap(), &[0; 3]);
-        assert_eq!(
-            heap.slice(table.iso_exchg_atnos.as_const()).unwrap(),
-            &[0; 5]
-        );
+        assert_eq!(heap.slice(table.iso_exchg_atnos.as_const()).unwrap(), &[0; 5]);
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[91]);
 
         let expected = [0, 0, 1, 0, 0, 1, 1, 1];
@@ -16034,10 +15093,7 @@ mod tests {
             );
             if failure_ordinal >= 1 {
                 assert!(!partial.Ctbl.is_null());
-                assert_eq!(
-                    failure_heap.slice(partial.Ctbl.as_const()).unwrap(),
-                    &[0; 5]
-                );
+                assert_eq!(failure_heap.slice(partial.Ctbl.as_const()).unwrap(), &[0; 5]);
             }
             if failure_ordinal == 2 {
                 assert!(!partial.nextCtblPos.is_null());
@@ -16119,41 +15175,26 @@ mod tests {
         let mut heap = SourceHeap::default();
         let old = heap.allocate(vec![8_u16, 9]).unwrap();
         let mut partition = UnorderedPartition { equ2: old };
-        assert_eq!(
-            UnorderedPartitionCreate(&mut heap, &mut partition, 4),
-            Ok(1)
-        );
+        assert_eq!(UnorderedPartitionCreate(&mut heap, &mut partition, 4), Ok(1));
         assert_ne!(partition.equ2, old);
         assert_eq!(heap.slice(partition.equ2.as_const()).unwrap(), &[0; 4]);
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[8, 9]);
 
         let allocated = partition.equ2;
         heap.fail_after_allocations(0);
-        assert_eq!(
-            UnorderedPartitionCreate(&mut heap, &mut partition, 3),
-            Ok(0)
-        );
+        assert_eq!(UnorderedPartitionCreate(&mut heap, &mut partition, 3), Ok(0));
         assert!(partition.equ2.is_null());
         assert_eq!(heap.slice(allocated.as_const()).unwrap(), &[0; 4]);
 
         let mut negative_heap = SourceHeap::default();
         let mut negative = UnorderedPartition::default();
-        assert_eq!(
-            UnorderedPartitionCreate(&mut negative_heap, &mut negative, -1),
-            Ok(0)
-        );
+        assert_eq!(UnorderedPartitionCreate(&mut negative_heap, &mut negative, -1), Ok(0));
         assert!(negative.equ2.is_null());
 
         let mut zero_heap = SourceHeap::default();
         let mut zero = UnorderedPartition::default();
-        assert_eq!(
-            UnorderedPartitionCreate(&mut zero_heap, &mut zero, 0),
-            Ok(1)
-        );
-        assert_eq!(
-            zero_heap.slice(zero.equ2.as_const()).unwrap(),
-            &[] as &[AT_NUMB]
-        );
+        assert_eq!(UnorderedPartitionCreate(&mut zero_heap, &mut zero, 0), Ok(1));
+        assert_eq!(zero_heap.slice(zero.equ2.as_const()).unwrap(), &[] as &[AT_NUMB]);
     }
 
     #[test]
@@ -16176,22 +15217,13 @@ mod tests {
         let mut heap = SourceHeap::default();
         let values = heap.allocate(vec![99_u16; 5]).unwrap();
         let partition = UnorderedPartition { equ2: values };
-        assert_eq!(
-            UnorderedPartitionMakeDiscrete(&mut heap, &partition, 5),
-            Ok(())
-        );
+        assert_eq!(UnorderedPartitionMakeDiscrete(&mut heap, &partition, 5), Ok(()));
         assert_eq!(heap.slice(values.as_const()).unwrap(), &[0, 1, 2, 3, 4]);
 
         heap.slice_mut(values).unwrap().fill(77);
-        assert_eq!(
-            UnorderedPartitionMakeDiscrete(&mut heap, &partition, 0),
-            Ok(())
-        );
+        assert_eq!(UnorderedPartitionMakeDiscrete(&mut heap, &partition, 0), Ok(()));
         assert_eq!(heap.slice(values.as_const()).unwrap(), &[77; 5]);
-        assert_eq!(
-            UnorderedPartitionMakeDiscrete(&mut heap, &partition, -1),
-            Ok(())
-        );
+        assert_eq!(UnorderedPartitionMakeDiscrete(&mut heap, &partition, -1), Ok(()));
         assert_eq!(heap.slice(values.as_const()).unwrap(), &[77; 5]);
 
         let short = heap.allocate(vec![88_u16; 2]).unwrap();
@@ -16203,11 +15235,7 @@ mod tests {
 
         let boundary = heap.allocate(vec![0_u16; 65_537]).unwrap();
         assert_eq!(
-            UnorderedPartitionMakeDiscrete(
-                &mut heap,
-                &UnorderedPartition { equ2: boundary },
-                65_537,
-            ),
+            UnorderedPartitionMakeDiscrete(&mut heap, &UnorderedPartition { equ2: boundary }, 65_537,),
             Ok(())
         );
         assert_eq!(heap.slice(boundary.as_const()).unwrap()[65_535], u16::MAX);
@@ -16249,24 +15277,15 @@ mod tests {
 
         let mut negative_heap = SourceHeap::default();
         let mut negative = Partition::default();
-        assert_eq!(
-            PartitionCreate(&mut negative_heap, &mut negative, -1),
-            Ok(0)
-        );
+        assert_eq!(PartitionCreate(&mut negative_heap, &mut negative, -1), Ok(0));
         assert!(negative.AtNumber.is_null());
         assert!(negative.Rank.is_null());
 
         let mut zero_heap = SourceHeap::default();
         let mut zero = Partition::default();
         assert_eq!(PartitionCreate(&mut zero_heap, &mut zero, 0), Ok(1));
-        assert_eq!(
-            zero_heap.slice(zero.AtNumber.as_const()).unwrap(),
-            &[] as &[AT_NUMB]
-        );
-        assert_eq!(
-            zero_heap.slice(zero.Rank.as_const()).unwrap(),
-            &[] as &[AT_RANK]
-        );
+        assert_eq!(zero_heap.slice(zero.AtNumber.as_const()).unwrap(), &[] as &[AT_NUMB]);
+        assert_eq!(zero_heap.slice(zero.Rank.as_const()).unwrap(), &[] as &[AT_RANK]);
     }
 
     #[test]
@@ -16333,10 +15352,7 @@ mod tests {
                 prev: 78,
             },
         ];
-        assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6),
-            Ok(2)
-        );
+        assert_eq!(PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6), Ok(2));
         assert_eq!(
             cells[0],
             Cell {
@@ -16345,10 +15361,7 @@ mod tests {
                 prev: 77
             }
         );
-        assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 2, 6),
-            Ok(2)
-        );
+        assert_eq!(PartitionGetFirstCell(&heap, &partition, &mut cells, 2, 6), Ok(2));
         assert_eq!(
             cells[1],
             Cell {
@@ -16360,10 +15373,7 @@ mod tests {
 
         heap.slice_mut(ranks).unwrap()[2] |= rank_mark_bit();
         heap.slice_mut(ranks).unwrap()[3] |= rank_mark_bit();
-        assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6),
-            Ok(2)
-        );
+        assert_eq!(PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6), Ok(2));
 
         let discrete_ranks = heap.allocate(vec![1_u16, 2, 3]).unwrap();
         let discrete_atoms = heap.allocate(vec![0_u16, 1, 2]).unwrap();
@@ -16518,8 +15528,7 @@ mod tests {
         assert_eq!(fixed.lenCt, 1);
         assert_eq!(&heap.slice(fixed.Ctbl.as_const()).unwrap()[..2], &[1, 0]);
 
-        let (graph2, mut pi2, symmetry2, canonical2, atom_order2, mut data2) =
-            fixture(&mut heap, &[1]);
+        let (graph2, mut pi2, symmetry2, canonical2, atom_order2, mut data2) = fixture(&mut heap, &[1]);
         let mut fixed_counts = CANON_COUNTS::default();
         assert_eq!(
             CanonGraph(
@@ -16581,17 +15590,9 @@ mod tests {
         );
 
         let mut timeout_heap = SourceHeap::default();
-        let (
-            timeout_graph,
-            mut timeout_pi,
-            timeout_symmetry,
-            timeout_canonical,
-            timeout_atoms,
-            mut timeout_data,
-        ) = fixture(&mut timeout_heap, &[2, 2]);
-        timeout_data.ulTimeOutTime = timeout_heap
-            .allocate(vec![inchiTime { clockTime: 0 }])
-            .unwrap();
+        let (timeout_graph, mut timeout_pi, timeout_symmetry, timeout_canonical, timeout_atoms, mut timeout_data) =
+            fixture(&mut timeout_heap, &[2, 2]);
+        timeout_data.ulTimeOutTime = timeout_heap.allocate(vec![inchiTime { clockTime: 0 }]).unwrap();
         assert_eq!(
             CanonGraph(
                 &mut timeout_heap,
@@ -16619,14 +15620,8 @@ mod tests {
         );
 
         let mut search_heap = SourceHeap::default();
-        let (
-            search_graph,
-            mut search_pi,
-            search_symmetry,
-            search_canonical,
-            search_atoms,
-            mut search_data,
-        ) = fixture(&mut search_heap, &[2, 2]);
+        let (search_graph, mut search_pi, search_symmetry, search_canonical, search_atoms, mut search_data) =
+            fixture(&mut search_heap, &[2, 2]);
         let mut search_counts = CANON_COUNTS::default();
         assert_eq!(
             CanonGraph(
@@ -16653,10 +15648,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            search_heap.slice(search_symmetry.as_const()).unwrap(),
-            &[1, 1]
-        );
+        assert_eq!(search_heap.slice(search_symmetry.as_const()).unwrap(), &[1, 1]);
         assert_eq!(search_counts.dGroupSize, 2.0);
         assert_eq!(search_counts.lNumGenerators, 1);
 
@@ -16664,14 +15656,8 @@ mod tests {
             1
         }
         let mut console_heap = SourceHeap::default();
-        let (
-            console_graph,
-            mut console_pi,
-            console_symmetry,
-            console_canonical,
-            console_atoms,
-            mut console_data,
-        ) = fixture(&mut console_heap, &[2, 2]);
+        let (console_graph, mut console_pi, console_symmetry, console_canonical, console_atoms, mut console_data) =
+            fixture(&mut console_heap, &[2, 2]);
         assert_eq!(
             CanonGraph(
                 &mut console_heap,
@@ -16699,14 +15685,8 @@ mod tests {
         );
 
         let mut mismatch_heap = SourceHeap::default();
-        let (
-            mismatch_graph,
-            mut mismatch_pi,
-            mismatch_symmetry,
-            mismatch_canonical,
-            mismatch_atoms,
-            mut mismatch_data,
-        ) = fixture(&mut mismatch_heap, &[1]);
+        let (mismatch_graph, mut mismatch_pi, mismatch_symmetry, mismatch_canonical, mismatch_atoms, mut mismatch_data) =
+            fixture(&mut mismatch_heap, &[1]);
         let mismatch_fixed = mismatch_heap
             .allocate(vec![ConTable {
                 nLenCTAtOnly: mismatch_data.nLenCTAtOnly + 1,
@@ -16741,14 +15721,8 @@ mod tests {
 
         for failure_ordinal in 0_u64..27 {
             let mut failure_heap = SourceHeap::default();
-            let (
-                failure_graph,
-                mut failure_pi,
-                failure_symmetry,
-                failure_canonical,
-                failure_atoms,
-                mut failure_data,
-            ) = fixture(&mut failure_heap, &[1]);
+            let (failure_graph, mut failure_pi, failure_symmetry, failure_canonical, failure_atoms, mut failure_data) =
+                fixture(&mut failure_heap, &[1]);
             let baseline = failure_heap.live_allocation_count();
             failure_heap.fail_after_allocations(failure_ordinal);
             let mut failure_globals = CANON_GLOBALS::default();
@@ -16835,185 +15809,49 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let base = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
-        let equal = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let base = make_ct(&mut heap, &[1, 2, 3, 4], &[10, 11], &[20, 21], &[30, 31], &[1, 2], 2);
+        let equal = make_ct(&mut heap, &[1, 2, 3, 4], &[10, 11], &[20, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &equal,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &equal, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(0)
         );
 
-        let layer0 = make_ct(
-            &mut heap,
-            &[2, 2, 3, 4],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let layer0 = make_ct(&mut heap, &[2, 2, 3, 4], &[10, 11], &[20, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer0,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &layer0, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(1)
         );
 
-        let layer1 = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[11, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let layer1 = make_ct(&mut heap, &[1, 2, 3, 4], &[11, 11], &[20, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer1,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &layer1, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(2)
         );
 
-        let layer2 = make_ct(
-            &mut heap,
-            &[1, 2, 4, 4],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let layer2 = make_ct(&mut heap, &[1, 2, 4, 4], &[10, 11], &[20, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer2,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &layer2, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(3)
         );
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer2,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                0,
-            ),
+            CtPartCompare(&mut heap, &base, &layer2, SourceMutPointer::null(), None, 1, 0, 0,),
             Ok(1)
         );
 
-        let layer3 = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[10, 11],
-            &[21, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let layer3 = make_ct(&mut heap, &[1, 2, 3, 4], &[10, 11], &[21, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer3,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &layer3, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(4)
         );
 
-        let layer4 = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[10, 11],
-            &[20, 21],
-            &[31, 31],
-            &[1, 2],
-            2,
-        );
+        let layer4 = make_ct(&mut heap, &[1, 2, 3, 4], &[10, 11], &[20, 21], &[31, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &layer4,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &layer4, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(5)
         );
-        let exchange4 = make_ct(
-            &mut heap,
-            &[1, 2, 3, 4],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[2, 2],
-            2,
-        );
+        let exchange4 = make_ct(&mut heap, &[1, 2, 3, 4], &[10, 11], &[20, 21], &[30, 31], &[2, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &exchange4,
-                SourceMutPointer::null(),
-                None,
-                1,
-                0,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &exchange4, SourceMutPointer::null(), None, 1, 0, 1,),
             Ok(5)
         );
 
@@ -17049,26 +15887,9 @@ mod tests {
         );
         assert_eq!(heap.slice(cmp.as_const()).unwrap(), &[1, 1]);
 
-        let common_short = make_ct(
-            &mut heap,
-            &[1, 2, 3],
-            &[10, 11],
-            &[20, 21],
-            &[30, 31],
-            &[1, 2],
-            2,
-        );
+        let common_short = make_ct(&mut heap, &[1, 2, 3], &[10, 11], &[20, 21], &[30, 31], &[1, 2], 2);
         assert_eq!(
-            CtPartCompare(
-                &mut heap,
-                &base,
-                &common_short,
-                SourceMutPointer::null(),
-                None,
-                1,
-                1,
-                1,
-            ),
+            CtPartCompare(&mut heap, &base, &common_short, SourceMutPointer::null(), None, 1, 1, 1,),
             Ok(0)
         );
     }
@@ -17084,8 +15905,8 @@ mod tests {
         assert_eq!(
             heap.slice(globals.m_bBit.as_const()).unwrap(),
             &[
-                0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200,
-                0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000,
+                0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x1000,
+                0x2000, 0x4000, 0x8000,
             ]
         );
         assert_eq!(rank_mark_bit(), 0x8000);
@@ -17105,10 +15926,7 @@ mod tests {
             m_bBit: created,
             ..CANON_GLOBALS::default()
         };
-        assert_eq!(
-            SetBitCreate(&mut failing_heap, &mut failing_globals),
-            Ok(-1)
-        );
+        assert_eq!(SetBitCreate(&mut failing_heap, &mut failing_globals), Ok(-1));
         assert_eq!(failing_heap.source_allocation_calls(), 1);
         assert!(failing_globals.m_bBit.is_null());
         assert_eq!(failing_globals.m_num_bit, 16);
@@ -17141,9 +15959,7 @@ mod tests {
     #[test]
     fn source_port__ichican2__nodesetfromradendpoints__line_1138() {
         let mut heap = SourceHeap::default();
-        let bit_masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
+        let bit_masks = heap.allocate((0..16).map(|bit| 1_u16 << bit).collect()).unwrap();
         let globals = CANON_GLOBALS {
             m_bBit: bit_masks,
             m_num_bit: 16,
@@ -17177,9 +15993,7 @@ mod tests {
     #[test]
     fn source_port__ichican2__removefromnodeset__line_1159() {
         let mut heap = SourceHeap::default();
-        let bit_masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
+        let bit_masks = heap.allocate((0..16).map(|bit| 1_u16 << bit).collect()).unwrap();
         let globals = CANON_GLOBALS {
             m_bBit: bit_masks,
             m_num_bit: 16,
@@ -17195,18 +16009,12 @@ mod tests {
         };
         let atoms = heap.allocate(vec![0, 17, 31]).unwrap();
 
-        assert_eq!(
-            RemoveFromNodeSet(&mut heap, &globals, &cur_nodes, 1, atoms, 3),
-            Ok(())
-        );
+        assert_eq!(RemoveFromNodeSet(&mut heap, &globals, &cur_nodes, 1, atoms, 3), Ok(()));
         assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0xfffe, 0x7ffd]);
         assert_eq!(heap.slice(set0.as_const()).unwrap(), &[0xffff, 0xffff]);
 
         let empty = NodeSet::default();
-        assert_eq!(
-            RemoveFromNodeSet(&mut heap, &globals, &empty, 0, atoms, 3),
-            Ok(())
-        );
+        assert_eq!(RemoveFromNodeSet(&mut heap, &globals, &empty, 0, atoms, 3), Ok(()));
     }
 
     #[test]
@@ -17262,18 +16070,13 @@ mod tests {
         assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0x0004, 0x0f00]);
         assert_eq!(heap.slice(set2.as_const()).unwrap(), &[0x8000, 0x0008]);
 
-        assert_eq!(
-            AddNodeSet2ToNodeSet1(&mut heap, &NodeSet::default(), 0, 1),
-            Ok(())
-        );
+        assert_eq!(AddNodeSet2ToNodeSet1(&mut heap, &NodeSet::default(), 0, 1), Ok(()));
     }
 
     #[test]
     fn source_port__ichican2__addnodestoradendpoints__line_1241() {
         let mut heap = SourceHeap::default();
-        let bit_masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
+        let bit_masks = heap.allocate((0..16).map(|bit| 1_u16 << bit).collect()).unwrap();
         let globals = CANON_GLOBALS {
             m_bBit: bit_masks,
             m_num_bit: 16,
@@ -17312,16 +16115,7 @@ mod tests {
             Ok(-1)
         );
         assert_eq!(
-            AddNodesToRadEndpoints(
-                &mut heap,
-                &globals,
-                &NodeSet::default(),
-                0,
-                endpoints,
-                99,
-                12,
-                10
-            ),
+            AddNodesToRadEndpoints(&mut heap, &globals, &NodeSet::default(), 0, endpoints, 99, 12, 10),
             Ok(12)
         );
     }
@@ -17329,20 +16123,12 @@ mod tests {
     #[test]
     fn source_port__ichican2__ctpartcopy__line_2965() {
         let mut heap = SourceHeap::default();
-        let source_ctbl = heap
-            .allocate(vec![10_u16, 11, 12, 13, 14, 15, 16, 17])
-            .unwrap();
+        let source_ctbl = heap.allocate(vec![10_u16, 11, 12, 13, 14, 15, 16, 17]).unwrap();
         let source_positions = heap.allocate(vec![2_u16, 5, 7]).unwrap();
         let source_ranks = heap.allocate(vec![3_u16, 6, 9]).unwrap();
-        let source_h = heap
-            .allocate(vec![100_i16, 101, 102, 103, 104, 105, 106])
-            .unwrap();
-        let source_fixed_h = heap
-            .allocate(vec![200_i16, 201, 202, 203, 204, 205, 206])
-            .unwrap();
-        let source_iso = heap
-            .allocate(vec![300_i64, 301, 302, 303, 304, 305, 306])
-            .unwrap();
+        let source_h = heap.allocate(vec![100_i16, 101, 102, 103, 104, 105, 106]).unwrap();
+        let source_fixed_h = heap.allocate(vec![200_i16, 201, 202, 203, 204, 205, 206]).unwrap();
+        let source_iso = heap.allocate(vec![300_i64, 301, 302, 303, 304, 305, 306]).unwrap();
         let source_exchange = heap.allocate(vec![10_i8, 11, 12, 13, 14, 15, 16]).unwrap();
         let source = ConTable {
             Ctbl: source_ctbl,
@@ -17385,10 +16171,7 @@ mod tests {
             heap.slice(target_ctbl.as_const()).unwrap(),
             &[10, 11, 999, 999, 999, 999, 999, 999]
         );
-        assert_eq!(
-            heap.slice(target_positions.as_const()).unwrap(),
-            &[2, 77, 77]
-        );
+        assert_eq!(heap.slice(target_positions.as_const()).unwrap(), &[2, 77, 77]);
         assert_eq!(heap.slice(target_ranks.as_const()).unwrap(), &[3, 88, 88]);
         assert_eq!(
             heap.slice(target_h.as_const()).unwrap(),
@@ -17419,10 +16202,7 @@ mod tests {
             heap.slice(target_ctbl.as_const()).unwrap(),
             &[10, 12, 13, 14, 999, 999, 999, 999]
         );
-        assert_eq!(
-            heap.slice(target_positions.as_const()).unwrap(),
-            &[1, 4, 77]
-        );
+        assert_eq!(heap.slice(target_positions.as_const()).unwrap(), &[1, 4, 77]);
         assert_eq!(heap.slice(target_ranks.as_const()).unwrap(), &[2, 6, 88]);
         assert_eq!(
             heap.slice(target_h.as_const()).unwrap(),
@@ -17468,10 +16248,7 @@ mod tests {
             lenPos: 54,
             ..ConTable::default()
         };
-        assert_eq!(
-            CtPartCopy(&mut heap, &mut empty_target, &empty_source, 1),
-            Ok(())
-        );
+        assert_eq!(CtPartCopy(&mut heap, &mut empty_target, &empty_source, 1), Ok(()));
         assert_eq!(heap.slice(empty_target_ctbl.as_const()).unwrap(), &[8]);
         assert_eq!(heap.slice(empty_target_positions.as_const()).unwrap(), &[0]);
         assert_eq!(heap.slice(empty_target_ranks.as_const()).unwrap(), &[1]);
@@ -17515,16 +16292,10 @@ mod tests {
         };
 
         assert_eq!(CtFullCopy(&mut heap, &mut target, &source), Ok(()));
-        assert_eq!(
-            heap.slice(target_ctbl.as_const()).unwrap(),
-            &[10, 11, 12, 13, 14, 99]
-        );
+        assert_eq!(heap.slice(target_ctbl.as_const()).unwrap(), &[10, 11, 12, 13, 14, 99]);
         assert_eq!(heap.slice(target_positions.as_const()).unwrap(), &[2, 5]);
         assert_eq!(heap.slice(target_ranks.as_const()).unwrap(), &[3, 6]);
-        assert_eq!(
-            heap.slice(target_h.as_const()).unwrap(),
-            &[20, 21, 22, 23, 24, -1]
-        );
+        assert_eq!(heap.slice(target_h.as_const()).unwrap(), &[20, 21, 22, 23, 24, -1]);
         assert_eq!(target.lenCt, 5);
         assert_eq!(target.lenNumH, 5);
         assert_eq!(target.lenPos, 2);
@@ -17571,10 +16342,7 @@ mod tests {
         assert_eq!(middle[2], original[2]);
 
         let mut zero = original.clone();
-        assert_eq!(
-            CellMakeEmpty(&mut zero, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(CellMakeEmpty(&mut zero, 0), Err(SourceHeapError::PointerOutOfBounds));
         assert_eq!(zero, original);
 
         let mut past_end = original.clone();
@@ -17635,10 +16403,7 @@ mod tests {
             heap.slice(at_number.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(
-            heap.slice(rank.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(rank.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(PartitionFree(&mut heap, Some(&mut both)), Ok(()));
     }
 

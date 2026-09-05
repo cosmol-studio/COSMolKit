@@ -1,6 +1,5 @@
 use cosmolkit_core::{
-    Molecule, MorganFingerprintParams, StereoisomerOptions, enumerate_stereoisomers, mol_to_binary,
-    stereoisomer_count,
+    Molecule, MorganFingerprintParams, StereoisomerOptions, enumerate_stereoisomers, mol_to_binary, stereoisomer_count,
 };
 use num_bigint::{BigInt, BigUint};
 use rayon::prelude::*;
@@ -38,14 +37,8 @@ fn no_center_public_methods_yield_one_clone_and_preserve_the_source() {
     let before = mol_to_binary(&source).expect("source binary snapshot");
     let options = StereoisomerOptions::default();
 
-    assert_eq!(
-        source.stereoisomer_count(&options).unwrap(),
-        BigUint::from(1_u8)
-    );
-    assert_eq!(
-        stereoisomer_count(&source, &options).unwrap(),
-        BigUint::from(1_u8)
-    );
+    assert_eq!(source.stereoisomer_count(&options).unwrap(), BigUint::from(1_u8));
+    assert_eq!(stereoisomer_count(&source, &options).unwrap(), BigUint::from(1_u8));
 
     let mut iterator = source.stereoisomers(options).unwrap();
     assert_eq!(iterator.yielded_count(), 0);
@@ -53,10 +46,7 @@ fn no_center_public_methods_yield_one_clone_and_preserve_the_source() {
     assert_eq!(canonical_isomeric_smiles(&only), "CC");
     assert_eq!(iterator.yielded_count(), 1);
     assert!(iterator.next().is_none());
-    assert!(
-        iterator.next().is_none(),
-        "the public iterator must be fused"
-    );
+    assert!(iterator.next().is_none(), "the public iterator must be fused");
     assert_eq!(
         mol_to_binary(&source).expect("source after enumeration"),
         before,
@@ -76,9 +66,7 @@ fn atom_and_double_bond_outputs_match_pinned_rdkit_order_exactly() {
     ];
 
     assert_eq!(
-        source
-            .stereoisomer_count(&StereoisomerOptions::default())
-            .unwrap(),
+        source.stereoisomer_count(&StereoisomerOptions::default()).unwrap(),
         BigUint::from(4_u8)
     );
     assert_eq!(

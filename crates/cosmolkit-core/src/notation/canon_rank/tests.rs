@@ -144,11 +144,9 @@ fn rank_fragment_atoms_accepts_symbol_overrides() {
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
     let atom_symbols = vec!["A".to_string(), "B".to_string()];
-    let scope =
-        FragmentRankScope::new(&atoms_to_use, &bonds_to_use).with_atom_symbols(&atom_symbols);
+    let scope = FragmentRankScope::new(&atoms_to_use, &bonds_to_use).with_atom_symbols(&atom_symbols);
 
-    let ranks =
-        rank_fragment_atoms(&molecule, scope, CanonicalRankOptions::kekulize_default()).unwrap();
+    let ranks = rank_fragment_atoms(&molecule, scope, CanonicalRankOptions::kekulize_default()).unwrap();
 
     assert_eq!(ranks.len(), molecule.num_atoms());
 }
@@ -211,16 +209,9 @@ fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_at
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![false; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
 
     let ordering = compare_canon_atoms_for_kekulize(
         &mut atoms,
@@ -234,24 +225,16 @@ fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_at
 }
 
 #[test]
-fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_special_chirality_compare()
- {
+fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_special_chirality_compare() {
     let mut builder = MoleculeBuilder::new();
     builder.add_atom(AtomSpec::new(Element::C));
     builder.add_atom(AtomSpec::new(Element::C));
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![false; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
     atoms[0].bonds.push(CanonBondHolder {
         bond_type: BondOrder::Single,
         bond_stereo: 0,
@@ -279,24 +262,16 @@ fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_sp
 }
 
 #[test]
-fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_special_symmetry_compare()
- {
+fn compare_ring_atoms_concerning_num_neighbors_out_of_play_atoms_are_equal_in_special_symmetry_compare() {
     let mut builder = MoleculeBuilder::new();
     builder.add_atom(AtomSpec::new(Element::C));
     builder.add_atom(AtomSpec::new(Element::C));
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![false; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
     atoms[0].neighbor_num = vec![1, -1];
     atoms[1].neighbor_num = vec![2, -1];
     atoms[0].revisted_neighbors = vec![3];
@@ -320,27 +295,15 @@ fn rank_options_control_isotope_atom_map_and_chiral_presence_comparison() {
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
     atoms[0].index = 0;
     atoms[1].index = 0;
 
     let mut options = CanonicalRankOptions::kekulize_default();
     assert_eq!(
-        compare_canon_atom_base_for_kekulize(
-            &atoms,
-            0,
-            1,
-            CanonRankFlags::from_fragment_options(options)
-        ),
+        compare_canon_atom_base_for_kekulize(&atoms, 0, 1, CanonRankFlags::from_fragment_options(options)),
         Ordering::Greater
     );
 
@@ -348,23 +311,13 @@ fn rank_options_control_isotope_atom_map_and_chiral_presence_comparison() {
     options.include_isotopes = false;
     options.include_chirality = false;
     assert_eq!(
-        compare_canon_atom_base_for_kekulize(
-            &atoms,
-            0,
-            1,
-            CanonRankFlags::from_fragment_options(options)
-        ),
+        compare_canon_atom_base_for_kekulize(&atoms, 0, 1, CanonRankFlags::from_fragment_options(options)),
         Ordering::Equal
     );
 
     options.include_chiral_presence = true;
     assert_eq!(
-        compare_canon_atom_base_for_kekulize(
-            &atoms,
-            0,
-            1,
-            CanonRankFlags::from_fragment_options(options)
-        ),
+        compare_canon_atom_base_for_kekulize(&atoms, 0, 1, CanonRankFlags::from_fragment_options(options)),
         Ordering::Less
     );
 }
@@ -374,16 +327,9 @@ fn special_symmetry_ring_neighbor_state_is_populated_for_ring_atoms() {
     let molecule = Molecule::from_smiles_with_sanitize("c1ccc2ccccc2c1", false).unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
 
     compare_ring_atoms_concerning_num_neighbors_for_kekulize(&molecule, &mut atoms).unwrap();
 
@@ -396,16 +342,9 @@ fn special_symmetry_ring_neighbor_state_skips_acyclic_atoms_like_rdkit() {
     let molecule = Molecule::from_smiles_with_sanitize("Cc1ccccc1", false).unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
 
     compare_ring_atoms_concerning_num_neighbors_for_kekulize(&molecule, &mut atoms).unwrap();
 
@@ -421,8 +360,7 @@ fn rank_fragment_atoms_handles_fused_ring_special_symmetry_path() {
     let bonds_to_use = vec![true; molecule.num_bonds()];
     let scope = FragmentRankScope::new(&atoms_to_use, &bonds_to_use);
 
-    let ranks =
-        rank_fragment_atoms(&molecule, scope, CanonicalRankOptions::kekulize_default()).unwrap();
+    let ranks = rank_fragment_atoms(&molecule, scope, CanonicalRankOptions::kekulize_default()).unwrap();
 
     assert_eq!(ranks.len(), molecule.num_atoms());
 }
@@ -432,16 +370,9 @@ fn hanoi_merges_equal_pair_into_single_partition() {
     let molecule = Molecule::from_smiles_with_sanitize("CC", false).unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
     atoms[0].index = 0;
     atoms[1].index = 0;
 
@@ -474,16 +405,9 @@ fn hanoi_merges_odd_length_partition_order_like_rdkit() {
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
     atoms[0].index = 2;
     atoms[1].index = 0;
     atoms[2].index = 1;
@@ -517,16 +441,9 @@ fn hanoi_break_ties_revisits_first_partition_after_refine_reorders_head() {
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let mut atoms =
+        init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+            .unwrap();
 
     atoms[0].index = 0;
     atoms[1].index = 0;
@@ -595,34 +512,19 @@ fn canonical_rank_state_records_ring_stereo_neighbor_and_stereo_group_order() {
         .add_bond(BondSpec::new(center, right, BondOrder::Single))
         .unwrap();
     builder
-        .add_stereo_group(StereoGroup::new(
-            StereoGroupKind::Or,
-            vec![center],
-            Vec::new(),
-        ))
+        .add_stereo_group(StereoGroup::new(StereoGroupKind::Or, vec![center], Vec::new()))
         .unwrap();
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
 
-    let atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let atoms = init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+        .unwrap();
 
     assert!(atoms[center.index()].is_ring_stereo_atom);
     assert!(atoms[left.index()].has_ring_nbr);
     assert_eq!(atoms[center.index()].which_stereo_group, 1);
-    assert_eq!(
-        atoms[center.index()].type_of_stereo_group,
-        CanonStereoGroupType::Or
-    );
+    assert_eq!(atoms[center.index()].type_of_stereo_group, CanonStereoGroupType::Or);
 }
 
 #[test]
@@ -631,33 +533,18 @@ fn init_canon_atoms_stereo_group_assignment_marks_group_atoms_outside_fragment_s
     let a0 = builder.add_atom(AtomSpec::new(Element::C));
     let a1 = builder.add_atom(AtomSpec::new(Element::C));
     builder
-        .add_stereo_group(StereoGroup::new(
-            StereoGroupKind::Or,
-            vec![a0, a1],
-            Vec::new(),
-        ))
+        .add_stereo_group(StereoGroup::new(StereoGroupKind::Or, vec![a0, a1], Vec::new()))
         .unwrap();
     let molecule = builder.build().unwrap();
     let atoms_to_use = vec![true, false];
     let bonds_to_use = vec![true; molecule.num_bonds()];
 
-    let atoms = init_fragment_canon_atoms_for_kekulize(
-        &molecule,
-        &atoms_to_use,
-        &bonds_to_use,
-        true,
-        true,
-        None,
-        None,
-    )
-    .unwrap();
+    let atoms = init_fragment_canon_atoms_for_kekulize(&molecule, &atoms_to_use, &bonds_to_use, true, true, None, None)
+        .unwrap();
 
     assert_eq!(atoms[a0.index()].which_stereo_group, 1);
     assert_eq!(atoms[a1.index()].which_stereo_group, 1);
-    assert_eq!(
-        atoms[a1.index()].type_of_stereo_group,
-        CanonStereoGroupType::Or
-    );
+    assert_eq!(atoms[a1.index()].type_of_stereo_group, CanonStereoGroupType::Or);
 }
 
 #[test]
@@ -690,8 +577,7 @@ fn make_canon_bond_holder_populates_cis_trans_controlling_atoms_like_rdkit() {
         .unwrap();
     let molecule = builder.build().unwrap();
 
-    let holder =
-        make_canon_bond_holder(&molecule, double_bond.index(), right.index(), true).unwrap();
+    let holder = make_canon_bond_holder(&molecule, double_bond.index(), right.index(), true).unwrap();
 
     assert_eq!(holder.stype, BondStereo::Cis);
     assert_eq!(
@@ -727,8 +613,7 @@ fn atropisomer_helper_orders_neighbor_bonds_by_other_atom_index() {
         .unwrap();
     let molecule = builder.build().unwrap();
 
-    let atoms_and_bonds =
-        atropisomer_atoms_and_bonds_for_canonical_rank(&molecule, atrop_bond).unwrap();
+    let atoms_and_bonds = atropisomer_atoms_and_bonds_for_canonical_rank(&molecule, atrop_bond).unwrap();
 
     assert_eq!(atoms_and_bonds[0].0, begin);
     assert_eq!(atoms_and_bonds[1].0, end);
@@ -832,16 +717,9 @@ fn debug_row_142_canon_atom_state() {
     let view = CanonRankReadView::from_molecule(&molecule).unwrap();
     let atoms_to_use = vec![true; molecule.num_atoms()];
     let bonds_to_use = vec![true; molecule.num_bonds()];
-    let atoms = super::init_fragment_canon_atoms_for_kekulize(
-        &view,
-        &atoms_to_use,
-        &bonds_to_use,
-        false,
-        false,
-        None,
-        None,
-    )
-    .unwrap();
+    let atoms =
+        super::init_fragment_canon_atoms_for_kekulize(&view, &atoms_to_use, &bonds_to_use, false, false, None, None)
+            .unwrap();
     for (idx, atom) in atoms.iter().enumerate() {
         eprintln!(
             "atom {idx} degree={} totalHs={} isRingAtom={} hasRingNbr={} isRingStereoAtom={} nbrs={:?}",

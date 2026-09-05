@@ -4,17 +4,14 @@
 //! owns the single environment-to-vector projection used by every family.
 
 use super::{
-    AdditionalOutput, AtomPairAtomInvGenerator, Fingerprint, FingerprintArguments,
-    FingerprintError, FingerprintFuncArguments, MorganArguments, MorganAtomInvGenerator,
-    MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganFingerprintGenerator,
-    RdkitFingerprintMtRng, SparseBitFingerprint, SparseCountFingerprint,
-    TopologicalTorsionArguments, TopologicalTorsionFingerprintGenerator,
+    AdditionalOutput, AtomPairAtomInvGenerator, Fingerprint, FingerprintArguments, FingerprintError,
+    FingerprintFuncArguments, MorganArguments, MorganAtomInvGenerator, MorganAtomInvariantsGenerator,
+    MorganBondInvariantsGenerator, MorganFingerprintGenerator, RdkitFingerprintMtRng, SparseBitFingerprint,
+    SparseCountFingerprint, TopologicalTorsionArguments, TopologicalTorsionFingerprintGenerator,
     atom_pair::{
-        AtomPairArguments, AtomPairAtomInvariantsGenerator, AtomPairFingerprintGenerator,
-        atom_pair_generator,
+        AtomPairArguments, AtomPairAtomInvariantsGenerator, AtomPairFingerprintGenerator, atom_pair_generator,
     },
-    duplicate_additional_output_bit, getMorganGenerator, getTopologicalTorsionGenerator,
-    setup_temp_additional_output,
+    duplicate_additional_output_bit, getMorganGenerator, getTopologicalTorsionGenerator, setup_temp_additional_output,
 };
 
 fn set_sparse_count_value(
@@ -129,9 +126,7 @@ impl RestoredFingerprintGenerator {
         match self {
             Self::Morgan(generator) => generator.getSparseCountFingerprint(molecule, arguments),
             Self::AtomPair(generator) => generator.sparse_count_fingerprint(molecule, arguments),
-            Self::TopologicalTorsion(generator) => {
-                generator.sparse_count_fingerprint(molecule, arguments)
-            }
+            Self::TopologicalTorsion(generator) => generator.sparse_count_fingerprint(molecule, arguments),
         }
     }
 
@@ -143,9 +138,7 @@ impl RestoredFingerprintGenerator {
         match self {
             Self::Morgan(generator) => generator.getSparseFingerprint(molecule, arguments),
             Self::AtomPair(generator) => generator.sparse_bit_fingerprint(molecule, arguments),
-            Self::TopologicalTorsion(generator) => {
-                generator.sparse_fingerprint(molecule, arguments)
-            }
+            Self::TopologicalTorsion(generator) => generator.sparse_fingerprint(molecule, arguments),
         }
     }
 
@@ -217,11 +210,10 @@ impl RestoredFingerprintGenerator {
     ) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
         match self {
             Self::Morgan(generator) => generator.getSparseCountFingerprints(molecules, num_threads),
-            Self::AtomPair(generator) => FingerprintGenerator::new(generator)
-                .get_sparse_count_fingerprints(molecules, num_threads),
-            Self::TopologicalTorsion(generator) => {
-                generator.getSparseCountFingerprints(molecules, num_threads)
+            Self::AtomPair(generator) => {
+                FingerprintGenerator::new(generator).get_sparse_count_fingerprints(molecules, num_threads)
             }
+            Self::TopologicalTorsion(generator) => generator.getSparseCountFingerprints(molecules, num_threads),
         }
     }
 
@@ -236,9 +228,7 @@ impl RestoredFingerprintGenerator {
             Self::AtomPair(generator) => {
                 FingerprintGenerator::new(generator).get_sparse_fingerprints(molecules, num_threads)
             }
-            Self::TopologicalTorsion(generator) => {
-                generator.getSparseFingerprints(molecules, num_threads)
-            }
+            Self::TopologicalTorsion(generator) => generator.getSparseFingerprints(molecules, num_threads),
         }
     }
 
@@ -253,9 +243,7 @@ impl RestoredFingerprintGenerator {
             Self::AtomPair(generator) => {
                 FingerprintGenerator::new(generator).get_count_fingerprints(molecules, num_threads)
             }
-            Self::TopologicalTorsion(generator) => {
-                generator.getCountFingerprints(molecules, num_threads)
-            }
+            Self::TopologicalTorsion(generator) => generator.getCountFingerprints(molecules, num_threads),
         }
     }
 
@@ -267,12 +255,8 @@ impl RestoredFingerprintGenerator {
     ) -> Result<Vec<Option<Fingerprint>>, FingerprintError> {
         match self {
             Self::Morgan(generator) => generator.getFingerprints(molecules, num_threads),
-            Self::AtomPair(generator) => {
-                FingerprintGenerator::new(generator).get_fingerprints(molecules, num_threads)
-            }
-            Self::TopologicalTorsion(generator) => {
-                generator.getFingerprints(molecules, num_threads)
-            }
+            Self::AtomPair(generator) => FingerprintGenerator::new(generator).get_fingerprints(molecules, num_threads),
+            Self::TopologicalTorsion(generator) => generator.getFingerprints(molecules, num_threads),
         }
     }
 }
@@ -293,11 +277,9 @@ fn fingerprint_num_threads_to_use(target: i32) -> Result<usize, FingerprintError
     if target >= 1 {
         return Ok(target as usize);
     }
-    let unavailable = target
-        .checked_neg()
-        .ok_or(FingerprintError::InvalidArguments {
-            reason: "numThreads must not be i32::MIN",
-        })? as usize;
+    let unavailable = target.checked_neg().ok_or(FingerprintError::InvalidArguments {
+        reason: "numThreads must not be i32::MIN",
+    })? as usize;
     let available = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     Ok(if available > unavailable {
         available - unavailable
@@ -367,23 +349,23 @@ fn required_generator_child<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,
 ) -> Result<&'a serde_json::Map<String, Value>, FingerprintError> {
-    object.get(field).and_then(Value::as_object).ok_or_else(|| {
-        FingerprintError::InvalidArgumentsJson(format!("{field} must be a JSON object"))
-    })
+    object
+        .get(field)
+        .and_then(Value::as_object)
+        .ok_or_else(|| FingerprintError::InvalidArgumentsJson(format!("{field} must be a JSON object")))
 }
 
 fn required_generator_type<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,
 ) -> Result<&'a str, FingerprintError> {
-    object.get("type").and_then(Value::as_str).ok_or_else(|| {
-        FingerprintError::InvalidArgumentsJson(format!("{field} type not specified in JSON"))
-    })
+    object
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| FingerprintError::InvalidArgumentsJson(format!("{field} type not specified in JSON")))
 }
 
-pub(crate) fn generator_from_json(
-    json: &str,
-) -> Result<RestoredFingerprintGenerator, FingerprintError> {
+pub(crate) fn generator_from_json(json: &str) -> Result<RestoredFingerprintGenerator, FingerprintError> {
     // RDKit source file: FingerprintGenerator.cpp
     // RDKit source: FingerprintGenerator.cpp lines 227-321
     // RDKit✔️✔️: std::unique_ptr<FingerprintGenerator<std::uint64_t>> generatorFromJSON(
@@ -392,11 +374,11 @@ pub(crate) fn generator_from_json(
     // RDKit✔️✔️:   ss.str(json);
     // RDKit✔️✔️:   boost::property_tree::ptree pt;
     // RDKit✔️✔️:   boost::property_tree::read_json(ss, pt);
-    let value: Value = serde_json::from_str(json)
-        .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-    let object = value.as_object().ok_or_else(|| {
-        FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-    })?;
+    let value: Value =
+        serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
 
     // RDKit✔️✔️:   auto fpArgsNode = pt.get_child_optional("fingerprintArguments");
     // RDKit✔️✔️:   if (fpArgsNode) {
@@ -420,9 +402,7 @@ pub(crate) fn generator_from_json(
         .get("atomInvariantsGenerator")
         .map(|value| {
             value.as_object().ok_or_else(|| {
-                FingerprintError::InvalidArgumentsJson(
-                    "atomInvariantsGenerator must be a JSON object".to_string(),
-                )
+                FingerprintError::InvalidArgumentsJson("atomInvariantsGenerator must be a JSON object".to_string())
             })
         })
         .transpose()?;
@@ -536,8 +516,7 @@ pub(crate) fn generator_from_json(
             }
             if object.contains_key("bondInvariantsGenerator") {
                 return Err(FingerprintError::InvalidArgumentsJson(
-                    "Topological Torsion generator cannot contain a bondInvariantsGenerator"
-                        .to_string(),
+                    "Topological Torsion generator cannot contain a bondInvariantsGenerator".to_string(),
                 ));
             }
             let mut arguments = TopologicalTorsionArguments::default();
@@ -617,10 +596,7 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
         // RDKit✔️✔️:   boost::property_tree::ptree argsNode;
         // RDKit✔️✔️:   dp_fingerprintArguments->toJSON(argsNode);
         // RDKit✔️✔️:   pt.add_child("fingerprintArguments", argsNode);
-        fields.push(format!(
-            r#""fingerprintArguments":{}"#,
-            self.family.arguments_json()
-        ));
+        fields.push(format!(r#""fingerprintArguments":{}"#, self.family.arguments_json()));
         // RDKit✔️✔️:   boost::property_tree::ptree envGenNode;
         // RDKit✔️✔️:   dp_atomEnvironmentGenerator->toJSON(envGenNode);
         // RDKit✔️✔️:   pt.add_child("atomEnvironmentGenerator", envGenNode);
@@ -655,11 +631,11 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        value
+            .as_object()
+            .ok_or_else(|| FingerprintError::InvalidArgumentsJson("expected JSON object".to_string()))?;
         Ok(())
     }
 
@@ -786,16 +762,10 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
                     if count >= bound as i32 {
                         let new_bit_id = bit_id * fp_args.d_count_bounds.len() as u64 + idx as u64;
                         result.set_bit(new_bit_id);
-                        if let (Some(temp_output), Some(orig_output)) = (
-                            args.additional_output.as_ref(),
-                            original_additional_output.as_mut(),
-                        ) {
-                            duplicate_additional_output_bit(
-                                temp_output,
-                                orig_output,
-                                bit_id,
-                                new_bit_id,
-                            )?;
+                        if let (Some(temp_output), Some(orig_output)) =
+                            (args.additional_output.as_ref(), original_additional_output.as_mut())
+                        {
+                            duplicate_additional_output_bit(temp_output, orig_output, bit_id, new_bit_id)?;
                         }
                     }
                 }
@@ -946,16 +916,10 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
                     if count >= bound as i32 {
                         let new_bit_id = bit_id * fp_args.d_count_bounds.len() as u64 + idx as u64;
                         on_bits.push(new_bit_id as usize);
-                        if let (Some(temp_output), Some(orig_output)) = (
-                            args.additional_output.as_ref(),
-                            original_additional_output.as_mut(),
-                        ) {
-                            duplicate_additional_output_bit(
-                                temp_output,
-                                orig_output,
-                                bit_id,
-                                new_bit_id,
-                            )?;
+                        if let (Some(temp_output), Some(orig_output)) =
+                            (args.additional_output.as_ref(), original_additional_output.as_mut())
+                        {
+                            duplicate_additional_output_bit(temp_output, orig_output, bit_id, new_bit_id)?;
                         }
                     }
                 }
@@ -965,10 +929,7 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
         }
 
         restore_original_additional_output(args, original_additional_output);
-        Ok(Fingerprint::from_on_bits(
-            fp_args.d_fp_size as usize,
-            on_bits,
-        ))
+        Ok(Fingerprint::from_on_bits(fp_args.d_fp_size as usize, on_bits))
     }
 
     pub(crate) fn get_fingerprint_helper(
@@ -1093,18 +1054,17 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
         let fp_args = self.family.common_arguments();
 
         let mut prepared_molecule;
-        let environment_molecule =
-            if fp_args.df_include_chirality && molecule.prop("_StereochemDone").is_none() {
-                prepared_molecule = molecule.clone();
-                assign_stereochemistry_on_working_copy(&mut prepared_molecule, true).map_err(
-                    |error| FingerprintError::StereoPreparation {
-                        reason: error.to_string(),
-                    },
-                )?;
-                &prepared_molecule
-            } else {
-                molecule
-            };
+        let environment_molecule = if fp_args.df_include_chirality && molecule.prop("_StereochemDone").is_none() {
+            prepared_molecule = molecule.clone();
+            assign_stereochemistry_on_working_copy(&mut prepared_molecule, true).map_err(|error| {
+                FingerprintError::StereoPreparation {
+                    reason: error.to_string(),
+                }
+            })?;
+            &prepared_molecule
+        } else {
+            molecule
+        };
 
         if let Some(additional_output) = args.additional_output.as_mut() {
             additional_output.reset_for_atom_count(molecule.num_atoms());
@@ -1136,17 +1096,10 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
             fp_size
         };
         let mut result = SparseCountFingerprint::new(result_size);
-        let mut random_source =
-            (fp_args.d_num_bits_per_feature > 1).then(|| RdkitFingerprintMtRng::new(42));
+        let mut random_source = (fp_args.d_num_bits_per_feature > 1).then(|| RdkitFingerprintMtRng::new(42));
 
         for environment in environments {
-            let seed = environment.bit_id(
-                fp_args,
-                &atom_invariants,
-                &bond_invariants,
-                hash_results,
-                fp_size,
-            )?;
+            let seed = environment.bit_id(fp_args, &atom_invariants, &bond_invariants, hash_results, fp_size)?;
             let bit_id = if hash_results { seed % fp_size } else { seed };
             let next_value = result.get_val(bit_id) + 1;
             set_sparse_count_value(&mut result, bit_id, next_value)?;
@@ -1236,10 +1189,7 @@ impl<'a, F: FingerprintFamily> FingerprintGenerator<'a, F> {
     }
 }
 
-fn restore_original_additional_output(
-    args: &mut FingerprintFuncArguments,
-    original: Option<AdditionalOutput>,
-) {
+fn restore_original_additional_output(args: &mut FingerprintFuncArguments, original: Option<AdditionalOutput>) {
     if let Some(mut original) = original {
         if original.atom_counts.is_some() {
             original.atom_counts = args

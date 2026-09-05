@@ -19,8 +19,7 @@ fn repository_root() -> &'static Path {
 
 fn read_json(path: &Path) -> Value {
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    serde_json::from_slice(&bytes)
-        .unwrap_or_else(|error| panic!("{} is not valid JSON: {error}", path.display()))
+    serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("{} is not valid JSON: {error}", path.display()))
 }
 
 fn validate_reference_metadata() -> Vec<u8> {
@@ -29,10 +28,7 @@ fn validate_reference_metadata() -> Vec<u8> {
     let golden_path = root.join("testdata/inchi/reference/official_c_oracle_version.jsonl");
 
     let schema = read_json(&schema_path);
-    assert_eq!(
-        schema["properties"]["schema_version"]["const"],
-        SCHEMA_VERSION
-    );
+    assert_eq!(schema["properties"]["schema_version"]["const"], SCHEMA_VERSION);
     assert_eq!(
         schema["properties"]["oracle"]["properties"]["tag"]["const"],
         UPSTREAM_TAG
@@ -50,8 +46,7 @@ fn validate_reference_metadata() -> Vec<u8> {
         API_VERSION
     );
 
-    let golden_bytes =
-        fs::read(&golden_path).unwrap_or_else(|error| panic!("{}: {error}", golden_path.display()));
+    let golden_bytes = fs::read(&golden_path).unwrap_or_else(|error| panic!("{}: {error}", golden_path.display()));
     let mut golden_lines = golden_bytes.split(|byte| *byte == b'\n');
     let golden_line = golden_lines.next().expect("version golden is empty");
     assert!(

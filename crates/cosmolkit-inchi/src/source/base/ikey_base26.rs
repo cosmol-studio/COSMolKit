@@ -266,10 +266,7 @@ pub(crate) fn base26_dublet_for_bits_28_to_36(a: &[u8]) -> [u8; 2] {
     let b0 = u32::from(a[3] & 0xf0);
     let b1 = u32::from(a[4] & 0x1f);
     let table_index = (b0 | (b1 << 8)) >> 4;
-    [
-        b'A' + (table_index / 26) as u8,
-        b'A' + (table_index % 26) as u8,
-    ]
+    [b'A' + (table_index / 26) as u8, b'A' + (table_index % 26) as u8]
 }
 
 pub(crate) fn base26_dublet_for_bits_56_to_64(a: &[u8]) -> [u8; 2] {
@@ -300,10 +297,7 @@ pub(crate) fn base26_dublet_for_bits_56_to_64(a: &[u8]) -> [u8; 2] {
     let b0 = u32::from(a[7]);
     let b1 = u32::from(a[8] & 0x01);
     let table_index = b0 | (b1 << 8);
-    [
-        b'A' + (table_index / 26) as u8,
-        b'A' + (table_index % 26) as u8,
-    ]
+    [b'A' + (table_index / 26) as u8, b'A' + (table_index % 26) as u8]
 }
 
 pub(crate) fn get_xtra_hash_major_hex(a: &[u8], sz_xtra: &mut [u8]) {
@@ -442,8 +436,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -535,8 +528,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -630,8 +622,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -664,17 +655,7 @@ mod tests {
 
     #[test]
     fn source_port__ikey_base26__base26_triplet_4__line_1233() {
-        let input_for_index = |index: u32| {
-            [
-                0,
-                0,
-                0,
-                0,
-                0,
-                ((index & 0x3f) << 2) as u8,
-                ((index >> 6) & 0xff) as u8,
-            ]
-        };
+        let input_for_index = |index: u32| [0, 0, 0, 0, 0, ((index & 0x3f) << 2) as u8, ((index >> 6) & 0xff) as u8];
         let cases = [
             (0, *b"AAA"),
             (255, *b"AJV"),
@@ -726,8 +707,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -760,15 +740,7 @@ mod tests {
 
     #[test]
     fn source_port__ikey_base26__base26_dublet_for_bits_28_to_36__line_1262() {
-        let input_for_index = |index: u32| {
-            [
-                0,
-                0,
-                0,
-                ((index & 0x0f) << 4) as u8,
-                ((index >> 4) & 0x1f) as u8,
-            ]
-        };
+        let input_for_index = |index: u32| [0, 0, 0, ((index & 0x0f) << 4) as u8, ((index >> 4) & 0x1f) as u8];
         let cases = [
             (0, *b"AA"),
             (1, *b"AB"),
@@ -780,10 +752,7 @@ mod tests {
             (511, *b"TR"),
         ];
         for (index, expected) in cases {
-            assert_eq!(
-                base26_dublet_for_bits_28_to_36(&input_for_index(index)),
-                expected
-            );
+            assert_eq!(base26_dublet_for_bits_28_to_36(&input_for_index(index)), expected);
         }
 
         for index in 0_u32..512 {
@@ -791,13 +760,7 @@ mod tests {
             let expected = [b'A' + (index / 26) as u8, b'A' + (index % 26) as u8];
             assert_eq!(base26_dublet_for_bits_28_to_36(&input), expected);
             assert_eq!(
-                base26_dublet_for_bits_28_to_36(&[
-                    0xff,
-                    0xa5,
-                    0x5a,
-                    input[3] | 0x0f,
-                    input[4] | 0xe0,
-                ]),
+                base26_dublet_for_bits_28_to_36(&[0xff, 0xa5, 0x5a, input[3] | 0x0f, input[4] | 0xe0,]),
                 expected
             );
         }
@@ -828,8 +791,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -862,19 +824,7 @@ mod tests {
 
     #[test]
     fn source_port__ikey_base26__base26_dublet_for_bits_56_to_64__line_1287() {
-        let input_for_index = |index: u32| {
-            [
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                (index & 0xff) as u8,
-                ((index >> 8) & 0x01) as u8,
-            ]
-        };
+        let input_for_index = |index: u32| [0, 0, 0, 0, 0, 0, 0, (index & 0xff) as u8, ((index >> 8) & 0x01) as u8];
         let cases = [
             (0, *b"AA"),
             (1, *b"AB"),
@@ -886,10 +836,7 @@ mod tests {
             (511, *b"TR"),
         ];
         for (index, expected) in cases {
-            assert_eq!(
-                base26_dublet_for_bits_56_to_64(&input_for_index(index)),
-                expected
-            );
+            assert_eq!(base26_dublet_for_bits_56_to_64(&input_for_index(index)), expected);
         }
 
         for index in 0_u32..512 {
@@ -897,17 +844,9 @@ mod tests {
             let expected = [b'A' + (index / 26) as u8, b'A' + (index % 26) as u8];
             assert_eq!(base26_dublet_for_bits_56_to_64(&input), expected);
             assert_eq!(
-                base26_dublet_for_bits_56_to_64(&[
-                    0xff,
-                    0xa5,
-                    0x5a,
-                    0x3c,
-                    0xc3,
-                    0x69,
-                    0x96,
-                    input[7],
-                    input[8] | 0xfe,
-                ]),
+                base26_dublet_for_bits_56_to_64(
+                    &[0xff, 0xa5, 0x5a, 0x3c, 0xc3, 0x69, 0x96, input[7], input[8] | 0xfe,]
+                ),
                 expected
             );
         }
@@ -938,8 +877,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -1034,8 +972,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -1130,8 +1067,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");

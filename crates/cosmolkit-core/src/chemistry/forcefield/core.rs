@@ -94,12 +94,7 @@ impl Add for ForceFieldVec3 {
         // RDKit✔️✔️: res.x = p1.x + p2.x;
         // RDKit✔️✔️: res.y = p1.y + p2.y;
         // RDKit✔️✔️: res.z = p1.z + p2.z;
-        Self::new4(
-            self.x + rhs.x,
-            self.y + rhs.y,
-            self.z + rhs.z,
-            self.w + rhs.w,
-        )
+        Self::new4(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z, self.w + rhs.w)
     }
 }
 
@@ -110,12 +105,7 @@ impl Sub for ForceFieldVec3 {
         // RDKit✔️✔️: res.x = p1.x - p2.x;
         // RDKit✔️✔️: res.y = p1.y - p2.y;
         // RDKit✔️✔️: res.z = p1.z - p2.z;
-        Self::new4(
-            self.x - rhs.x,
-            self.y - rhs.y,
-            self.z - rhs.z,
-            self.w - rhs.w,
-        )
+        Self::new4(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z, self.w - rhs.w)
     }
 }
 
@@ -275,13 +265,7 @@ pub fn compute_dihedral_from_position_vec(
     // RDKit✔️✔️:                 static_cast<RDGeom::Point3D *>(pos[idx3]),
     // RDKit✔️✔️:                 static_cast<RDGeom::Point3D *>(pos[idx4]), dihedral, cosPhi,
     // RDKit✔️✔️:                 r, t, d);
-    compute_dihedral_from_points(
-        &pos[idx1],
-        &pos[idx2],
-        &pos[idx3],
-        &pos[idx4],
-        want_dihedral,
-    )
+    compute_dihedral_from_points(&pos[idx1], &pos[idx2], &pos[idx3], &pos[idx4], want_dihedral)
 }
 
 pub trait ForceFieldContrib {
@@ -772,14 +756,7 @@ pub struct DistanceConstraintContrib {
 }
 
 impl DistanceConstraintContrib {
-    pub fn new(
-        owner: &ForceField,
-        idx1: usize,
-        idx2: usize,
-        min_len: f64,
-        max_len: f64,
-        force_constant: f64,
-    ) -> Self {
+    pub fn new(owner: &ForceField, idx1: usize, idx2: usize, min_len: f64, max_len: f64, force_constant: f64) -> Self {
         // RDKit✔️✔️: PRECONDITION(owner, "bad owner");
         // RDKit✔️✔️: URANGE_CHECK(idx1, owner->positions().size());
         // RDKit✔️✔️: URANGE_CHECK(idx2, owner->positions().size());
@@ -885,10 +862,7 @@ impl ForceFieldContrib for DistanceConstraintContrib {
         // `dist_mat`. For contrib evaluation against an explicit `pos` buffer,
         // match RDKit's live-position behavior by recomputing the current pair
         // distance instead of reusing the initialized cache entry.
-        let dist = self
-            .owner()
-            .distance2(self.end1_idx, self.end2_idx, Some(pos))
-            .sqrt();
+        let dist = self.owner().distance2(self.end1_idx, self.end2_idx, Some(pos)).sqrt();
         // RDKit✔️✔️: double distTerm = 0.0;
         let mut dist_term = 0.0;
         // RDKit✔️✔️: if (dist < d_minLen) {
@@ -916,10 +890,7 @@ impl ForceFieldContrib for DistanceConstraintContrib {
         //
         // See `get_energy()`: gradients must use the current trial coordinates,
         // not the initialization-time cached distance.
-        let dist = self
-            .owner()
-            .distance2(self.end1_idx, self.end2_idx, Some(pos))
-            .sqrt();
+        let dist = self.owner().distance2(self.end1_idx, self.end2_idx, Some(pos)).sqrt();
         // RDKit✔️✔️: double preFactor = 0.0;
         // RDKit✔️✔️: if (dist < d_minLen) {
         // RDKit✔️✔️:   preFactor = dist - d_minLen;
@@ -980,14 +951,7 @@ impl DistanceConstraintContribs {
         }
     }
 
-    pub fn add_contrib(
-        &mut self,
-        idx1: usize,
-        idx2: usize,
-        min_len: f64,
-        max_len: f64,
-        force_constant: f64,
-    ) {
+    pub fn add_contrib(&mut self, idx1: usize, idx2: usize, min_len: f64, max_len: f64, force_constant: f64) {
         // RDKit✔️✔️: URANGE_CHECK(idx1, dp_forceField->positions().size());
         // RDKit✔️✔️: URANGE_CHECK(idx2, dp_forceField->positions().size());
         // RDKit✔️✔️: PRECONDITION(maxLen >= minLen, "bad bounds");
@@ -1082,9 +1046,7 @@ impl ForceFieldContrib for DistanceConstraintContribs {
         for contrib in &self.contribs {
             // RDKit✔️✔️: const auto distance2 =
             // RDKit✔️✔️:     dp_forceField->distance2(contrib.idx1, contrib.idx2, pos);
-            let distance2 = self
-                .owner()
-                .distance2(contrib.idx1, contrib.idx2, Some(pos));
+            let distance2 = self.owner().distance2(contrib.idx1, contrib.idx2, Some(pos));
             // RDKit✔️✔️: double difference = 0.0;
             // RDKit✔️✔️: if (distance2 < contrib.minLen * contrib.minLen) {
             // RDKit✔️✔️:   difference = contrib.minLen - std::sqrt(distance2);
@@ -1119,9 +1081,7 @@ impl ForceFieldContrib for DistanceConstraintContribs {
             // RDKit✔️✔️: double distance = 0.0;
             // RDKit✔️✔️: const auto distance2 =
             // RDKit✔️✔️:     dp_forceField->distance2(contrib.idx1, contrib.idx2, pos);
-            let distance2 = self
-                .owner()
-                .distance2(contrib.idx1, contrib.idx2, Some(pos));
+            let distance2 = self.owner().distance2(contrib.idx1, contrib.idx2, Some(pos));
             // RDKit✔️✔️: if (distance2 < contrib.minLen * contrib.minLen) {
             // RDKit✔️✔️:   distance = std::sqrt(distance2);
             // RDKit✔️✔️:   preFactor = distance - contrib.minLen;
@@ -1171,8 +1131,7 @@ fn point_from_flat(pos: &[f64], idx: usize) -> ForceFieldVec3 {
 fn angle_degrees(p1: ForceFieldVec3, p2: ForceFieldVec3, p3: ForceFieldVec3) -> f64 {
     let r = [p1 - p2, p3 - p2];
     let r_length_sq = [r[0].length_sq().max(1.0e-5), r[1].length_sq().max(1.0e-5)];
-    let cos_theta =
-        (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt()).clamp(-1.0, 1.0);
+    let cos_theta = (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt()).clamp(-1.0, 1.0);
     RAD2DEG * cos_theta.acos()
 }
 
@@ -1210,10 +1169,7 @@ impl AngleConstraintContrib {
         assert!(idx1 < owner.positions().len());
         assert!(idx2 < owner.positions().len());
         assert!(idx3 < owner.positions().len());
-        assert!(
-            min_angle_deg <= max_angle_deg,
-            "minAngleDeg must be <= maxAngleDeg"
-        );
+        assert!(min_angle_deg <= max_angle_deg, "minAngleDeg must be <= maxAngleDeg");
         // RDKit✔️✔️: dp_forceField = owner;
         // RDKit✔️✔️: d_at1Idx = idx1;
         // RDKit✔️✔️: d_at2Idx = idx2;
@@ -1252,10 +1208,7 @@ impl AngleConstraintContrib {
         assert!(idx1 < owner.positions().len());
         assert!(idx2 < owner.positions().len());
         assert!(idx3 < owner.positions().len());
-        assert!(
-            min_angle_deg <= max_angle_deg,
-            "minAngleDeg must be <= maxAngleDeg"
-        );
+        assert!(min_angle_deg <= max_angle_deg, "minAngleDeg must be <= maxAngleDeg");
         // RDKit✔️✔️: if (relative) {
         if relative {
             // RDKit✔️✔️: const RDGeom::Point3D &p1 = *((RDGeom::Point3D *)pos[idx1]);
@@ -1378,8 +1331,7 @@ impl ForceFieldContrib for AngleConstraintContrib {
         // RDKit✔️✔️: double cosTheta = r[0].dotProduct(r[1]) / sqrt(rLengthSq[0] * rLengthSq[1]);
         // RDKit✔️✔️: cosTheta = std::clamp(cosTheta, -1.0, 1.0);
         // RDKit✔️✔️: const double angle = RAD2DEG * acos(cosTheta);
-        let cos_theta =
-            (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt()).clamp(-1.0, 1.0);
+        let cos_theta = (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt()).clamp(-1.0, 1.0);
         let angle = RAD2DEG * cos_theta.acos();
         // RDKit✔️✔️: const double angleTerm = computeAngleTerm(angle);
         let angle_term = self.compute_angle_term(angle);
@@ -1465,10 +1417,7 @@ impl AngleConstraintContribs {
         assert!(idx1 < owner.positions().len());
         assert!(idx2 < owner.positions().len());
         assert!(idx3 < owner.positions().len());
-        assert!(
-            max_angle_deg >= min_angle_deg,
-            "minAngleDeg must be <= maxAngleDeg"
-        );
+        assert!(max_angle_deg >= min_angle_deg, "minAngleDeg must be <= maxAngleDeg");
         // RDKit✔️✔️: d_contribs.emplace_back(idx1, idx2, idx3, minAngleDeg, maxAngleDeg,
         // RDKit✔️✔️:                         forceConst);
         self.contribs.push(AngleConstraintContribsParams {
@@ -1501,10 +1450,7 @@ impl AngleConstraintContribs {
         assert!(idx1 < owner.positions().len());
         assert!(idx2 < owner.positions().len());
         assert!(idx3 < owner.positions().len());
-        assert!(
-            max_angle_deg >= min_angle_deg,
-            "minAngleDeg must be <= maxAngleDeg"
-        );
+        assert!(max_angle_deg >= min_angle_deg, "minAngleDeg must be <= maxAngleDeg");
         // RDKit✔️✔️: if (relative) {
         if relative {
             // RDKit✔️✔️: const RDGeom::Point3D &p1 = *((RDGeom::Point3D *)pos[idx1]);
@@ -1643,8 +1589,7 @@ impl ForceFieldContrib for AngleConstraintContribs {
             // RDKit✔️✔️: double cosTheta = r[0].dotProduct(r[1]) / sqrt(rLengthSq[0] * rLengthSq[1]);
             // RDKit✔️✔️: cosTheta = std::clamp(cosTheta, -1.0, 1.0);
             // RDKit✔️✔️: const double angle = RAD2DEG * acos(cosTheta);
-            let cos_theta = (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt())
-                .clamp(-1.0, 1.0);
+            let cos_theta = (r[0].dot_product(r[1]) / (r_length_sq[0] * r_length_sq[1]).sqrt()).clamp(-1.0, 1.0);
             let angle = RAD2DEG * cos_theta.acos();
             // RDKit✔️✔️: const double angleTerm = computeAngleTerm(angle, contrib);
             let angle_term = self.compute_angle_term(angle, contrib);
@@ -1724,13 +1669,7 @@ impl PositionConstraintContrib {
         }
     }
 
-    pub fn new_relative(
-        owner: &ForceField,
-        idx: usize,
-        relative: bool,
-        max_displ: f64,
-        force_constant: f64,
-    ) -> Self {
+    pub fn new_relative(owner: &ForceField, idx: usize, relative: bool, max_displ: f64, force_constant: f64) -> Self {
         // RDKit✔️✔️: PositionConstraintContrib(ForceField *owner, unsigned int idx,
         // RDKit✔️✔️:                           double maxDispl, double forceConst);
         //
@@ -1844,15 +1783,7 @@ impl TorsionConstraintContrib {
     ) -> Self {
         // RDKit✔️✔️: checkPrecondition(owner, idx1, idx2, idx3, idx4, minDihedralDeg,
         // RDKit✔️✔️:                   maxDihedralDeg);
-        check_torsion_precondition(
-            owner,
-            idx1,
-            idx2,
-            idx3,
-            idx4,
-            min_dihedral_deg,
-            max_dihedral_deg,
-        );
+        check_torsion_precondition(owner, idx1, idx2, idx3, idx4, min_dihedral_deg, max_dihedral_deg);
         // RDKit✔️✔️: setParameters(owner, idx1, idx2, idx3, idx4, minDihedralDeg, maxDihedralDeg,
         // RDKit✔️✔️:               forceConst);
         let mut contrib = Self {
@@ -1891,15 +1822,7 @@ impl TorsionConstraintContrib {
     ) -> Self {
         // RDKit✔️✔️: checkPrecondition(owner, idx1, idx2, idx3, idx4, minDihedralDeg,
         // RDKit✔️✔️:                   maxDihedralDeg);
-        check_torsion_precondition(
-            owner,
-            idx1,
-            idx2,
-            idx3,
-            idx4,
-            min_dihedral_deg,
-            max_dihedral_deg,
-        );
+        check_torsion_precondition(owner, idx1, idx2, idx3, idx4, min_dihedral_deg, max_dihedral_deg);
         // RDKit✔️✔️: if (relative) {
         if relative {
             // RDKit✔️✔️: double dihedral;
@@ -1909,10 +1832,9 @@ impl TorsionConstraintContrib {
             // RDKit✔️✔️: minDihedralDeg += dihedral;
             // RDKit✔️✔️: maxDihedralDeg += dihedral;
             // RDKit✔️✔️: }
-            let dihedral =
-                compute_dihedral_from_position_vec(owner.positions(), idx1, idx2, idx3, idx4, true)
-                    .dihedral
-                    .expect("requested dihedral");
+            let dihedral = compute_dihedral_from_position_vec(owner.positions(), idx1, idx2, idx3, idx4, true)
+                .dihedral
+                .expect("requested dihedral");
             min_dihedral_deg += dihedral * RAD2DEG;
             max_dihedral_deg += dihedral * RAD2DEG;
         }
@@ -2047,16 +1969,9 @@ impl ForceFieldContrib for TorsionConstraintContrib {
         // RDKit✔️✔️: RDKit::ForceFieldsHelper::computeDihedral(pos, d_at1Idx, d_at2Idx, d_at3Idx,
         // RDKit✔️✔️:                                             d_at4Idx, &dihedral);
         // RDKit✔️✔️: dihedral *= RAD2DEG;
-        let dihedral = compute_dihedral_from_flat(
-            pos,
-            self.at1_idx,
-            self.at2_idx,
-            self.at3_idx,
-            self.at4_idx,
-            true,
-        )
-        .dihedral
-        .expect("requested dihedral")
+        let dihedral = compute_dihedral_from_flat(pos, self.at1_idx, self.at2_idx, self.at3_idx, self.at4_idx, true)
+            .dihedral
+            .expect("requested dihedral")
             * RAD2DEG;
         // RDKit✔️✔️: double dihedralTerm = computeDihedralTerm(dihedral);
         let dihedral_term = self.compute_dihedral_term(dihedral);
@@ -2078,14 +1993,8 @@ impl ForceFieldContrib for TorsionConstraintContrib {
         // RDKit✔️✔️: double dihedral;
         // RDKit✔️✔️: RDKit::ForceFieldsHelper::computeDihedral(
         // RDKit✔️✔️:     pos, d_at1Idx, d_at2Idx, d_at3Idx, d_at4Idx, &dihedral, nullptr, r, t, d);
-        let dihedral_output = compute_dihedral_from_flat(
-            pos,
-            self.at1_idx,
-            self.at2_idx,
-            self.at3_idx,
-            self.at4_idx,
-            true,
-        );
+        let dihedral_output =
+            compute_dihedral_from_flat(pos, self.at1_idx, self.at2_idx, self.at3_idx, self.at4_idx, true);
         let r = dihedral_output.r;
         // RDKit✔️✔️: dihedral *= RAD2DEG;
         let dihedral = dihedral_output.dihedral.expect("requested dihedral") * RAD2DEG;
@@ -2278,8 +2187,7 @@ where
     for iter in 1..=max_its {
         // RDKit✔️✔️: linearSearch(dim, pos, fp, grad.data(), xi.data(), newPos.get(), funcVal, func,
         // RDKit✔️✔️:              maxStep, status);
-        let (status, new_val) =
-            linear_search(&pos, fp, &grad, &mut xi, &mut new_pos, &mut func, max_step);
+        let (status, new_val) = linear_search(&pos, fp, &grad, &mut xi, &mut new_pos, &mut func, max_step);
         // RDKit✔️✔️: CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
         assert!(status >= 0, "bad direction in linearSearch");
         let func_val = new_val;
@@ -2388,8 +2296,7 @@ where
                 let hdgi = fad * hess_d_grad[i];
                 let dgi = fae * d_grad[i];
                 for j in i..dim {
-                    inv_hessian[i * dim + j] +=
-                        pxi * xi[j] - hdgi * hess_d_grad[j] + dgi * d_grad[j];
+                    inv_hessian[i * dim + j] += pxi * xi[j] - hdgi * hess_d_grad[j] + dgi * d_grad[j];
                     let updated = inv_hessian[i * dim + j];
                     inv_hessian[j * dim + i] = updated;
                 }
@@ -2681,9 +2588,7 @@ mod tests {
 
     #[test]
     fn forcefield_core_symbol_inventory_names_required_symbols() {
-        let inventory = include_str!(
-            "../../../../../dev/gap_reports/rdkit_forcefield_core_symbol_inventory.md"
-        );
+        let inventory = include_str!("../../../../../dev/gap_reports/rdkit_forcefield_core_symbol_inventory.md");
         assert!(inventory.contains("ForceField"));
         assert!(inventory.contains("ForceFieldContrib"));
         assert!(inventory.contains("normalizeAngleDeg"));
@@ -2694,8 +2599,7 @@ mod tests {
 
     #[test]
     fn mmff_symbol_inventory_names_required_contrib_and_builder_files() {
-        let inventory =
-            include_str!("../../../../../dev/gap_reports/rdkit_mmff_symbol_inventory.md");
+        let inventory = include_str!("../../../../../dev/gap_reports/rdkit_mmff_symbol_inventory.md");
         for required in [
             "AngleBend.h",
             "AngleBend.cpp",
@@ -2723,8 +2627,7 @@ mod tests {
 
     #[test]
     fn forcefield_unit_branch_coverage_report_lists_all_forcefield_module_groups() {
-        let report =
-            include_str!("../../../../../dev/gap_reports/rdkit_forcefield_unit_branch_coverage.md");
+        let report = include_str!("../../../../../dev/gap_reports/rdkit_forcefield_unit_branch_coverage.md");
 
         for required in [
             "## Coverage Verdict",
@@ -3088,10 +2991,7 @@ mod tests {
         assert_close(contrib.compute_angle_term(70.0), -10.0);
         assert_close(contrib.compute_angle_term(90.0), 0.0);
         assert_close(contrib.compute_angle_term(120.0), 20.0);
-        assert_close(
-            contrib.get_energy(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
-            0.0,
-        );
+        assert_close(contrib.get_energy(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]), 0.0);
         assert_close(
             contrib.get_energy(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0]),
             2450.0,
@@ -3131,18 +3031,9 @@ mod tests {
         let mut contribs = AngleConstraintContribs::new(&ff);
         contribs.add_contrib(0, 1, 2, 80.0, 100.0, 2.0);
         contribs.add_contrib(0, 1, 2, 100.0, 120.0, 1.0);
-        assert_close(
-            contribs.compute_angle_term(70.0, &contribs.contribs[0]),
-            -10.0,
-        );
-        assert_close(
-            contribs.compute_angle_term(90.0, &contribs.contribs[0]),
-            0.0,
-        );
-        assert_close(
-            contribs.compute_angle_term(130.0, &contribs.contribs[1]),
-            10.0,
-        );
+        assert_close(contribs.compute_angle_term(70.0, &contribs.contribs[0]), -10.0);
+        assert_close(contribs.compute_angle_term(90.0, &contribs.contribs[0]), 0.0);
+        assert_close(contribs.compute_angle_term(130.0, &contribs.contribs[1]), 10.0);
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         assert_close(contribs.get_energy(&pos), 100.0);
         let mut grad = [0.0; 9];
@@ -3164,12 +3055,10 @@ mod tests {
     #[test]
     fn torsionconstraintcontrib_constructor_relative_offsets_bounds() {
         let ff = torsion_forcefield();
-        let contrib =
-            TorsionConstraintContrib::new_relative(&ff, 0, 1, 2, 3, true, -10.0, 10.0, 2.0);
+        let contrib = TorsionConstraintContrib::new_relative(&ff, 0, 1, 2, 3, true, -10.0, 10.0, 2.0);
         assert_close(contrib.min_dihedral_deg(), -10.0);
         assert_close(contrib.max_dihedral_deg(), 10.0);
-        let absolute =
-            TorsionConstraintContrib::new_relative(&ff, 0, 1, 2, 3, false, 20.0, 40.0, 2.0);
+        let absolute = TorsionConstraintContrib::new_relative(&ff, 0, 1, 2, 3, false, 20.0, 40.0, 2.0);
         assert_close(absolute.min_dihedral_deg(), 20.0);
         assert_close(absolute.max_dihedral_deg(), 40.0);
     }

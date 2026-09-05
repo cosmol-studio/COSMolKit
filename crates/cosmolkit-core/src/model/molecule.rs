@@ -4,13 +4,13 @@ use std::{
 };
 
 use crate::{
-    Atom, AtomId, Bond, MoleculeBuilder, error::InvariantError,
-    invariants::enforce_molecule_invariants, sgroup::SubstanceGroup, stereo::StereoGroup,
+    Atom, AtomId, Bond, MoleculeBuilder, error::InvariantError, invariants::enforce_molecule_invariants,
+    sgroup::SubstanceGroup, stereo::StereoGroup,
 };
 
 pub use cosmolkit_model::{
-    Conformer2D, Conformer3D, ConformerStore, CoordinateBlock, CoordinateDimension,
-    MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget,
+    Conformer2D, Conformer3D, ConformerStore, CoordinateBlock, CoordinateDimension, MoleculeProperties, PropertyStore,
+    SdfPropertyList, SdfPropertyListTarget,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -148,17 +148,11 @@ impl PartialEq for ComputedPropertyCache {
 
 impl ComputedPropertyCache {
     fn crippen(&self) -> Option<[f64; 2]> {
-        *self
-            .crippen
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        *self.crippen.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn set_crippen(&self, values: [f64; 2]) {
-        *self
-            .crippen
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+        *self.crippen.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
     }
 
     fn crippen_atom_contributions(&self) -> Option<CrippenAtomContributionCache> {
@@ -211,10 +205,7 @@ impl ComputedPropertyCache {
     }
 
     fn set_labute(&self, values: LabuteDescriptorCache) {
-        *self
-            .labute
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+        *self.labute.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
     }
 
     fn topological_distance_matrix(&self) -> Option<Arc<[f64]>> {
@@ -224,10 +215,7 @@ impl ComputedPropertyCache {
             .clone()
     }
 
-    fn topological_distance_matrix_or_init(
-        &self,
-        initialize: impl FnOnce() -> Vec<f64>,
-    ) -> Arc<[f64]> {
+    fn topological_distance_matrix_or_init(&self, initialize: impl FnOnce() -> Vec<f64>) -> Arc<[f64]> {
         if let Some(matrix) = self.topological_distance_matrix() {
             return matrix;
         }
@@ -264,11 +252,7 @@ impl ComputedPropertyCache {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
     }
 
-    fn distance_matrix_3d_or_init(
-        &self,
-        conformer_id: usize,
-        initialize: impl FnOnce() -> Vec<f64>,
-    ) -> Arc<[f64]> {
+    fn distance_matrix_3d_or_init(&self, conformer_id: usize, initialize: impl FnOnce() -> Vec<f64>) -> Arc<[f64]> {
         if let Some(matrix) = self
             .distance_matrices_3d
             .read()
@@ -298,10 +282,7 @@ impl ComputedPropertyCache {
     }
 
     fn clear(&self) {
-        *self
-            .crippen
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self.crippen.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         *self
             .crippen_atom_contributions
             .write()
@@ -314,10 +295,7 @@ impl ComputedPropertyCache {
             .connectivity_n_vals
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        *self
-            .labute
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self.labute.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         *self
             .topological_distance_matrix
             .write()
@@ -400,8 +378,7 @@ impl Molecule {
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Result<Self, InvariantError> {
-        topology.adjacency =
-            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology.adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         let molecule = Self {
             topology: Arc::new(topology),
             coordinates: Arc::new(coordinates),
@@ -420,8 +397,7 @@ impl Molecule {
         properties: MoleculeProperties,
         capabilities: MoleculeCapabilities,
     ) -> Result<Self, InvariantError> {
-        topology.adjacency =
-            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology.adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         let molecule = Self {
             topology: Arc::new(topology),
             coordinates: Arc::new(coordinates),
@@ -441,8 +417,7 @@ impl Molecule {
         derived_cache: DerivedCacheBlock,
         capabilities: MoleculeCapabilities,
     ) -> Result<Self, InvariantError> {
-        topology.adjacency =
-            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology.adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         let molecule = Self {
             topology: Arc::new(topology),
             coordinates: Arc::new(coordinates),
@@ -492,10 +467,7 @@ impl Molecule {
 
     #[must_use]
     pub fn coordinates_2d(&self) -> Option<&[[f64; 2]]> {
-        self.coordinates
-            .conformers_2d
-            .first()
-            .map(Conformer2D::coordinates)
+        self.coordinates.conformers_2d.first().map(Conformer2D::coordinates)
     }
 
     #[must_use]
@@ -595,28 +567,18 @@ impl Molecule {
         crate::smiles::mol_from_smiles(smiles, &crate::smiles::SmilesParseParams::default())
     }
 
-    pub fn from_smiles_with_params(
-        smiles: &str,
-        params: &crate::SmilesParseParams,
-    ) -> Result<Self, SmilesParseError> {
+    pub fn from_smiles_with_params(smiles: &str, params: &crate::SmilesParseParams) -> Result<Self, SmilesParseError> {
         crate::smiles::mol_from_smiles(smiles, params)
     }
 
-    pub fn from_smiles_with_sanitize(
-        smiles: &str,
-        sanitize: bool,
-    ) -> Result<Self, SmilesParseError> {
+    pub fn from_smiles_with_sanitize(smiles: &str, sanitize: bool) -> Result<Self, SmilesParseError> {
         let params = crate::smiles::SmilesParseParams::with_sanitize(sanitize);
         crate::smiles::mol_from_smiles(smiles, &params)
     }
 
     #[cfg(feature = "io")]
     pub fn from_mol_block(_block: &str) -> Result<Self, crate::io::sdf::SdfReadError> {
-        Ok(crate::io::sdf::read_sdf_from_str_with_params(
-            _block,
-            crate::io::sdf::SdfReadParams::default(),
-        )?
-        .molecule)
+        Ok(crate::io::sdf::read_sdf_from_str_with_params(_block, crate::io::sdf::SdfReadParams::default())?.molecule)
     }
 
     #[cfg(feature = "io")]
@@ -628,9 +590,7 @@ impl Molecule {
     }
 
     #[cfg(feature = "io")]
-    pub fn from_mol_file(
-        _path: impl AsRef<std::path::Path>,
-    ) -> Result<Self, crate::io::sdf::SdfReadError> {
+    pub fn from_mol_file(_path: impl AsRef<std::path::Path>) -> Result<Self, crate::io::sdf::SdfReadError> {
         Ok(crate::io::molfile::read_mol_file(_path)?.molecule)
     }
 
@@ -655,10 +615,7 @@ impl Molecule {
         self.to_smiles_with_params(&params)
     }
 
-    pub fn to_smiles_with_params(
-        &self,
-        params: &crate::SmilesWriteParams,
-    ) -> Result<String, SmilesWriteError> {
+    pub fn to_smiles_with_params(&self, params: &crate::SmilesWriteParams) -> Result<String, SmilesWriteError> {
         crate::smiles_write::mol_to_smiles(self, params)
     }
 
@@ -799,9 +756,7 @@ impl Molecule {
     }
 
     #[cfg(feature = "depict")]
-    pub(crate) fn prepared_for_drawing_parity(
-        &self,
-    ) -> Result<crate::draw::PreparedDrawMolecule, crate::SvgDrawError> {
+    pub(crate) fn prepared_for_drawing_parity(&self) -> Result<crate::draw::PreparedDrawMolecule, crate::SvgDrawError> {
         crate::draw::prepare_mol_for_drawing_parity(self)
     }
 
@@ -967,8 +922,7 @@ impl Molecule {
     }
 
     pub(crate) fn set_crippen_atom_contribution_cache(&self, values: CrippenAtomContributionCache) {
-        self.computed_properties
-            .set_crippen_atom_contributions(values);
+        self.computed_properties.set_crippen_atom_contributions(values);
     }
 
     pub(crate) fn connectivity_hk_deltas_cache(&self) -> Option<Arc<[f64]>> {
@@ -999,8 +953,7 @@ impl Molecule {
         &self,
         initialize: impl FnOnce() -> Vec<f64>,
     ) -> Arc<[f64]> {
-        self.computed_properties
-            .topological_distance_matrix_or_init(initialize)
+        self.computed_properties.topological_distance_matrix_or_init(initialize)
     }
 
     pub(crate) fn distance_matrix_3d_cache_or_init(
@@ -1030,10 +983,7 @@ impl Molecule {
     }
 
     pub(crate) fn take_properties_or_clone(&mut self) -> MoleculeProperties {
-        let block = std::mem::replace(
-            &mut self.properties,
-            Arc::new(MoleculeProperties::default()),
-        );
+        let block = std::mem::replace(&mut self.properties, Arc::new(MoleculeProperties::default()));
         match Arc::try_unwrap(block) {
             Ok(block) => block,
             Err(block) => (*block).clone(),
@@ -1053,8 +1003,8 @@ mod tests {
     use crate::avalon_fingerprint::{AvalonFingerprintParams, avalon_fingerprint};
     use crate::fingerprint::{MaccsFingerprintParams, TopologicalFingerprintParams};
     use crate::{
-        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, MoleculeBuilder,
-        assign_stereochemistry, fragment, mol_hash, pdb_writer, perceive_stereochemistry,
+        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, MoleculeBuilder, assign_stereochemistry, fragment,
+        mol_hash, pdb_writer, perceive_stereochemistry,
     };
 
     #[test]
@@ -1104,8 +1054,7 @@ mod tests {
         let mol = Molecule::from_smiles("Cc1ccccc1").expect("failed to parse scaffold molecule");
 
         let murcko_method = mol.murcko_scaffold().expect("method murcko scaffold");
-        let murcko_module =
-            crate::mol_hash::mol_murcko_scaffold(&mol).expect("module murcko scaffold");
+        let murcko_module = crate::mol_hash::mol_murcko_scaffold(&mol).expect("module murcko scaffold");
         let net_method = mol.net_scaffold().expect("method net scaffold");
         let net_module = crate::mol_hash::mol_net_scaffold(&mol).expect("module net scaffold");
 
@@ -1133,10 +1082,8 @@ mod tests {
                 .expect("module topological fingerprint")
         );
         assert_eq!(
-            mol.maccs_fingerprint(&maccs_params)
-                .expect("method MACCS fingerprint"),
-            crate::fingerprint::maccs_fingerprint(&mol, &maccs_params)
-                .expect("module MACCS fingerprint")
+            mol.maccs_fingerprint(&maccs_params).expect("method MACCS fingerprint"),
+            crate::fingerprint::maccs_fingerprint(&mol, &maccs_params).expect("module MACCS fingerprint")
         );
     }
 
@@ -1159,20 +1106,14 @@ mod tests {
     fn molecule_pdb_helper_matches_module_function() {
         let mol = Molecule::from_smiles("CO").expect("failed to parse pdb molecule");
 
-        assert_eq!(
-            mol.to_pdb_block(-1, 0),
-            pdb_writer::mol_to_pdb_block(&mol, -1, 0)
-        );
+        assert_eq!(mol.to_pdb_block(-1, 0), pdb_writer::mol_to_pdb_block(&mol, -1, 0));
     }
 
     #[test]
     fn molecule_perceive_stereochemistry_matches_module_function() {
         let mol = Molecule::from_smiles("Cl[C@H](Br)I").expect("failed to parse stereo molecule");
 
-        assert_eq!(
-            mol.perceive_stereochemistry(),
-            perceive_stereochemistry(&mol)
-        );
+        assert_eq!(mol.perceive_stereochemistry(), perceive_stereochemistry(&mol));
         #[allow(deprecated)]
         {
             assert_eq!(assign_stereochemistry(&mol), perceive_stereochemistry(&mol));
@@ -1199,9 +1140,7 @@ mod tests {
     fn molecule_perceive_stereochemistry_is_read_only() {
         let mol = Molecule::from_smiles("F/C=C/F").expect("failed to parse stereo molecule");
         let before = mol.to_smiles(true).expect("smiles before");
-        let _ = mol
-            .perceive_stereochemistry()
-            .expect("perceive stereochemistry");
+        let _ = mol.perceive_stereochemistry().expect("perceive stereochemistry");
         let after = mol.to_smiles(true).expect("smiles after");
         assert_eq!(before, after);
     }
@@ -1218,9 +1157,7 @@ mod tests {
         builder
             .add_bond(BondSpec::new(c2, o, BondOrder::Single))
             .expect("failed to add c-o bond");
-        let mol = builder
-            .build()
-            .expect("failed to build fingerprint molecule");
+        let mol = builder.build().expect("failed to build fingerprint molecule");
         let params = TopologicalFingerprintParams {
             min_path: 1,
             max_path: 2,
@@ -1235,10 +1172,8 @@ mod tests {
             from_atoms: Some(vec![0]),
         };
         assert_eq!(
-            mol.topological_fingerprint(&params)
-                .expect("Molecule helper result"),
-            crate::fingerprint::topological_fingerprint(&mol, &params)
-                .expect("module function result")
+            mol.topological_fingerprint(&params).expect("Molecule helper result"),
+            crate::fingerprint::topological_fingerprint(&mol, &params).expect("module function result")
         );
     }
 
@@ -1276,10 +1211,7 @@ mod tests {
             clone.connectivity_hk_deltas_cache().as_deref(),
             Some(&[1.0, 2.0, 3.0][..])
         );
-        assert_eq!(
-            clone.connectivity_n_vals_cache().as_deref(),
-            Some(&[4.0, 5.0, 6.0][..])
-        );
+        assert_eq!(clone.connectivity_n_vals_cache().as_deref(), Some(&[4.0, 5.0, 6.0][..]));
         assert_eq!(clone.labute_descriptor_cache().unwrap().asa, 11.0);
 
         let coordinates = molecule.coordinate_block().clone();

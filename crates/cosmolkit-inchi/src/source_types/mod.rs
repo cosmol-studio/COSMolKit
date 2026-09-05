@@ -211,8 +211,7 @@ impl<T> SourceMutPointer<T> {
             i64::try_from(difference).map_err(|_| SourceHeapError::PointerDifferenceOverflow)
         } else {
             let difference = origin.element_offset - self.element_offset;
-            let difference = i64::try_from(difference)
-                .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
+            let difference = i64::try_from(difference).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
             Ok(-difference)
         }
     }
@@ -510,11 +509,7 @@ impl AllocationArena {
         usize::try_from(id.0).map_err(|_| SourceHeapError::MissingAllocation)
     }
 
-    fn insert<T: 'static>(
-        &mut self,
-        id: AllocationId,
-        allocation: Vec<T>,
-    ) -> Result<(), SourceHeapError> {
+    fn insert<T: 'static>(&mut self, id: AllocationId, allocation: Vec<T>) -> Result<(), SourceHeapError> {
         let index = usize::try_from(id.0).map_err(|_| SourceHeapError::AllocationIdExhausted)?;
         if index != self.slots.len() {
             return Err(SourceHeapError::AllocationIdExhausted);
@@ -637,10 +632,7 @@ fn inp_atom_gcc_lp64_bytes(atom: &inp_ATOM) -> [u8; INP_ATOM_GCC_LP64_SIZE] {
     bytes
 }
 
-fn overwrite_inp_atom_from_gcc_lp64_bytes(
-    atom: &mut inp_ATOM,
-    bytes: &[u8; INP_ATOM_GCC_LP64_SIZE],
-) {
+fn overwrite_inp_atom_from_gcc_lp64_bytes(atom: &mut inp_ATOM, bytes: &[u8; INP_ATOM_GCC_LP64_SIZE]) {
     for (target, &value) in atom.elname.iter_mut().zip(&bytes[0..6]) {
         *target = value as i8;
     }
@@ -766,10 +758,7 @@ impl SourceHeap {
 
     #[cfg(test)]
     pub(crate) fn live_source_allocation_types(&self) -> Vec<&'static str> {
-        self.live_source_allocation_types
-            .values()
-            .copied()
-            .collect()
+        self.live_source_allocation_types.values().copied().collect()
     }
 
     #[cfg(test)]
@@ -780,10 +769,7 @@ impl SourceHeap {
             .count()
     }
 
-    pub(crate) fn allocate<T: 'static>(
-        &mut self,
-        values: Vec<T>,
-    ) -> Result<SourceMutPointer<T>, SourceHeapError> {
+    pub(crate) fn allocate<T: 'static>(&mut self, values: Vec<T>) -> Result<SourceMutPointer<T>, SourceHeapError> {
         #[cfg(test)]
         {
             self.source_allocation_calls += 1;
@@ -839,9 +825,7 @@ impl SourceHeap {
         if pointer_table.element_offset != 0 || storage.element_offset != 0 {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let table_id = pointer_table
-            .allocation
-            .ok_or(SourceHeapError::NullPointer)?;
+        let table_id = pointer_table.allocation.ok_or(SourceHeapError::NullPointer)?;
         let storage_id = storage.allocation.ok_or(SourceHeapError::NullPointer)?;
         if table_id == storage_id {
             return Err(SourceHeapError::PointerAllocationMismatch);
@@ -923,10 +907,7 @@ impl SourceHeap {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let slot = self
-            .allocations
-            .get_mut(id)
-            .ok_or(SourceHeapError::MissingAllocation)?;
+        let slot = self.allocations.get_mut(id).ok_or(SourceHeapError::MissingAllocation)?;
         if !slot.is::<T>() {
             return Err(SourceHeapError::AllocationTypeMismatch);
         }
@@ -969,10 +950,7 @@ impl SourceHeap {
 
     #[track_caller]
     #[inline(always)]
-    pub(crate) fn slice<T: 'static>(
-        &self,
-        pointer: SourceConstPointer<T>,
-    ) -> Result<&[T], SourceHeapError> {
+    pub(crate) fn slice<T: 'static>(&self, pointer: SourceConstPointer<T>) -> Result<&[T], SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
@@ -980,19 +958,13 @@ impl SourceHeap {
             .ok_or(SourceHeapError::MissingAllocation)?
             .downcast_ref::<T>()
             .ok_or(SourceHeapError::AllocationTypeMismatch)?;
-        let offset = usize::try_from(pointer.element_offset)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        values
-            .get(offset..)
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+        let offset = usize::try_from(pointer.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        values.get(offset..).ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
     #[track_caller]
     #[inline(always)]
-    pub(crate) fn slice_mut<T: 'static>(
-        &mut self,
-        pointer: SourceMutPointer<T>,
-    ) -> Result<&mut [T], SourceHeapError> {
+    pub(crate) fn slice_mut<T: 'static>(&mut self, pointer: SourceMutPointer<T>) -> Result<&mut [T], SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
@@ -1000,11 +972,8 @@ impl SourceHeap {
             .ok_or(SourceHeapError::MissingAllocation)?
             .downcast_mut::<T>()
             .ok_or(SourceHeapError::AllocationTypeMismatch)?;
-        let offset = usize::try_from(pointer.element_offset)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        values
-            .get_mut(offset..)
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+        let offset = usize::try_from(pointer.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        values.get_mut(offset..).ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
     /// Validates a source pointer once for a tightly scoped read-heavy loop.
@@ -1061,18 +1030,12 @@ impl SourceHeap {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let slot = self
-            .allocations
-            .get_mut(id)
-            .ok_or(SourceHeapError::MissingAllocation)?;
+        let slot = self.allocations.get_mut(id).ok_or(SourceHeapError::MissingAllocation)?;
         let values = slot
             .downcast_ref::<T>()
             .ok_or(SourceHeapError::AllocationTypeMismatch)?;
-        let offset = usize::try_from(pointer.element_offset)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let values = values
-            .get(offset..)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let offset = usize::try_from(pointer.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let values = values.get(offset..).ok_or(SourceHeapError::PointerOutOfBounds)?;
         Ok(StableSourceSlice {
             pointer: NonNull::new(values.as_ptr().cast_mut()).expect("slice pointers are non-null"),
             len: values.len(),
@@ -1086,10 +1049,7 @@ impl SourceHeap {
         operation: impl FnOnce(&mut [T], &SourceHeap) -> Result<R, SourceHeapError>,
     ) -> Result<R, SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let mut allocation = self
-            .allocations
-            .remove(id)
-            .ok_or(SourceHeapError::MissingAllocation)?;
+        let mut allocation = self.allocations.remove(id).ok_or(SourceHeapError::MissingAllocation)?;
         let offset = match usize::try_from(pointer.element_offset) {
             Ok(offset) => offset,
             Err(_) => {
@@ -1115,10 +1075,7 @@ impl SourceHeap {
         operation: impl FnOnce(&mut [T], &mut SourceHeap) -> Result<R, SourceHeapError>,
     ) -> Result<R, SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let mut allocation = self
-            .allocations
-            .remove(id)
-            .ok_or(SourceHeapError::MissingAllocation)?;
+        let mut allocation = self.allocations.remove(id).ok_or(SourceHeapError::MissingAllocation)?;
         let offset = match usize::try_from(pointer.element_offset) {
             Ok(offset) => offset,
             Err(_) => {
@@ -1173,10 +1130,10 @@ impl SourceHeap {
         };
 
         let result = (|| {
-            let first_offset = usize::try_from(first.element_offset)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let second_offset = usize::try_from(second.element_offset)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let first_offset =
+                usize::try_from(first.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let second_offset =
+                usize::try_from(second.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let first_values = first_allocation
                 .downcast_mut::<A>()
                 .ok_or(SourceHeapError::AllocationTypeMismatch)?
@@ -1189,8 +1146,8 @@ impl SourceHeap {
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let third_values = match (&mut third_allocation, third) {
                 (Some((_, allocation)), Some(pointer)) => {
-                    let offset = usize::try_from(pointer.element_offset)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let offset =
+                        usize::try_from(pointer.element_offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     Some(
                         allocation
                             .downcast_mut::<C>()
@@ -1212,20 +1169,14 @@ impl SourceHeap {
         result
     }
 
-    pub(crate) fn free<T: 'static>(
-        &mut self,
-        pointer: SourceMutPointer<T>,
-    ) -> Result<(), SourceHeapError> {
+    pub(crate) fn free<T: 'static>(&mut self, pointer: SourceMutPointer<T>) -> Result<(), SourceHeapError> {
         let Some(id) = pointer.allocation else {
             return Ok(());
         };
         if pointer.element_offset != 0 {
             return Err(SourceHeapError::FreeOfInteriorPointer);
         }
-        let allocation = self
-            .allocations
-            .get(id)
-            .ok_or(SourceHeapError::MissingAllocation)?;
+        let allocation = self.allocations.get(id).ok_or(SourceHeapError::MissingAllocation)?;
         if !allocation.is::<T>() {
             return Err(SourceHeapError::AllocationTypeMismatch);
         }
@@ -1337,10 +1288,7 @@ mod tests {
         17
     }
 
-    fn compare_source_pointers(
-        left: SourceConstPointer<SourceVoid>,
-        right: SourceConstPointer<SourceVoid>,
-    ) -> i32 {
+    fn compare_source_pointers(left: SourceConstPointer<SourceVoid>, right: SourceConstPointer<SourceVoid>) -> i32 {
         i32::from(left != right)
     }
 
@@ -1406,12 +1354,7 @@ mod tests {
 
         let input_parameters = INPUT_PARMS::default();
         assert_eq!(input_parameters.szSdfDataHeader, [0; 65]);
-        assert!(
-            input_parameters
-                .path
-                .iter()
-                .all(|pointer| pointer.is_null())
-        );
+        assert!(input_parameters.path.iter().all(|pointer| pointer.is_null()));
         assert!(input_parameters.pSdfLabel.is_null());
         assert!(input_parameters.pSdfValue.is_null());
 
@@ -1440,24 +1383,15 @@ mod tests {
             heap.slice(allocation.as_const().offset(4).unwrap()),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(
-            allocation.offset(-1),
-            Err(SourceHeapError::PointerOffsetOverflow)
-        );
-        assert_eq!(
-            heap.free(interior),
-            Err(SourceHeapError::FreeOfInteriorPointer)
-        );
+        assert_eq!(allocation.offset(-1), Err(SourceHeapError::PointerOffsetOverflow));
+        assert_eq!(heap.free(interior), Err(SourceHeapError::FreeOfInteriorPointer));
         assert_eq!(heap.free(SourceMutPointer::<i32>::null()), Ok(()));
         assert_eq!(
             heap.slice(SourceConstPointer::<i32>::null()),
             Err(SourceHeapError::NullPointer)
         );
         heap.free(allocation).unwrap();
-        assert_eq!(
-            heap.slice(alias.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(alias.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let bytes = heap.allocate(vec![1_u8, 2]).unwrap();
         let wrong_type = SourceConstPointer::<u16> {
@@ -1465,10 +1399,7 @@ mod tests {
             element_offset: 0,
             marker: PhantomData,
         };
-        assert_eq!(
-            heap.slice(wrong_type),
-            Err(SourceHeapError::AllocationTypeMismatch)
-        );
+        assert_eq!(heap.slice(wrong_type), Err(SourceHeapError::AllocationTypeMismatch));
         heap.free(bytes).unwrap();
 
         let split = tagSplitLong::from_ulong(0x1122_3344_5566_7788);

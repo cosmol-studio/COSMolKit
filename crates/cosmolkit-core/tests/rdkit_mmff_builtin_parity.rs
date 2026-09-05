@@ -40,12 +40,9 @@ fn load_golden() -> Vec<MmffBuiltinRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
+            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
         })
         .collect()
 }
@@ -83,10 +80,7 @@ fn mmff_builtin_golden_covers_rdkit_fixture_rows() {
         "MMFF built-in golden row count must match copied RDKit fixture rows"
     );
     for fixture in fixtures {
-        let actual = records
-            .iter()
-            .filter(|record| record.fixture == fixture)
-            .count();
+        let actual = records.iter().filter(|record| record.fixture == fixture).count();
         assert_eq!(
             actual,
             expected_fixture_rows(fixture),

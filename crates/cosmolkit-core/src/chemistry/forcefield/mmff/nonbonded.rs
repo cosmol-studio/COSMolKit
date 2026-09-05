@@ -40,14 +40,7 @@ fn calc_vdw_energy(dist: f64, r_star_ij: f64, well_depth: f64) -> f64 {
     res
 }
 
-fn calc_ele_energy(
-    idx1: usize,
-    idx2: usize,
-    dist: f64,
-    charge_term: f64,
-    diel_model: u8,
-    is_1_4: bool,
-) -> f64 {
+fn calc_ele_energy(idx1: usize, idx2: usize, dist: f64, charge_term: f64, diel_model: u8, is_1_4: bool) -> f64 {
     // BEGIN RDKIT CPP FUNCTION ForceFields::MMFF::Utils::calcEleEnergy (Nonbonded.cpp:76-85)
     // RDKit✔️✔️: double calcEleEnergy(unsigned int, unsigned int, double dist, double chargeTerm,
     // RDKit✔️✔️:                      std::uint8_t dielModel, bool is1_4) {
@@ -278,8 +271,7 @@ impl NonbondedContrib {
                 let is_1_4 = self.is_1_4s[i] != 0;
                 // RDKit✔️✔️:       const auto res = Utils::calcEleEnergy(d_at1Idx, d_at2Idx, dist,
                 // RDKit✔️✔️:                                             d_chargeTerm, d_dielModel, d_is1_4);
-                let res =
-                    calc_ele_energy(atom1_idx, atom2_idx, dist, charge_term, diel_model, is_1_4);
+                let res = calc_ele_energy(atom1_idx, atom2_idx, dist, charge_term, diel_model, is_1_4);
                 // RDKit✔️✔️:       energySum += res;
                 energy_sum += res;
                 // RDKit✔️✔️:     }
@@ -390,8 +382,7 @@ impl NonbondedContrib {
                 // RDKit✔️✔️:                             ((-vdw2t7 / q7pvdw2m1 + 14.0) / (q + vdw1m1)));
                 let de_dr = well_depth / r_ij_star
                     * t7
-                    * (-vdw2t7 * q6 / (q7pvdw2m1 * q7pvdw2m1)
-                        + ((-vdw2t7 / q7pvdw2m1 + 14.0) / (q + vdw1m1)));
+                    * (-vdw2t7 * q6 / (q7pvdw2m1 * q7pvdw2m1) + ((-vdw2t7 / q7pvdw2m1 + 14.0) / (q + vdw1m1)));
                 // RDKit✔️✔️:       vdwGrad = dE_dr / dist;
                 vdw_grad = de_dr / dist;
                 // RDKit✔️✔️:     }
@@ -417,8 +408,8 @@ impl NonbondedContrib {
                 };
                 // RDKit✔️✔️:       const double dE_dr = -332.0716 * (double)(d_dielModel)*d_chargeTerm /
                 // RDKit✔️✔️:                            corr_dist * (d_is1_4 ? 0.75 : 1.0);
-                let de_dr = -332.0716 * f64::from(diel_model) * charge_term / corr_dist
-                    * if is_1_4 { 0.75 } else { 1.0 };
+                let de_dr =
+                    -332.0716 * f64::from(diel_model) * charge_term / corr_dist * if is_1_4 { 0.75 } else { 1.0 };
                 // RDKit✔️✔️:       eleGrad = dE_dr / dist;
                 ele_grad = de_dr / dist;
                 // RDKit✔️✔️:     }
@@ -468,9 +459,7 @@ impl ForceFieldContrib for NonbondedContrib {
 mod tests {
     use super::NonbondedContrib;
     use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3};
-    use crate::chemistry::forcefield::mmff::mol_properties::{
-        MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE,
-    };
+    use crate::chemistry::forcefield::mmff::mol_properties::{MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE};
     use crate::chemistry::forcefield::mmff::params::MmffVdwRijstarEps;
 
     const TEST_TOLERANCE: f64 = 1.0e-12;
@@ -478,11 +467,9 @@ mod tests {
     fn force_field_with_positions(count: usize) -> ForceField {
         let mut force_field = ForceField::new(count);
         for idx in 0..count {
-            force_field.positions_mut().push(ForceFieldVec3::new(
-                idx as f64,
-                idx as f64 + 0.25,
-                idx as f64 + 0.5,
-            ));
+            force_field
+                .positions_mut()
+                .push(ForceFieldVec3::new(idx as f64, idx as f64 + 0.25, idx as f64 + 0.5));
         }
         force_field.initialize();
         force_field
@@ -521,8 +508,7 @@ mod tests {
         let t7 = t2 * t2 * t2 * t;
         let de_dr = well_depth / r_ij_star
             * t7
-            * (-vdw2t7 * q6 / (q7pvdw2m1 * q7pvdw2m1)
-                + ((-vdw2t7 / q7pvdw2m1 + 14.0) / (q + vdw1m1)));
+            * (-vdw2t7 * q6 / (q7pvdw2m1 * q7pvdw2m1) + ((-vdw2t7 / q7pvdw2m1 + 14.0) / (q + vdw1m1)));
         de_dr / dist
     }
 
@@ -533,8 +519,7 @@ mod tests {
         } else {
             corr_dist
         };
-        let de_dr = -332.0716 * f64::from(diel_model) * charge_term / corr_dist
-            * if is_1_4 { 0.75 } else { 1.0 };
+        let de_dr = -332.0716 * f64::from(diel_model) * charge_term / corr_dist * if is_1_4 { 0.75 } else { 1.0 };
         de_dr / dist
     }
 
@@ -578,15 +563,7 @@ mod tests {
             epsilon: 0.12,
         };
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
 
         assert_eq!(contrib.atom1_indices(), &[0]);
         assert_eq!(contrib.atom2_indices(), &[1]);
@@ -609,15 +586,7 @@ mod tests {
             epsilon: 0.12,
         };
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            false,
-            0.75,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), false, 0.75, MMFF_DIELECTRIC_DISTANCE, true);
 
         assert_eq!(contrib.contrib_types(), &[1]);
         assert_eq!(contrib.r_ij_stars(), &[3.0]);
@@ -663,15 +632,7 @@ mod tests {
             epsilon: 0.12,
         };
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
         contrib.add_term(2, 3, None, true, 0.50, 1, false);
 
         assert_eq!(contrib.atom1_indices(), &[0, 2]);
@@ -696,15 +657,7 @@ mod tests {
             epsilon: 0.12,
         };
 
-        contrib.add_term(
-            2,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(2, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
     }
 
     #[test]
@@ -719,15 +672,7 @@ mod tests {
             epsilon: 0.12,
         };
 
-        contrib.add_term(
-            0,
-            2,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 2, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
     }
 
     #[test]
@@ -751,15 +696,7 @@ mod tests {
         };
         let pos = [0.0, 0.0, 0.0, 1.5, 0.0, 0.0];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            false,
-            0.0,
-            MMFF_DIELECTRIC_DISTANCE,
-            false,
-        );
+        contrib.add_term(0, 1, Some(&params), false, 0.0, MMFF_DIELECTRIC_DISTANCE, false);
 
         let dist = 1.5_f64;
         let vdw1 = 1.07_f64;
@@ -818,15 +755,7 @@ mod tests {
         };
         let pos = [0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 2.0, 0.0];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
         contrib.add_term(1, 2, None, true, 0.4, MMFF_DIELECTRIC_CONSTANT, false);
 
         let dist01 = 1.5_f64;
@@ -863,15 +792,7 @@ mod tests {
         let pos = [0.0, 0.0, 0.0, 1.5, 0.0, 0.0];
         let mut grad = vec![0.0; 6];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            false,
-            0.0,
-            MMFF_DIELECTRIC_DISTANCE,
-            false,
-        );
+        contrib.add_term(0, 1, Some(&params), false, 0.0, MMFF_DIELECTRIC_DISTANCE, false);
         contrib.get_grad(&pos, &mut grad);
 
         let de_dr = source_vdw_grad_component(3.0, 0.12, 1.5);
@@ -907,15 +828,7 @@ mod tests {
         let pos = [0.0, 0.0, 0.0, 1.5, 0.0, 0.0];
         let mut grad = vec![0.0; 6];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
         contrib.get_grad(&pos, &mut grad);
 
         let de_dr = source_vdw_grad_component(3.0, 0.12, 1.5)
@@ -937,15 +850,7 @@ mod tests {
         let pos = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let mut grad = vec![0.0; 6];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
         contrib.get_grad(&pos, &mut grad);
 
         let expected = vec![0.05, 0.05, 0.05, -0.05, -0.05, -0.05];
@@ -965,15 +870,7 @@ mod tests {
         let pos = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0];
         let mut grad = vec![0.0; 9];
 
-        contrib.add_term(
-            0,
-            1,
-            Some(&params),
-            true,
-            -0.25,
-            MMFF_DIELECTRIC_DISTANCE,
-            true,
-        );
+        contrib.add_term(0, 1, Some(&params), true, -0.25, MMFF_DIELECTRIC_DISTANCE, true);
         contrib.add_term(1, 2, None, true, 0.4, MMFF_DIELECTRIC_CONSTANT, false);
         contrib.get_grad(&pos, &mut grad);
 

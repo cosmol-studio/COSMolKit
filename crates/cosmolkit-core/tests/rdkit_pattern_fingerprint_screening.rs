@@ -1,6 +1,5 @@
 use cosmolkit_core::{
-    Fingerprint, Molecule, PatternFingerprintParams, SmartsParseParams, has_substruct_match,
-    mol_from_smarts,
+    Fingerprint, Molecule, PatternFingerprintParams, SmartsParseParams, has_substruct_match, mol_from_smarts,
 };
 
 const FP_SIZE: usize = 2048;
@@ -24,9 +23,7 @@ struct ScreeningCase {
 fn parse_input(kind: InputKind, input: &str) -> Molecule {
     match kind {
         InputKind::Smiles => Molecule::from_smiles(input).expect("screening SMILES"),
-        InputKind::Smarts => {
-            mol_from_smarts(input, &SmartsParseParams::default()).expect("screening SMARTS")
-        }
+        InputKind::Smarts => mol_from_smarts(input, &SmartsParseParams::default()).expect("screening SMARTS"),
         InputKind::SmartsMergeHs => mol_from_smarts(
             input,
             &SmartsParseParams {

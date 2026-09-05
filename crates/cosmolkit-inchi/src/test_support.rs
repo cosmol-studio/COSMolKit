@@ -52,10 +52,7 @@ pub(crate) fn source_i8_c_string(bytes_without_nul: &[u8]) -> Vec<i8> {
     bytes
 }
 
-pub(crate) fn allocate_source_fixture<T: 'static>(
-    heap: &mut SourceHeap,
-    values: Vec<T>,
-) -> SourceMutPointer<T> {
+pub(crate) fn allocate_source_fixture<T: 'static>(heap: &mut SourceHeap, values: Vec<T>) -> SourceMutPointer<T> {
     heap.allocate(values)
         .expect("source fixture allocation identifier exhausted")
 }

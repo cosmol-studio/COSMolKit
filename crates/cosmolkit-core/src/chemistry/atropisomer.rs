@@ -143,10 +143,7 @@ impl AtropisomerAtomsAndBonds {
 // RDKit✔️✔️:   return true;
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: getAtropisomerAtomsAndBonds
-pub(crate) fn atropisomer_atoms_and_bonds(
-    mol: &Molecule,
-    bond_id: BondId,
-) -> Option<AtropisomerAtomsAndBonds> {
+pub(crate) fn atropisomer_atoms_and_bonds(mol: &Molecule, bond_id: BondId) -> Option<AtropisomerAtomsAndBonds> {
     let topology = mol.topology_block();
     let bond = topology.bonds.get(bond_id.index())?;
     let atoms = [bond.begin(), bond.end()];
@@ -186,10 +183,7 @@ pub(crate) fn atropisomer_atoms_and_bonds(
         }
     }
 
-    Some(AtropisomerAtomsAndBonds {
-        atoms,
-        neighbor_bonds,
-    })
+    Some(AtropisomerAtomsAndBonds { atoms, neighbor_bonds })
 }
 
 /// Return the axis endpoint atoms when both ends have the neighbor bonds
@@ -275,15 +269,8 @@ fn can_have_direction(order: BondOrder) -> bool {
 /// This is the structural analogue of the first half of RDKit's
 /// `detectAtropisomerChirality`, stopping before the coordinate-based
 /// geometric chirality assignment.
-pub fn detect_atropisomers(
-    mol: &Molecule,
-    params: &AtropisomerParams,
-) -> Result<Vec<AtropisomerResult>, AtropError> {
-    let rings = mol
-        .derived_cache()
-        .rings
-        .as_ref()
-        .ok_or(AtropError::NoRingInfo)?;
+pub fn detect_atropisomers(mol: &Molecule, params: &AtropisomerParams) -> Result<Vec<AtropisomerResult>, AtropError> {
+    let rings = mol.derived_cache().rings.as_ref().ok_or(AtropError::NoRingInfo)?;
 
     let num_atoms = mol.num_atoms();
     let _num_bonds = mol.bonds().len();
@@ -299,8 +286,7 @@ pub fn detect_atropisomers(
     };
 
     // Compute hybridization from atoms.
-    let hybridization: Vec<crate::Hybridization> =
-        mol.atoms().iter().map(|a| a.hybridization()).collect();
+    let hybridization: Vec<crate::Hybridization> = mol.atoms().iter().map(|a| a.hybridization()).collect();
 
     let mut results = Vec::new();
     let mut seen_bonds = HashSet::new();
@@ -380,8 +366,7 @@ pub fn detect_atropisomers(
             }
             // If max_atrop_bond_ring_size is set (non-zero), also enforce
             // an upper bound.
-            if params.max_atrop_bond_ring_size > 0 && min_ring_sz > params.max_atrop_bond_ring_size
-            {
+            if params.max_atrop_bond_ring_size > 0 && min_ring_sz > params.max_atrop_bond_ring_size {
                 continue;
             }
         }
@@ -502,11 +487,7 @@ pub fn does_mol_have_atropisomers(mol: &Molecule) -> bool {
 /// ChiralTag projection must not be treated as a complete source port.
 pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTag)>, AtropError> {
     // Rings needed for structural validation during assignment.
-    let rings = mol
-        .derived_cache()
-        .rings
-        .as_ref()
-        .ok_or(AtropError::NoRingInfo)?;
+    let rings = mol.derived_cache().rings.as_ref().ok_or(AtropError::NoRingInfo)?;
 
     let num_atoms = mol.num_atoms();
 
@@ -521,8 +502,7 @@ pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTa
     };
 
     // Compute hybridization.
-    let hybridization: Vec<crate::Hybridization> =
-        mol.atoms().iter().map(|a| a.hybridization()).collect();
+    let hybridization: Vec<crate::Hybridization> = mol.atoms().iter().map(|a| a.hybridization()).collect();
 
     let mut assignments = Vec::new();
 
@@ -663,12 +643,8 @@ pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTa
         }
 
         let stereo = match (wedge_dir0, wedge_dir1) {
-            (crate::BondDirection::BeginWedge, crate::BondDirection::BeginDash) => {
-                BondStereo::AtropCcw
-            }
-            (crate::BondDirection::BeginDash, crate::BondDirection::BeginWedge) => {
-                BondStereo::AtropCw
-            }
+            (crate::BondDirection::BeginWedge, crate::BondDirection::BeginDash) => BondStereo::AtropCcw,
+            (crate::BondDirection::BeginDash, crate::BondDirection::BeginWedge) => BondStereo::AtropCw,
             _ => continue,
         };
 
@@ -691,11 +667,7 @@ pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTa
 /// - If the first bond has a BeginWedge or BeginDash direction, use it.
 /// - If the second bond has a direction, use the opposite.
 /// - If both have directions, they must be different.
-fn get_end_wedge_direction(
-    mol: &Molecule,
-    nbr_bonds: &[BondId],
-    _focus_atom: AtomId,
-) -> (bool, crate::BondDirection) {
+fn get_end_wedge_direction(mol: &Molecule, nbr_bonds: &[BondId], _focus_atom: AtomId) -> (bool, crate::BondDirection) {
     if nbr_bonds.is_empty() {
         return (false, crate::BondDirection::None);
     }
@@ -717,9 +689,7 @@ fn get_end_wedge_direction(
         crate::BondDirection::None
     };
 
-    let dir1 = bond1
-        .map(|b| b.direction())
-        .unwrap_or(crate::BondDirection::None);
+    let dir1 = bond1.map(|b| b.direction()).unwrap_or(crate::BondDirection::None);
     let effective_dir1 = if is_wedge_or_dash(dir1) {
         dir1
     } else {
@@ -737,14 +707,10 @@ fn get_end_wedge_direction(
     // Determine effective direction: if bond0 is wedge, use wedge.
     // If bond1 is dash, that means bond0 wants wedge (opposite).
     // RDKit: (bond1Dir == BEGINWEDGE || bond2Dir == BEGINDASH) → BEGINWEDGE
-    if effective_dir0 == crate::BondDirection::BeginWedge
-        || effective_dir1 == crate::BondDirection::BeginDash
-    {
+    if effective_dir0 == crate::BondDirection::BeginWedge || effective_dir1 == crate::BondDirection::BeginDash {
         return (true, crate::BondDirection::BeginWedge);
     }
-    if effective_dir0 == crate::BondDirection::BeginDash
-        || effective_dir1 == crate::BondDirection::BeginWedge
-    {
+    if effective_dir0 == crate::BondDirection::BeginDash || effective_dir1 == crate::BondDirection::BeginWedge {
         return (true, crate::BondDirection::BeginDash);
     }
 
@@ -753,10 +719,7 @@ fn get_end_wedge_direction(
 
 /// Check if a bond direction is wedge or dash.
 fn is_wedge_or_dash(dir: crate::BondDirection) -> bool {
-    matches!(
-        dir,
-        crate::BondDirection::BeginWedge | crate::BondDirection::BeginDash
-    )
+    matches!(dir, crate::BondDirection::BeginWedge | crate::BondDirection::BeginDash)
 }
 
 // BEGIN RDKIT CPP FUNCTION: cleanupAtropisomerStereoGroups (Atropisomers.cpp:487-520)
@@ -815,19 +778,12 @@ pub fn cleanup_atropisomer_stereo_groups(mol: &Molecule) -> Vec<BondId> {
 /// Returns Ok if the bond is a valid atropisomer, or Err with a
 /// description of why it's not.
 pub fn validate_atropisomer_assignment(mol: &Molecule, bond_id: BondId) -> Result<(), AtropError> {
-    let rings = mol
-        .derived_cache()
-        .rings
-        .as_ref()
-        .ok_or(AtropError::NoRingInfo)?;
+    let rings = mol.derived_cache().rings.as_ref().ok_or(AtropError::NoRingInfo)?;
 
-    let bond = mol
-        .bonds()
-        .get(bond_id.index())
-        .ok_or(AtropError::InvalidBond {
-            bond: bond_id.index(),
-            bond_count: mol.bonds().len(),
-        })?;
+    let bond = mol.bonds().get(bond_id.index()).ok_or(AtropError::InvalidBond {
+        bond: bond_id.index(),
+        bond_count: mol.bonds().len(),
+    })?;
 
     // Must be a single bond.
     if bond.order() != BondOrder::Single {
@@ -880,9 +836,7 @@ mod tests {
         let low_right = builder.add_atom(AtomSpec::new(Element::C));
         let high_left = builder.add_atom(AtomSpec::new(Element::C));
         let high_right = builder.add_atom(AtomSpec::new(Element::C));
-        let axis = builder
-            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
-            .unwrap();
+        let axis = builder.add_bond(BondSpec::new(begin, end, BondOrder::Single)).unwrap();
         let high_left_bond = builder
             .add_bond(BondSpec::new(begin, high_left, BondOrder::Single))
             .unwrap();
@@ -906,14 +860,8 @@ mod tests {
                 vec![low_right_bond, high_right_bond],
             ]
         );
-        assert_eq!(
-            parts.first_neighbor_atoms(&molecule),
-            Some([low_left, low_right])
-        );
-        assert_eq!(
-            get_atropisomer_atoms_and_bonds(&molecule, axis),
-            Some([begin, end])
-        );
+        assert_eq!(parts.first_neighbor_atoms(&molecule), Some([low_left, low_right]));
+        assert_eq!(get_atropisomer_atoms_and_bonds(&molecule, axis), Some([begin, end]));
     }
 
     #[test]
@@ -925,9 +873,7 @@ mod tests {
         let second = builder.add_atom(AtomSpec::new(Element::C));
         let third = builder.add_atom(AtomSpec::new(Element::C));
         let right = builder.add_atom(AtomSpec::new(Element::C));
-        let axis = builder
-            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
-            .unwrap();
+        let axis = builder.add_bond(BondSpec::new(begin, end, BondOrder::Single)).unwrap();
         let first_bond = builder
             .add_bond(BondSpec::new(begin, third, BondOrder::Single))
             .unwrap();
@@ -937,9 +883,7 @@ mod tests {
         let third_bond = builder
             .add_bond(BondSpec::new(begin, second, BondOrder::Single))
             .unwrap();
-        let right_bond = builder
-            .add_bond(BondSpec::new(end, right, BondOrder::Single))
-            .unwrap();
+        let right_bond = builder.add_bond(BondSpec::new(end, right, BondOrder::Single)).unwrap();
         let molecule = builder.build().unwrap();
 
         let parts = atropisomer_atoms_and_bonds(&molecule, axis).unwrap();
@@ -956,12 +900,8 @@ mod tests {
         let begin = builder.add_atom(AtomSpec::new(Element::C));
         let end = builder.add_atom(AtomSpec::new(Element::C));
         let left = builder.add_atom(AtomSpec::new(Element::C));
-        let axis = builder
-            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(begin, left, BondOrder::Single))
-            .unwrap();
+        let axis = builder.add_bond(BondSpec::new(begin, end, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(begin, left, BondOrder::Single)).unwrap();
         let molecule = builder.build().unwrap();
 
         assert!(atropisomer_atoms_and_bonds(&molecule, axis).is_none());
@@ -1107,9 +1047,6 @@ mod tests {
         let result = validate_atropisomer_assignment(&mol, BondId::new(99));
         // Without ring info (not sanitized), we expect NoRingInfo.
         // With ring info, we'd expect InvalidBond.
-        assert!(
-            result.is_err(),
-            "expected error for out-of-range bond, got Ok"
-        );
+        assert!(result.is_err(), "expected error for out-of-range bond, got Ok");
     }
 }

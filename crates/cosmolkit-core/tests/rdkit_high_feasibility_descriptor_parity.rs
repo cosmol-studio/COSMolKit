@@ -6,18 +6,17 @@ use std::{
 };
 
 use cosmolkit_core::{
-    Molecule, calc_chi_0, calc_chi_0n, calc_chi_0v, calc_chi_1, calc_chi_1n, calc_chi_1v,
-    calc_chi_2n, calc_chi_2v, calc_chi_3n, calc_chi_3v, calc_chi_4n, calc_chi_4v, calc_chi_nn,
-    calc_chi_nv, calc_fraction_csp3, calc_hall_kier_alpha, calc_hall_kier_alpha_with_contributions,
-    calc_kappa_1, calc_kappa_2, calc_kappa_3, calc_labute_asa, calc_labute_asa_contributions,
-    calc_lipinski_hba, calc_lipinski_hbd, calc_mqns, calc_num_aliphatic_carbocycles,
-    calc_num_aliphatic_heterocycles, calc_num_aliphatic_rings, calc_num_amide_bonds,
+    Molecule, calc_chi_0, calc_chi_0n, calc_chi_0v, calc_chi_1, calc_chi_1n, calc_chi_1v, calc_chi_2n, calc_chi_2v,
+    calc_chi_3n, calc_chi_3v, calc_chi_4n, calc_chi_4v, calc_chi_nn, calc_chi_nv, calc_fraction_csp3,
+    calc_hall_kier_alpha, calc_hall_kier_alpha_with_contributions, calc_kappa_1, calc_kappa_2, calc_kappa_3,
+    calc_labute_asa, calc_labute_asa_contributions, calc_lipinski_hba, calc_lipinski_hbd, calc_mqns,
+    calc_num_aliphatic_carbocycles, calc_num_aliphatic_heterocycles, calc_num_aliphatic_rings, calc_num_amide_bonds,
     calc_num_aromatic_carbocycles, calc_num_aromatic_heterocycles, calc_num_aromatic_rings,
-    calc_num_atom_stereo_centers, calc_num_atoms, calc_num_bridgehead_atoms, calc_num_hba,
-    calc_num_hbd, calc_num_heavy_atoms, calc_num_heteroatoms, calc_num_heterocycles,
-    calc_num_rings, calc_num_saturated_carbocycles, calc_num_saturated_heterocycles,
-    calc_num_saturated_rings, calc_num_spiro_atoms, calc_num_unspecified_atom_stereo_centers,
-    calc_phi, calc_slogp_vsa, calc_slogp_vsa_with_bins, calc_smr_vsa, calc_smr_vsa_with_bins,
+    calc_num_atom_stereo_centers, calc_num_atoms, calc_num_bridgehead_atoms, calc_num_hba, calc_num_hbd,
+    calc_num_heavy_atoms, calc_num_heteroatoms, calc_num_heterocycles, calc_num_rings, calc_num_saturated_carbocycles,
+    calc_num_saturated_heterocycles, calc_num_saturated_rings, calc_num_spiro_atoms,
+    calc_num_unspecified_atom_stereo_centers, calc_phi, calc_slogp_vsa, calc_slogp_vsa_with_bins, calc_smr_vsa,
+    calc_smr_vsa_with_bins,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -41,9 +40,8 @@ fn bits(values: impl IntoIterator<Item = f64>) -> Vec<String> {
 }
 
 fn molecule(smiles: &str) -> Molecule {
-    Molecule::from_smiles(smiles).unwrap_or_else(|error| {
-        panic!("failed to parse focused descriptor row {smiles:?}: {error}")
-    })
+    Molecule::from_smiles(smiles)
+        .unwrap_or_else(|error| panic!("failed to parse focused descriptor row {smiles:?}: {error}"))
 }
 
 fn descriptor_bits(smiles: &str) -> Value {
@@ -192,13 +190,8 @@ fn load_profile(profile: &str) -> Vec<Record> {
         .lines()
         .enumerate()
         .map(|(index, line)| {
-            serde_json::from_str(&line.unwrap()).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    index + 1
-                )
-            })
+            serde_json::from_str(&line.unwrap())
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1))
         })
         .collect()
 }
@@ -222,10 +215,7 @@ fn compare_records(records: &[Record]) {
     for (index, record) in records.iter().enumerate() {
         let context = format!("row {} ({:?})", index + 1, record.smiles);
         if !record.rdkit_ok {
-            assert!(
-                record.error.is_some(),
-                "RDKit rejection lacks an error in {context}"
-            );
+            assert!(record.error.is_some(), "RDKit rejection lacks an error in {context}");
             assert!(
                 Molecule::from_smiles(&record.smiles).is_err(),
                 "RDKit rejected {context}, but COSMolKit accepted it"

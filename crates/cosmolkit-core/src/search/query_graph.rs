@@ -41,17 +41,11 @@ impl<'a> QueryGraphOperator<'a> {
         self.inner
     }
 
-    pub fn to_smarts(
-        &self,
-        params: &crate::SmilesWriteParams,
-    ) -> Result<String, crate::SmartsWriteError> {
+    pub fn to_smarts(&self, params: &crate::SmilesWriteParams) -> Result<String, crate::SmartsWriteError> {
         crate::search::smarts_write::query_graph_to_smarts(self.inner, params)
     }
 
-    pub fn to_cx_smarts(
-        &self,
-        params: &crate::SmilesWriteParams,
-    ) -> Result<String, crate::SmartsWriteError> {
+    pub fn to_cx_smarts(&self, params: &crate::SmilesWriteParams) -> Result<String, crate::SmartsWriteError> {
         crate::search::smarts_write::query_graph_to_cx_smarts(self.inner, params)
     }
 
@@ -61,9 +55,7 @@ impl<'a> QueryGraphOperator<'a> {
         atom_ids: &[crate::AtomId],
         bond_ids: Option<&[crate::BondId]>,
     ) -> Result<String, crate::SmartsWriteError> {
-        crate::search::smarts_write::query_graph_fragment_to_smarts(
-            self.inner, params, atom_ids, bond_ids,
-        )
+        crate::search::smarts_write::query_graph_fragment_to_smarts(self.inner, params, atom_ids, bond_ids)
     }
 
     pub fn fragment_to_cx_smarts(
@@ -72,21 +64,19 @@ impl<'a> QueryGraphOperator<'a> {
         atom_ids: &[crate::AtomId],
         bond_ids: Option<&[crate::BondId]>,
     ) -> Result<String, crate::SmartsWriteError> {
-        crate::search::smarts_write::query_graph_fragment_to_cx_smarts(
-            self.inner, params, atom_ids, bond_ids,
-        )
+        crate::search::smarts_write::query_graph_fragment_to_cx_smarts(self.inner, params, atom_ids, bond_ids)
     }
 
     pub fn pattern_fingerprint(
         &self,
         params: &crate::PatternFingerprintParams,
     ) -> Result<crate::Fingerprint, crate::FingerprintError> {
-        let molecule =
-            self.inner
-                .to_molecule()
-                .map_err(|error| crate::FingerprintError::Pattern {
-                    reason: error.to_string(),
-                })?;
+        let molecule = self
+            .inner
+            .to_molecule()
+            .map_err(|error| crate::FingerprintError::Pattern {
+                reason: error.to_string(),
+            })?;
         crate::fingerprint::pattern_fingerprint(&molecule, params)
     }
 
@@ -246,10 +236,7 @@ impl QueryGraph {
     }
 
     /// Parse SMARTS into a first-class query graph.
-    pub fn from_smarts(
-        smarts: &str,
-        params: &crate::SmartsParseParams,
-    ) -> Result<Self, crate::SmartsParseError> {
+    pub fn from_smarts(smarts: &str, params: &crate::SmartsParseParams) -> Result<Self, crate::SmartsParseError> {
         super::smarts_parse::mol_from_smarts(smarts, params)
     }
 
@@ -261,9 +248,10 @@ impl QueryGraph {
             .atoms()
             .iter()
             .map(|atom| {
-                let predicate = atom.query().cloned().unwrap_or_else(|| {
-                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number()))
-                });
+                let predicate = atom
+                    .query()
+                    .cloned()
+                    .unwrap_or_else(|| QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number())));
                 QueryAtom::new(atom.clone(), predicate)
             })
             .collect::<Vec<_>>();
@@ -300,9 +288,9 @@ impl QueryGraph {
             bonds,
             adjacency,
             props,
-            conformers_2d: molecule.coordinates_2d().map_or_else(Vec::new, |coords| {
-                vec![Conformer2D::new(0, coords.to_vec())]
-            }),
+            conformers_2d: molecule
+                .coordinates_2d()
+                .map_or_else(Vec::new, |coords| vec![Conformer2D::new(0, coords.to_vec())]),
             conformers_3d: molecule.conformers_3d().to_vec(),
             stereo_groups: molecule.stereo_groups().to_vec(),
         })
@@ -348,9 +336,9 @@ impl QueryGraph {
             atoms,
             bonds,
             props,
-            molecule.coordinates_2d().map_or_else(Vec::new, |coords| {
-                vec![Conformer2D::new(0, coords.to_vec())]
-            }),
+            molecule
+                .coordinates_2d()
+                .map_or_else(Vec::new, |coords| vec![Conformer2D::new(0, coords.to_vec())]),
             molecule.conformers_3d().to_vec(),
             molecule.stereo_groups().to_vec(),
         )
@@ -397,11 +385,7 @@ impl QueryGraph {
             bonds: self.bonds.iter().map(|bond| bond.bond.clone()).collect(),
             adjacency: crate::AdjacencyList::from_topology(
                 self.atoms.len(),
-                &self
-                    .bonds
-                    .iter()
-                    .map(|bond| bond.bond.clone())
-                    .collect::<Vec<_>>(),
+                &self.bonds.iter().map(|bond| bond.bond.clone()).collect::<Vec<_>>(),
             ),
             substance_groups: Vec::new(),
             stereo_groups: self.stereo_groups.clone(),
@@ -453,9 +437,7 @@ impl QueryGraph {
     }
 
     pub(crate) fn atom_mut(&mut self, index: usize) -> Option<&mut Atom> {
-        self.atoms
-            .get_mut(index)
-            .map(|query_atom| &mut query_atom.atom)
+        self.atoms.get_mut(index).map(|query_atom| &mut query_atom.atom)
     }
 
     /// Query bonds in stable graph order.
@@ -512,10 +494,7 @@ impl QueryGraph {
         self.conformers_2d.first().map(Conformer2D::coordinates)
     }
 
-    pub(crate) fn with_2d_coordinate_block(
-        mut self,
-        coords: Vec<[f64; 2]>,
-    ) -> Result<Self, String> {
+    pub(crate) fn with_2d_coordinate_block(mut self, coords: Vec<[f64; 2]>) -> Result<Self, String> {
         if coords.len() != self.num_atoms() {
             return Err("query graph coordinate count does not match atom count".to_owned());
         }
@@ -540,8 +519,7 @@ impl QueryGraph {
     pub(crate) fn cleanup_parser_state(&mut self) {
         for atom in &mut self.atoms {
             atom.atom_mut().clear_prop("_RingClosures");
-            atom.atom_mut()
-                .clear_prop(crate::notation::smiles::SMILES_START_PROP);
+            atom.atom_mut().clear_prop(crate::notation::smiles::SMILES_START_PROP);
         }
         for bond in &mut self.bonds {
             bond.bond_mut()
@@ -552,10 +530,7 @@ impl QueryGraph {
     }
 
     /// Render this query using the canonical SMARTS writer.
-    pub fn to_smarts(
-        &self,
-        params: &crate::SmilesWriteParams,
-    ) -> Result<String, crate::SmartsWriteError> {
+    pub fn to_smarts(&self, params: &crate::SmilesWriteParams) -> Result<String, crate::SmartsWriteError> {
         self.operator().to_smarts(params)
     }
 
@@ -567,10 +542,7 @@ impl QueryGraph {
     }
 
     /// Render a CXSMARTS query.
-    pub fn to_cx_smarts(
-        &self,
-        params: &crate::SmilesWriteParams,
-    ) -> Result<String, crate::SmartsWriteError> {
+    pub fn to_cx_smarts(&self, params: &crate::SmilesWriteParams) -> Result<String, crate::SmartsWriteError> {
         self.operator().to_cx_smarts(params)
     }
 
@@ -581,8 +553,7 @@ impl QueryGraph {
         atom_ids: &[crate::AtomId],
         bond_ids: Option<&[crate::BondId]>,
     ) -> Result<String, crate::SmartsWriteError> {
-        self.operator()
-            .fragment_to_smarts(params, atom_ids, bond_ids)
+        self.operator().fragment_to_smarts(params, atom_ids, bond_ids)
     }
 
     /// Render a selected query fragment as CXSMARTS.
@@ -592,8 +563,7 @@ impl QueryGraph {
         atom_ids: &[crate::AtomId],
         bond_ids: Option<&[crate::BondId]>,
     ) -> Result<String, crate::SmartsWriteError> {
-        self.operator()
-            .fragment_to_cx_smarts(params, atom_ids, bond_ids)
+        self.operator().fragment_to_cx_smarts(params, atom_ids, bond_ids)
     }
 
     /// Compile this graph for repeated matching.
@@ -700,8 +670,7 @@ mod tests {
 
     #[test]
     fn smarts_parser_produces_first_class_query_graph() {
-        let graph = crate::mol_from_smarts("[#6]-[#8]", &crate::SmartsParseParams::default())
-            .expect("SMARTS query");
+        let graph = crate::mol_from_smarts("[#6]-[#8]", &crate::SmartsParseParams::default()).expect("SMARTS query");
         assert_eq!(graph.num_atoms(), 2);
         assert_eq!(graph.num_bonds(), 1);
         assert!(matches!(
@@ -712,8 +681,7 @@ mod tests {
 
     #[test]
     fn compiled_query_matches_concrete_molecule() {
-        let graph = crate::mol_from_smarts("[#6]-[#8]", &crate::SmartsParseParams::default())
-            .expect("SMARTS query");
+        let graph = crate::mol_from_smarts("[#6]-[#8]", &crate::SmartsParseParams::default()).expect("SMARTS query");
         let target = Molecule::from_smiles("CCO").expect("target molecule");
         let atom_count = graph.num_atoms();
         let matches = graph.compile().matches(&target);

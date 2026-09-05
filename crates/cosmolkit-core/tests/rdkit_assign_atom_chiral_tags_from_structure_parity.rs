@@ -7,9 +7,8 @@ use std::sync::{Mutex, OnceLock};
 
 use common::parity_data;
 use cosmolkit_core::{
-    AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, ChiralTag, Conformer3D, Element,
-    Molecule, MoleculeBuilder, OperationError, SanitizeOps, StereoError, ValenceModel,
-    assign_valence_with_options,
+    AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, ChiralTag, Conformer3D, Element, Molecule, MoleculeBuilder,
+    OperationError, SanitizeOps, StereoError, ValenceModel, assign_valence_with_options,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -83,40 +82,26 @@ impl Drop for EnvironmentGuard {
 }
 
 fn fixture_path() -> std::path::PathBuf {
-    parity_data::repo_root()
-        .join("testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json")
+    parity_data::repo_root().join("testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json")
 }
 
 fn load_fixture() -> Fixture {
     let path = fixture_path();
-    let bytes = std::fs::read(&path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    serde_json::from_slice(&bytes)
-        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
+    let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
 }
 
 fn load_oracle() -> Vec<OracleRecord> {
     let path = parity_data::golden_path("assign_atom_chiral_tags_from_structure.jsonl");
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line_index, line)| {
-            let line = line.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    line_index + 1
-                )
-            });
-            serde_json::from_str(&line).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    line_index + 1
-                )
-            })
+            let line = line
+                .unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line_index + 1));
+            serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line_index + 1))
         })
         .collect()
 }
@@ -237,20 +222,12 @@ fn decode_point(value: &Value) -> [f64; 3] {
 }
 
 fn configure_atom(config: &Value) -> AtomSpec {
-    let atomic_number = object(config)
-        .get("atomic_number")
-        .and_then(Value::as_u64)
-        .unwrap_or(0) as u8;
+    let atomic_number = object(config).get("atomic_number").and_then(Value::as_u64).unwrap_or(0) as u8;
     let mut atom = AtomSpec::new(
         Element::from_atomic_number(atomic_number)
             .unwrap_or_else(|| panic!("unsupported atomic number {atomic_number}")),
     )
-    .with_formal_charge(
-        object(config)
-            .get("formal_charge")
-            .and_then(Value::as_i64)
-            .unwrap_or(0) as i8,
-    )
+    .with_formal_charge(object(config).get("formal_charge").and_then(Value::as_i64).unwrap_or(0) as i8)
     .with_explicit_hydrogens(
         object(config)
             .get("explicit_hydrogens")
@@ -266,10 +243,7 @@ fn configure_atom(config: &Value) -> AtomSpec {
         )
         .expect("fixture chiral tag must be supported"),
     );
-    if let Some(permutation) = object(config)
-        .get("chiral_permutation")
-        .and_then(Value::as_u64)
-    {
+    if let Some(permutation) = object(config).get("chiral_permutation").and_then(Value::as_u64) {
         atom = atom.with_chiral_permutation(permutation as u32);
     }
     if let Some(props) = object(config).get("props").and_then(Value::as_object) {
@@ -283,8 +257,7 @@ fn configure_atom(config: &Value) -> AtomSpec {
 fn bond_order(name: &str) -> BondOrder {
     match name {
         "ZERO" => BondOrder::Zero,
-        name => BondOrder::from_rdkit_name(name)
-            .unwrap_or_else(|| panic!("unsupported fixture bond type {name:?}")),
+        name => BondOrder::from_rdkit_name(name).unwrap_or_else(|| panic!("unsupported fixture bond type {name:?}")),
     }
 }
 
@@ -307,12 +280,7 @@ fn add_bond(builder: &mut MoleculeBuilder, config: &Value) {
     let mut bond = BondSpec::new(
         begin,
         end,
-        bond_order(
-            object(config)
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or("SINGLE"),
-        ),
+        bond_order(object(config).get("type").and_then(Value::as_str).unwrap_or("SINGLE")),
     )
     .with_direction(bond_direction(
         object(config)
@@ -328,9 +296,7 @@ fn add_bond(builder: &mut MoleculeBuilder, config: &Value) {
             bond = bond.with_prop(name, property_string(value));
         }
     }
-    builder
-        .add_bond(bond)
-        .expect("fixture bond must reference valid atoms");
+    builder.add_bond(bond).expect("fixture bond must reference valid atoms");
 }
 
 fn build_molecule(case: &Value) -> Molecule {
@@ -350,11 +316,9 @@ fn build_molecule(case: &Value) -> Molecule {
             for (ligand_index, _) in array_field(case, "ligands").iter().enumerate() {
                 let atomic_number = ligand_elements[ligand_index]
                     .as_u64()
-                    .expect("ligand atomic number must be unsigned")
-                    as u8;
+                    .expect("ligand atomic number must be unsigned") as u8;
                 builder.add_atom(AtomSpec::new(
-                    Element::from_atomic_number(atomic_number)
-                        .expect("ligand atomic number must be supported"),
+                    Element::from_atomic_number(atomic_number).expect("ligand atomic number must be supported"),
                 ));
             }
 
@@ -376,9 +340,7 @@ fn build_molecule(case: &Value) -> Molecule {
                 if let Some(override_config) = overrides.get(&ligand_index) {
                     config = deep_merge(&config, override_config);
                 }
-                let config_object = config
-                    .as_object_mut()
-                    .expect("bond config must be an object");
+                let config_object = config.as_object_mut().expect("bond config must be an object");
                 config_object.remove("ligand");
                 if config_object
                     .remove("reverse")
@@ -396,42 +358,34 @@ fn build_molecule(case: &Value) -> Molecule {
         kind => panic!("unsupported fixture builder {kind:?}"),
     }
 
-    if let Some(props) = object(case)
-        .get("molecule_props")
-        .and_then(Value::as_object)
-    {
+    if let Some(props) = object(case).get("molecule_props").and_then(Value::as_object) {
         for (name, value) in props {
             builder = builder.with_property(name, property_string(value));
         }
     }
     for conformer_config in array_field(case, "conformers") {
-        let coordinates = if let Some(coordinates) = object(conformer_config)
-            .get("coordinates")
-            .and_then(Value::as_array)
-        {
-            coordinates.iter().map(decode_point).collect()
-        } else {
-            let center = object(conformer_config)
-                .get("center_position")
-                .unwrap_or(&object(case)["center_position"]);
-            let ligands = object(conformer_config)
-                .get("ligands")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice)
-                .unwrap_or_else(|| array_field(case, "ligands"));
-            std::iter::once(decode_point(center))
-                .chain(ligands.iter().map(decode_point))
-                .collect()
-        };
+        let coordinates =
+            if let Some(coordinates) = object(conformer_config).get("coordinates").and_then(Value::as_array) {
+                coordinates.iter().map(decode_point).collect()
+            } else {
+                let center = object(conformer_config)
+                    .get("center_position")
+                    .unwrap_or(&object(case)["center_position"]);
+                let ligands = object(conformer_config)
+                    .get("ligands")
+                    .and_then(Value::as_array)
+                    .map(Vec::as_slice)
+                    .unwrap_or_else(|| array_field(case, "ligands"));
+                std::iter::once(decode_point(center))
+                    .chain(ligands.iter().map(decode_point))
+                    .collect()
+            };
         let mut conformer = Conformer3D::new(
             i64_field(conformer_config, "id") as usize,
             coordinates,
             bool_field(conformer_config, "is_3d"),
         );
-        if let Some(props) = object(conformer_config)
-            .get("props")
-            .and_then(Value::as_object)
-        {
+        if let Some(props) = object(conformer_config).get("props").and_then(Value::as_object) {
             for (name, value) in props {
                 conformer = conformer.with_prop(name, property_string(value));
             }
@@ -454,9 +408,11 @@ fn typed_props(props: &BTreeMap<String, String>, typed_integer_keys: &[&str]) ->
         if typed_integer_keys.contains(&name.as_str()) {
             result.insert(
                 name.clone(),
-                json!(value.parse::<i64>().unwrap_or_else(|error| {
-                    panic!("typed property {name:?} must contain an integer: {error}")
-                })),
+                json!(
+                    value
+                        .parse::<i64>()
+                        .unwrap_or_else(|error| { panic!("typed property {name:?} must contain an integer: {error}") })
+                ),
             );
         } else {
             result.insert(name.clone(), Value::String(value.clone()));
@@ -609,10 +565,7 @@ fn assign_atom_chiral_tags_from_structure_matches_pinned_rdkit_for_every_fixture
     for (row_index, (raw_case, expected)) in cases.iter().zip(&oracle).enumerate() {
         let case = deep_merge(&fixture.defaults, raw_case);
         assert_eq!(string_field(&case, "case_id"), expected.case_id);
-        assert_eq!(
-            string_field(&case, "selection_reason"),
-            expected.selection_reason
-        );
+        assert_eq!(string_field(&case, "selection_reason"), expected.selection_reason);
         assert_eq!(object(&case)["environment"], expected.environment);
         assert_eq!(i64_field(&case, "conf_id") as i32, expected.conf_id);
         assert_eq!(
@@ -636,21 +589,11 @@ fn assign_atom_chiral_tags_from_structure_matches_pinned_rdkit_for_every_fixture
             expected.case_id
         );
 
-        match molecule
-            .with_chiral_tags_from_structure(expected.conf_id, expected.replace_existing_tags)
-        {
+        match molecule.with_chiral_tags_from_structure(expected.conf_id, expected.replace_existing_tags) {
             Ok(actual) => {
                 assert_eq!(expected.status, "ok", "{} status differs", expected.case_id);
-                assert_eq!(
-                    expected.error_type, None,
-                    "{} error type differs",
-                    expected.case_id
-                );
-                assert_eq!(
-                    expected.error_text, None,
-                    "{} error text differs",
-                    expected.case_id
-                );
+                assert_eq!(expected.error_type, None, "{} error type differs", expected.case_id);
+                assert_eq!(expected.error_text, None, "{} error text differs", expected.case_id);
                 assert_eq!(
                     snapshot_molecule(&actual),
                     expected.after,
@@ -660,11 +603,7 @@ fn assign_atom_chiral_tags_from_structure_matches_pinned_rdkit_for_every_fixture
                 );
             }
             Err(error) => {
-                assert_eq!(
-                    expected.status, "error",
-                    "{} status differs",
-                    expected.case_id
-                );
+                assert_eq!(expected.status, "error", "{} status differs", expected.case_id);
                 let (error_type, error_text) = rdkit_error(&error);
                 assert_eq!(expected.error_type.as_deref(), Some(error_type));
                 assert_eq!(expected.error_text.as_deref(), Some(error_text));

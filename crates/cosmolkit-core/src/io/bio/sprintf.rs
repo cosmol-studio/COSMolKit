@@ -1,12 +1,12 @@
 //! Gemmi's locale-independent `%g` formatting path.
 
 const BOT: [f64; 23] = [
-    1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
-    1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+    1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20,
+    1e21, 1e22,
 ];
 const NEG_BOT: [f64; 22] = [
-    1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15,
-    1e-16, 1e-17, 1e-18, 1e-19, 1e-20, 1e-21, 1e-22,
+    1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15, 1e-16, 1e-17,
+    1e-18, 1e-19, 1e-20, 1e-21, 1e-22,
 ];
 const NEG_BOT_ERR: [f64; 22] = [
     -5.551115123125783e-18,
@@ -36,8 +36,7 @@ const TOP: [f64; 13] = [
     1e23, 1e46, 1e69, 1e92, 1e115, 1e138, 1e161, 1e184, 1e207, 1e230, 1e253, 1e276, 1e299,
 ];
 const NEG_TOP: [f64; 13] = [
-    1e-23, 1e-46, 1e-69, 1e-92, 1e-115, 1e-138, 1e-161, 1e-184, 1e-207, 1e-230, 1e-253, 1e-276,
-    1e-299,
+    1e-23, 1e-46, 1e-69, 1e-92, 1e-115, 1e-138, 1e-161, 1e-184, 1e-207, 1e-230, 1e-253, 1e-276, 1e-299,
 ];
 const TOP_ERR: [f64; 13] = [
     8_388_608.0,
@@ -217,10 +216,8 @@ fn raise_to_power10(value: f64, power: i32) -> (f64, f64) {
             if top_index != 0 {
                 (high, low) = renormalize(high, low);
                 top_index -= 1;
-                let (next_high, mut next_low) =
-                    double_double_multiply_high(high, NEG_TOP[top_index as usize]);
-                next_low +=
-                    high * NEG_TOP_ERR[top_index as usize] + low * NEG_TOP[top_index as usize];
+                let (next_high, mut next_low) = double_double_multiply_high(high, NEG_TOP[top_index as usize]);
+                next_low += high * NEG_TOP_ERR[top_index as usize] + low * NEG_TOP[top_index as usize];
                 high = next_high;
                 low = next_low;
             }
@@ -232,8 +229,7 @@ fn raise_to_power10(value: f64, power: i32) -> (f64, f64) {
                 let second = remaining - remainder;
                 if second != 0 {
                     (high, low) = renormalize(high, low);
-                    let (next_high, mut next_low) =
-                        double_double_multiply_high(high, BOT[second as usize]);
+                    let (next_high, mut next_low) = double_double_multiply_high(high, BOT[second as usize]);
                     next_low += BOT[second as usize] * low;
                     high = next_high;
                     low = next_low;
@@ -242,8 +238,7 @@ fn raise_to_power10(value: f64, power: i32) -> (f64, f64) {
             if top_index != 0 {
                 (high, low) = renormalize(high, low);
                 top_index -= 1;
-                let (next_high, mut next_low) =
-                    double_double_multiply_high(high, TOP[top_index as usize]);
+                let (next_high, mut next_low) = double_double_multiply_high(high, TOP[top_index as usize]);
                 next_low += high * TOP_ERR[top_index as usize] + low * TOP[top_index as usize];
                 high = next_high;
                 low = next_low;
@@ -427,11 +422,7 @@ fn real_to_digits(value: f64, requested_digits: u32) -> (bool, RealDigits) {
     let magnitude = if negative { -value } else { value };
 
     if exponent == 2047 {
-        let special = if raw & ((1_u64 << 52) - 1) != 0 {
-            "NaN"
-        } else {
-            "Inf"
-        };
+        let special = if raw & ((1_u64 << 52) - 1) != 0 { "NaN" } else { "Inf" };
         return (negative, RealDigits::Special(special));
     }
     if exponent == 0 {
@@ -746,11 +737,7 @@ pub(super) fn format_general(value: f64, precision: usize) -> String {
 pub(super) fn format_fixed(value: f64, precision: usize) -> String {
     let (negative, real) = real_to_digits(value, precision as u32);
     let sign = if negative { "-" } else { "" };
-    let RealDigits::Finite {
-        digits,
-        decimal_pos,
-    } = real
-    else {
+    let RealDigits::Finite { digits, decimal_pos } = real else {
         let RealDigits::Special(special) = real else {
             unreachable!()
         };
@@ -771,10 +758,7 @@ pub(super) fn format_fixed(value: f64, precision: usize) -> String {
         output.extend(std::iter::repeat_n('0', precision - leading_zeros - copied));
     } else if decimal_pos as usize >= digits.len() {
         output.push_str(&digits);
-        output.extend(std::iter::repeat_n(
-            '0',
-            decimal_pos as usize - digits.len(),
-        ));
+        output.extend(std::iter::repeat_n('0', decimal_pos as usize - digits.len()));
         if precision != 0 {
             output.push('.');
             output.extend(std::iter::repeat_n('0', precision));
@@ -798,14 +782,8 @@ mod tests {
 
     #[test]
     fn gemmi_general_format_locks_stb_halfway_and_special_values() {
-        assert_eq!(
-            format_general(f32::from_bits(0xc6cf_fa80) as f64, 6),
-            "-26621.3"
-        );
-        assert_eq!(
-            format_general(f32::from_bits(0x4838_f2a0) as f64, 6),
-            "189387"
-        );
+        assert_eq!(format_general(f32::from_bits(0xc6cf_fa80) as f64, 6), "-26621.3");
+        assert_eq!(format_general(f32::from_bits(0x4838_f2a0) as f64, 6), "189387");
         assert_eq!(format_general(0.0, 9), "0");
         assert_eq!(format_general(-0.0, 9), "-0");
         assert_eq!(format_general(f64::INFINITY, 9), "Inf");

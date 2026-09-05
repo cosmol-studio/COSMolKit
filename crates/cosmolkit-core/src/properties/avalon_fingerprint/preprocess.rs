@@ -191,10 +191,7 @@ impl Neighbourhood {
     fn push(&mut self, atom: usize, bond: usize, owner: usize) -> Result<(), FingerprintError> {
         if self.n_ligands == MAX_NEIGHBOURS {
             return Err(FingerprintError::AvalonConversion {
-                reason: format!(
-                    "Avalon neighbourhood capacity exceeded at atom {}",
-                    owner + 1
-                ),
+                reason: format!("Avalon neighbourhood capacity exceeded at atom {}", owner + 1),
             });
         }
         self.atoms[self.n_ligands] = atom;
@@ -269,11 +266,7 @@ pub(super) fn setup_neighbourhood(
     Ok(neighbours)
 }
 
-fn source_atom_index(
-    source_index: i32,
-    atom_count: usize,
-    bond_index: usize,
-) -> Result<usize, FingerprintError> {
+fn source_atom_index(source_index: i32, atom_count: usize, bond_index: usize) -> Result<usize, FingerprintError> {
     let index = source_index
         .checked_sub(1)
         .and_then(|value| usize::try_from(value).ok());
@@ -348,10 +341,7 @@ fn implicit_hydrogens(
     // Avalon❗✔️:    for (i=0; valence_table[i].atom_type!=(char *)NULL; i++)
     // Avalon❗✔️:       if (0 == strcmp(valence_table[i].atom_type,symbol))
     // Avalon❗✔️:       {
-    for entry in VALENCE_TABLE
-        .iter()
-        .filter(|entry| entry.atom_type == symbol)
-    {
+    for entry in VALENCE_TABLE.iter().filter(|entry| entry.atom_type == symbol) {
         // Avalon❗✔️:          if (charge == 0)       /* Easy case */
         // Avalon❗✔️:          {
         if charge == 0 {
@@ -431,10 +421,7 @@ fn implicit_hydrogens(
     0
 }
 
-fn compute_implicit_h(
-    molecule: &MoleculeState,
-    h_count: &mut [i32],
-) -> Result<(), FingerprintError> {
+fn compute_implicit_h(molecule: &MoleculeState, h_count: &mut [i32]) -> Result<(), FingerprintError> {
     // Avalon❗✔️: void
     // Avalon❗✔️: ComputeImplicitH(struct reaccs_molecule_t *mp,
     // Avalon❗✔️:                  int H_count[])
@@ -576,11 +563,7 @@ fn compute_implicit_h(
     Ok(())
 }
 
-fn source_atom_number(
-    source_index: i32,
-    atom_count: usize,
-    bond_index: usize,
-) -> Result<usize, FingerprintError> {
+fn source_atom_number(source_index: i32, atom_count: usize, bond_index: usize) -> Result<usize, FingerprintError> {
     usize::try_from(source_index)
         .ok()
         .filter(|&value| value > 0 && value <= atom_count)
@@ -633,18 +616,14 @@ fn guess_h_counts_from_substitution(
             continue;
         }
         // Avalon❗✔️:       nsingle = ndouble = naromatic= ntriple = nother = 0;
-        let (mut nsingle, mut ndouble, mut naromatic, mut ntriple, mut nother) =
-            (0_i32, 0_i32, 0_i32, 0_i32, 0_i32);
+        let (mut nsingle, mut ndouble, mut naromatic, mut ntriple, mut nother) = (0_i32, 0_i32, 0_i32, 0_i32, 0_i32);
         // Avalon❗✔️:       nexplicit = 0;
         let mut nexplicit = 0_i32;
         // Avalon❗✔️:       for (j=0; j<nbp[i].n_ligands; j++)
         // Avalon❗✔️:          if (AtomSymbolMatch(mp->atom_array[nbp[i].atoms[j]].atom_symbol, "H,D,T"))
         // Avalon❗✔️:             nexplicit++;
         for &neighbour_atom in neighbourhood.atoms() {
-            if matches!(
-                molecule.atoms[neighbour_atom].atom_symbol.as_str(),
-                "H" | "D" | "T"
-            ) {
+            if matches!(molecule.atoms[neighbour_atom].atom_symbol.as_str(), "H" | "D" | "T") {
                 nexplicit += 1;
             }
         }
@@ -708,8 +687,7 @@ fn guess_h_counts_from_substitution(
             } else if atom.sub_desc == SUB_AS_IS {
                 // Avalon❗✔️:             ap->query_H_count =
                 // Avalon❗✔️:                nexplicit+ZERO_COUNT+4-nsingle-2*ndouble-3*ntriple;
-                atom.query_h_count =
-                    nexplicit + ZERO_COUNT + 4 - nsingle - 2 * ndouble - 3 * ntriple;
+                atom.query_h_count = nexplicit + ZERO_COUNT + 4 - nsingle - 2 * ndouble - 3 * ntriple;
                 // Avalon❗✔️:          }
             }
             // Avalon❗✔️:       }
@@ -815,9 +793,7 @@ pub(super) fn collect_hydrogen_counts(
     Ok(h_count)
 }
 
-pub(super) fn ring_state(
-    molecule: &MoleculeState,
-) -> Result<(Vec<i32>, Vec<i32>), FingerprintError> {
+pub(super) fn ring_state(molecule: &MoleculeState) -> Result<(Vec<i32>, Vec<i32>), FingerprintError> {
     // Avalon❗✔️: typedef unsigned atom_pair[2];
     // Avalon❗✔️: void RingState(struct reaccs_molecule_t *mp,
     // Avalon❗✔️:                int atom_status[],
@@ -1321,11 +1297,7 @@ mod tests {
                 .all(|atom| atom.rsize_flags == triangle_and_square)
         );
         assert_eq!(
-            molecule
-                .bonds
-                .iter()
-                .map(|bond| bond.rsize_flags)
-                .collect::<Vec<_>>(),
+            molecule.bonds.iter().map(|bond| bond.rsize_flags).collect::<Vec<_>>(),
             vec![
                 triangle_and_square,
                 triangle_and_square,

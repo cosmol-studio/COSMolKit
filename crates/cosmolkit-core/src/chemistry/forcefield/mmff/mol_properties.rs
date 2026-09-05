@@ -2,22 +2,19 @@
 
 use std::sync::OnceLock;
 
-use super::builder::{
-    MmffBuilderError, construct_force_field_with_props, select_mmff_conformer_index,
-};
+use super::builder::{MmffBuilderError, construct_force_field_with_props, select_mmff_conformer_index};
 use super::params::{
-    MmffAngle, MmffAngleCollection, MmffBond, MmffBondCollection, MmffChgCollection,
-    MmffDefCollection, MmffDfsbCollection, MmffOop, MmffOopCollection, MmffParamError,
-    MmffPbciCollection, MmffProp, MmffPropCollection, MmffStbn, MmffStbnCollection, MmffTor,
-    MmffTorCollection, MmffVdw, MmffVdwCollection, MmffVdwRijstarEps, default_mmff_bndk_params,
-    default_mmff_cov_rad_pau_ele_params, default_mmff_herschbach_laurie_params,
+    MmffAngle, MmffAngleCollection, MmffBond, MmffBondCollection, MmffChgCollection, MmffDefCollection,
+    MmffDfsbCollection, MmffOop, MmffOopCollection, MmffParamError, MmffPbciCollection, MmffProp, MmffPropCollection,
+    MmffStbn, MmffStbnCollection, MmffTor, MmffTorCollection, MmffVdw, MmffVdwCollection, MmffVdwRijstarEps,
+    default_mmff_bndk_params, default_mmff_cov_rad_pau_ele_params, default_mmff_herschbach_laurie_params,
 };
 use crate::chemistry::valence::{ValenceError, ValenceModel, assign_valence};
 use crate::rings::{RingFindingError, symmetrize_sssr};
 use crate::{
-    AromaticityAssignment, AromaticityError, AromaticityModel, Atom, AtomId, Bond, BondOrder,
-    FeatureCategory, FeatureSpec, KekulizeError, Molecule, OperationError, RingInfo, SanitizeOps,
-    SupportStatus, UnsupportedFeatureError, set_aromaticity,
+    AromaticityAssignment, AromaticityError, AromaticityModel, Atom, AtomId, Bond, BondOrder, FeatureCategory,
+    FeatureSpec, KekulizeError, Molecule, OperationError, RingInfo, SanitizeOps, SupportStatus,
+    UnsupportedFeatureError, set_aromaticity,
 };
 
 pub const MMFF_SANITIZED_PROP: &str = "_MMFFSanitized";
@@ -289,10 +286,7 @@ pub fn mmff_optimize_molecule(
     let mmff_mol_properties = match MmffMolProperties::new(mol, mmff_variant, MMFF_VERBOSITY_NONE) {
         Ok(mmff_mol_properties) => mmff_mol_properties,
         Err(MmffMolPropertiesError::UnsupportedFeature(_)) => {
-            return Ok(MmffOptimizeMoleculeResult {
-                molecule,
-                needs_more,
-            });
+            return Ok(MmffOptimizeMoleculeResult { molecule, needs_more });
         }
         Err(err) => return Err(err.into()),
     };
@@ -322,8 +316,7 @@ pub fn mmff_optimize_molecule(
         // RDKit default ForceField::minimize(maxIts) forwards forceTol=1e-4 and energyTol=1e-6.
         needs_more = ff.minimize(max_iters, 1.0e-4, 1.0e-6);
         {
-            let coords =
-                molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
+            let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
             for (coord, position) in coords.iter_mut().zip(ff.positions()) {
                 *coord = [position.x, position.y, position.z];
             }
@@ -332,10 +325,7 @@ pub fn mmff_optimize_molecule(
     }
     // RDKit❗✔️:
     // RDKit❗✔️:   return res;
-    Ok(MmffOptimizeMoleculeResult {
-        molecule,
-        needs_more,
-    })
+    Ok(MmffOptimizeMoleculeResult { molecule, needs_more })
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION RDKit::MMFFOptimizeMolecule
 }
@@ -462,8 +452,8 @@ fn is_mmff_atom_n_oxide(
             let nbr_atom = &mol.atoms()[neighbor.atom_index];
             // RDKit✔️✔️:       isNOxide =
             // RDKit✔️✔️:           ((nbrAtom->getAtomicNum() == 8) && (nbrAtom->getTotalDegree() == 1));
-            is_n_oxide = nbr_atom.atomic_number() == 8
-                && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)? == 1;
+            is_n_oxide =
+                nbr_atom.atomic_number() == 8 && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)? == 1;
             // RDKit✔️✔️:     }
         }
         // RDKit✔️✔️:   }
@@ -476,11 +466,7 @@ fn is_mmff_atom_n_oxide(
 }
 
 impl MmffMolProperties {
-    pub fn new(
-        mol: &Molecule,
-        mmff_variant: &str,
-        verbosity: u8,
-    ) -> Result<Self, MmffMolPropertiesError> {
+    pub fn new(mol: &Molecule, mmff_variant: &str, verbosity: u8) -> Result<Self, MmffMolPropertiesError> {
         // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::MMFFMolProperties::MMFFMolProperties (AtomTyper.cpp:2328-2408)
         // RDKit❗✔️: // constructs a MMFFMolProperties object for ROMol mol filled
         // RDKit❗✔️: // with MMFF atom types, formal and partial charges
@@ -531,10 +517,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:     }
         let mut prepared_molecule = mol.clone();
         if prepared_molecule.prop(MMFF_SANITIZED_PROP).is_none() {
-            let is_aromatic_set = prepared_molecule
-                .atoms()
-                .iter()
-                .any(crate::Atom::is_aromatic);
+            let is_aromatic_set = prepared_molecule.atoms().iter().any(crate::Atom::is_aromatic);
             // RDKit✔️✔️:     if (isAromaticSet) {
             // RDKit✔️✔️:       MolOps::Kekulize((RWMol &)mol, true);
             // RDKit✔️✔️:     }
@@ -549,8 +532,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:     d_MMFFAtomPropertiesPtrVect[i] =
         // RDKit✔️✔️:         MMFFAtomPropertiesPtr(new MMFFAtomProperties());
         // RDKit✔️✔️:   }
-        let pre_mmff_aromaticity_valence =
-            assign_valence(&prepared_molecule, ValenceModel::RdkitLike)?;
+        let pre_mmff_aromaticity_valence = assign_valence(&prepared_molecule, ValenceModel::RdkitLike)?;
         // RDKit❗✔️:   MolOps::setMMFFAromaticity((RWMol &)mol);
         let aromaticity = set_aromaticity(&prepared_molecule, AromaticityModel::Mmff94)?;
         prepared_molecule = molecule_with_aromaticity_assignment(
@@ -584,8 +566,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:   }
         for atom in prepared_molecule.atoms() {
             if atom.atomic_number() == 1 {
-                let properties =
-                    set_mmff_hydrogen_type(&prepared_molecule, &atom_properties, atom)?;
+                let properties = set_mmff_hydrogen_type(&prepared_molecule, &atom_properties, atom)?;
                 if properties.atom_type == 0 {
                     valid = false;
                 }
@@ -708,11 +689,7 @@ impl MmffMolProperties {
                         let mut n_term_os_bonded_to_nbr = 0_i32;
                         // RDKit✔️✔️:           boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                         // RDKit✔️✔️:           for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                        for neighbor2 in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                        {
+                        for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                             // RDKit✔️✔️:             const Atom *nbr2Atom = mol[*nbr2Idx];
                             let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                             // RDKit✔️✔️:             // if it's nitrogen with 2 neighbors and it is not aromatic,
@@ -721,12 +698,7 @@ impl MmffMolProperties {
                             // RDKit✔️✔️:                 (nbr2Atom->getDegree() == 2) &&
                             // RDKit✔️✔️:                 (!(nbr2Atom->getIsAromatic()))) {
                             if nbr2_atom.atomic_number() == 7
-                                && mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor2.atom_index)
-                                    .len()
-                                    == 2
+                                && mol.topology_block().adjacency.neighbors_of(neighbor2.atom_index).len() == 2
                                 && !nbr2_atom.is_aromatic()
                             {
                                 // RDKit✔️✔️:               ++nSecNbondedToNbr;
@@ -739,12 +711,7 @@ impl MmffMolProperties {
                             // RDKit✔️✔️:                  (nbr2Atom->getAtomicNum() == 16)) &&
                             // RDKit✔️✔️:                 (nbr2Atom->getDegree() == 1)) {
                             if matches!(nbr2_atom.atomic_number(), 8 | 16)
-                                && mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor2.atom_index)
-                                    .len()
-                                    == 1
+                                && mol.topology_block().adjacency.neighbors_of(neighbor2.atom_index).len() == 1
                             {
                                 // RDKit✔️✔️:               ++nTermOSbondedToNbr;
                                 n_term_os_bonded_to_nbr += 1;
@@ -759,9 +726,7 @@ impl MmffMolProperties {
                         // RDKit✔️✔️:           // nitrogen as a replacement for oxygen/sulfur in a sulfone
                         // RDKit✔️✔️:           if ((nbrAtom->getAtomicNum() == 16) && (nTermOSbondedToNbr == 2) &&
                         // RDKit✔️✔️:               (nSecNbondedToNbr == 1)) {
-                        if nbr_atom.atomic_number() == 16
-                            && n_term_os_bonded_to_nbr == 2
-                            && n_sec_n_bonded_to_nbr == 1
+                        if nbr_atom.atomic_number() == 16 && n_term_os_bonded_to_nbr == 2 && n_sec_n_bonded_to_nbr == 1
                         {
                             // RDKit✔️✔️:             nSecNbondedToNbr = 0;
                             n_sec_n_bonded_to_nbr = 0;
@@ -783,8 +748,7 @@ impl MmffMolProperties {
                             formal_charge = if n_term_os_bonded_to_nbr == 1 {
                                 -1.0
                             } else {
-                                -f64::from(n_term_os_bonded_to_nbr - 1)
-                                    / f64::from(n_term_os_bonded_to_nbr)
+                                -f64::from(n_term_os_bonded_to_nbr - 1) / f64::from(n_term_os_bonded_to_nbr)
                             };
                             // RDKit✔️✔️:             break;
                             break;
@@ -819,8 +783,7 @@ impl MmffMolProperties {
                             formal_charge = if n_term_os_bonded_to_nbr == 1 {
                                 0.0
                             } else {
-                                -f64::from(n_term_os_bonded_to_nbr - 1)
-                                    / f64::from(n_term_os_bonded_to_nbr)
+                                -f64::from(n_term_os_bonded_to_nbr - 1) / f64::from(n_term_os_bonded_to_nbr)
                             };
                             // RDKit✔️✔️:             break;
                             break;
@@ -844,8 +807,7 @@ impl MmffMolProperties {
                             // RDKit✔️✔️:                      ? 0.0
                             // RDKit✔️✔️:                      : -((double)((nSecNbondedToNbr + nTermOSbondedToNbr) - 2) /
                             // RDKit✔️✔️:                          (double)nTermOSbondedToNbr));
-                            formal_charge = if n_sec_n_bonded_to_nbr + n_term_os_bonded_to_nbr == 2
-                            {
+                            formal_charge = if n_sec_n_bonded_to_nbr + n_term_os_bonded_to_nbr == 2 {
                                 0.0
                             } else {
                                 -f64::from(n_sec_n_bonded_to_nbr + n_term_os_bonded_to_nbr - 2)
@@ -868,8 +830,7 @@ impl MmffMolProperties {
                             formal_charge = if n_term_os_bonded_to_nbr == 1 {
                                 0.0
                             } else {
-                                -f64::from(n_term_os_bonded_to_nbr - 1)
-                                    / f64::from(n_term_os_bonded_to_nbr)
+                                -f64::from(n_term_os_bonded_to_nbr - 1) / f64::from(n_term_os_bonded_to_nbr)
                             };
                             // RDKit✔️✔️:             break;
                             break;
@@ -986,8 +947,7 @@ impl MmffMolProperties {
                             for neighbor in mol.topology_block().adjacency.neighbors_of(i) {
                                 // RDKit✔️✔️:               const Atom *nbrAtom = mol[*nbrIdx];
                                 // RDKit✔️✔️:               nbrAtomType = this->getMMFFAtomType(nbrAtom->getIdx());
-                                let nbr_atom_type =
-                                    self.atom_properties[neighbor.atom_index].atom_type;
+                                let nbr_atom_type = self.atom_properties[neighbor.atom_index].atom_type;
                                 // RDKit✔️✔️:               // if atom type is not 80 or 57, move on
                                 // RDKit✔️✔️:               if ((nbrAtomType != 57) && (nbrAtomType != 80)) {
                                 if nbr_atom_type != 57 && nbr_atom_type != 80 {
@@ -1001,17 +961,12 @@ impl MmffMolProperties {
                                 // RDKit✔️✔️:               // and increment the nConj counter by 1
                                 // RDKit✔️✔️:               boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                                 // RDKit✔️✔️:               for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                                for neighbor2 in mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor.atom_index)
-                                {
+                                for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                     // RDKit✔️✔️:                 const Atom *nbr2Atom = mol[*nbr2Idx];
                                     let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                                     // RDKit✔️✔️:                 // if atom type is not 81, 55 or 56, move on
                                     // RDKit✔️✔️:                 nbrAtomType = this->getMMFFAtomType(nbr2Atom->getIdx());
-                                    let nbr2_atom_type =
-                                        self.atom_properties[neighbor2.atom_index].atom_type;
+                                    let nbr2_atom_type = self.atom_properties[neighbor2.atom_index].atom_type;
                                     // RDKit✔️✔️:                 if ((nbrAtomType != 55) && (nbrAtomType != 56) &&
                                     // RDKit✔️✔️:                     (nbrAtomType != 81)) {
                                     if !matches!(nbr2_atom_type, 55 | 56 | 81) {
@@ -1215,11 +1170,7 @@ impl MmffMolProperties {
                     // RDKit✔️✔️:         if (nbrFormalCharge < 0.0) {
                     if nbr_formal_charge < 0.0 {
                         // RDKit✔️✔️:           q0 += (nbrFormalCharge / (2.0 * (double)(nbrAtom->getDegree())));
-                        let nbr_degree = mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                            .len();
+                        let nbr_degree = mol.topology_block().adjacency.neighbors_of(neighbor.atom_index).len();
                         q0 += nbr_formal_charge / (2.0 * nbr_degree as f64);
                         // RDKit✔️✔️:         }
                     }
@@ -1265,11 +1216,8 @@ impl MmffMolProperties {
                 let bond_type = self.get_mmff_bond_type(bond, mmff_prop)?;
                 // RDKit✔️✔️:       mmffChgParams =
                 // RDKit✔️✔️:           mmffChg->getMMFFChgParams(bondType, atomType, nbrAtomType);
-                let mmff_chg_params = mmff_chg.get_mmff_chg_params(
-                    bond_type,
-                    u32::from(atom_type),
-                    u32::from(nbr_atom_type),
-                );
+                let mmff_chg_params =
+                    mmff_chg.get_mmff_chg_params(bond_type, u32::from(atom_type), u32::from(nbr_atom_type));
                 // RDKit✔️✔️:       sumPartialCharge +=
                 // RDKit✔️✔️:           (mmffChgParams.second
                 // RDKit✔️✔️:                ? (double)(mmffChgParams.first) * ((mmffChgParams.second)->bci)
@@ -1278,11 +1226,12 @@ impl MmffMolProperties {
                 sum_partial_charge += if let Some(chg_params) = mmff_chg_params.1 {
                     f64::from(mmff_chg_params.0) * chg_params.bci
                 } else {
-                    let nbr_pbci = mmff_pbci.get(u32::from(nbr_atom_type)).ok_or(
-                        MmffMolPropertiesError::AtomTypePbciMissing {
-                            atom_type: nbr_atom_type,
-                        },
-                    )?;
+                    let nbr_pbci =
+                        mmff_pbci
+                            .get(u32::from(nbr_atom_type))
+                            .ok_or(MmffMolPropertiesError::AtomTypePbciMissing {
+                                atom_type: nbr_atom_type,
+                            })?;
                     atom_pbci.pbci - nbr_pbci.pbci
                 };
                 // RDKit✔️✔️:       nbrFormalCharge = this->getMMFFFormalCharge(nbrAtom->getIdx());
@@ -1318,13 +1267,13 @@ impl MmffMolProperties {
         // BEGIN RDKIT CPP METHOD RDKit::MMFF::MMFFMolProperties::getMMFFAtomType (AtomTyper.h:94-98)
         // RDKit✔️✔️: std::uint8_t getMMFFAtomType(const unsigned int idx) {
         // RDKit✔️✔️:   URANGE_CHECK(idx, this->d_MMFFAtomPropertiesPtrVect.size());
-        let atom_properties =
-            self.atom_properties
-                .get(idx)
-                .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
-                    atom_index: idx,
-                    atoms: self.atom_properties.len(),
-                })?;
+        let atom_properties = self
+            .atom_properties
+            .get(idx)
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index: idx,
+                atoms: self.atom_properties.len(),
+            })?;
 
         // RDKit✔️✔️:
         // RDKit✔️✔️:   return this->d_MMFFAtomPropertiesPtrVect[idx]->mmffAtomType;
@@ -1332,10 +1281,7 @@ impl MmffMolProperties {
         Ok(atom_properties.atom_type)
     }
 
-    pub fn get_mmff_central_atom_prop(
-        &self,
-        idx: usize,
-    ) -> Result<MmffProp, MmffMolPropertiesError> {
+    pub fn get_mmff_central_atom_prop(&self, idx: usize) -> Result<MmffProp, MmffMolPropertiesError> {
         let atom_type = self.get_mmff_atom_type(idx)?;
         let mmff_prop = default_mmff_prop_collection()?;
         mmff_prop
@@ -1348,13 +1294,13 @@ impl MmffMolProperties {
         // BEGIN RDKIT CPP METHOD RDKit::MMFF::MMFFMolProperties::getMMFFFormalCharge (AtomTyper.h:99-103)
         // RDKit✔️✔️: double getMMFFFormalCharge(const unsigned int idx) {
         // RDKit✔️✔️:   URANGE_CHECK(idx, this->d_MMFFAtomPropertiesPtrVect.size());
-        let atom_properties =
-            self.atom_properties
-                .get(idx)
-                .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
-                    atom_index: idx,
-                    atoms: self.atom_properties.len(),
-                })?;
+        let atom_properties = self
+            .atom_properties
+            .get(idx)
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index: idx,
+                atoms: self.atom_properties.len(),
+            })?;
 
         // RDKit✔️✔️:
         // RDKit✔️✔️:   return this->d_MMFFAtomPropertiesPtrVect[idx]->mmffFormalCharge;
@@ -1366,13 +1312,13 @@ impl MmffMolProperties {
         // BEGIN RDKIT CPP METHOD RDKit::MMFF::MMFFMolProperties::getMMFFPartialCharge (AtomTyper.h:104-108)
         // RDKit✔️✔️: double getMMFFPartialCharge(const unsigned int idx) {
         // RDKit✔️✔️:   URANGE_CHECK(idx, this->d_MMFFAtomPropertiesPtrVect.size());
-        let atom_properties =
-            self.atom_properties
-                .get(idx)
-                .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
-                    atom_index: idx,
-                    atoms: self.atom_properties.len(),
-                })?;
+        let atom_properties = self
+            .atom_properties
+            .get(idx)
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index: idx,
+                atoms: self.atom_properties.len(),
+            })?;
 
         // RDKit✔️✔️:
         // RDKit✔️✔️:   return this->d_MMFFAtomPropertiesPtrVect[idx]->mmffPartialCharge;
@@ -1380,11 +1326,7 @@ impl MmffMolProperties {
         Ok(atom_properties.partial_charge)
     }
 
-    fn get_mmff_bond_type(
-        &self,
-        bond: &Bond,
-        mmff_prop: &MmffPropCollection,
-    ) -> Result<u32, MmffMolPropertiesError> {
+    fn get_mmff_bond_type(&self, bond: &Bond, mmff_prop: &MmffPropCollection) -> Result<u32, MmffMolPropertiesError> {
         // BEGIN RDKIT CPP METHOD RDKit::MMFF::MMFFMolProperties::getMMFFBondType (AtomTyper.cpp:2456-2477)
         // RDKit✔️✔️: // returns the MMFF bond type of the bond
         // RDKit✔️✔️: unsigned int MMFFMolProperties::getMMFFBondType(const Bond *bond) {
@@ -1397,20 +1339,16 @@ impl MmffMolProperties {
         // RDKit✔️✔️:   const ForceFields::MMFF::MMFFProp *mmffPropAtom1 =
         // RDKit✔️✔️:       (*mmffProp)(this->getMMFFAtomType(bond->getBeginAtomIdx()));
         let atom_type_1 = self.get_mmff_atom_type(bond.begin().index())?;
-        let mmff_prop_atom_1 = mmff_prop.get(u32::from(atom_type_1)).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: atom_type_1,
-            },
-        )?;
+        let mmff_prop_atom_1 = mmff_prop
+            .get(u32::from(atom_type_1))
+            .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing { atom_type: atom_type_1 })?;
 
         // RDKit✔️✔️:   const ForceFields::MMFF::MMFFProp *mmffPropAtom2 =
         // RDKit✔️✔️:       (*mmffProp)(this->getMMFFAtomType(bond->getEndAtomIdx()));
         let atom_type_2 = self.get_mmff_atom_type(bond.end().index())?;
-        let mmff_prop_atom_2 = mmff_prop.get(u32::from(atom_type_2)).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: atom_type_2,
-            },
-        )?;
+        let mmff_prop_atom_2 = mmff_prop
+            .get(u32::from(atom_type_2))
+            .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing { atom_type: atom_type_2 })?;
 
         // RDKit✔️✔️:
         // RDKit✔️✔️:   // return 1 if the bond is single and the properties for this
@@ -1484,8 +1422,8 @@ impl MmffMolProperties {
         // RDKit✔️✔️:   unsigned int bondTypeSum =
         // RDKit✔️✔️:       this->getMMFFBondType(mol.getBondBetweenAtoms(idx1, idx2)) +
         // RDKit✔️✔️:       this->getMMFFBondType(mol.getBondBetweenAtoms(idx2, idx3));
-        let bond_type_sum = self.get_mmff_bond_type(bond_12, mmff_prop)?
-            + self.get_mmff_bond_type(bond_23, mmff_prop)?;
+        let bond_type_sum =
+            self.get_mmff_bond_type(bond_12, mmff_prop)? + self.get_mmff_bond_type(bond_23, mmff_prop)?;
         // RDKit✔️✔️:   unsigned int angleType = bondTypeSum;
         let mut angle_type = bond_type_sum;
 
@@ -1558,8 +1496,7 @@ impl MmffMolProperties {
         // RDKit❗✔️:         mmffBondParams = getMMFFBondStretchEmpiricalRuleParams(mol, bond);
         // RDKit❗✔️:         areMMFFBondParamsEmpirical = true;
         // RDKit❗✔️:       }
-        let mmff_bond_params =
-            self.get_mmff_bond_stretch_empirical_rule_params(idx1, idx2, mmff_prop)?;
+        let mmff_bond_params = self.get_mmff_bond_stretch_empirical_rule_params(idx1, idx2, mmff_prop)?;
         Ok(Some((bond_type, mmff_bond_params)))
         // RDKit✔️✔️:       }
         // RDKit✔️✔️:     }
@@ -1605,16 +1542,14 @@ impl MmffMolProperties {
         let mmff_bndk_params = default_mmff_bndk_params(atomic_num_1, atomic_num_2);
         // RDKit❗✔️:   mmffAtomCovRadPauEleParams[0] = (*mmffCovRadPauEle)(atomicNum1);
         // RDKit❗✔️:   mmffAtomCovRadPauEleParams[1] = (*mmffCovRadPauEle)(atomicNum2);
-        let cov_rad_pau_ele_1 = default_mmff_cov_rad_pau_ele_params(atomic_num_1).ok_or(
-            MmffParamError::MissingDefaultData {
+        let cov_rad_pau_ele_1 =
+            default_mmff_cov_rad_pau_ele_params(atomic_num_1).ok_or(MmffParamError::MissingDefaultData {
                 symbol: "defaultMMFFCovRadPauEle atom 1",
-            },
-        )?;
-        let cov_rad_pau_ele_2 = default_mmff_cov_rad_pau_ele_params(atomic_num_2).ok_or(
-            MmffParamError::MissingDefaultData {
+            })?;
+        let cov_rad_pau_ele_2 =
+            default_mmff_cov_rad_pau_ele_params(atomic_num_2).ok_or(MmffParamError::MissingDefaultData {
                 symbol: "defaultMMFFCovRadPauEle atom 2",
-            },
-        )?;
+            })?;
         // RDKit❗✔️:   mmffAtomPropParams[0] =
         // RDKit❗✔️:       (*mmffProp)(this->getMMFFAtomType(bond->getBeginAtomIdx()));
         // RDKit❗✔️:   mmffAtomPropParams[1] =
@@ -1748,11 +1683,7 @@ impl MmffMolProperties {
         // RDKit❗✔️:                                      mmffAtomCovRadPauEleParams[1]->chi),
         // RDKit❗✔️:                                 n) -
         // RDKit❗✔️:                         delta);
-        let r0 = r0_i[0] + r0_i[1]
-            - c * (cov_rad_pau_ele_1.chi - cov_rad_pau_ele_2.chi)
-                .abs()
-                .powf(n)
-            - delta;
+        let r0 = r0_i[0] + r0_i[1] - c * (cov_rad_pau_ele_1.chi - cov_rad_pau_ele_2.chi).abs().powf(n) - delta;
         // RDKit❗✔️:   if (mmffBndkParams) {
         let kb = if let Some(mmff_bndk_params) = mmff_bndk_params {
             // RDKit❗✔️:     // equation (19) - MMFF.V, page 625
@@ -1859,9 +1790,7 @@ impl MmffMolProperties {
                 3 => {
                     // RDKit❗✔️:         if ((mmffPropParamsCentralAtom->val == 3) &&
                     // RDKit❗✔️:             (mmffPropParamsCentralAtom->mltb == 0)) {
-                    if mmff_prop_params_central_atom.val == 3
-                        && mmff_prop_params_central_atom.mltb == 0
-                    {
+                    if mmff_prop_params_central_atom.val == 3 && mmff_prop_params_central_atom.mltb == 0 {
                         // RDKit❗✔️:           // if the central atom is nitrogen
                         // RDKit❗✔️:           if (atomicNum[1] == 7) {
                         if atomic_num[1] == 7 {
@@ -2031,8 +1960,7 @@ impl MmffMolProperties {
         // RDKit❗✔️:   mmffAngleParams->ka =
         // RDKit❗✔️:       beta * Z[0] * C[1] * Z[2] /
         // RDKit❗✔️:       ((r0_ij + r0_jk) * theta0_rad * theta0_rad * exp(2.0 * D));
-        let ka = beta * z[0] * c[1] * z[2]
-            / ((r0_ij + r0_jk) * theta0_rad * theta0_rad * (2.0 * d).exp());
+        let ka = beta * z[0] * c[1] * z[2] / ((r0_ij + r0_jk) * theta0_rad * theta0_rad * (2.0 * d).exp());
 
         // RDKit❗✔️:   return (const ForceFields::MMFF::MMFFAngle *)mmffAngleParams;
         // RDKit❗✔️: }
@@ -2059,8 +1987,7 @@ impl MmffMolProperties {
         if !self.is_valid() {
             return Ok(None);
         }
-        if self.bond_between_atom_indices(idx1, idx2).is_none()
-            || self.bond_between_atom_indices(idx2, idx3).is_none()
+        if self.bond_between_atom_indices(idx1, idx2).is_none() || self.bond_between_atom_indices(idx2, idx3).is_none()
         {
             return Ok(None);
         }
@@ -2089,14 +2016,14 @@ impl MmffMolProperties {
         // RDKit✔️✔️:     const MMFFAngle *mmffAngleParams =
         // RDKit✔️✔️:         (*mmffAngle)(DefaultParameters::getMMFFDef(), angleType, atomType[0],
         // RDKit✔️✔️:                      atomType[1], atomType[2]);
-        let mmff_angle_params =
-            mmff_angle.get(mmff_def, angle_type, atom_type_1, atom_type_2, atom_type_3);
+        let mmff_angle_params = mmff_angle.get(mmff_def, angle_type, atom_type_1, atom_type_2, atom_type_3);
         // RDKit✔️✔️:     const MMFFProp *mmffPropParamsCentralAtom = (*mmffProp)(atomType[1]);
-        let mmff_prop_params_central_atom = mmff_prop.get(atom_type_2).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: self.get_mmff_atom_type(idx2)?,
-            },
-        )?;
+        let mmff_prop_params_central_atom =
+            mmff_prop
+                .get(atom_type_2)
+                .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing {
+                    atom_type: self.get_mmff_atom_type(idx2)?,
+                })?;
 
         if let Some(mmff_angle_params) = mmff_angle_params {
             if !is_double_zero(mmff_angle_params.ka) {
@@ -2118,14 +2045,10 @@ impl MmffMolProperties {
         // RDKit❗✔️:         areMMFFAngleParamsEmpirical = getMMFFBondStretchParams(
         // RDKit❗✔️:             mol, idx[i], idx[i + 1], bondType, mmffBondParams[i]);
         // RDKit❗✔️:       }
-        let Some((_bond_type_1, mmff_bond_params_1)) =
-            self.get_mmff_bond_stretch_params(idx1, idx2)?
-        else {
+        let Some((_bond_type_1, mmff_bond_params_1)) = self.get_mmff_bond_stretch_params(idx1, idx2)? else {
             return Ok(None);
         };
-        let Some((_bond_type_2, mmff_bond_params_2)) =
-            self.get_mmff_bond_stretch_params(idx2, idx3)?
-        else {
+        let Some((_bond_type_2, mmff_bond_params_2)) = self.get_mmff_bond_stretch_params(idx2, idx3)? else {
             return Ok(None);
         };
         // RDKit❗✔️:       if (areMMFFAngleParamsEmpirical) {
@@ -2183,11 +2106,12 @@ impl MmffMolProperties {
         // RDKit✔️✔️:     const MMFFProp *mmffPropParamsCentralAtom =
         // RDKit✔️✔️:         (*mmffProp)(getMMFFAtomType(idx[1]));
         let central_atom_type = self.get_mmff_atom_type(idx[1])?;
-        let mmff_prop_params_central_atom = mmff_prop.get(u32::from(central_atom_type)).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: central_atom_type,
-            },
-        )?;
+        let mmff_prop_params_central_atom =
+            mmff_prop
+                .get(u32::from(central_atom_type))
+                .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing {
+                    atom_type: central_atom_type,
+                })?;
 
         // RDKit✔️✔️:     if (!(mmffPropParamsCentralAtom->linh)) {
         if mmff_prop_params_central_atom.linh != 0 {
@@ -2211,14 +2135,10 @@ impl MmffMolProperties {
         // RDKit✔️✔️:         res = getMMFFBondStretchParams(mol, idx[i], idx[i + 1], bondType[i],
         // RDKit✔️✔️:                                        mmffBondStretchParams[i]);
         // RDKit✔️✔️:       }
-        let Some((bond_type_1, bond_params_1)) =
-            self.get_mmff_bond_stretch_params(idx[0], idx[1])?
-        else {
+        let Some((bond_type_1, bond_params_1)) = self.get_mmff_bond_stretch_params(idx[0], idx[1])? else {
             return Ok(None);
         };
-        let Some((bond_type_2, bond_params_2)) =
-            self.get_mmff_bond_stretch_params(idx[1], idx[2])?
-        else {
+        let Some((bond_type_2, bond_params_2)) = self.get_mmff_bond_stretch_params(idx[1], idx[2])? else {
             return Ok(None);
         };
         let bond_type = [bond_type_1, bond_type_2];
@@ -2227,8 +2147,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:         res = getMMFFAngleBendParams(mol, idx1, idx2, idx3, angleType,
         // RDKit✔️✔️:                                      mmffAngleBendParams);
         // RDKit✔️✔️:       }
-        let Some((angle_type, angle_params)) = self.get_mmff_angle_bend_params(idx1, idx2, idx3)?
-        else {
+        let Some((angle_type, angle_params)) = self.get_mmff_angle_bend_params(idx1, idx2, idx3)? else {
             return Ok(None);
         };
 
@@ -2370,10 +2289,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:   // empirically determined to be the correct one
         // RDKit✔️✔️:   if ((bondTypeJK == 0) && (bondJK->getBondType() == Bond::SINGLE) &&
         // RDKit✔️✔️:       ((bondTypeIJ == 1) || (bondTypeKL == 1))) {
-        if bond_type_jk == 0
-            && bond_jk.order() == BondOrder::Single
-            && (bond_type_ij == 1 || bond_type_kl == 1)
-        {
+        if bond_type_jk == 0 && bond_jk.order() == BondOrder::Single && (bond_type_ij == 1 || bond_type_kl == 1) {
             // RDKit✔️✔️:     torsionType = 2;
             torsion_type = 2;
         }
@@ -2450,17 +2366,13 @@ impl MmffMolProperties {
         // RDKit❗✔️:   unsigned int kAtomType = this->getMMFFAtomType(idx3);
         let k_atom_type = self.get_mmff_atom_type(idx3)?;
         // RDKit❗✔️:   const MMFFProp *jMMFFProp = (*mmffProp)(jAtomType);
-        let j_mmff_prop = mmff_prop.get(u32::from(j_atom_type)).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: j_atom_type,
-            },
-        )?;
+        let j_mmff_prop = mmff_prop
+            .get(u32::from(j_atom_type))
+            .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing { atom_type: j_atom_type })?;
         // RDKit❗✔️:   const MMFFProp *kMMFFProp = (*mmffProp)(kAtomType);
-        let k_mmff_prop = mmff_prop.get(u32::from(k_atom_type)).ok_or(
-            MmffMolPropertiesError::AtomTypePropertiesMissing {
-                atom_type: k_atom_type,
-            },
-        )?;
+        let k_mmff_prop = mmff_prop
+            .get(u32::from(k_atom_type))
+            .ok_or(MmffMolPropertiesError::AtomTypePropertiesMissing { atom_type: k_atom_type })?;
         // RDKit❗✔️:   const Bond *bond = mol.getBondBetweenAtoms(idx2, idx3);
         let bond = self
             .bond_between_atom_indices(idx2, idx3)
@@ -2581,13 +2493,12 @@ impl MmffMolProperties {
             // RDKit❗✔️:              ((jMMFFProp->val == 4) && (kMMFFProp->val == 3)))
             // RDKit❗✔️:                 ? 3.0
             // RDKit❗✔️:                 : 6.0);
-            let beta = if (j_mmff_prop.val == 3 && k_mmff_prop.val == 4)
-                || (j_mmff_prop.val == 4 && k_mmff_prop.val == 3)
-            {
-                3.0
-            } else {
-                6.0
-            };
+            let beta =
+                if (j_mmff_prop.val == 3 && k_mmff_prop.val == 4) || (j_mmff_prop.val == 4 && k_mmff_prop.val == 3) {
+                    3.0
+                } else {
+                    6.0
+                };
             // RDKit❗✔️:     pi_jk = (((jMMFFProp->pilp == 0) && (kMMFFProp->pilp == 0)) ? 0.5 : 0.3);
             let pi_jk = if j_mmff_prop.pilp == 0 && k_mmff_prop.pilp == 0 {
                 0.5
@@ -2627,8 +2538,7 @@ impl MmffMolProperties {
             // RDKit❗✔️:          (((kMMFFProp->val == 4) || (kMMFFProp->val == 34)) ||
             // RDKit❗✔️:           kMMFFProp->mltb)) ||
             // RDKit❗✔️:         ((kMMFFProp->crd == 2) && ((kMMFFProp->val == 3) || kMMFFProp->mltb))) {
-            if (k_mmff_prop.crd == 3
-                && (k_mmff_prop.val == 4 || k_mmff_prop.val == 34 || k_mmff_prop.mltb != 0))
+            if (k_mmff_prop.crd == 3 && (k_mmff_prop.val == 4 || k_mmff_prop.val == 34 || k_mmff_prop.mltb != 0))
                 || (k_mmff_prop.crd == 2 && (k_mmff_prop.val == 3 || k_mmff_prop.mltb != 0))
             {
                 // RDKit❗✔️:       mmffTorParams->V1 = 0.0;
@@ -2649,8 +2559,7 @@ impl MmffMolProperties {
             // RDKit❗✔️:          (((jMMFFProp->val == 4) || (jMMFFProp->val == 34)) ||
             // RDKit❗✔️:           jMMFFProp->mltb)) ||
             // RDKit❗✔️:         ((jMMFFProp->crd == 2) && ((jMMFFProp->val == 3) || jMMFFProp->mltb))) {
-            if (j_mmff_prop.crd == 3
-                && (j_mmff_prop.val == 4 || j_mmff_prop.val == 34 || j_mmff_prop.mltb != 0))
+            if (j_mmff_prop.crd == 3 && (j_mmff_prop.val == 4 || j_mmff_prop.val == 34 || j_mmff_prop.mltb != 0))
                 || (j_mmff_prop.crd == 2 && (j_mmff_prop.val == 3 || j_mmff_prop.mltb != 0))
             {
                 // RDKit❗✔️:       mmffTorParams->V1 = 0.0;
@@ -2669,9 +2578,7 @@ impl MmffMolProperties {
         // RDKit❗✔️:             kMMFFProp->mltb) ||
         // RDKit❗✔️:            (jMMFFProp->mltb && kMMFFProp->pilp) ||
         // RDKit❗✔️:            (jMMFFProp->pilp && kMMFFProp->mltb)) {
-        } else if (bond.order() == BondOrder::Single
-            && j_mmff_prop.mltb != 0
-            && k_mmff_prop.mltb != 0)
+        } else if (bond.order() == BondOrder::Single && j_mmff_prop.mltb != 0 && k_mmff_prop.mltb != 0)
             || (j_mmff_prop.mltb != 0 && k_mmff_prop.pilp != 0)
             || (j_mmff_prop.pilp != 0 && k_mmff_prop.mltb != 0)
         {
@@ -2694,9 +2601,7 @@ impl MmffMolProperties {
                 // RDKit❗✔️:       } else if ((getPeriodicTableRow(atomicNum[0]) == 2) &&
                 // RDKit❗✔️:                  (getPeriodicTableRow(atomicNum[1]) == 2)) {
                 // RDKit❗✔️:         pi_jk = 0.3;
-                } else if mmff_periodic_table_row(atomic_num[0]) == 2
-                    && mmff_periodic_table_row(atomic_num[1]) == 2
-                {
+                } else if mmff_periodic_table_row(atomic_num[0]) == 2 && mmff_periodic_table_row(atomic_num[1]) == 2 {
                     0.3
                 // RDKit❗✔️:       } else if ((getPeriodicTableRow(atomicNum[0]) != 2) ||
                 // RDKit❗✔️:                  (getPeriodicTableRow(atomicNum[1]) != 2)) {
@@ -2720,9 +2625,7 @@ impl MmffMolProperties {
                 // RDKit❗✔️:       } else if ((getPeriodicTableRow(atomicNum[0]) == 2) &&
                 // RDKit❗✔️:                  (getPeriodicTableRow(atomicNum[1]) == 2)) {
                 // RDKit❗✔️:         pi_jk = 0.3;
-                } else if mmff_periodic_table_row(atomic_num[0]) == 2
-                    && mmff_periodic_table_row(atomic_num[1]) == 2
-                {
+                } else if mmff_periodic_table_row(atomic_num[0]) == 2 && mmff_periodic_table_row(atomic_num[1]) == 2 {
                     0.3
                 // RDKit❗✔️:       } else if ((getPeriodicTableRow(atomicNum[0]) != 2) ||
                 // RDKit❗✔️:                  (getPeriodicTableRow(atomicNum[1]) != 2)) {
@@ -2737,9 +2640,7 @@ impl MmffMolProperties {
             // RDKit❗✔️:     // case (4)
             // RDKit❗✔️:     else if (((jMMFFProp->mltb == 1) || (kMMFFProp->mltb == 1)) &&
             // RDKit❗✔️:              ((atomicNum[0] != 6) || (atomicNum[1] != 6))) {
-            } else if (j_mmff_prop.mltb == 1 || k_mmff_prop.mltb == 1)
-                && (atomic_num[0] != 6 || atomic_num[1] != 6)
-            {
+            } else if (j_mmff_prop.mltb == 1 || k_mmff_prop.mltb == 1) && (atomic_num[0] != 6 || atomic_num[1] != 6) {
                 // RDKit❗✔️:       beta = 6.0;
                 // RDKit❗✔️:       pi_jk = 0.4;
                 // RDKit❗✔️:       mmffTorParams->V2 = beta * pi_jk * sqrt(U[0] * U[1]);
@@ -2761,9 +2662,7 @@ impl MmffMolProperties {
         } else {
             // RDKit❗✔️:     if (((atomicNum[0] == 8) || (atomicNum[0] == 16)) &&
             // RDKit❗✔️:         ((atomicNum[1] == 8) || (atomicNum[1] == 16))) {
-            if (atomic_num[0] == 8 || atomic_num[0] == 16)
-                && (atomic_num[1] == 8 || atomic_num[1] == 16)
-            {
+            if (atomic_num[0] == 8 || atomic_num[0] == 16) && (atomic_num[1] == 8 || atomic_num[1] == 16) {
                 // RDKit❗✔️:       mmffTorParams->V2 = -sqrt(W[0] * W[1]);
                 mmff_tor_params.v2 = -(w[0] * w[1]).sqrt();
             // RDKit❗✔️:     } else {
@@ -2855,8 +2754,7 @@ impl MmffMolProperties {
             // RDKit❗✔️:       torsionType = torTypePair.first;
             torsion_type = tor_type_pair.0;
             // RDKit❗✔️:       mmffTorParams = getMMFFTorsionEmpiricalRuleParams(mol, idx2, idx3);
-            let mmff_tor_params =
-                self.get_mmff_torsion_empirical_rule_params(idx2, idx3, mmff_prop)?;
+            let mmff_tor_params = self.get_mmff_torsion_empirical_rule_params(idx2, idx3, mmff_prop)?;
             // RDKit❗✔️:       areMMFFTorParamsEmpirical = true;
             // RDKit❗✔️:     }
             mmff_tor_params
@@ -2931,13 +2829,8 @@ impl MmffMolProperties {
         // RDKit✔️✔️:     const MMFFOop *mmffOopParams =
         // RDKit✔️✔️:         (*mmffOop)(DefaultParameters::getMMFFDef(), atomType[0], atomType[1],
         // RDKit✔️✔️:                    atomType[2], atomType[3]);
-        let mmff_oop_params = mmff_oop.get_mmff_oop_params(
-            mmff_def,
-            atom_type[0],
-            atom_type[1],
-            atom_type[2],
-            atom_type[3],
-        );
+        let mmff_oop_params =
+            mmff_oop.get_mmff_oop_params(mmff_def, atom_type[0], atom_type[1], atom_type[2], atom_type[3]);
         // RDKit✔️✔️:     // if no parameters could be found, we exclude this term (SURDOX02)
         // RDKit✔️✔️:     if (mmffOopParams) {
         let Some(mmff_oop_params) = mmff_oop_params else {
@@ -2986,16 +2879,12 @@ impl MmffMolProperties {
 
         // RDKit✔️✔️:       mmffVdWParams.R_ij_starUnscaled = MMFF::Utils::calcUnscaledVdWMinimum(
         // RDKit✔️✔️:           mmffVdW, mmffVdWParamsIAtom, mmffVdWParamsJAtom);
-        let r_ij_star_unscaled =
-            calc_unscaled_vdw_minimum(mmff_vdw, mmff_vdw_params_i_atom, mmff_vdw_params_j_atom);
+        let r_ij_star_unscaled = calc_unscaled_vdw_minimum(mmff_vdw, mmff_vdw_params_i_atom, mmff_vdw_params_j_atom);
         // RDKit✔️✔️:       mmffVdWParams.epsilonUnscaled = MMFF::Utils::calcUnscaledVdWWellDepth(
         // RDKit✔️✔️:           mmffVdWParams.R_ij_starUnscaled, mmffVdWParamsIAtom,
         // RDKit✔️✔️:           mmffVdWParamsJAtom);
-        let epsilon_unscaled = calc_unscaled_vdw_well_depth(
-            r_ij_star_unscaled,
-            mmff_vdw_params_i_atom,
-            mmff_vdw_params_j_atom,
-        );
+        let epsilon_unscaled =
+            calc_unscaled_vdw_well_depth(r_ij_star_unscaled, mmff_vdw_params_i_atom, mmff_vdw_params_j_atom);
         // RDKit✔️✔️:       mmffVdWParams.R_ij_star = mmffVdWParams.R_ij_starUnscaled;
         // RDKit✔️✔️:       mmffVdWParams.epsilon = mmffVdWParams.epsilonUnscaled;
         let mut params = MmffVdwRijstarEps {
@@ -3034,8 +2923,7 @@ impl MmffMolProperties {
         // RDKit✔️✔️:
         // RDKit✔️✔️:   if (mol.getBondBetweenAtoms(idx1, idx2) &&
         // RDKit✔️✔️:       mol.getBondBetweenAtoms(idx2, idx3)) {
-        if self.bond_between_atom_indices(idx1, idx2).is_some()
-            && self.bond_between_atom_indices(idx2, idx3).is_some()
+        if self.bond_between_atom_indices(idx1, idx2).is_some() && self.bond_between_atom_indices(idx2, idx3).is_some()
         {
             // RDKit✔️✔️:     if (mol.getBondBetweenAtoms(idx3, idx1)) {
             // RDKit✔️✔️:       ringSize = 3;
@@ -3071,10 +2959,7 @@ impl MmffMolProperties {
             // RDKit✔️✔️:                             std::back_inserter(intersect));
             // RDKit✔️✔️:       if (intersect.size()) {
             // RDKit✔️✔️:         ringSize = 4;
-            if neighbors_1
-                .iter()
-                .any(|neighbor| neighbors_3.contains(neighbor))
-            {
+            if neighbors_1.iter().any(|neighbor| neighbors_3.contains(neighbor)) {
                 return Some(4);
             }
             // RDKit✔️✔️:       }
@@ -3087,13 +2972,7 @@ impl MmffMolProperties {
         None
     }
 
-    fn torsion_ring_size_4_or_5(
-        &self,
-        idx1: usize,
-        idx2: usize,
-        idx3: usize,
-        idx4: usize,
-    ) -> Option<u32> {
+    fn torsion_ring_size_4_or_5(&self, idx1: usize, idx2: usize, idx3: usize, idx4: usize) -> Option<u32> {
         // BEGIN RDKIT CPP HELPER RDKit::MMFF::isTorsionInRingOfSize4or5 (AtomTyper.cpp:403-445)
         // RDKit✔️✔️: unsigned int isTorsionInRingOfSize4or5(const ROMol &mol,
         // RDKit✔️✔️:                                        const unsigned int idx1,
@@ -3143,10 +3022,7 @@ impl MmffMolProperties {
             // RDKit✔️✔️:                             std::back_inserter(intersect));
             // RDKit✔️✔️:       if (intersect.size()) {
             // RDKit✔️✔️:         ringSize = 5;
-            if neighbors_1
-                .iter()
-                .any(|neighbor| neighbors_4.contains(neighbor))
-            {
+            if neighbors_1.iter().any(|neighbor| neighbors_4.contains(neighbor)) {
                 return Some(5);
             }
             // RDKit✔️✔️:       }
@@ -3180,8 +3056,7 @@ impl MmffMolProperties {
         let atom_1 = AtomId::new(idx1);
         let atom_2 = AtomId::new(idx2);
         self.molecule.bonds().iter().find(|bond| {
-            (bond.begin() == atom_1 && bond.end() == atom_2)
-                || (bond.begin() == atom_2 && bond.end() == atom_1)
+            (bond.begin() == atom_1 && bond.end() == atom_2) || (bond.begin() == atom_2 && bond.end() == atom_1)
         })
     }
 }
@@ -3364,11 +3239,7 @@ fn set_mmff_heavy_atom_type(
             let mut alpha_het = Vec::<AtomId>::new();
             let mut beta_het = Vec::<AtomId>::new();
             if matches!(atom.atomic_number(), 6 | 7) {
-                for neighbor in mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                {
+                for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                     let nbr_atom = &mol.atoms()[neighbor.atom_index];
                     if !mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr_atom.id(), 5) {
                         continue;
@@ -3376,45 +3247,24 @@ fn set_mmff_heavy_atom_type(
                     if ring_info.are_atoms_in_same_ring_of_size(atom.id(), nbr_atom.id(), 5)
                         && (matches!(nbr_atom.atomic_number(), 8 | 16)
                             || (nbr_atom.atomic_number() == 7
-                                && mmff_total_degree(
-                                    mol,
-                                    implicit_hydrogens,
-                                    neighbor.atom_index,
-                                )? == 3
-                                && !is_mmff_atom_n_oxide(
-                                    mol,
-                                    implicit_hydrogens,
-                                    neighbor.atom_index,
-                                )?))
+                                && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)? == 3
+                                && !is_mmff_atom_n_oxide(mol, implicit_hydrogens, neighbor.atom_index)?))
                     {
                         alpha_het.push(nbr_atom.id());
                     }
-                    for neighbor2 in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(neighbor.atom_index)
-                    {
+                    for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                         if neighbor2.atom_index == atom.id().index() {
                             continue;
                         }
                         let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
-                        if !mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr2_atom.id(), 5)
-                        {
+                        if !mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr2_atom.id(), 5) {
                             continue;
                         }
                         if ring_info.are_atoms_in_same_ring_of_size(atom.id(), nbr2_atom.id(), 5)
                             && (matches!(nbr2_atom.atomic_number(), 8 | 16)
                                 || (nbr2_atom.atomic_number() == 7
-                                    && mmff_total_degree(
-                                        mol,
-                                        implicit_hydrogens,
-                                        neighbor2.atom_index,
-                                    )? == 3
-                                    && !is_mmff_atom_n_oxide(
-                                        mol,
-                                        implicit_hydrogens,
-                                        neighbor2.atom_index,
-                                    )?))
+                                    && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 3
+                                    && !is_mmff_atom_n_oxide(mol, implicit_hydrogens, neighbor2.atom_index)?))
                         {
                             beta_het.push(nbr2_atom.id());
                         }
@@ -3439,46 +3289,26 @@ fn set_mmff_heavy_atom_type(
                         let mut n_formal_charge = 0_u32;
                         let mut n_in_aromatic_5_ring = 0_u32;
                         let mut n_in_aromatic_6_ring = 0_u32;
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             if nbr_atom.atomic_number() == 7
-                                && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?
-                                    == 3
+                                && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)? == 3
                             {
                                 n_n += 1;
                                 if nbr_atom.formal_charge() > 0
-                                    && !is_mmff_atom_n_oxide(
-                                        mol,
-                                        implicit_hydrogens,
-                                        neighbor.atom_index,
-                                    )?
+                                    && !is_mmff_atom_n_oxide(mol, implicit_hydrogens, neighbor.atom_index)?
                                 {
                                     n_formal_charge += 1;
                                 }
-                                if mmff_is_atom_in_aromatic_ring_of_size(
-                                    mol,
-                                    ring_info,
-                                    nbr_atom.id(),
-                                    5,
-                                ) {
+                                if mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr_atom.id(), 5) {
                                     n_in_aromatic_5_ring += 1;
                                 }
-                                if mmff_is_atom_in_aromatic_ring_of_size(
-                                    mol,
-                                    ring_info,
-                                    nbr_atom.id(),
-                                    6,
-                                ) {
+                                if mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr_atom.id(), 6) {
                                     n_in_aromatic_6_ring += 1;
                                 }
                             }
                         }
-                        if (((n_n == 2) && n_in_aromatic_5_ring != 0)
-                            || ((n_n == 3) && (n_in_aromatic_5_ring == 2)))
+                        if (((n_n == 2) && n_in_aromatic_5_ring != 0) || ((n_n == 3) && (n_in_aromatic_5_ring == 2)))
                             && n_formal_charge != 0
                             && n_in_aromatic_6_ring == 0
                         {
@@ -3488,15 +3318,9 @@ fn set_mmff_heavy_atom_type(
                     if atom_type == 0 && alpha_het.len() == beta_het.len() {
                         let mut surrounded_by_benzene_c = true;
                         let mut surrounded_by_arom = true;
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
-                            if nbr_atom.atomic_number() != 6
-                                || !ring_info.is_atom_in_ring_of_size(nbr_atom.id(), 6)
-                            {
+                            if nbr_atom.atomic_number() != 6 || !ring_info.is_atom_in_ring_of_size(nbr_atom.id(), 6) {
                                 surrounded_by_benzene_c = false;
                             }
                             if ring_info.are_atoms_in_same_ring_of_size(atom.id(), nbr_atom.id(), 5)
@@ -3516,22 +3340,15 @@ fn set_mmff_heavy_atom_type(
                             atom_type = 78;
                         }
                     }
-                    if atom_type == 0
-                        && !alpha_het.is_empty()
-                        && (beta_het.is_empty() || is_alpha_os)
-                    {
+                    if atom_type == 0 && !alpha_het.is_empty() && (beta_het.is_empty() || is_alpha_os) {
                         atom_type = 63;
                     }
-                    if atom_type == 0
-                        && !beta_het.is_empty()
-                        && (alpha_het.is_empty() || is_beta_os)
-                    {
+                    if atom_type == 0 && !beta_het.is_empty() && (alpha_het.is_empty() || is_beta_os) {
                         atom_type = 64;
                     }
                 }
                 7 => {
-                    let total_degree =
-                        mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
+                    let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
                     if is_mmff_atom_n_oxide(mol, implicit_hydrogens, atom.id().index())? {
                         atom_type = 82;
                     } else if alpha_het.is_empty() && beta_het.is_empty() {
@@ -3597,8 +3414,7 @@ fn set_mmff_heavy_atom_type(
                         // RDKit✔️✔️:             break;
                     }
                     // RDKit✔️✔️:           }
-                    let total_degree =
-                        mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
+                    let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
                     if atom_type == 0 && total_degree == 3 {
                         // RDKit✔️✔️:           if (atom->getTotalDegree() == 3) {
                         // RDKit✔️✔️:             // NPD+
@@ -3635,11 +3451,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Lithium
             // RDKit✔️✔️:       case 3:
             3 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           // LI+
@@ -3697,11 +3509,7 @@ fn set_mmff_heavy_atom_type(
                     let mut double_bonded_element = 0_u8;
                     // RDKit❗✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit❗✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         // RDKit❗✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                         let nbr_atom = &mol.atoms()[neighbor.atom_index];
                         let nbr_bond = &mol.bonds()[neighbor.bond.index()];
@@ -3713,8 +3521,7 @@ fn set_mmff_heavy_atom_type(
                             double_bonded_element = nbr_atom.atomic_number();
                         }
                         // RDKit❗✔️:             }
-                        let nbr_total_degree =
-                            mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
+                        let nbr_total_degree = mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
                         // RDKit❗✔️:             // count how many terminal oxygen/sulfur atoms
                         // RDKit❗✔️:             // are bonded to ipso
                         // RDKit❗✔️:             if (nbrAtom->getTotalDegree() == 1) {
@@ -3744,8 +3551,7 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:                        ((mol.getBondBetweenAtoms(nbrAtom->getIdx(),
                             // RDKit❗✔️:                                                  atom->getIdx()))
                             // RDKit❗✔️:                             ->getBondType() == Bond::DOUBLE)) {
-                            } else if nbr_total_degree == 2 && nbr_bond.order() == BondOrder::Double
-                            {
+                            } else if nbr_total_degree == 2 && nbr_bond.order() == BondOrder::Double {
                                 // RDKit❗✔️:                 ++nN2;
                                 n_n2 += 1;
                             }
@@ -3782,9 +3588,7 @@ fn set_mmff_heavy_atom_type(
                     // RDKit❗✔️:           // is double-bonded to another carbon
                     // RDKit❗✔️:           if (ringInfo->isAtomInRingOfSize(atom->getIdx(), 4) &&
                     // RDKit❗✔️:               (doubleBondedElement == 6)) {
-                    } else if ring_info.is_atom_in_ring_of_size(atom.id(), 4)
-                        && double_bonded_element == 6
-                    {
+                    } else if ring_info.is_atom_in_ring_of_size(atom.id(), 4) && double_bonded_element == 6 {
                         // RDKit❗✔️:             // CR4E
                         // RDKit❗✔️:             // Olefinic carbon in 4-membered ring
                         // RDKit❗✔️:             atomType = 30;
@@ -3866,23 +3670,17 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       case 7:
             7 => {
                 let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
-                let total_bond_order =
-                    mmff_total_bond_order(explicit_valence, implicit_hydrogens, atom.id().index())?;
+                let total_bond_order = mmff_total_bond_order(explicit_valence, implicit_hydrogens, atom.id().index())?;
                 // RDKit❗✔️:         // if the neighbor is phosphorus or sulfur
                 // RDKit❗✔️:         // count the number of terminal oxygens bonded
                 // RDKit❗✔️:         // to that phosphorus or sulfur atom
                 let mut n_term_o_bonded_to_n = 0_u32;
                 // RDKit❗✔️:         boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                 // RDKit❗✔️:         for (; nbrIdx != endNbrs; ++nbrIdx) {
-                for neighbor in mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                {
+                for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                     // RDKit❗✔️:           const Atom *nbrAtom = mol[*nbrIdx];
                     let nbr_atom = &mol.atoms()[neighbor.atom_index];
-                    let nbr_total_degree =
-                        mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
+                    let nbr_total_degree = mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
                     // RDKit❗✔️:           // count how many terminal oxygen atoms
                     // RDKit❗✔️:           // are bonded to ipso
                     // RDKit❗✔️:           if ((nbrAtom->getAtomicNum() == 8) &&
@@ -3901,18 +3699,13 @@ fn set_mmff_heavy_atom_type(
                         let mut n_o_bonded_to_sp = 0_u32;
                         // RDKit✔️✔️:             boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                         // RDKit✔️✔️:             for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                        for neighbor2 in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                        {
+                        for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                             // RDKit✔️✔️:               const Atom *nbr2Atom = mol[*nbr2Idx];
                             let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                             // RDKit✔️✔️:               if ((nbr2Atom->getAtomicNum() == 8) &&
                             // RDKit✔️✔️:                   (nbr2Atom->getTotalDegree() == 1)) {
                             if nbr2_atom.atomic_number() == 8
-                                && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)?
-                                    == 1
+                                && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 1
                             {
                                 // RDKit✔️✔️:                 ++nObondedToSP;
                                 n_o_bonded_to_sp += 1;
@@ -3962,11 +3755,7 @@ fn set_mmff_heavy_atom_type(
                         let mut double_bonded_cn = false;
                         // RDKit✔️✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit✔️✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             // RDKit✔️✔️:               const Atom *nbrAtom = mol[*nbrIdx];
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             let nbr_bond = &mol.bonds()[neighbor.bond.index()];
@@ -3978,17 +3767,12 @@ fn set_mmff_heavy_atom_type(
                             if nbr_bond.order() == BondOrder::Double {
                                 // RDKit✔️✔️:                 doubleBondedCN = ((nbrAtom->getAtomicNum() == 7) ||
                                 // RDKit✔️✔️:                                   (nbrAtom->getAtomicNum() == 6));
-                                double_bonded_cn =
-                                    nbr_atom.atomic_number() == 7 || nbr_atom.atomic_number() == 6;
+                                double_bonded_cn = nbr_atom.atomic_number() == 7 || nbr_atom.atomic_number() == 6;
                                 // RDKit✔️✔️:                 if (nbrAtom->getAtomicNum() == 6) {
                                 if nbr_atom.atomic_number() == 6 {
                                     // RDKit✔️✔️:                   boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                                     // RDKit✔️✔️:                   for (; doubleBondedCN && (nbr2Idx != end2Nbrs); ++nbr2Idx) {
-                                    for neighbor2 in mol
-                                        .topology_block()
-                                        .adjacency
-                                        .neighbors_of(neighbor.atom_index)
-                                    {
+                                    for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                         if !double_bonded_cn {
                                             break;
                                         }
@@ -4003,11 +3787,7 @@ fn set_mmff_heavy_atom_type(
                                         // RDKit✔️✔️:                     doubleBondedCN = (!((nbr2Atom->getAtomicNum() == 7) &&
                                         // RDKit✔️✔️:                                         (nbr2Atom->getTotalDegree() == 3)));
                                         double_bonded_cn = !(nbr2_atom.atomic_number() == 7
-                                            && mmff_total_degree(
-                                                mol,
-                                                implicit_hydrogens,
-                                                neighbor2.atom_index,
-                                            )? == 3);
+                                            && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 3);
                                     }
                                     // RDKit✔️✔️:                   }
                                 }
@@ -4089,11 +3869,7 @@ fn set_mmff_heavy_atom_type(
                         // RDKit❗✔️:             // loop over neighbors
                         // RDKit❗✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit❗✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             // RDKit❗✔️:               const Atom *nbrAtom = mol[*nbrIdx];
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             // RDKit❗✔️:               // if the neighbor is carbon
@@ -4105,10 +3881,7 @@ fn set_mmff_heavy_atom_type(
                                 // RDKit❗✔️:                 if (nbrAtom->getIsAromatic() &&
                                 // RDKit❗✔️:                     ringInfo->isAtomInRingOfSize(nbrAtom->getIdx(), 6)) {
                                 if nbr_atom.is_aromatic()
-                                    && ring_info.is_atom_in_ring_of_size(
-                                        AtomId::new(neighbor.atom_index),
-                                        6,
-                                    )
+                                    && ring_info.is_atom_in_ring_of_size(AtomId::new(neighbor.atom_index), 6)
                                 {
                                     // RDKit❗✔️:                   isNbrBenzeneC = true;
                                     is_nbr_benzene_c = true;
@@ -4129,11 +3902,7 @@ fn set_mmff_heavy_atom_type(
                                 // RDKit❗✔️:                 // loop over carbon neighbors
                                 // RDKit❗✔️:                 boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                                 // RDKit❗✔️:                 for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                                for neighbor2 in mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor.atom_index)
-                                {
+                                for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                     // RDKit❗✔️:                   const Atom *nbr2Atom = mol[*nbr2Idx];
                                     let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                                     // RDKit❗✔️:                   const Bond *bond = mol.getBondBetweenAtoms(
@@ -4144,8 +3913,7 @@ fn set_mmff_heavy_atom_type(
                                     // RDKit❗✔️:                   if ((bond->getBondType() == Bond::DOUBLE) &&
                                     // RDKit❗✔️:                       ((nbr2Atom->getAtomicNum() == 8) ||
                                     // RDKit❗✔️:                        (nbr2Atom->getAtomicNum() == 16))) {
-                                    if bond.order() == BondOrder::Double
-                                        && matches!(nbr2_atom.atomic_number(), 8 | 16)
+                                    if bond.order() == BondOrder::Double && matches!(nbr2_atom.atomic_number(), 8 | 16)
                                     {
                                         // RDKit❗✔️:                     isNCOorNCS = true;
                                         is_nco_or_ncs = true;
@@ -4164,9 +3932,8 @@ fn set_mmff_heavy_atom_type(
                                         || (bond.is_aromatic()
                                             && (nbr2_atom.atomic_number() == 6
                                                 || (nbr2_atom.atomic_number() == 7
-                                                    && ring_info.num_atom_rings(AtomId::new(
-                                                        neighbor2.atom_index,
-                                                    )) == 1)))
+                                                    && ring_info.num_atom_rings(AtomId::new(neighbor2.atom_index))
+                                                        == 1)))
                                     {
                                         // RDKit✔️✔️:                     elementDoubleBondedToC = nbr2Atom->getAtomicNum();
                                         element_double_bonded_to_c = nbr2_atom.atomic_number();
@@ -4184,11 +3951,7 @@ fn set_mmff_heavy_atom_type(
                                     // RDKit✔️✔️:                   if ((nbr2Atom->getAtomicNum() == 7) &&
                                     // RDKit✔️✔️:                       (nbr2Atom->getTotalDegree() == 3)) {
                                     if nbr2_atom.atomic_number() == 7
-                                        && mmff_total_degree(
-                                            mol,
-                                            implicit_hydrogens,
-                                            neighbor2.atom_index,
-                                        )? == 3
+                                        && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 3
                                     {
                                         // RDKit✔️✔️:                     // count the number of +1 formal charges that we have
                                         // RDKit✔️✔️:                     if (nbr2Atom->getFormalCharge() == 1) {
@@ -4215,10 +3978,8 @@ fn set_mmff_heavy_atom_type(
                                         // RDKit✔️✔️:                     boost::tie(nbr3Idx, end3Nbrs) =
                                         // RDKit✔️✔️:                         mol.getAtomNeighbors(nbr2Atom);
                                         // RDKit✔️✔️:                     for (; nbr3Idx != end3Nbrs; ++nbr3Idx) {
-                                        for neighbor3 in mol
-                                            .topology_block()
-                                            .adjacency
-                                            .neighbors_of(neighbor2.atom_index)
+                                        for neighbor3 in
+                                            mol.topology_block().adjacency.neighbors_of(neighbor2.atom_index)
                                         {
                                             // RDKit✔️✔️:                       const Atom *nbr3Atom = mol[*nbr3Idx];
                                             let nbr3_atom = &mol.atoms()[neighbor3.atom_index];
@@ -4251,11 +4012,7 @@ fn set_mmff_heavy_atom_type(
                                     // RDKit✔️✔️:                       ((bond->getBondType() == Bond::DOUBLE) ||
                                     // RDKit✔️✔️:                        (bond->getBondType() == Bond::AROMATIC))) {
                                     if nbr2_atom.atomic_number() == 7
-                                        && mmff_total_degree(
-                                            mol,
-                                            implicit_hydrogens,
-                                            neighbor2.atom_index,
-                                        )? == 2
+                                        && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 2
                                         && (bond.order() == BondOrder::Double || bond.is_aromatic())
                                     {
                                         // RDKit✔️✔️:                     ++nN2bondedToC;
@@ -4300,11 +4057,7 @@ fn set_mmff_heavy_atom_type(
                                         && n_n2_bonded_to_c == 0
                                         && n_formal_charge != 0
                                         && n_in_aromatic_6_ring == 0
-                                        && mmff_total_degree(
-                                            mol,
-                                            implicit_hydrogens,
-                                            neighbor.atom_index,
-                                        )? < 4
+                                        && mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)? < 4
                                     {
                                         // RDKit✔️✔️:                     isNCNplus = true;
                                         is_ncn_plus = true;
@@ -4335,11 +4088,7 @@ fn set_mmff_heavy_atom_type(
                                 // RDKit✔️✔️:                 // loop over nitrogen neighbors
                                 // RDKit✔️✔️:                 boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                                 // RDKit✔️✔️:                 for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                                for neighbor2 in mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor.atom_index)
-                                {
+                                for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                     // RDKit✔️✔️:                   const Atom *nbr2Atom = mol[*nbr2Idx];
                                     let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                                     // RDKit✔️✔️:                   const Bond *bond = mol.getBondBetweenAtoms(
@@ -4355,10 +4104,8 @@ fn set_mmff_heavy_atom_type(
                                             // RDKit✔️✔️:                       boost::tie(nbr3Idx, end3Nbrs) =
                                             // RDKit✔️✔️:                           mol.getAtomNeighbors(nbr2Atom);
                                             // RDKit✔️✔️:                       for (; nbr3Idx != end3Nbrs; ++nbr3Idx) {
-                                            for neighbor3 in mol
-                                                .topology_block()
-                                                .adjacency
-                                                .neighbors_of(neighbor2.atom_index)
+                                            for neighbor3 in
+                                                mol.topology_block().adjacency.neighbors_of(neighbor2.atom_index)
                                             {
                                                 // RDKit✔️✔️:                         const Atom *nbr3Atom = mol[*nbr3Idx];
                                                 let nbr3_atom = &mol.atoms()[neighbor3.atom_index];
@@ -4474,9 +4221,7 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:                     (elementTripleBondedToC == 6)))) {
                             if atom_type == 0
                                 && ((!is_nco_or_ncs) && (!is_nso2_or_nso3_or_ncn))
-                                && (((n_o_bonded_to_c == 0)
-                                    && (n_s_bonded_to_c == 0)
-                                    && is_nbr_benzene_c)
+                                && (((n_o_bonded_to_c == 0) && (n_s_bonded_to_c == 0) && is_nbr_benzene_c)
                                     || matches!(element_double_bonded_to_c, 6 | 7 | 15)
                                     || element_triple_bonded_to_c == 6)
                             {
@@ -4498,10 +4243,7 @@ fn set_mmff_heavy_atom_type(
                         // RDKit❗✔️:             // if ipso is not sulfonamide while it is either amide/thioamide
                         // RDKit❗✔️:             // or >N-N=N-/>N-N=C<
                         // RDKit❗✔️:             if ((!isNSO2orNSO3orNCN) && (isNCOorNCS || isNNNorNNC)) {
-                        if atom_type == 0
-                            && !is_nso2_or_nso3_or_ncn
-                            && (is_nco_or_ncs || is_nnn_or_nnc)
-                        {
+                        if atom_type == 0 && !is_nso2_or_nso3_or_ncn && (is_nco_or_ncs || is_nnn_or_nnc) {
                             // RDKit❗✔️:               // NC=O
                             // RDKit❗✔️:               // Amide nitrogen
                             // RDKit❗✔️:               // NC=S
@@ -4531,11 +4273,7 @@ fn set_mmff_heavy_atom_type(
                         let mut is_isonitrile = false;
                         // RDKit❗✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit❗✔️:             for (; (!isIsonitrile) && (nbrIdx != endNbrs); ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             if is_isonitrile {
                                 break;
                             }
@@ -4576,11 +4314,7 @@ fn set_mmff_heavy_atom_type(
                         let mut is_imine_or_azo = false;
                         // RDKit✔️✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit✔️✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             // RDKit✔️✔️:               const Atom *nbrAtom = mol[*nbrIdx];
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             let nbr_bond = &mol.bonds()[neighbor.bond.index()];
@@ -4591,8 +4325,7 @@ fn set_mmff_heavy_atom_type(
                                 // RDKit✔️✔️:                 // if it is terminal oxygen (-N=O)
                                 // RDKit✔️✔️:                 isNitroso =
                                 // RDKit✔️✔️:                     ((nbrAtom->getAtomicNum() == 8) && (nTermObondedToN == 1));
-                                is_nitroso =
-                                    nbr_atom.atomic_number() == 8 && n_term_o_bonded_to_n == 1;
+                                is_nitroso = nbr_atom.atomic_number() == 8 && n_term_o_bonded_to_n == 1;
                                 // RDKit✔️✔️:                 // if it is carbon or nitrogen (-N=N-, -N=C<),
                                 // RDKit✔️✔️:                 // ipso is imine or azo
                                 // RDKit✔️✔️:                 isImineOrAzo = ((nbrAtom->getAtomicNum() == 6) ||
@@ -4632,11 +4365,7 @@ fn set_mmff_heavy_atom_type(
                         let mut is_nso = false;
                         // RDKit✔️✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit✔️✔️:             for (; (!isNSO) && (nbrIdx != endNbrs); ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             if is_nso {
                                 break;
                             }
@@ -4651,21 +4380,13 @@ fn set_mmff_heavy_atom_type(
                                 let mut n_term_o_bonded_to_s = 0_u32;
                                 // RDKit✔️✔️:                 boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                                 // RDKit✔️✔️:                 for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                                for neighbor2 in mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor.atom_index)
-                                {
+                                for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                     // RDKit✔️✔️:                   const Atom *nbr2Atom = mol[*nbr2Idx];
                                     let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                                     // RDKit✔️✔️:                   if ((nbr2Atom->getAtomicNum() == 8) &&
                                     // RDKit✔️✔️:                       (nbr2Atom->getTotalDegree() == 1)) {
                                     if nbr2_atom.atomic_number() == 8
-                                        && mmff_total_degree(
-                                            mol,
-                                            implicit_hydrogens,
-                                            neighbor2.atom_index,
-                                        )? == 1
+                                        && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 1
                                     {
                                         // RDKit✔️✔️:                     ++nTermObondedToS;
                                         n_term_o_bonded_to_s += 1;
@@ -4725,11 +4446,7 @@ fn set_mmff_heavy_atom_type(
                     let mut is_nazt = false;
                     // RDKit❗✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit❗✔️:           for (; (!isNSP) && (!isNAZT) && (nbrIdx != endNbrs); ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         if is_nsp || is_nazt {
                             break;
                         }
@@ -4750,29 +4467,21 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:               // loop over nitrogen neighbors
                             // RDKit❗✔️:               boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                             // RDKit❗✔️:               for (; (!isNAZT) && (nbr2Idx != end2Nbrs); ++nbr2Idx) {
-                            for neighbor2 in mol
-                                .topology_block()
-                                .adjacency
-                                .neighbors_of(neighbor.atom_index)
-                            {
+                            for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                 if is_nazt {
                                     break;
                                 }
                                 // RDKit❗✔️:                 const Atom *nbr2Atom = mol[*nbr2Idx];
                                 let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
-                                let nbr2_total_degree = mmff_total_degree(
-                                    mol,
-                                    implicit_hydrogens,
-                                    neighbor2.atom_index,
-                                )?;
+                                let nbr2_total_degree =
+                                    mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)?;
                                 // RDKit❗✔️:                 // if another nitrogen with 2 neighbors, or a carbon
                                 // RDKit❗✔️:                 // with 3 neighbors is found, ipso is NAZT
                                 // RDKit❗✔️:                 isNAZT = (((nbr2Atom->getAtomicNum() == 7) &&
                                 // RDKit❗✔️:                            (nbr2Atom->getTotalDegree() == 2)) ||
                                 // RDKit❗✔️:                           ((nbr2Atom->getAtomicNum() == 6) &&
                                 // RDKit❗✔️:                            (nbr2Atom->getTotalDegree() == 3)));
-                                is_nazt = (nbr2_atom.atomic_number() == 7
-                                    && nbr2_total_degree == 2)
+                                is_nazt = (nbr2_atom.atomic_number() == 7 && nbr2_total_degree == 2)
                                     || (nbr2_atom.atomic_number() == 6 && nbr2_total_degree == 3);
                             }
                             // RDKit❗✔️:               }
@@ -4813,13 +4522,8 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       case 8:
             8 => {
                 let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
-                let total_bond_order =
-                    mmff_total_bond_order(explicit_valence, implicit_hydrogens, atom.id().index())?;
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let total_bond_order = mmff_total_bond_order(explicit_valence, implicit_hydrogens, atom.id().index())?;
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         // 3 neighbors
                 // RDKit✔️✔️:         if (atom->getTotalDegree() == 3) {
                 if total_degree == 3 {
@@ -4848,11 +4552,7 @@ fn set_mmff_heavy_atom_type(
                         let mut n_h_bonded_to_o = 0_i32;
                         // RDKit❗✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                         // RDKit❗✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                        for neighbor in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(atom.id().index())
-                        {
+                        for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                             // RDKit❗✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             // RDKit❗✔️:             if (nbrAtom->getAtomicNum() == 1) {
@@ -4863,13 +4563,12 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:             }
                         }
                         // RDKit❗✔️:           }
-                        let oxygen_implicit_hydrogens = implicit_hydrogens
-                            .get(atom.id().index())
-                            .copied()
-                            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                        let oxygen_implicit_hydrogens = implicit_hydrogens.get(atom.id().index()).copied().ok_or(
+                            MmffMolPropertiesError::AtomIndexOutOfRange {
                                 atom_index: atom.id().index(),
                                 atoms: implicit_hydrogens.len(),
-                            })?;
+                            },
+                        )?;
                         // RDKit❗✔️:           if ((nHbondedToO + atom->getNumImplicitHs()) == 2) {
                         if n_h_bonded_to_o + oxygen_implicit_hydrogens == 2 {
                             // RDKit❗✔️:             // OH2
@@ -4926,13 +4625,12 @@ fn set_mmff_heavy_atom_type(
                     let mut n_n_bonded_to_c_or_n_or_s = 0_u32;
                     let mut n_o_bonded_to_c_or_n_or_s = 0_u32;
                     let mut n_s_bonded_to_c_or_n_or_s = 0_u32;
-                    let oxygen_implicit_hydrogens = implicit_hydrogens
-                        .get(atom.id().index())
-                        .copied()
-                        .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                    let oxygen_implicit_hydrogens = implicit_hydrogens.get(atom.id().index()).copied().ok_or(
+                        MmffMolPropertiesError::AtomIndexOutOfRange {
                             atom_index: atom.id().index(),
                             atoms: implicit_hydrogens.len(),
-                        })?;
+                        },
+                    )?;
                     // RDKit✔️✔️:           bool isOxideOBondedToH =
                     // RDKit✔️✔️:               atom->getNumExplicitHs() + atom->getNumImplicitHs() > 0;
                     let mut is_oxide_o_bonded_to_h =
@@ -4968,11 +4666,7 @@ fn set_mmff_heavy_atom_type(
                     // RDKit✔️✔️:                  (!isPhosphateOrPerchlorateO) && (!isCarbonylO) &&
                     // RDKit✔️✔️:                  (!isNitrosoO) && (!isSulfoxideO);
                     // RDKit✔️✔️:                ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         if is_oxide_o_bonded_to_c
                             || is_oxide_o_bonded_to_n
                             || is_oxide_o_bonded_to_h
@@ -5003,15 +4697,10 @@ fn set_mmff_heavy_atom_type(
                             // RDKit✔️✔️:               // are bonded to the carbon or nitrogen neighbor of ipso
                             // RDKit✔️✔️:               boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                             // RDKit✔️✔️:               for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                            for nbr2 in mol
-                                .topology_block()
-                                .adjacency
-                                .neighbors_of(neighbor.atom_index)
-                            {
+                            for nbr2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                                 // RDKit✔️✔️:                 const Atom *nbr2Atom = mol[*nbr2Idx];
                                 let nbr2_atom = &mol.atoms()[nbr2.atom_index];
-                                let nbr2_total_degree =
-                                    mmff_total_degree(mol, implicit_hydrogens, nbr2.atom_index)?;
+                                let nbr2_total_degree = mmff_total_degree(mol, implicit_hydrogens, nbr2.atom_index)?;
                                 // RDKit✔️✔️:                 if ((nbr2Atom->getAtomicNum() == 7) &&
                                 // RDKit✔️✔️:                     (nbr2Atom->getTotalDegree() == 2)) {
                                 if nbr2_atom.atomic_number() == 7 && nbr2_total_degree == 2 {
@@ -5055,8 +4744,8 @@ fn set_mmff_heavy_atom_type(
                             // RDKit✔️✔️:               // ipso is oxide oxygen
                             // RDKit✔️✔️:               isOxideOBondedToC = ((bond->getBondType() == Bond::SINGLE) &&
                             // RDKit✔️✔️:                                    (nObondedToCorNorS == 1));
-                            is_oxide_o_bonded_to_c = nbr_bond.order() == BondOrder::Single
-                                && n_o_bonded_to_c_or_n_or_s == 1;
+                            is_oxide_o_bonded_to_c =
+                                nbr_bond.order() == BondOrder::Single && n_o_bonded_to_c_or_n_or_s == 1;
                         }
                         // RDKit✔️✔️:             }
                         // RDKit✔️✔️:             // if ipso neighbor is nitrogen
@@ -5070,27 +4759,17 @@ fn set_mmff_heavy_atom_type(
                             // RDKit✔️✔️:               // and there are no other bonded oxygens
                             // RDKit✔️✔️:               if ((bond->getBondType() == Bond::SINGLE) &&
                             // RDKit✔️✔️:                   (nObondedToCorNorS == 1)) {
-                            if nbr_bond.order() == BondOrder::Single
-                                && n_o_bonded_to_c_or_n_or_s == 1
-                            {
-                                let nbr_total_bond_order = mmff_total_bond_order(
-                                    explicit_valence,
-                                    implicit_hydrogens,
-                                    neighbor.atom_index,
-                                )?;
-                                let nbr_total_degree = mmff_total_degree(
-                                    mol,
-                                    implicit_hydrogens,
-                                    neighbor.atom_index,
-                                )?;
+                            if nbr_bond.order() == BondOrder::Single && n_o_bonded_to_c_or_n_or_s == 1 {
+                                let nbr_total_bond_order =
+                                    mmff_total_bond_order(explicit_valence, implicit_hydrogens, neighbor.atom_index)?;
+                                let nbr_total_degree = mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
                                 // RDKit✔️✔️:                 // if nitrogen has 2 neighbors or, if the neighbors are 3,
                                 // RDKit✔️✔️:                 // the total bond order on nitrogen is 3, ipso is oxide oxygen
                                 // RDKit✔️✔️:                 isOxideOBondedToN =
                                 // RDKit✔️✔️:                     ((nbrAtom->getTotalDegree() == 2) ||
                                 // RDKit✔️✔️:                      ((nbrAtom->getValence(Atom::ValenceType::EXPLICIT) +
                                 // RDKit✔️✔️:                        nbrAtom->getNumImplicitHs()) == 3));
-                                is_oxide_o_bonded_to_n =
-                                    nbr_total_degree == 2 || nbr_total_bond_order == 3;
+                                is_oxide_o_bonded_to_n = nbr_total_degree == 2 || nbr_total_bond_order == 3;
                                 // RDKit✔️✔️:                 // if the total bond order on nitrogen is 4, ipso is N-oxide
                                 // RDKit✔️✔️:                 // oxygen
                                 // RDKit✔️✔️:                 isNOxideO = ((nbrAtom->getValence(Atom::ValenceType::EXPLICIT) +
@@ -5220,11 +4899,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       // Fluorine
             // RDKit❗✔️:       case 9:
             9 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit❗✔️:         // 1 neighbor
                 // RDKit❗✔️:         if (atom->getDegree() == 1) {
                 if graph_degree == 1 {
@@ -5248,11 +4923,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       // Sodium
             // RDKit❗✔️:       case 11:
             11 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit❗✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit❗✔️:           // NA+
@@ -5267,11 +4938,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Magnesium
             // RDKit✔️✔️:       case 12:
             12 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           // MG+2
@@ -5332,11 +4999,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       case 16:
             16 => {
                 let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit❗✔️:         // 3  or 4 neighbors
                 // RDKit❗✔️:         if ((atom->getTotalDegree() == 3) || (atom->getTotalDegree() == 4)) {
                 if total_degree == 3 || total_degree == 4 {
@@ -5349,21 +5012,12 @@ fn set_mmff_heavy_atom_type(
                     // RDKit✔️✔️:           // loop over neighbors
                     // RDKit✔️✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit✔️✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         // RDKit✔️✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                         let nbr_atom = &mol.atoms()[neighbor.atom_index];
                         let nbr_bond = &mol.bonds()[neighbor.bond.index()];
-                        let nbr_graph_degree = mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                            .len();
-                        let nbr_total_degree =
-                            mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
+                        let nbr_graph_degree = mol.topology_block().adjacency.neighbors_of(neighbor.atom_index).len();
+                        let nbr_total_degree = mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
                         // RDKit✔️✔️:             // check if ipso sulfur is double-bonded to carbon
                         // RDKit✔️✔️:             if ((nbrAtom->getAtomicNum() == 6) &&
                         // RDKit✔️✔️:                 ((mol.getBondBetweenAtoms(atom->getIdx(), nbrAtom->getIdx()))
@@ -5401,8 +5055,7 @@ fn set_mmff_heavy_atom_type(
                     // RDKit❗✔️:           if (((atom->getTotalDegree() == 3) && (nOorNbondedToS == 2) &&
                     // RDKit✔️✔️:                (isCDoubleBondedToS)) ||
                     // RDKit✔️✔️:               (atom->getTotalDegree() == 4)) {
-                    if (total_degree == 3 && n_o_or_n_bonded_to_s == 2 && is_c_double_bonded_to_s)
-                        || total_degree == 4
+                    if (total_degree == 3 && n_o_or_n_bonded_to_s == 2 && is_c_double_bonded_to_s) || total_degree == 4
                     {
                         // RDKit✔️✔️:             // =SO2
                         // RDKit✔️✔️:             // Sulfone sulfur, doubly bonded to carbon
@@ -5445,11 +5098,7 @@ fn set_mmff_heavy_atom_type(
                     let mut is_o_double_bonded_to_s = false;
                     // RDKit❗✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit❗✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         // RDKit❗✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                         let nbr_atom = &mol.atoms()[neighbor.atom_index];
                         let nbr_bond = &mol.bonds()[neighbor.bond.index()];
@@ -5494,27 +5143,18 @@ fn set_mmff_heavy_atom_type(
                     // RDKit✔️✔️:           // atoms are there, including ipso
                     // RDKit✔️✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit✔️✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         // RDKit✔️✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                         let nbr_atom = &mol.atoms()[neighbor.atom_index];
                         // RDKit✔️✔️:             boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                         // RDKit✔️✔️:             for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
-                        for neighbor2 in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                        {
+                        for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                             // RDKit✔️✔️:               const Atom *nbr2Atom = mol[*nbr2Idx];
                             let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                             // RDKit✔️✔️:               if ((nbr2Atom->getAtomicNum() == 16) &&
                             // RDKit✔️✔️:                   (nbr2Atom->getTotalDegree() == 1)) {
                             if nbr2_atom.atomic_number() == 16
-                                && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)?
-                                    == 1
+                                && mmff_total_degree(mol, implicit_hydrogens, neighbor2.atom_index)? == 1
                             {
                                 // RDKit✔️✔️:                 ++nTermSbondedToNbr;
                                 n_term_s_bonded_to_nbr += 1;
@@ -5565,11 +5205,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       case 17:
             17 => {
                 let total_degree = mmff_total_degree(mol, implicit_hydrogens, atom.id().index())?;
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         // 4 neighbors
                 // RDKit✔️✔️:         if (atom->getTotalDegree() == 4) {
                 if total_degree == 4 {
@@ -5579,11 +5215,7 @@ fn set_mmff_heavy_atom_type(
                     let mut n_o_bonded_to_cl = 0_u32;
                     // RDKit✔️✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
                     // RDKit✔️✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    for neighbor in mol
-                        .topology_block()
-                        .adjacency
-                        .neighbors_of(atom.id().index())
-                    {
+                    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
                         // RDKit✔️✔️:             const Atom *nbrAtom = mol[*nbrIdx];
                         let nbr_atom = &mol.atoms()[neighbor.atom_index];
                         // RDKit✔️✔️:             if (nbrAtom->getAtomicNum() == 8) {
@@ -5630,11 +5262,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Potassium
             // RDKit✔️✔️:       case 19:
             19 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           // K+
@@ -5649,11 +5277,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Calcium
             // RDKit✔️✔️:       case 20:
             20 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           // CA+2
@@ -5668,11 +5292,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Iron
             // RDKit✔️✔️:       case 26:
             26 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           if (atom->getFormalCharge() == 2) {
@@ -5700,11 +5320,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Copper
             // RDKit✔️✔️:       case 29:
             29 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           if (atom->getFormalCharge() == 1) {
@@ -5732,11 +5348,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit✔️✔️:       // Zinc
             // RDKit✔️✔️:       case 30:
             30 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit✔️✔️:         if (atom->getDegree() == 0) {
                 if graph_degree == 0 {
                     // RDKit✔️✔️:           // ZN+2
@@ -5751,11 +5363,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       // Bromine
             // RDKit❗✔️:       case 35:
             35 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit❗✔️:         if (atom->getDegree() == 1) {
                 if graph_degree == 1 {
                     // RDKit❗✔️:           // Br
@@ -5778,11 +5386,7 @@ fn set_mmff_heavy_atom_type(
             // RDKit❗✔️:       // Iodine
             // RDKit❗✔️:       case 53:
             53 => {
-                let graph_degree = mol
-                    .topology_block()
-                    .adjacency
-                    .neighbors_of(atom.id().index())
-                    .len();
+                let graph_degree = mol.topology_block().adjacency.neighbors_of(atom.id().index()).len();
                 // RDKit❗✔️:         if (atom->getDegree() == 1) {
                 if graph_degree == 1 {
                     // RDKit❗✔️:           // I
@@ -5846,18 +5450,15 @@ fn set_mmff_hydrogen_type(
     // RDKit✔️✔️:   // loop over neighbors (actually there can be only one)
     // RDKit✔️✔️:   boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
     // RDKit✔️✔️:   for (; nbrIdx != endNbrs; ++nbrIdx) {
-    for neighbor in mol
-        .topology_block()
-        .adjacency
-        .neighbors_of(atom.id().index())
-    {
+    for neighbor in mol.topology_block().adjacency.neighbors_of(atom.id().index()) {
         // RDKit✔️✔️:     const Atom *nbrAtom = mol[*nbrIdx];
-        let nbr_atom = mol.atoms().get(neighbor.atom_index).ok_or(
-            MmffMolPropertiesError::AtomIndexOutOfRange {
+        let nbr_atom = mol
+            .atoms()
+            .get(neighbor.atom_index)
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
                 atom_index: neighbor.atom_index,
                 atoms: mol.num_atoms(),
-            },
-        )?;
+            })?;
         // RDKit✔️✔️:     switch (nbrAtom->getAtomicNum()) {
         match nbr_atom.atomic_number() {
             // RDKit✔️✔️:       // carbon, silicon
@@ -6004,11 +5605,7 @@ fn set_mmff_hydrogen_type(
                     // RDKit✔️✔️:             boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
                     // RDKit✔️✔️:             for (; nbr2Idx != end2Nbrs; ++nbr2Idx) {
                     6 => {
-                        for neighbor2 in mol
-                            .topology_block()
-                            .adjacency
-                            .neighbors_of(neighbor.atom_index)
-                        {
+                        for neighbor2 in mol.topology_block().adjacency.neighbors_of(neighbor.atom_index) {
                             // RDKit✔️✔️:               const Atom *nbr2Atom = mol[*nbr2Idx];
                             let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
                             // RDKit✔️✔️:               // if the neighbor of oxygen is carbon, loop over the carbon
@@ -6017,11 +5614,7 @@ fn set_mmff_hydrogen_type(
                             if nbr2_atom.atomic_number() == 6 {
                                 // RDKit✔️✔️:                 boost::tie(nbr3Idx, end3Nbrs) = mol.getAtomNeighbors(nbr2Atom);
                                 // RDKit✔️✔️:                 for (; nbr3Idx != end3Nbrs; ++nbr3Idx) {
-                                for neighbor3 in mol
-                                    .topology_block()
-                                    .adjacency
-                                    .neighbors_of(neighbor2.atom_index)
-                                {
+                                for neighbor3 in mol.topology_block().adjacency.neighbors_of(neighbor2.atom_index) {
                                     // RDKit✔️✔️:                   const Atom *nbr3Atom = mol[*nbr3Idx];
                                     let nbr3_atom = &mol.atoms()[neighbor3.atom_index];
                                     // RDKit✔️✔️:                   const Bond *bond = mol.getBondBetweenAtoms(
@@ -6040,10 +5633,8 @@ fn set_mmff_hydrogen_type(
                                     // RDKit✔️✔️:                        (nbr3Atom->getAtomicNum() == 7)) &&
                                     // RDKit✔️✔️:                       ((bond->getBondType() == Bond::DOUBLE) ||
                                     // RDKit✔️✔️:                        (bond->getBondType() == Bond::AROMATIC))) {
-                                    if (nbr3_atom.atomic_number() == 6
-                                        || nbr3_atom.atomic_number() == 7)
-                                        && (bond.order() == BondOrder::Double
-                                            || bond.order() == BondOrder::Aromatic)
+                                    if (nbr3_atom.atomic_number() == 6 || nbr3_atom.atomic_number() == 7)
+                                        && (bond.order() == BondOrder::Double || bond.order() == BondOrder::Aromatic)
                                     {
                                         // RDKit✔️✔️:                     isHOCCorHOCN = true;
                                         is_hocc_or_hocn = true;
@@ -6053,9 +5644,7 @@ fn set_mmff_hydrogen_type(
                                     // RDKit✔️✔️:                   // via a double bond, ipso is HOCO
                                     // RDKit✔️✔️:                   if ((nbr3Atom->getAtomicNum() == 8) &&
                                     // RDKit✔️✔️:                       (bond->getBondType() == Bond::DOUBLE)) {
-                                    if nbr3_atom.atomic_number() == 8
-                                        && bond.order() == BondOrder::Double
-                                    {
+                                    if nbr3_atom.atomic_number() == 8 && bond.order() == BondOrder::Double {
                                         // RDKit✔️✔️:                     isHOCO = true;
                                         is_hoco = true;
                                     }
@@ -6165,17 +5754,15 @@ fn mmff_total_degree(
             atom_index,
             atoms: mol.num_atoms(),
         })?;
-    let implicit_hydrogens = implicit_hydrogens.get(atom_index).copied().ok_or(
-        MmffMolPropertiesError::AtomIndexOutOfRange {
-            atom_index,
-            atoms: implicit_hydrogens.len(),
-        },
-    )?;
-    Ok(mol
-        .topology_block()
-        .adjacency
-        .neighbors_of(atom_index)
-        .len() as i32
+    let implicit_hydrogens =
+        implicit_hydrogens
+            .get(atom_index)
+            .copied()
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index,
+                atoms: implicit_hydrogens.len(),
+            })?;
+    Ok(mol.topology_block().adjacency.neighbors_of(atom_index).len() as i32
         + i32::from(atom.explicit_hydrogens())
         + implicit_hydrogens)
 }
@@ -6185,18 +5772,22 @@ fn mmff_total_bond_order(
     implicit_hydrogens: &[i32],
     atom_index: usize,
 ) -> Result<i32, MmffMolPropertiesError> {
-    let explicit_valence = explicit_valence.get(atom_index).copied().ok_or(
-        MmffMolPropertiesError::AtomIndexOutOfRange {
-            atom_index,
-            atoms: explicit_valence.len(),
-        },
-    )?;
-    let implicit_hydrogens = implicit_hydrogens.get(atom_index).copied().ok_or(
-        MmffMolPropertiesError::AtomIndexOutOfRange {
-            atom_index,
-            atoms: implicit_hydrogens.len(),
-        },
-    )?;
+    let explicit_valence =
+        explicit_valence
+            .get(atom_index)
+            .copied()
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index,
+                atoms: explicit_valence.len(),
+            })?;
+    let implicit_hydrogens =
+        implicit_hydrogens
+            .get(atom_index)
+            .copied()
+            .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+                atom_index,
+                atoms: implicit_hydrogens.len(),
+            })?;
     Ok(explicit_valence + implicit_hydrogens)
 }
 
@@ -6366,8 +5957,7 @@ fn mmff_stretch_bend_type(angle_type: u32, bond_type1: u32, bond_type2: u32) -> 
 }
 
 fn default_mmff_bond_collection() -> Result<&'static MmffBondCollection, MmffParamError> {
-    static DEFAULT_MMFF_BOND: OnceLock<Result<MmffBondCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_BOND: OnceLock<Result<MmffBondCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_BOND
         .get_or_init(|| MmffBondCollection::new(""))
         .as_ref()
@@ -6375,8 +5965,7 @@ fn default_mmff_bond_collection() -> Result<&'static MmffBondCollection, MmffPar
 }
 
 fn default_mmff_angle_collection() -> Result<&'static MmffAngleCollection, MmffParamError> {
-    static DEFAULT_MMFF_ANGLE: OnceLock<Result<MmffAngleCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_ANGLE: OnceLock<Result<MmffAngleCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_ANGLE
         .get_or_init(|| MmffAngleCollection::new(""))
         .as_ref()
@@ -6392,8 +5981,7 @@ fn default_mmff_def_collection() -> Result<&'static MmffDefCollection, MmffParam
 }
 
 fn default_mmff_prop_collection() -> Result<&'static MmffPropCollection, MmffParamError> {
-    static DEFAULT_MMFF_PROP: OnceLock<Result<MmffPropCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_PROP: OnceLock<Result<MmffPropCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_PROP
         .get_or_init(|| MmffPropCollection::new(""))
         .as_ref()
@@ -6401,8 +5989,7 @@ fn default_mmff_prop_collection() -> Result<&'static MmffPropCollection, MmffPar
 }
 
 fn default_mmff_pbci_collection() -> Result<&'static MmffPbciCollection, MmffParamError> {
-    static DEFAULT_MMFF_PBCI: OnceLock<Result<MmffPbciCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_PBCI: OnceLock<Result<MmffPbciCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_PBCI
         .get_or_init(|| MmffPbciCollection::new(""))
         .as_ref()
@@ -6418,8 +6005,7 @@ fn default_mmff_chg_collection() -> Result<&'static MmffChgCollection, MmffParam
 }
 
 fn default_mmff_stbn_collection() -> Result<&'static MmffStbnCollection, MmffParamError> {
-    static DEFAULT_MMFF_STBN: OnceLock<Result<MmffStbnCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_STBN: OnceLock<Result<MmffStbnCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_STBN
         .get_or_init(|| MmffStbnCollection::new(""))
         .as_ref()
@@ -6427,17 +6013,14 @@ fn default_mmff_stbn_collection() -> Result<&'static MmffStbnCollection, MmffPar
 }
 
 fn default_mmff_dfsb_collection() -> Result<&'static MmffDfsbCollection, MmffParamError> {
-    static DEFAULT_MMFF_DFSB: OnceLock<Result<MmffDfsbCollection, MmffParamError>> =
-        OnceLock::new();
+    static DEFAULT_MMFF_DFSB: OnceLock<Result<MmffDfsbCollection, MmffParamError>> = OnceLock::new();
     DEFAULT_MMFF_DFSB
         .get_or_init(|| MmffDfsbCollection::new(""))
         .as_ref()
         .map_err(Clone::clone)
 }
 
-fn default_mmff_tor_collection(
-    is_mmffs: bool,
-) -> Result<&'static MmffTorCollection, MmffParamError> {
+fn default_mmff_tor_collection(is_mmffs: bool) -> Result<&'static MmffTorCollection, MmffParamError> {
     static DEFAULT_MMFF_TOR: OnceLock<Result<MmffTorCollection, MmffParamError>> = OnceLock::new();
     static DEFAULT_MMFFS_TOR: OnceLock<Result<MmffTorCollection, MmffParamError>> = OnceLock::new();
     if is_mmffs {
@@ -6453,9 +6036,7 @@ fn default_mmff_tor_collection(
     }
 }
 
-fn default_mmff_oop_collection(
-    is_mmffs: bool,
-) -> Result<&'static MmffOopCollection, MmffParamError> {
+fn default_mmff_oop_collection(is_mmffs: bool) -> Result<&'static MmffOopCollection, MmffParamError> {
     static DEFAULT_MMFF_OOP: OnceLock<Result<MmffOopCollection, MmffParamError>> = OnceLock::new();
     static DEFAULT_MMFFS_OOP: OnceLock<Result<MmffOopCollection, MmffParamError>> = OnceLock::new();
     if is_mmffs {
@@ -6572,18 +6153,10 @@ fn molecule_with_aromaticity_assignment(
     pre_aromaticity_explicit_valence: &[i32],
 ) -> Result<Molecule, MmffMolPropertiesError> {
     let topology = molecule.topology_block_mut();
-    for (atom, is_aromatic) in topology
-        .atoms
-        .iter_mut()
-        .zip(aromaticity.atom_aromatic.iter().copied())
-    {
+    for (atom, is_aromatic) in topology.atoms.iter_mut().zip(aromaticity.atom_aromatic.iter().copied()) {
         atom.set_aromatic(is_aromatic);
     }
-    for (bond, is_aromatic) in topology
-        .bonds
-        .iter_mut()
-        .zip(aromaticity.bond_aromatic.iter().copied())
-    {
+    for (bond, is_aromatic) in topology.bonds.iter_mut().zip(aromaticity.bond_aromatic.iter().copied()) {
         bond.set_aromatic(is_aromatic);
         if is_aromatic && matches!(bond.order(), BondOrder::Single | BondOrder::Double) {
             bond.set_order(BondOrder::Aromatic);
@@ -6629,33 +6202,28 @@ fn molecule_with_aromaticity_assignment(
             if molecule.atoms()[atom_id.index()].atomic_number() == 6 {
                 continue;
             }
-            let explicit_valence = *pre_aromaticity_explicit_valence
-                .get(atom_id.index())
-                .ok_or(MmffMolPropertiesError::AtomIndexOutOfRange {
+            let explicit_valence = *pre_aromaticity_explicit_valence.get(atom_id.index()).ok_or(
+                MmffMolPropertiesError::AtomIndexOutOfRange {
                     atom_index: atom_id.index(),
                     atoms: pre_aromaticity_explicit_valence.len(),
-                })?;
-            let implicit_hydrogens =
-                crate::valence::assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
-                    molecule.atoms(),
-                    molecule.bonds(),
-                    &molecule.topology_block().adjacency,
-                    atom_id,
-                    explicit_valence,
-                    false,
-                )?;
+                },
+            )?;
+            let implicit_hydrogens = crate::valence::assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
+                molecule.atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                atom_id,
+                explicit_valence,
+                false,
+            )?;
             if implicit_hydrogens != 0 {
-                let explicit_hydrogens =
-                    u8::try_from(implicit_hydrogens).map_err(|_| {
-                        MmffMolPropertiesError::UnsupportedFeature(
-                            UnsupportedFeatureError {
-                                feature: MMFF_MOL_PROPERTIES_FEATURE.name,
-                                reason: "RDKit MMFF aromaticity implicit hydrogen adjustment is out of range",
-                            },
-                        )
-                    })?;
-                molecule.topology_block_mut().atoms[atom_id.index()]
-                    .set_explicit_hydrogens(explicit_hydrogens);
+                let explicit_hydrogens = u8::try_from(implicit_hydrogens).map_err(|_| {
+                    MmffMolPropertiesError::UnsupportedFeature(UnsupportedFeatureError {
+                        feature: MMFF_MOL_PROPERTIES_FEATURE.name,
+                        reason: "RDKit MMFF aromaticity implicit hydrogen adjustment is out of range",
+                    })
+                })?;
+                molecule.topology_block_mut().atoms[atom_id.index()].set_explicit_hydrogens(explicit_hydrogens);
                 let _ = explicit_valence;
                 let _ = crate::valence::assign_valence_state_for_atom_from_parts(
                     molecule.atoms(),
@@ -6673,25 +6241,22 @@ fn molecule_with_aromaticity_assignment(
 #[cfg(test)]
 mod tests {
     use super::{
-        MMFF_DIELECTRIC_CONSTANT, MMFF_SANITIZED_PROP, MMFF_VERBOSITY_HIGH, MMFF_VERBOSITY_NONE,
-        MmffAngle, MmffAtomProperties, MmffBond, MmffBuilderError, MmffMolProperties,
-        MmffMolPropertiesError, MmffProp, MmffPublicApiError, MmffVariant,
-        default_mmff_prop_collection, mmff_has_all_molecule_params, mmff_optimize_molecule,
-        mmff_optimize_molecule_confs, mmff_sanitize_ops, sanitize_mmff_mol, set_mmff_hydrogen_type,
+        MMFF_DIELECTRIC_CONSTANT, MMFF_SANITIZED_PROP, MMFF_VERBOSITY_HIGH, MMFF_VERBOSITY_NONE, MmffAngle,
+        MmffAtomProperties, MmffBond, MmffBuilderError, MmffMolProperties, MmffMolPropertiesError, MmffProp,
+        MmffPublicApiError, MmffVariant, default_mmff_prop_collection, mmff_has_all_molecule_params,
+        mmff_optimize_molecule, mmff_optimize_molecule_confs, mmff_sanitize_ops, sanitize_mmff_mol,
+        set_mmff_hydrogen_type,
     };
     use crate::{
-        AromaticityAssignment, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Molecule,
-        MoleculeBuilder, OperationError, SanitizeOps, SanitizeStep,
+        AromaticityAssignment, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Molecule, MoleculeBuilder,
+        OperationError, SanitizeOps, SanitizeStep,
     };
 
     fn mmff_props_for_atom_types(atom_types: &[u8]) -> MmffMolProperties {
         mmff_props_for_molecule_and_atom_types(crate::Molecule::new(), atom_types)
     }
 
-    fn mmff_props_for_molecule_and_atom_types(
-        molecule: Molecule,
-        atom_types: &[u8],
-    ) -> MmffMolProperties {
+    fn mmff_props_for_molecule_and_atom_types(molecule: Molecule, atom_types: &[u8]) -> MmffMolProperties {
         mmff_props_for_atom_properties(
             molecule,
             &atom_types
@@ -6706,10 +6271,7 @@ mod tests {
         )
     }
 
-    fn mmff_props_for_atom_properties(
-        molecule: Molecule,
-        atom_properties: &[MmffAtomProperties],
-    ) -> MmffMolProperties {
+    fn mmff_props_for_atom_properties(molecule: Molecule, atom_properties: &[MmffAtomProperties]) -> MmffMolProperties {
         let num_bonds = molecule.num_bonds();
         MmffMolProperties {
             molecule,
@@ -6768,10 +6330,7 @@ mod tests {
             .atom_type
     }
 
-    fn oxygen_type_six_environment(
-        ipso_element: Element,
-        terminal: Option<(Element, BondOrder)>,
-    ) -> Molecule {
+    fn oxygen_type_six_environment(ipso_element: Element, terminal: Option<(Element, BondOrder)>) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
@@ -6799,11 +6358,7 @@ mod tests {
             .atom_type
     }
 
-    fn three_atom_angle_molecule(
-        first: Element,
-        second: Element,
-        third: Element,
-    ) -> crate::Molecule {
+    fn three_atom_angle_molecule(first: Element, second: Element, third: Element) -> crate::Molecule {
         let mut builder = MoleculeBuilder::new();
         let first = builder.add_atom(AtomSpec::new(first));
         let second = builder.add_atom(AtomSpec::new(second));
@@ -6817,12 +6372,7 @@ mod tests {
         builder.build().expect("test molecule is valid")
     }
 
-    fn four_atom_torsion_molecule(
-        first: Element,
-        second: Element,
-        third: Element,
-        fourth: Element,
-    ) -> crate::Molecule {
+    fn four_atom_torsion_molecule(first: Element, second: Element, third: Element, fourth: Element) -> crate::Molecule {
         let mut builder = MoleculeBuilder::new();
         let first = builder.add_atom(AtomSpec::new(first));
         let second = builder.add_atom(AtomSpec::new(second));
@@ -6836,12 +6386,7 @@ mod tests {
         builder.build().expect("test molecule is valid")
     }
 
-    fn four_atom_oop_molecule(
-        first: Element,
-        central: Element,
-        third: Element,
-        fourth: Element,
-    ) -> crate::Molecule {
+    fn four_atom_oop_molecule(first: Element, central: Element, third: Element, fourth: Element) -> crate::Molecule {
         let mut builder = MoleculeBuilder::new();
         let first = builder.add_atom(AtomSpec::new(first));
         let central = builder.add_atom(AtomSpec::new(central));
@@ -6875,11 +6420,7 @@ mod tests {
             .collect::<Vec<_>>();
         for idx in 0..5 {
             builder
-                .add_bond(BondSpec::new(
-                    atoms[idx],
-                    atoms[(idx + 1) % 5],
-                    BondOrder::Single,
-                ))
+                .add_bond(BondSpec::new(atoms[idx], atoms[(idx + 1) % 5], BondOrder::Single))
                 .expect("test molecule bond endpoints are valid");
         }
         builder.build().expect("test molecule is valid")
@@ -6922,9 +6463,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(first);
         let a1 = builder.add_atom(second);
-        builder
-            .add_bond(BondSpec::new(a0, a1, order))
-            .expect("test bond");
+        builder.add_bond(BondSpec::new(a0, a1, order)).expect("test bond");
         builder.add_3d_conformer(coords).expect("test 3d conformer");
         builder.build().expect("test bonded pair with conformer")
     }
@@ -6932,9 +6471,7 @@ mod tests {
     fn single_atom_with_3d_conformer(atom: AtomSpec, coord: [f64; 3]) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(atom);
-        builder
-            .add_3d_conformer(vec![coord])
-            .expect("test 3d conformer");
+        builder.add_3d_conformer(vec![coord]).expect("test 3d conformer");
         builder.build().expect("test single atom with conformer")
     }
 
@@ -6948,18 +6485,14 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(first);
         let a1 = builder.add_atom(second);
-        builder
-            .add_bond(BondSpec::new(a0, a1, order))
-            .expect("test bond");
+        builder.add_bond(BondSpec::new(a0, a1, order)).expect("test bond");
         builder
             .add_conformer(Conformer3D::new(0, first_coords, true))
             .expect("first conformer");
         builder
             .add_conformer(Conformer3D::new(7, second_coords, true))
             .expect("second conformer");
-        builder
-            .build()
-            .expect("test bonded pair with named conformers")
+        builder.build().expect("test bonded pair with named conformers")
     }
 
     fn empty_molecule_with_named_3d_conformer(id: usize) -> Molecule {
@@ -7099,8 +6632,7 @@ mod tests {
     fn mmff_mol_properties_constructor_assigns_source_atom_types_for_ethanol() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
 
-        let props = MmffMolProperties::new(&molecule, "MMFF94", 0)
-            .expect("ethanol source atom typing is ported");
+        let props = MmffMolProperties::new(&molecule, "MMFF94", 0).expect("ethanol source atom typing is ported");
 
         assert!(props.is_valid());
         assert_eq!(props.get_mmff_atom_type(0).unwrap(), 1);
@@ -7281,19 +6813,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![2, 2, 5, 5, 5, 5]
         );
-        assert!(
-            mmff_has_all_molecule_params(&molecule)
-                .expect("explicit-H ethene parameter coverage computes")
-        );
+        assert!(mmff_has_all_molecule_params(&molecule).expect("explicit-H ethene parameter coverage computes"));
     }
 
     #[test]
     fn mmff_mol_properties_constructor_marks_unbound_hydrogen_invalid() {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::H));
-        let molecule = builder
-            .build()
-            .expect("isolated hydrogen molecule is valid");
+        let molecule = builder.build().expect("isolated hydrogen molecule is valid");
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("isolated hydrogen returns invalid MMFF properties");
 
@@ -7305,8 +6832,7 @@ mod tests {
     fn mmff_public_api_mmff_has_all_molecule_params_returns_true_for_empty_molecule() {
         let molecule = Molecule::new();
 
-        let found_all = mmff_has_all_molecule_params(&molecule)
-            .expect("empty MMFF parameter coverage should compute");
+        let found_all = mmff_has_all_molecule_params(&molecule).expect("empty MMFF parameter coverage should compute");
 
         assert!(found_all);
     }
@@ -7315,8 +6841,8 @@ mod tests {
     fn mmff_public_api_mmff_has_all_molecule_params_returns_false_for_missing_atom_params() {
         let molecule = single_atom_with_3d_conformer(AtomSpec::new(Element::HE), [0.0, 0.0, 0.0]);
 
-        let found_all = mmff_has_all_molecule_params(&molecule)
-            .expect("missing MMFF atom typing should be reported as false");
+        let found_all =
+            mmff_has_all_molecule_params(&molecule).expect("missing MMFF atom typing should be reported as false");
 
         assert!(!found_all);
     }
@@ -7327,8 +6853,7 @@ mod tests {
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("empty MMFF constructor path should succeed");
 
-        let found_all = mmff_has_all_molecule_params(&molecule)
-            .expect("empty MMFF parameter coverage should compute");
+        let found_all = mmff_has_all_molecule_params(&molecule).expect("empty MMFF parameter coverage should compute");
 
         assert_eq!(found_all, props.is_valid());
         assert_eq!(props.mmff_variant(), MmffVariant::Mmff94);
@@ -7338,10 +6863,7 @@ mod tests {
     fn mmff_mol_properties_types_neutral_nitric_oxide_like_rdkit() {
         let molecule = Molecule::from_smiles("[N]=O").expect("neutral nitric oxide parses");
 
-        assert!(
-            mmff_has_all_molecule_params(&molecule)
-                .expect("neutral nitric oxide MMFF coverage computes")
-        );
+        assert!(mmff_has_all_molecule_params(&molecule).expect("neutral nitric oxide MMFF coverage computes"));
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("neutral nitric oxide MMFF properties compute");
 
@@ -7350,17 +6872,13 @@ mod tests {
         assert_eq!(props.get_mmff_formal_charge(0).unwrap(), 0.0);
         assert_eq!(props.get_mmff_formal_charge(1).unwrap(), 0.0);
         assert!((props.get_mmff_partial_charge(0).unwrap() - 0.43400000000000005).abs() <= 1.0e-12);
-        assert!(
-            (props.get_mmff_partial_charge(1).unwrap() - -0.43400000000000005).abs() <= 1.0e-12
-        );
+        assert!((props.get_mmff_partial_charge(1).unwrap() - -0.43400000000000005).abs() <= 1.0e-12);
     }
 
     #[test]
     fn mmff_mol_properties_dearomatizes_complete_fused_quinone_ring_like_rdkit() {
-        let molecule = Molecule::from_smiles(
-            "CC1(O)O[C@@H]2c3c(ccc(=O)c(O)c3O)[C@H]1[C@]1(C)OCc3c(ccc(O)c3O)[C@H]21",
-        )
-        .expect("fused quinone regression molecule parses");
+        let molecule = Molecule::from_smiles("CC1(O)O[C@@H]2c3c(ccc(=O)c(O)c3O)[C@H]1[C@]1(C)OCc3c(ccc(O)c3O)[C@H]21")
+            .expect("fused quinone regression molecule parses");
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("fused quinone MMFF properties compute");
 
@@ -7371,16 +6889,14 @@ mod tests {
                 .map(|properties| properties.atom_type)
                 .collect::<Vec<_>>(),
             vec![
-                1, 1, 6, 6, 1, 2, 2, 2, 2, 3, 7, 2, 6, 2, 6, 1, 1, 1, 6, 1, 37, 37, 37, 37, 37, 6,
-                37, 6, 1,
+                1, 1, 6, 6, 1, 2, 2, 2, 2, 3, 7, 2, 6, 2, 6, 1, 1, 1, 6, 1, 37, 37, 37, 37, 37, 6, 37, 6, 1,
             ]
         );
     }
 
     #[test]
     fn mmff_mol_properties_falls_through_aromatic_six_ring_sulfur_like_rdkit() {
-        let molecule =
-            Molecule::from_smiles("[s+]1ccccc1.[Cl-]").expect("thiopyrylium chloride parses");
+        let molecule = Molecule::from_smiles("[s+]1ccccc1.[Cl-]").expect("thiopyrylium chloride parses");
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("thiopyrylium chloride MMFF properties compute");
 
@@ -7413,10 +6929,9 @@ mod tests {
 
     #[test]
     fn mmff_mol_properties_types_chembl_aromatic_phosphorus_case_like_rdkit() {
-        let molecule = Molecule::from_smiles(
-            "CC(=O)C1(C(C)=O)C(Cl)C(=O)N1N(c1c(O)ccc2c(P(Cl)Cl)pc(C(=O)O)n12)[N+](=O)[O-]",
-        )
-        .expect("ChEMBL aromatic phosphorus regression molecule parses");
+        let molecule =
+            Molecule::from_smiles("CC(=O)C1(C(C)=O)C(Cl)C(=O)N1N(c1c(O)ccc2c(P(Cl)Cl)pc(C(=O)O)n12)[N+](=O)[O-]")
+                .expect("ChEMBL aromatic phosphorus regression molecule parses");
         let props = MmffMolProperties::new(&molecule, "MMFF94", MMFF_VERBOSITY_NONE)
             .expect("ChEMBL aromatic phosphorus MMFF properties compute");
 
@@ -7428,15 +6943,12 @@ mod tests {
                 .map(|properties| properties.atom_type)
                 .collect::<Vec<_>>(),
             vec![
-                1, 3, 7, 20, 3, 1, 7, 20, 12, 3, 7, 10, 40, 2, 2, 6, 2, 2, 63, 64, 26, 12, 12, 75,
-                63, 3, 7, 6, 39, 45, 32, 32,
+                1, 3, 7, 20, 3, 1, 7, 20, 12, 3, 7, 10, 40, 2, 2, 6, 2, 2, 63, 64, 26, 12, 12, 75, 63, 3, 7, 6, 39, 45,
+                32, 32,
             ]
         );
         assert_eq!(props.get_mmff_partial_charge(20).unwrap(), 0.4614);
-        assert_eq!(
-            props.get_mmff_partial_charge(23).unwrap(),
-            -0.14900000000000002
-        );
+        assert_eq!(props.get_mmff_partial_charge(23).unwrap(), -0.14900000000000002);
     }
 
     #[test]
@@ -7468,10 +6980,7 @@ mod tests {
             .expect("typed MMFF molecule should optimize");
 
         assert_eq!(result.needs_more, 0);
-        assert_ne!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_coords
-        );
+        assert_ne!(result.molecule.conformers_3d()[0].coordinates(), original_coords);
         assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
@@ -7484,10 +6993,7 @@ mod tests {
             .expect("missing MMFF atom typing should map to wrapper -1 result");
 
         assert_eq!(result.needs_more, -1);
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), original_coords);
         assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
@@ -7516,8 +7022,8 @@ mod tests {
     fn mmff_public_api_mmff_optimize_molecule_rejects_invalid_conformer_id() {
         let molecule = empty_molecule_with_named_3d_conformer(0);
 
-        let err = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -2, true)
-            .expect_err("conf_id below -1 should fail");
+        let err =
+            mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -2, true).expect_err("conf_id below -1 should fail");
 
         assert_eq!(
             err,
@@ -7539,10 +7045,7 @@ mod tests {
             .expect("empty-typed MMFF optimize should run");
 
         assert_eq!(result.needs_more, 1);
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
@@ -7561,14 +7064,8 @@ mod tests {
             .expect("MMFF optimize should preserve unselected conformers");
 
         assert_eq!(result.needs_more, 0);
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            first_coords
-        );
-        assert_ne!(
-            result.molecule.conformers_3d()[1].coordinates(),
-            selected_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), first_coords);
+        assert_ne!(result.molecule.conformers_3d()[1].coordinates(), selected_coords);
         assert_eq!(molecule.conformers_3d()[1].coordinates(), selected_coords);
     }
 
@@ -7594,14 +7091,8 @@ mod tests {
                 .iter()
                 .all(|entry| entry.needs_more == 0 && entry.energy.is_finite())
         );
-        assert_ne!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_first
-        );
-        assert_ne!(
-            result.molecule.conformers_3d()[1].coordinates(),
-            original_second
-        );
+        assert_ne!(result.molecule.conformers_3d()[0].coordinates(), original_first);
+        assert_ne!(result.molecule.conformers_3d()[1].coordinates(), original_second);
         assert_eq!(molecule.conformers_3d()[0].coordinates(), original_first);
         assert_eq!(molecule.conformers_3d()[1].coordinates(), original_second);
     }
@@ -7617,16 +7108,12 @@ mod tests {
         assert_eq!(result.conformer_results.len(), 1);
         assert_eq!(result.conformer_results[0].needs_more, -1);
         assert_eq!(result.conformer_results[0].energy, -1.0);
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), original_coords);
         assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_uses_rdkit_variant_parser_for_invalid_variant()
-    {
+    fn mmff_public_api_mmff_optimize_molecule_confs_uses_rdkit_variant_parser_for_invalid_variant() {
         let molecule = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C),
             AtomSpec::new(Element::C),
@@ -7654,8 +7141,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_forcefield_conformer_driver_mmff_handles_non_positive_thread_request_like_non_threaded_rdkit_build()
-     {
+    fn shared_forcefield_conformer_driver_mmff_handles_non_positive_thread_request_like_non_threaded_rdkit_build() {
         let molecule = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C),
             AtomSpec::new(Element::C),
@@ -7666,9 +7152,8 @@ mod tests {
 
         let zero_threads = mmff_optimize_molecule_confs(&molecule, 0, 5, "MMFF94", 100.0, true)
             .expect("zero-thread request should use non-threaded RDKit path");
-        let negative_threads =
-            mmff_optimize_molecule_confs(&molecule, -1, 5, "MMFF94", 100.0, true)
-                .expect("negative-thread request should use non-threaded RDKit path");
+        let negative_threads = mmff_optimize_molecule_confs(&molecule, -1, 5, "MMFF94", 100.0, true)
+            .expect("negative-thread request should use non-threaded RDKit path");
 
         assert_eq!(zero_threads.conformer_results.len(), 2);
         assert_eq!(negative_threads.conformer_results.len(), 2);
@@ -7699,10 +7184,7 @@ mod tests {
         assert_eq!(result.conformer_results.len(), 1);
         assert_eq!(result.conformer_results[0].needs_more, 1);
         assert!(result.conformer_results[0].energy.is_finite());
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            original_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
@@ -7721,14 +7203,8 @@ mod tests {
             .expect("MMFF conformer optimization should preserve current modeled coordinates");
 
         assert_eq!(result.conformer_results.len(), 2);
-        assert_ne!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            first_coords
-        );
-        assert_ne!(
-            result.molecule.conformers_3d()[1].coordinates(),
-            second_coords
-        );
+        assert_ne!(result.molecule.conformers_3d()[0].coordinates(), first_coords);
+        assert_ne!(result.molecule.conformers_3d()[1].coordinates(), second_coords);
         assert_eq!(molecule.conformers_3d()[0].coordinates(), first_coords);
         assert_eq!(molecule.conformers_3d()[1].coordinates(), second_coords);
     }
@@ -8243,15 +7719,8 @@ mod tests {
                 molecule,
                 &[central_prop.atno, central_prop.atno, central_prop.atno],
             );
-            let params = props.get_mmff_angle_bend_empirical_rule_params(
-                None,
-                &central_prop,
-                &bond_1,
-                &bond_2,
-                0,
-                1,
-                2,
-            );
+            let params =
+                props.get_mmff_angle_bend_empirical_rule_params(None, &central_prop, &bond_1, &bond_2, 0, 1, 2);
 
             assert_eq!(params.theta0, expected_theta0);
             assert!((params.ka - expected_ka).abs() < 1.0e-12);
@@ -8260,10 +7729,7 @@ mod tests {
         let molecule = three_atom_angle_molecule(Element::F, Element::C, Element::CL);
         let props = mmff_props_for_molecule_and_atom_types(molecule, &[11, 1, 12]);
         let params = props.get_mmff_angle_bend_empirical_rule_params(
-            Some(&MmffAngle {
-                ka: 0.0,
-                theta0: 108.9,
-            }),
+            Some(&MmffAngle { ka: 0.0, theta0: 108.9 }),
             &prop(6, 4, 4, 0, 0),
             &bond(1.36),
             &bond(1.773),
@@ -8439,20 +7905,8 @@ mod tests {
 
         assert!((params.3.ka - 1.2566039721725888).abs() < 1.0e-12);
         assert_eq!(params.3.theta0, 108.9);
-        assert_eq!(
-            params.2[0],
-            MmffBond {
-                kb: 6.011,
-                r0: 1.36
-            }
-        );
-        assert_eq!(
-            params.2[1],
-            MmffBond {
-                kb: 2.974,
-                r0: 1.773
-            }
-        );
+        assert_eq!(params.2[0], MmffBond { kb: 6.011, r0: 1.36 });
+        assert_eq!(params.2[1], MmffBond { kb: 2.974, r0: 1.773 });
     }
 
     #[test]
@@ -8763,12 +8217,8 @@ mod tests {
         let mmff_prop = default_mmff_prop_collection().expect("default MMFFProp parses");
 
         for case in cases {
-            let molecule = two_atom_molecule_with_aromaticity(
-                case.elements[0],
-                case.elements[1],
-                case.order,
-                case.aromatic,
-            );
+            let molecule =
+                two_atom_molecule_with_aromaticity(case.elements[0], case.elements[1], case.order, case.aromatic);
             let props = mmff_props_for_molecule_and_atom_types(molecule, &case.atom_types);
             let params = props
                 .get_mmff_torsion_empirical_rule_params(0, 1, mmff_prop)
@@ -9074,9 +8524,7 @@ mod tests {
     fn mmff_mol_properties_get_vdw_params_returns_none_without_first_table_row() {
         let props = mmff_props_for_atom_types(&[83, 1]);
 
-        let params = props
-            .get_mmff_vdw_params(0, 1)
-            .expect("default MMFF VdW table parses");
+        let params = props.get_mmff_vdw_params(0, 1).expect("default MMFF VdW table parses");
 
         assert_eq!(params, None);
     }
@@ -9085,9 +8533,7 @@ mod tests {
     fn mmff_mol_properties_get_vdw_params_returns_none_without_second_table_row() {
         let props = mmff_props_for_atom_types(&[1, 83]);
 
-        let params = props
-            .get_mmff_vdw_params(0, 1)
-            .expect("default MMFF VdW table parses");
+        let params = props.get_mmff_vdw_params(0, 1).expect("default MMFF VdW table parses");
 
         assert_eq!(params, None);
     }

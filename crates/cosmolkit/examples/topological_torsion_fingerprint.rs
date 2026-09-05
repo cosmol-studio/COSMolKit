@@ -1,8 +1,7 @@
 use cosmolkit::{
     BatchRecord, Molecule, MoleculeBatch, TopologicalTorsionFingerprintOutputRequest,
-    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintValue,
-    TopologicalTorsionFingerprintVector, TopologicalTorsionLegacyKind,
-    TopologicalTorsionLegacyParams, topological_torsion_count_fingerprint,
+    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintValue, TopologicalTorsionFingerprintVector,
+    TopologicalTorsionLegacyKind, TopologicalTorsionLegacyParams, topological_torsion_count_fingerprint,
     topological_torsion_fingerprint, topological_torsion_fingerprint_with_output,
     topological_torsion_legacy_fingerprint, topological_torsion_sparse_count_fingerprint,
     topological_torsion_sparse_fingerprint,
@@ -32,14 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             atoms_per_bit: true,
         },
     )?;
-    let TopologicalTorsionFingerprintValue::Count(with_output_count) = with_output.fingerprint
-    else {
+    let TopologicalTorsionFingerprintValue::Count(with_output_count) = with_output.fingerprint else {
         unreachable!("the requested vector variant is preserved")
     };
-    println!(
-        "count with output: {:?}",
-        with_output_count.nonzero_elements()
-    );
+    println!("count with output: {:?}", with_output_count.nonzero_elements());
     println!("provenance: {:?}", with_output.additional_output);
 
     let legacy = topological_torsion_legacy_fingerprint(
@@ -55,8 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         BatchRecord::Molecule(molecule.clone()),
         BatchRecord::Molecule(Molecule::from_smiles("CCCCC")?),
     ]);
-    let batch_bits =
-        batch.topological_torsion_fingerprint_list_with_options(&params, Some(2), Some(false))?;
+    let batch_bits = batch.topological_torsion_fingerprint_list_with_options(&params, Some(2), Some(false))?;
     assert_eq!(batch_bits[0], Some(bit));
 
     Ok(())

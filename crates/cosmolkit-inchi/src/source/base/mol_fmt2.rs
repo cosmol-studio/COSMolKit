@@ -5,10 +5,10 @@ use crate::source::base::mol_fmt3::DeleteMolfileV3000Info;
 use crate::source::base::mol_fmt4::MolFmtSgroups_Free;
 use crate::source::base::util::{inchi_free, inchi_memicmp, lrtrim, mystrncpy};
 use crate::source_types::{
-    FILE, INCHI_IOS_TYPE_FILE, INCHI_IOSTREAM, MOL_FMT_CHAR_INT_DATA, MOL_FMT_DATA,
-    MOL_FMT_DOUBLE_DATA, MOL_FMT_FLOAT_DATA, MOL_FMT_HEADER_BLOCK, MOL_FMT_INPLINELEN,
-    MOL_FMT_JUMP_TO_RIGHT, MOL_FMT_LONG_INT_DATA, MOL_FMT_MAX_VALUE_LEN, MOL_FMT_SHORT_INT_DATA,
-    MOL_FMT_STRING_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    FILE, INCHI_IOS_TYPE_FILE, INCHI_IOSTREAM, MOL_FMT_CHAR_INT_DATA, MOL_FMT_DATA, MOL_FMT_DOUBLE_DATA,
+    MOL_FMT_FLOAT_DATA, MOL_FMT_HEADER_BLOCK, MOL_FMT_INPLINELEN, MOL_FMT_JUMP_TO_RIGHT, MOL_FMT_LONG_INT_DATA,
+    MOL_FMT_MAX_VALUE_LEN, MOL_FMT_SHORT_INT_DATA, MOL_FMT_STRING_DATA, SourceConstPointer, SourceHeap,
+    SourceHeapError, SourceMutPointer,
 };
 
 pub(crate) enum MolfileFieldData<'a> {
@@ -572,12 +572,7 @@ pub(crate) fn MolfileExtractStrucNum(
         let needle = b"SDfile Output";
         let found = line2_bytes[INCHI_PREFIX_LENGTH..line2_length]
             .windows(needle.len())
-            .any(|window| {
-                window
-                    .iter()
-                    .map(|byte| *byte as u8)
-                    .eq(needle.iter().copied())
-            });
+            .any(|window| window.iter().map(|byte| *byte as u8).eq(needle.iter().copied()));
         Ok(if found { molfile_number } else { 0 })
     })();
     let cleanup = heap.free(storage);
@@ -1087,11 +1082,7 @@ MOL_FMT_DATA *FreeMolfileData(MOL_FMT_DATA *mfdata)
     Ok(SourceMutPointer::null())
 }
 
-fn source_fseek(
-    heap: &mut SourceHeap,
-    file: SourceMutPointer<FILE>,
-    position: i64,
-) -> Result<i32, SourceHeapError> {
+fn source_fseek(heap: &mut SourceHeap, file: SourceMutPointer<FILE>, position: i64) -> Result<i32, SourceHeapError> {
     if file.is_null() || position < 0 {
         return Ok(1);
     }
@@ -1134,10 +1125,7 @@ fn source_fputs(
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let input = input[..length]
-        .iter()
-        .map(|byte| *byte as u8)
-        .collect::<Vec<_>>();
+    let input = input[..length].iter().map(|byte| *byte as u8).collect::<Vec<_>>();
     let file = heap
         .slice_mut(file)?
         .first_mut()
@@ -1145,8 +1133,7 @@ fn source_fputs(
     if file.error {
         return Ok(-1);
     }
-    let position =
-        usize::try_from(file.position).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let position = usize::try_from(file.position).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if file.bytes.len() < position {
         file.bytes.resize(position, 0);
     }
@@ -1155,9 +1142,7 @@ fn source_fputs(
     file.bytes.extend_from_slice(&input[overwrite..]);
     file.position = file
         .position
-        .checked_add(
-            u64::try_from(input.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-        )
+        .checked_add(u64::try_from(input.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     Ok(0)
 }
@@ -1273,10 +1258,8 @@ pub(crate) fn MolfileSaveCopy(
                 lrtrim(heap, line, Some(&mut trimmed_length))?;
                 let prefix = format!("#{number}{}", if trimmed_length != 0 { "/" } else { "" });
                 let prefix_length = prefix.len();
-                let shifted = line.offset(
-                    i64::try_from(prefix_length)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                )?;
+                let shifted =
+                    line.offset(i64::try_from(prefix_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)?;
                 mystrncpy(
                     heap,
                     shifted,
@@ -1284,10 +1267,7 @@ pub(crate) fn MolfileSaveCopy(
                     u32::try_from(MOL_FMT_INPLINELEN as usize - prefix_length - 1)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                 )?;
-                for (destination, source) in heap.slice_mut(line)?[..prefix_length]
-                    .iter_mut()
-                    .zip(prefix.bytes())
-                {
+                for (destination, source) in heap.slice_mut(line)?[..prefix_length].iter_mut().zip(prefix.bytes()) {
                     *destination = source as i8;
                 }
             }
@@ -1316,8 +1296,8 @@ pub(crate) fn MolfileSaveCopy(
 mod tests {
     use super::*;
     use crate::source_types::{
-        INCHI_IOS_TYPE_STRING, INT_ARRAY, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_CTAB,
-        MOL_FMT_SGROUP, MOL_FMT_SGROUPS, MOL_FMT_v3000, SourceFile,
+        INCHI_IOS_TYPE_STRING, INT_ARRAY, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_CTAB, MOL_FMT_SGROUP,
+        MOL_FMT_SGROUPS, MOL_FMT_v3000, SourceFile,
     };
 
     #[test]
@@ -1328,15 +1308,9 @@ mod tests {
             Ok(SourceMutPointer::null())
         );
 
-        let atoms = heap
-            .allocate_model_storage(vec![MOL_FMT_ATOM::default(); 2])
-            .unwrap();
-        let bonds = heap
-            .allocate_model_storage(vec![MOL_FMT_BOND::default()])
-            .unwrap();
-        let coords = heap
-            .allocate_model_storage(vec![MOL_COORD::default(); 2])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![MOL_FMT_ATOM::default(); 2]).unwrap();
+        let bonds = heap.allocate_model_storage(vec![MOL_FMT_BOND::default()]).unwrap();
+        let coords = heap.allocate_model_storage(vec![MOL_COORD::default(); 2]).unwrap();
         let atom_list = heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
         let bond_list = heap.allocate_model_storage(vec![1_i32]).unwrap();
         let group = heap
@@ -1357,9 +1331,7 @@ mod tests {
             }])
             .unwrap();
         let group_array = heap.allocate_model_storage(vec![group]).unwrap();
-        let v3000 = heap
-            .allocate_model_storage(vec![MOL_FMT_v3000::default()])
-            .unwrap();
+        let v3000 = heap.allocate_model_storage(vec![MOL_FMT_v3000::default()]).unwrap();
         let data = heap
             .allocate_model_storage(vec![MOL_FMT_DATA {
                 ctab: MOL_FMT_CTAB {
@@ -1380,22 +1352,10 @@ mod tests {
                 ..MOL_FMT_DATA::default()
             }])
             .unwrap();
-        assert_eq!(
-            FreeMolfileData(&mut heap, data),
-            Ok(SourceMutPointer::null())
-        );
-        assert_eq!(
-            heap.slice(atoms.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(bonds.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(coords.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(FreeMolfileData(&mut heap, data), Ok(SourceMutPointer::null()));
+        assert_eq!(heap.slice(atoms.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(bonds.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(coords.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(atom_list.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -1404,22 +1364,13 @@ mod tests {
             heap.slice(bond_list.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(
-            heap.slice(group.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(group.as_const()), Err(SourceHeapError::MissingAllocation));
         assert_eq!(
             heap.slice(group_array.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(
-            heap.slice(v3000.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(data.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(v3000.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(data.as_const()), Err(SourceHeapError::MissingAllocation));
     }
 
     #[test]
@@ -1443,10 +1394,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(first_space, destination.offset(1).unwrap());
-        assert_eq!(
-            heap.slice(destination.as_const()).unwrap(),
-            &bytes(b"A\0CD")
-        );
+        assert_eq!(heap.slice(destination.as_const()).unwrap(), &bytes(b"A\0CD"));
 
         let short_source = heap.allocate(bytes(b"xy\0ignored")).unwrap();
         let short_destination = heap.allocate(vec![0x55_i8; 8]).unwrap();
@@ -1526,13 +1474,7 @@ mod tests {
         let high_source = heap.allocate(vec![-1_i8, b' ' as i8, 0]).unwrap();
         let high_destination = heap.allocate(vec![0_i8; 4]).unwrap();
         assert_eq!(
-            MolfileStrnread(
-                &mut heap,
-                high_destination,
-                high_source.as_const(),
-                2,
-                &mut first_space,
-            ),
+            MolfileStrnread(&mut heap, high_destination, high_source.as_const(), 2, &mut first_space,),
             Ok(2)
         );
         assert_eq!(first_space, high_destination.offset(1).unwrap());
@@ -1787,26 +1729,10 @@ mod tests {
             ("sTrUcTuRe #-22", "iNcHi SDfile Output", -22),
             ("Structure #  +22", "InChI--SDfile Output--", 22),
             ("Structure #0", "InChI SDfile Output", 0),
-            (
-                "Structure #9223372036854775807",
-                "InChI SDfile Output",
-                i64::MAX,
-            ),
-            (
-                "Structure #-9223372036854775808",
-                "InChI SDfile Output",
-                i64::MIN,
-            ),
-            (
-                "Structure #9223372036854775808",
-                "InChI SDfile Output",
-                i64::MAX,
-            ),
-            (
-                "Structure #-9223372036854775809",
-                "InChI SDfile Output",
-                i64::MIN,
-            ),
+            ("Structure #9223372036854775807", "InChI SDfile Output", i64::MAX),
+            ("Structure #-9223372036854775808", "InChI SDfile Output", i64::MIN),
+            ("Structure #9223372036854775808", "InChI SDfile Output", i64::MAX),
+            ("Structure #-9223372036854775809", "InChI SDfile Output", i64::MIN),
             ("structure #17x", "InChI SDfile Output", 0),
             ("Structure #17 ", "InChI SDfile Output", 0),
             ("Structure #", "InChI SDfile Output", 0),
@@ -1900,11 +1826,7 @@ mod tests {
 
     #[test]
     fn source_port__mol_fmt2__molfilegetxyzdimandnormfactors__line_474() {
-        fn fixture(
-            heap: &mut SourceHeap,
-            coordinates: &[(f64, f64, f64)],
-            bonds: &[(i16, i16)],
-        ) -> MOL_FMT_DATA {
+        fn fixture(heap: &mut SourceHeap, coordinates: &[(f64, f64, f64)], bonds: &[(i16, i16)]) -> MOL_FMT_DATA {
             let atoms = heap
                 .allocate(
                     coordinates
@@ -2009,16 +1931,9 @@ mod tests {
         assert_eq!(evaluate(&heap, Some(&short), 1, &mut err, None).7, 100.0);
 
         let zero_length = fixture(&mut heap, &[(2.0, 3.0, 4.0), (2.0, 3.0, 4.0)], &[(1, 2)]);
-        assert_eq!(
-            evaluate(&heap, Some(&zero_length), 1, &mut err, None).7,
-            1.0
-        );
+        assert_eq!(evaluate(&heap, Some(&zero_length), 1, &mut err, None).7, 1.0);
 
-        let nan_after_finite = fixture(
-            &mut heap,
-            &[(1.0, 2.0, 3.0), (f64::NAN, f64::NAN, f64::NAN)],
-            &[],
-        );
+        let nan_after_finite = fixture(&mut heap, &[(1.0, 2.0, 3.0), (f64::NAN, f64::NAN, f64::NAN)], &[]);
         let nan_result = evaluate(&heap, Some(&nan_after_finite), 1, &mut err, None);
         assert_eq!(
             (nan_result.0, nan_result.1, nan_result.2, nan_result.3),
@@ -2076,10 +1991,7 @@ mod tests {
             MolfileSaveCopy(&mut heap, Some(&mut stream), 0, 5, output_file, 0),
             Ok(0)
         );
-        assert_eq!(
-            heap.slice(output_file.as_const()).unwrap()[0].bytes,
-            b"skip\n".to_vec()
-        );
+        assert_eq!(heap.slice(output_file.as_const()).unwrap()[0].bytes, b"skip\n".to_vec());
 
         assert_eq!(
             MolfileSaveCopy(&mut heap, Some(&mut stream), -2, -3, output_file, 0),
@@ -2102,14 +2014,7 @@ mod tests {
             Ok(1)
         );
         assert_eq!(
-            MolfileSaveCopy(
-                &mut heap,
-                Some(&mut stream),
-                0,
-                1,
-                SourceMutPointer::null(),
-                0
-            ),
+            MolfileSaveCopy(&mut heap, Some(&mut stream), 0, 1, SourceMutPointer::null(), 0),
             Ok(1)
         );
         assert_eq!(

@@ -7,18 +7,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
 use cosmolkit_core::{BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams};
-use numpy::{
-    AllowTypeChange, PyArray2, PyArrayLike, PyUntypedArray, PyUntypedArrayMethods, ndarray::Ix2,
-};
+use numpy::{AllowTypeChange, PyArray2, PyArrayLike, PyUntypedArray, PyUntypedArrayMethods, ndarray::Ix2};
 use pyo3::PyErr;
 use pyo3::exceptions::{
-    PyIndexError, PyNotImplementedError, PyOSError, PyOverflowError, PyRuntimeError, PyTypeError,
-    PyValueError,
+    PyIndexError, PyNotImplementedError, PyOSError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyDict, PyIterator, PyList, PyMapping, PyMappingProxy, PySlice,
-    PySliceMethods, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyDict, PyIterator, PyList, PyMapping, PyMappingProxy, PySlice, PySliceMethods, PyTuple,
+    PyType,
 };
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
@@ -126,8 +123,7 @@ fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr 
     Python::attach(|py| {
         let error_count = error.errors;
         let reason = error.reason.map(|value| value.to_string());
-        let record_errors: Vec<PyBatchError> =
-            error.record_errors.into_iter().map(Into::into).collect();
+        let record_errors: Vec<PyBatchError> = error.record_errors.into_iter().map(Into::into).collect();
         match (|| -> PyResult<Bound<'_, PyAny>> {
             let cls = py.import("cosmolkit")?.getattr("BatchValidationError")?;
             cls.call1((message, error_count, reason, record_errors))
@@ -192,11 +188,7 @@ fn emit_inchi_diagnostics(diagnostics: &[cosmolkit_core::InchiDiagnostic]) -> Py
     })
 }
 
-fn inchi_output_string(
-    operation: &'static str,
-    field: &'static str,
-    bytes: Vec<u8>,
-) -> PyResult<String> {
+fn inchi_output_string(operation: &'static str, field: &'static str, bytes: Vec<u8>) -> PyResult<String> {
     String::from_utf8(bytes).map_err(|error| {
         inchi_pyerr(cosmolkit_core::InchiError {
             operation,
@@ -255,10 +247,7 @@ fn pickle_pyerr(error: cosmolkit_core::PickleError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
 
-fn molecule_pickle_state<'py>(
-    py: Python<'py>,
-    inner: &cosmolkit_core::Molecule,
-) -> PyResult<Bound<'py, PyDict>> {
+fn molecule_pickle_state<'py>(py: Python<'py>, inner: &cosmolkit_core::Molecule) -> PyResult<Bound<'py, PyDict>> {
     let data = cosmolkit_core::mol_to_binary(inner).map_err(pickle_pyerr)?;
     let state = PyDict::new(py);
     state.set_item("kind", "cosmolkit.Molecule")?;
@@ -299,11 +288,8 @@ fn chiral_tag_assignment_pyerr(error: cosmolkit_core::OperationError) -> PyErr {
         }
         | cosmolkit_core::OperationError::InvalidInput { .. }
         | cosmolkit_core::OperationError::Precondition { .. }
-        | cosmolkit_core::OperationError::Valence { .. } => {
-            PyValueError::new_err(error.to_string())
-        }
-        cosmolkit_core::OperationError::Stereo { .. }
-        | cosmolkit_core::OperationError::InvariantViolation { .. } => {
+        | cosmolkit_core::OperationError::Valence { .. } => PyValueError::new_err(error.to_string()),
+        cosmolkit_core::OperationError::Stereo { .. } | cosmolkit_core::OperationError::InvariantViolation { .. } => {
             PyRuntimeError::new_err(error.to_string())
         }
         _ => PyValueError::new_err(error.to_string()),
@@ -348,11 +334,9 @@ fn make_morgan_fingerprint_params(
         .map(|value| value.to_ascii_lowercase())
         .as_deref()
     {
-        None | Some("connectivity") | Some("morgan") => {
-            cosmolkit_core::MorganAtomInvariantsGenerator::Connectivity {
-                include_ring_membership: atom_invariants_include_ring_membership,
-            }
-        }
+        None | Some("connectivity") | Some("morgan") => cosmolkit_core::MorganAtomInvariantsGenerator::Connectivity {
+            include_ring_membership: atom_invariants_include_ring_membership,
+        },
         Some("feature") | Some("fcfp") => cosmolkit_core::MorganAtomInvariantsGenerator::Feature,
         Some(value) => {
             return Err(PyValueError::new_err(format!(
@@ -366,12 +350,10 @@ fn make_morgan_fingerprint_params(
         .as_deref()
     {
         None => None,
-        Some("morgan") | Some("default") | Some("bond") => {
-            Some(cosmolkit_core::MorganBondInvariantsGenerator {
-                use_bond_types: bond_invariants_use_bond_types,
-                use_chirality: bond_invariants_use_chirality,
-            })
-        }
+        Some("morgan") | Some("default") | Some("bond") => Some(cosmolkit_core::MorganBondInvariantsGenerator {
+            use_bond_types: bond_invariants_use_bond_types,
+            use_chirality: bond_invariants_use_chirality,
+        }),
         Some(value) => {
             return Err(PyValueError::new_err(format!(
                 "unsupported bond_invariants_generator '{value}', expected one of: morgan, default, bond"
@@ -545,8 +527,7 @@ fn write_batch_report(path: &str, report: &cosmolkit_core::BatchExportReport) ->
             report.written, report.skipped, report.failed
         )
     };
-    fs::write(&expanded_path, content)
-        .map_err(|err| PyValueError::new_err(format!("write error report failed: {err}")))
+    fs::write(&expanded_path, content).map_err(|err| PyValueError::new_err(format!("write error report failed: {err}")))
 }
 
 fn complete_batch_filenames(
@@ -572,9 +553,7 @@ fn complete_batch_filenames(
     ))
 }
 
-fn to_python_tetrahedral_stereo(
-    mol: &cosmolkit_core::Molecule,
-) -> PyResult<Vec<(usize, Vec<Option<usize>>)>> {
+fn to_python_tetrahedral_stereo(mol: &cosmolkit_core::Molecule) -> PyResult<Vec<(usize, Vec<Option<usize>>)>> {
     Ok(mol
         .tetrahedral_stereo()
         .map_err(|err| PyValueError::new_err(format!("tetrahedral_stereo failed: {err}")))?
@@ -630,17 +609,11 @@ fn residue_info_sequence_pyerr(error: cosmolkit_core::ResidueInfoSequenceError) 
     PyValueError::new_err(error.to_string())
 }
 
-fn residue_code_enum_member<'py>(
-    py: Python<'py>,
-    code: cosmolkit_core::ResidueCode,
-) -> PyResult<Bound<'py, PyAny>> {
+fn residue_code_enum_member<'py>(py: Python<'py>, code: cosmolkit_core::ResidueCode) -> PyResult<Bound<'py, PyAny>> {
     enum_member(py, "ResidueCode", i64::from(code.as_u16()))
 }
 
-fn element_enum_member<'py>(
-    py: Python<'py>,
-    element: cosmolkit_core::Element,
-) -> PyResult<Bound<'py, PyAny>> {
+fn element_enum_member<'py>(py: Python<'py>, element: cosmolkit_core::Element) -> PyResult<Bound<'py, PyAny>> {
     enum_member(py, "Element", i64::from(element.atomic_number()))
 }
 
@@ -651,12 +624,7 @@ fn residue_info_kind_enum_member<'py>(
     enum_member(py, "ResidueInfoKind", residue_info_kind_code(kind))
 }
 
-fn add_int_enum(
-    m: &Bound<'_, PyModule>,
-    enum_name: &str,
-    map_name: &str,
-    members: &[(&str, i64)],
-) -> PyResult<()> {
+fn add_int_enum(m: &Bound<'_, PyModule>, enum_name: &str, map_name: &str, members: &[(&str, i64)]) -> PyResult<()> {
     let members_with_map_keys = members
         .iter()
         .map(|(name, value)| (*name, *value, *name))
@@ -750,13 +718,7 @@ fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
         .iter()
         .map(|(symbol, name)| (symbol.as_str(), name.as_str()))
         .collect::<Vec<_>>();
-    add_int_enum_with_map_aliases(
-        m,
-        "Element",
-        "ELEMENT_MAP",
-        &element_member_refs,
-        &element_alias_refs,
-    )?;
+    add_int_enum_with_map_aliases(m, "Element", "ELEMENT_MAP", &element_member_refs, &element_alias_refs)?;
 
     add_int_enum(
         m,
@@ -941,9 +903,7 @@ class BatchValidationError(ValueError):
     def errors(self):
         return list(self._errors)
 "#;
-    py.import("builtins")?
-        .getattr("exec")?
-        .call1((code, &globals))?;
+    py.import("builtins")?.getattr("exec")?.call1((code, &globals))?;
     let cls = globals
         .get_item("BatchValidationError")?
         .ok_or_else(|| PyValueError::new_err("failed to create BatchValidationError class"))?;
@@ -955,10 +915,7 @@ fn add_inchi_error_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     let globals = PyDict::new(py);
     globals.set_item("ValueError", py.get_type::<PyValueError>())?;
-    globals.set_item(
-        "UserWarning",
-        py.import("builtins")?.getattr("UserWarning")?,
-    )?;
+    globals.set_item("UserWarning", py.import("builtins")?.getattr("UserWarning")?)?;
     let code = r#"
 class InchiError(ValueError):
     __module__ = "cosmolkit"
@@ -983,9 +940,7 @@ class InchiDiagnosticWarning(UserWarning):
         self.level = level
         self.message = message
 "#;
-    py.import("builtins")?
-        .getattr("exec")?
-        .call1((code, &globals))?;
+    py.import("builtins")?.getattr("exec")?.call1((code, &globals))?;
     for class_name in [
         "InchiError",
         "InchiAllocationError",
@@ -1064,18 +1019,16 @@ fn molecule_to_3d_sdf_record_string(
     if !mol.conformers_3d().is_empty() {
         molblock::mol_to_sdf_record_with_params(mol, &params)
     } else {
-        Err(
-            cosmolkit_core::io::molblock::MolWriteError::UnsupportedSubset(
-                "3D coordinates are required; read a 3D SDF record or add a 3D conformer before writing 3D SDF",
-            ),
-        )
+        Err(cosmolkit_core::io::molblock::MolWriteError::UnsupportedSubset(
+            "3D coordinates are required; read a 3D SDF record or add a 3D conformer before writing 3D SDF",
+        ))
     }
 }
 
 fn expand_user_path(path: &str) -> PyResult<PathBuf> {
     if path == "~" || path.starts_with("~/") {
-        let home = std::env::var_os("HOME")
-            .ok_or_else(|| PyValueError::new_err("cannot expand '~': HOME is not set"))?;
+        let home =
+            std::env::var_os("HOME").ok_or_else(|| PyValueError::new_err("cannot expand '~': HOME is not set"))?;
         let mut expanded = PathBuf::from(home);
         if let Some(rest) = path.strip_prefix("~/") {
             expanded.push(rest);
@@ -1091,11 +1044,7 @@ fn py_method<'py>(obj: &Bound<'py, PyAny>, method: &str) -> PyResult<Bound<'py, 
         .map_err(|err| PyValueError::new_err(format!("from_rdkit failed calling {method}: {err}")))
 }
 
-fn py_method_index<'py>(
-    obj: &Bound<'py, PyAny>,
-    method: &str,
-    index: usize,
-) -> PyResult<Bound<'py, PyAny>> {
+fn py_method_index<'py>(obj: &Bound<'py, PyAny>, method: &str, index: usize) -> PyResult<Bound<'py, PyAny>> {
     obj.call_method1(method, (index,))
         .map_err(|err| PyValueError::new_err(format!("from_rdkit failed calling {method}: {err}")))
 }
@@ -1104,31 +1053,25 @@ fn py_method_extract<T>(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<T>
 where
     for<'a> T: FromPyObject<'a, 'a>,
 {
-    py_method(obj, method)?.extract::<T>().map_err(|_| {
-        PyValueError::new_err(format!("from_rdkit failed extracting result from {method}"))
-    })
+    py_method(obj, method)?
+        .extract::<T>()
+        .map_err(|_| PyValueError::new_err(format!("from_rdkit failed extracting result from {method}")))
 }
 
 fn py_attr_f64(obj: &Bound<'_, PyAny>, attr: &str) -> PyResult<f64> {
-    let value = obj.getattr(attr).map_err(|err| {
-        PyValueError::new_err(format!(
-            "from_rdkit failed accessing attribute {attr}: {err}"
-        ))
-    })?;
-    value.extract::<f64>().map_err(|err| {
-        PyValueError::new_err(format!(
-            "from_rdkit failed extracting attribute {attr}: {err}"
-        ))
-    })
+    let value = obj
+        .getattr(attr)
+        .map_err(|err| PyValueError::new_err(format!("from_rdkit failed accessing attribute {attr}: {err}")))?;
+    value
+        .extract::<f64>()
+        .map_err(|err| PyValueError::new_err(format!("from_rdkit failed extracting attribute {attr}: {err}")))
 }
 
 fn py_method_str(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<String> {
     let value = py_method(obj, method)?;
     Ok(value
         .str()
-        .map_err(|err| {
-            PyValueError::new_err(format!("from_rdkit failed stringifying {method}: {err}"))
-        })?
+        .map_err(|err| PyValueError::new_err(format!("from_rdkit failed stringifying {method}: {err}")))?
         .to_string_lossy()
         .into_owned())
 }
@@ -1160,9 +1103,7 @@ fn extract_coordinate_matrix(
     }
     let array_like = coords
         .extract::<PyArrayLike<'_, f64, Ix2, AllowTypeChange>>()
-        .map_err(|err| {
-            PyTypeError::new_err(format!("{label} must be a 2D numeric array: {err}"))
-        })?;
+        .map_err(|err| PyTypeError::new_err(format!("{label} must be a 2D numeric array: {err}")))?;
     let array = array_like.as_array();
     let shape = array.shape();
     if shape[0] != expected_rows {
@@ -1198,11 +1139,7 @@ fn extract_coordinate_matrix(
     Ok(out)
 }
 
-fn extract_2d_coordinates(
-    coords: &Bound<'_, PyAny>,
-    expected_rows: usize,
-    z_policy: &str,
-) -> PyResult<Vec<[f64; 2]>> {
+fn extract_2d_coordinates(coords: &Bound<'_, PyAny>, expected_rows: usize, z_policy: &str) -> PyResult<Vec<[f64; 2]>> {
     let z_policy = parse_z_policy(z_policy)?;
     let rows = extract_coordinate_matrix(coords, expected_rows, &[2, 3], "2D coordinates")?;
     let mut out = Vec::with_capacity(rows.len());
@@ -1230,15 +1167,9 @@ fn extract_2d_coordinates(
     Ok(out)
 }
 
-fn extract_3d_coordinates(
-    coords: &Bound<'_, PyAny>,
-    expected_rows: usize,
-) -> PyResult<Vec<[f64; 3]>> {
-    extract_coordinate_matrix(coords, expected_rows, &[3], "3D coordinates").map(|rows| {
-        rows.into_iter()
-            .map(|row| [row[0], row[1], row[2]])
-            .collect()
-    })
+fn extract_3d_coordinates(coords: &Bound<'_, PyAny>, expected_rows: usize) -> PyResult<Vec<[f64; 3]>> {
+    extract_coordinate_matrix(coords, expected_rows, &[3], "3D coordinates")
+        .map(|rows| rows.into_iter().map(|row| [row[0], row[1], row[2]]).collect())
 }
 
 fn rdkit_chiral_tag_from_name(name: &str) -> PyResult<cosmolkit_core::ChiralTag> {
@@ -1428,10 +1359,7 @@ impl PyAlignmentParameters {
         cosmolkit_core::AlignmentParameters {
             probe_conformer_id: self.probe_conformer_id,
             reference_conformer_id: self.reference_conformer_id,
-            atom_map: self
-                .atom_map
-                .as_ref()
-                .map(|map| map.iter().map(Into::into).collect()),
+            atom_map: self.atom_map.as_ref().map(|map| map.iter().map(Into::into).collect()),
             weights: self.weights.clone(),
             reflect: self.reflect,
             max_iterations: self.max_iterations,
@@ -1647,12 +1575,7 @@ impl PyCoordinateRmsdParameters {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(
-    name = "ConformerAlignmentParameters",
-    get_all,
-    set_all,
-    from_py_object
-)]
+#[pyclass(name = "ConformerAlignmentParameters", get_all, set_all, from_py_object)]
 #[derive(Clone)]
 #[doc = "Parameters for aligning selected or all conformers of one molecule."]
 struct PyConformerAlignmentParameters {
@@ -1877,15 +1800,11 @@ fn stereo_descriptor_name(value: cosmolkit_core::StereoDescriptor) -> &'static s
     match value {
         cosmolkit_core::StereoDescriptor::None => "none",
         cosmolkit_core::StereoDescriptor::TetrahedralClockwise => "tetrahedral_clockwise",
-        cosmolkit_core::StereoDescriptor::TetrahedralCounterclockwise => {
-            "tetrahedral_counterclockwise"
-        }
+        cosmolkit_core::StereoDescriptor::TetrahedralCounterclockwise => "tetrahedral_counterclockwise",
         cosmolkit_core::StereoDescriptor::BondCis => "bond_cis",
         cosmolkit_core::StereoDescriptor::BondTrans => "bond_trans",
         cosmolkit_core::StereoDescriptor::BondAtropClockwise => "bond_atrop_clockwise",
-        cosmolkit_core::StereoDescriptor::BondAtropCounterclockwise => {
-            "bond_atrop_counterclockwise"
-        }
+        cosmolkit_core::StereoDescriptor::BondAtropCounterclockwise => "bond_atrop_counterclockwise",
     }
 }
 
@@ -1992,10 +1911,7 @@ impl PyPotentialStereoAnalysis {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "PotentialStereoAnalysis(records={})",
-            self.stereo_info.len()
-        )
+        format!("PotentialStereoAnalysis(records={})", self.stereo_info.len())
     }
 }
 
@@ -2028,10 +1944,7 @@ impl PyStereoisomerIterator {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "StereoisomerIterator(yielded_count={})",
-            self.inner.yielded_count()
-        )
+        format!("StereoisomerIterator(yielded_count={})", self.inner.yielded_count())
     }
 }
 
@@ -2423,9 +2336,9 @@ impl PyEmbedParameters {
     }
 
     fn update_from_json(&mut self, json: &str) -> PyResult<()> {
-        self.inner.update_from_json(json).map_err(|err| {
-            PyValueError::new_err(format!("EmbedParameters.update_from_json failed: {err}"))
-        })
+        self.inner
+            .update_from_json(json)
+            .map_err(|err| PyValueError::new_err(format!("EmbedParameters.update_from_json failed: {err}")))
     }
 
     fn to_json(&self) -> String {
@@ -2435,10 +2348,7 @@ impl PyEmbedParameters {
     fn __repr__(&self) -> String {
         format!(
             "EmbedParameters(random_seed={}, num_threads={}, prune_rms_thresh={}, clear_confs={})",
-            self.inner.random_seed,
-            self.inner.num_threads,
-            self.inner.prune_rms_thresh,
-            self.inner.clear_confs
+            self.inner.random_seed, self.inner.num_threads, self.inner.prune_rms_thresh, self.inner.clear_confs
         )
     }
 }
@@ -2799,9 +2709,7 @@ struct Bond {
 fn atom_snapshots(molecule: &cosmolkit_core::Molecule) -> Vec<Atom> {
     let assignment = cosmolkit_core::cached_valence_assignment(molecule)
         .cloned()
-        .or_else(|| {
-            cosmolkit_core::assign_valence(molecule, cosmolkit_core::ValenceModel::RdkitLike).ok()
-        });
+        .or_else(|| cosmolkit_core::assign_valence(molecule, cosmolkit_core::ValenceModel::RdkitLike).ok());
     let mut degrees = vec![0usize; molecule.atoms().len()];
     for bond in molecule.bonds() {
         degrees[bond.begin().index()] += 1;
@@ -2829,22 +2737,18 @@ fn atom_snapshots(molecule: &cosmolkit_core::Molecule) -> Vec<Atom> {
             implicit_hydrogens: assignment
                 .as_ref()
                 .map(|v| v.implicit_hydrogens[atom.id().index()] as usize),
-            total_num_hs: assignment.as_ref().map(|v| {
-                atom.explicit_hydrogens() as usize
-                    + v.implicit_hydrogens[atom.id().index()] as usize
-            }),
+            total_num_hs: assignment
+                .as_ref()
+                .map(|v| atom.explicit_hydrogens() as usize + v.implicit_hydrogens[atom.id().index()] as usize),
             total_valence: assignment.as_ref().map(|v| {
-                v.explicit_valence[atom.id().index()] as usize
-                    + v.implicit_hydrogens[atom.id().index()] as usize
+                v.explicit_valence[atom.id().index()] as usize + v.implicit_hydrogens[atom.id().index()] as usize
             }),
             cip_code: atom.prop("_CIPCode").map(str::to_owned),
             cip_neighbor_order: atom
                 .prop("_CIPNeighborOrder")
                 .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
                 .map(|values| values.into_iter().map(|value| value as usize).collect()),
-            cip_rank: atom
-                .prop("_CIPRank")
-                .and_then(|value| value.parse::<u32>().ok()),
+            cip_rank: atom.prop("_CIPRank").and_then(|value| value.parse::<u32>().ok()),
         })
         .collect()
 }
@@ -3119,9 +3023,7 @@ impl MoleculeBatch {
         }
 
         let py = key.py();
-        let bool_mask = items
-            .iter()
-            .all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
+        let bool_mask = items.iter().all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
         if bool_mask {
             if items.len() != self.inner.len() {
                 return Err(PyIndexError::new_err(format!(
@@ -3235,9 +3137,7 @@ fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<V
     }
 
     let py = key.py();
-    let bool_mask = items
-        .iter()
-        .all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
+    let bool_mask = items.iter().all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
     if bool_mask {
         if items.len() != len {
             return Err(PyIndexError::new_err(format!(
@@ -3353,8 +3253,7 @@ fn sdf_batch_from_reader(
     if seen == 0 {
         return Ok(None);
     }
-    cosmolkit_core::MoleculeBatch::from_records_with_mode(records, errors)
-        .map(|batch| Some((batch, index)))
+    cosmolkit_core::MoleculeBatch::from_records_with_mode(records, errors).map(|batch| Some((batch, index)))
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -3374,17 +3273,11 @@ impl PySdfRecordMetadata {
     }
 
     fn byte_range(&self) -> (u64, u64) {
-        (
-            self.inner.byte_offset,
-            self.inner.byte_offset + self.inner.byte_len,
-        )
+        (self.inner.byte_offset, self.inner.byte_offset + self.inner.byte_len)
     }
 
     fn line_range(&self) -> (usize, usize) {
-        (
-            self.inner.line_offset,
-            self.inner.line_offset + self.inner.line_len,
-        )
+        (self.inner.line_offset, self.inner.line_offset + self.inner.line_len)
     }
 
     fn title(&self) -> Option<String> {
@@ -3492,14 +3385,12 @@ impl PySdfDataset {
                 let record = self
                     .inner
                     .record_with_params(index, self.params)
-                    .map_err(|err| {
-                        PyValueError::new_err(format!("SdfDataset read failed: {err}"))
-                    })?;
+                    .map_err(|err| PyValueError::new_err(format!("SdfDataset read failed: {err}")))?;
                 Ok(Py::new(py, sdf_record_py(index, record))?.into_any())
             }
             Ok(indices) => {
-                let inner = sdf_batch_from_indices(&self.inner, self.params, indices)
-                    .map_err(batch_validation_pyerr)?;
+                let inner =
+                    sdf_batch_from_indices(&self.inner, self.params, indices).map_err(batch_validation_pyerr)?;
                 Ok(Py::new(py, MoleculeBatch { inner })?.into_any())
             }
         }
@@ -3532,8 +3423,7 @@ impl PySdfDataset {
         }
         let errors = parse_batch_error_mode(errors)?;
         let n_jobs = validate_n_jobs(n_jobs)?;
-        let progress_bar =
-            maybe_batch_progress_bar(progress_bar, self.inner.len(), "read_sdf_batches");
+        let progress_bar = maybe_batch_progress_bar(progress_bar, self.inner.len(), "read_sdf_batches");
         Ok(PySdfBatchIterator {
             dataset: self.inner.clone(),
             params: self.params,
@@ -3582,13 +3472,10 @@ impl PySdfReader {
                 "SdfReader.batches(progress_bar=True) cannot show an accurate total for forward-only streams; use SdfDataset.batches() for indexed progress",
             ));
         }
-        let file = File::open(&self.path)
-            .map_err(|err| PyValueError::new_err(format!("SdfReader.open failed: {err}")))?;
+        let file =
+            File::open(&self.path).map_err(|err| PyValueError::new_err(format!("SdfReader.open failed: {err}")))?;
         Ok(PySdfReaderBatchIterator {
-            reader: cosmolkit_core::io::sdf::SdfReader::with_params(
-                BufReader::new(file),
-                self.params,
-            ),
+            reader: cosmolkit_core::io::sdf::SdfReader::with_params(BufReader::new(file), self.params),
             index: 0,
             size,
             errors: parse_batch_error_mode(errors)?,
@@ -3665,8 +3552,8 @@ impl PySdfReaderBatchIterator {
     #[gen_stub(override_return_type(type_repr = "MoleculeBatch"))]
     fn __next__(&mut self) -> PyResult<Option<MoleculeBatch>> {
         let start = self.index;
-        let result = sdf_batch_from_reader(&mut self.reader, start, self.size, self.errors)
-            .map_err(batch_validation_pyerr)?;
+        let result =
+            sdf_batch_from_reader(&mut self.reader, start, self.size, self.errors).map_err(batch_validation_pyerr)?;
         let Some((inner, next_index)) = result else {
             return Ok(None);
         };
@@ -3790,15 +3677,14 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let params = make_sdf_read_params(sanitize, remove_hs, strict_parsing, coordinate_dim)?;
-        let inner =
-            cosmolkit_core::MoleculeBatch::read_sdf_records_from_str_with_params_and_options(
-                sdf_text,
-                params,
-                mode,
-                validate_n_jobs(n_jobs)?,
-                None,
-            )
-            .map_err(batch_validation_pyerr)?;
+        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_str_with_params_and_options(
+            sdf_text,
+            params,
+            mode,
+            validate_n_jobs(n_jobs)?,
+            None,
+        )
+        .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -3849,20 +3735,16 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
             return Ok(Self { inner });
         }
         let file = File::open(&expanded_path).map_err(|error| {
-            PyValueError::new_err(format!(
-                "read_sdf open failed for {}: {error}",
-                expanded_path.display()
-            ))
+            PyValueError::new_err(format!("read_sdf open failed for {}: {error}", expanded_path.display()))
         })?;
-        let inner =
-            cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader_with_params_and_options(
-                BufReader::new(file),
-                params,
-                mode,
-                validate_n_jobs(n_jobs)?,
-                None,
-            )
-            .map_err(batch_validation_pyerr)?;
+        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader_with_params_and_options(
+            BufReader::new(file),
+            params,
+            mode,
+            validate_n_jobs(n_jobs)?,
+            None,
+        )
+        .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -3875,10 +3757,7 @@ Pass ``None`` to clear the batch-level default and let rayon decide. Method-leve
 "#]
     fn with_parallel_jobs(&self, n_jobs: Option<usize>) -> PyResult<Self> {
         Ok(Self {
-            inner: self
-                .inner
-                .clone()
-                .with_parallel_jobs(validate_n_jobs(n_jobs)?),
+            inner: self.inner.clone().with_parallel_jobs(validate_n_jobs(n_jobs)?),
         })
     }
 
@@ -3989,12 +3868,7 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
         let mode = parse_batch_error_mode(errors)?;
         let inner = self
             .inner
-            .with_kekulized_bonds_with_options(
-                clear_aromatic_flags,
-                mode,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .with_kekulized_bonds_with_options(clear_aromatic_flags, mode, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
@@ -4035,22 +3909,14 @@ Return a boolean mask indicating which records are valid.
 Return a boolean mask indicating which records are invalid.
 "#]
     fn invalid_mask(&self) -> Vec<bool> {
-        self.inner
-            .valid_mask()
-            .into_iter()
-            .map(|valid| !valid)
-            .collect()
+        self.inner.valid_mask().into_iter().map(|valid| !valid).collect()
     }
 
     #[doc = r#"
 Return structured errors collected for invalid records.
 "#]
     fn errors(&self) -> Vec<PyBatchError> {
-        self.inner
-            .errors()
-            .into_iter()
-            .map(PyBatchError::from)
-            .collect()
+        self.inner.errors().into_iter().map(PyBatchError::from).collect()
     }
 
     #[doc = r#"
@@ -4151,11 +4017,7 @@ Invalid input records remain ``None`` at their original positions.
             false,
         );
         self.inner
-            .atom_pair_fingerprint_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .atom_pair_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
             .map(|values| {
                 values
                     .into_iter()
@@ -4215,11 +4077,7 @@ Invalid input records remain ``None`` at their original positions.
             false,
         );
         self.inner
-            .atom_pair_sparse_count_fingerprint_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .atom_pair_sparse_count_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
             .map(|values| {
                 values
                     .into_iter()
@@ -4279,11 +4137,7 @@ Invalid input records remain ``None`` at their original positions.
             false,
         );
         self.inner
-            .atom_pair_count_fingerprint_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .atom_pair_count_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
             .map(|values| {
                 values
                     .into_iter()
@@ -4343,11 +4197,7 @@ Invalid input records remain ``None`` at their original positions.
             false,
         );
         self.inner
-            .atom_pair_sparse_bit_fingerprint_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .atom_pair_sparse_bit_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
             .map(|values| {
                 values
                     .into_iter()
@@ -4407,17 +4257,8 @@ Invalid input records remain ``None`` at their original positions.
             true,
         );
         self.inner
-            .atom_pair_fingerprint_with_output_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(Into::into))
-                    .collect()
-            })
+            .atom_pair_fingerprint_with_output_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| values.into_iter().map(|value| value.map(Into::into)).collect())
             .map_err(batch_validation_pyerr)
     }
 
@@ -4489,11 +4330,7 @@ n_jobs : int, optional
             rooted_at_atom,
         );
         self.inner
-            .to_smiles_optional_list_with_params_and_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .to_smiles_optional_list_with_params_and_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)
     }
 
@@ -4516,9 +4353,7 @@ Return distance-geometry bounds matrices for all valid records.
         for value in values {
             if let Some(matrix) = value {
                 out.append(PyArray2::from_vec2(py, &matrix).map_err(|err| {
-                    PyValueError::new_err(format!(
-                        "MoleculeBatch.dg_bounds_matrix_list failed: {err}"
-                    ))
+                    PyValueError::new_err(format!("MoleculeBatch.dg_bounds_matrix_list failed: {err}"))
                 })?)?;
             } else {
                 out.append(py.None())?;
@@ -4622,17 +4457,8 @@ Invalid input records remain ``None`` at their original positions.
             from_atoms,
         );
         self.inner
-            .layered_fingerprint_with_output_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(Into::into))
-                    .collect()
-            })
+            .layered_fingerprint_with_output_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| values.into_iter().map(|value| value.map(Into::into)).collect())
             .map_err(batch_validation_pyerr)
     }
 
@@ -4792,17 +4618,8 @@ Invalid records are returned as ``None`` in their original positions.
             true,
         )?;
         self.inner
-            .morgan_fingerprint_with_output_list_with_options(
-                &params,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(Into::into))
-                    .collect()
-            })
+            .morgan_fingerprint_with_output_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| values.into_iter().map(|value| value.map(Into::into)).collect())
             .map_err(batch_validation_pyerr)
     }
 
@@ -4915,13 +4732,7 @@ report_path : str, optional
         let path = expand_user_path(path)?;
         let report = self
             .inner
-            .write_sdf_with_options(
-                path.as_path(),
-                sdf_format,
-                mode,
-                validate_n_jobs(n_jobs)?,
-                progress_bar,
-            )
+            .write_sdf_with_options(path.as_path(), sdf_format, mode, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         if let Some(report_path) = report_path {
             write_batch_report(report_path, &report)?;
@@ -5061,14 +4872,9 @@ Examples
 Use ``Molecule.from_smiles("CCO")`` to create a molecule and
 ``mol.to_smiles()`` to write it back.
 "#]
-    fn from_smiles(
-        _cls: &Bound<'_, PyType>,
-        smiles: &str,
-        sanitize: Option<bool>,
-    ) -> PyResult<Self> {
-        let mol =
-            cosmolkit_core::Molecule::from_smiles_with_sanitize(smiles, sanitize.unwrap_or(true))
-                .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    fn from_smiles(_cls: &Bound<'_, PyType>, smiles: &str, sanitize: Option<bool>) -> PyResult<Self> {
+        let mol = cosmolkit_core::Molecule::from_smiles_with_sanitize(smiles, sanitize.unwrap_or(true))
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(Self { inner: mol })
     }
 
@@ -5080,12 +4886,7 @@ Create a molecule from an InChI string.
 Returns ``None`` when the source API returns no graph or molecule
 sanitization rejects the parsed graph.
 "#]
-    fn from_inchi(
-        _cls: &Bound<'_, PyType>,
-        inchi: &str,
-        sanitize: bool,
-        remove_hs: bool,
-    ) -> PyResult<Option<Self>> {
+    fn from_inchi(_cls: &Bound<'_, PyType>, inchi: &str, sanitize: bool, remove_hs: bool) -> PyResult<Option<Self>> {
         let output = match cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs) {
             Ok(output) => output,
             Err(error) if error.kind == cosmolkit_core::InchiErrorKind::SanitizeFailed => {
@@ -5139,8 +4940,7 @@ Molecule
             flavor,
             proximity_bonding,
         };
-        let inner = cosmolkit_core::Molecule::from_pdb_block_with_options(text, options)
-            .map_err(pdb_molecule_pyerr)?;
+        let inner = cosmolkit_core::Molecule::from_pdb_block_with_options(text, options).map_err(pdb_molecule_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -5188,8 +4988,8 @@ Molecule
             flavor,
             proximity_bonding,
         };
-        let inner = cosmolkit_core::Molecule::from_mmcif_block_with_options(text, options)
-            .map_err(pdb_molecule_pyerr)?;
+        let inner =
+            cosmolkit_core::Molecule::from_mmcif_block_with_options(text, options).map_err(pdb_molecule_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -5216,8 +5016,8 @@ Molecule
     nonzero.
 "#]
     fn from_xyz_block(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
-        let inner = cosmolkit_core::Molecule::from_xyz_block(text)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        let inner =
+            cosmolkit_core::Molecule::from_xyz_block(text).map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(Self { inner })
     }
 
@@ -5240,11 +5040,7 @@ Returns
 Molecule
     COSMolKit molecule copied from the input object.
 "#]
-    fn from_rdkit(
-        _cls: &Bound<'_, PyType>,
-        rdmol: &Bound<'_, PyAny>,
-        sanitize: Option<bool>,
-    ) -> PyResult<Self> {
+    fn from_rdkit(_cls: &Bound<'_, PyType>, rdmol: &Bound<'_, PyAny>, sanitize: Option<bool>) -> PyResult<Self> {
         rdmol.py().import("rdkit.Chem").map_err(|err| {
             PyValueError::new_err(format!(
                 "Molecule.from_rdkit requires rdkit to be installed and importable: {err}"
@@ -5283,22 +5079,18 @@ Molecule
             let atom_map_raw: u32 = py_method_extract(&atom, "GetAtomMapNum")?;
             let isotope_raw: u16 = py_method_extract(&atom, "GetIsotope")?;
             let chiral_tag = rdkit_chiral_tag_from_name(&py_method_str(&atom, "GetChiralTag")?)?;
-            let hybridization =
-                rdkit_hybridization_from_name(&py_method_str(&atom, "GetHybridization")?)?;
-            let mut spec = cosmolkit_core::AtomSpec::new(
-                cosmolkit_core::Element::from_atomic_number(atomic_num).ok_or_else(|| {
-                    PyValueError::new_err(format!(
-                        "from_rdkit atom {idx} unsupported atomic number {atomic_num}"
-                    ))
-                })?,
-            )
-            .with_formal_charge(formal_charge)
-            .with_explicit_hydrogens(explicit_hydrogens)
-            .with_no_implicit(py_method_extract(&atom, "GetNoImplicit")?)
-            .with_chiral_tag(chiral_tag)
-            .with_aromatic(py_method_extract(&atom, "GetIsAromatic")?)
-            .with_radical_electrons(num_radical_electrons)
-            .with_hybridization(hybridization);
+            let hybridization = rdkit_hybridization_from_name(&py_method_str(&atom, "GetHybridization")?)?;
+            let mut spec =
+                cosmolkit_core::AtomSpec::new(cosmolkit_core::Element::from_atomic_number(atomic_num).ok_or_else(
+                    || PyValueError::new_err(format!("from_rdkit atom {idx} unsupported atomic number {atomic_num}")),
+                )?)
+                .with_formal_charge(formal_charge)
+                .with_explicit_hydrogens(explicit_hydrogens)
+                .with_no_implicit(py_method_extract(&atom, "GetNoImplicit")?)
+                .with_chiral_tag(chiral_tag)
+                .with_aromatic(py_method_extract(&atom, "GetIsAromatic")?)
+                .with_radical_electrons(num_radical_electrons)
+                .with_hybridization(hybridization);
             if isotope_raw != 0 {
                 spec = spec.with_isotope(isotope_raw);
             }
@@ -5321,14 +5113,11 @@ Molecule
             let order = rdkit_bond_order_from_name(&py_method_str(&bond, "GetBondType")?)?;
             let direction = rdkit_bond_direction_from_name(&py_method_str(&bond, "GetBondDir")?)?;
             let stereo = rdkit_bond_stereo_from_name(&py_method_str(&bond, "GetStereo")?)?;
-            let stereo_atoms: Vec<usize> =
-                py_method(&bond, "GetStereoAtoms")?
-                    .extract()
-                    .map_err(|err| {
-                        PyValueError::new_err(format!(
-                            "from_rdkit failed extracting result from GetStereoAtoms: {err}"
-                        ))
-                    })?;
+            let stereo_atoms: Vec<usize> = py_method(&bond, "GetStereoAtoms")?.extract().map_err(|err| {
+                PyValueError::new_err(format!(
+                    "from_rdkit failed extracting result from GetStereoAtoms: {err}"
+                ))
+            })?;
             let begin = cosmolkit_core::AtomId::new(begin_atom);
             let end = cosmolkit_core::AtomId::new(end_atom);
             let mut spec = cosmolkit_core::BondSpec::new(begin, end, order)
@@ -5341,18 +5130,16 @@ Molecule
                     cosmolkit_core::AtomId::new(stereo_atoms[1]),
                 );
             }
-            builder.add_bond(spec).map_err(|err| {
-                PyValueError::new_err(format!("from_rdkit failed adding bond {idx}: {err}"))
-            })?;
+            builder
+                .add_bond(spec)
+                .map_err(|err| PyValueError::new_err(format!("from_rdkit failed adding bond {idx}: {err}")))?;
         }
 
         let conformers = py_method(rdmol, "GetConformers")?;
         let conformer_iter = PyIterator::from_object(&conformers)?;
         for conformer in conformer_iter {
             let conformer = conformer.map_err(|err| {
-                PyValueError::new_err(format!(
-                    "from_rdkit failed iterating result from GetConformers: {err}"
-                ))
+                PyValueError::new_err(format!("from_rdkit failed iterating result from GetConformers: {err}"))
             })?;
             if !py_method_extract::<bool>(&conformer, "Is3D")? {
                 continue;
@@ -5366,17 +5153,15 @@ Molecule
                     py_attr_f64(&pos, "z")?,
                 ]);
             }
-            builder.add_3d_conformer(coords).map_err(|err| {
-                PyValueError::new_err(format!("from_rdkit failed adding conformer: {err}"))
-            })?;
+            builder
+                .add_3d_conformer(coords)
+                .map_err(|err| PyValueError::new_err(format!("from_rdkit failed adding conformer: {err}")))?;
         }
         let mol = builder
             .build()
             .map_err(|err| PyValueError::new_err(format!("from_rdkit build failed: {err}")))?;
         let inner = match sanitize {
-            Some(true) => mol
-                .sanitize()
-                .map_err(|err| PyValueError::new_err(err.to_string()))?,
+            Some(true) => mol.sanitize().map_err(|err| PyValueError::new_err(err.to_string()))?,
             Some(false) => mol,
             None => mol
                 .with_assigned_valence()
@@ -5417,8 +5202,8 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     ) -> PyResult<Self> {
         let expanded_path = expand_user_path(path)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
-        let file = File::open(&expanded_path)
-            .map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
+        let file =
+            File::open(&expanded_path).map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
         let mut reader = SdfReader::with_params(
             BufReader::new(file),
             cosmolkit_core::SdfReadParams {
@@ -5435,9 +5220,7 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         else {
             return Err(PyValueError::new_err("read_sdf found no molecule record"));
         };
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[classmethod]
@@ -5484,9 +5267,7 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
             },
         )
         .map_err(|e| PyValueError::new_err(format!("read_mol failed: {e}")))?;
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[classmethod]
@@ -5519,9 +5300,7 @@ including SDF data fields and ``$$$$`` record separators. Use
             },
         )
         .map_err(|e| PyValueError::new_err(format!("read_mol_from_str failed: {e:?}")))?;
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[classmethod]
@@ -5553,9 +5332,7 @@ parsed as SDF record metadata. Use ``read_mol_from_str()`` for RDKit
             },
         )
         .map_err(|e| PyValueError::new_err(format!("read_sdf_from_str failed: {e:?}")))?;
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[classmethod]
@@ -5602,9 +5379,7 @@ cleanup_substructures : bool, optional
         else {
             return Err(PyValueError::new_err("read_mol2 found no molecule record"));
         };
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[classmethod]
@@ -5634,13 +5409,9 @@ currently supported variant is ``"corina"``, matching RDKit's public enum.
         let Some(record) = cosmolkit_core::read_mol2_from_str_with_params(mol2_text, params)
             .map_err(|e| PyValueError::new_err(format!("read_mol2_from_str failed: {e}")))?
         else {
-            return Err(PyValueError::new_err(
-                "read_mol2_from_str found no molecule record",
-            ));
+            return Err(PyValueError::new_err("read_mol2_from_str found no molecule record"));
         };
-        Ok(Self {
-            inner: record.molecule,
-        })
+        Ok(Self { inner: record.molecule })
     }
 
     #[doc = r#"
@@ -5708,9 +5479,7 @@ The original ``Molecule`` value is left unchanged.
         let out = self
             .inner
             .with_kekulized_bonds(clear_aromatic_flags.unwrap_or(true))
-            .map_err(|err| {
-                PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
-            })?;
+            .map_err(|err| PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
 
@@ -5746,11 +5515,7 @@ and defined errors. It does not perform ``assignStereochemistryFrom3D``, 3D
 double-bond direction or E/Z assignment, CIP orchestration, or
 distinct-substituent validation.
 "#]
-    fn with_chiral_tags_from_structure(
-        &self,
-        conf_id: i32,
-        replace_existing_tags: bool,
-    ) -> PyResult<Self> {
+    fn with_chiral_tags_from_structure(&self, conf_id: i32, replace_existing_tags: bool) -> PyResult<Self> {
         self.inner
             .with_chiral_tags_from_structure(conf_id, replace_existing_tags)
             .map(|inner| Self { inner })
@@ -5769,11 +5534,7 @@ in-place ``Molecule`` methods end with ``_``. It has the same stable,
 pinned-RDKit parity scope as the value-style form. Failures are transactional
 and leave the molecule unchanged.
 "#]
-    fn assign_chiral_tags_from_structure_(
-        &mut self,
-        conf_id: i32,
-        replace_existing_tags: bool,
-    ) -> PyResult<()> {
+    fn assign_chiral_tags_from_structure_(&mut self, conf_id: i32, replace_existing_tags: bool) -> PyResult<()> {
         self.inner
             .assign_chiral_tags_from_structure_(conf_id, replace_existing_tags)
             .map_err(chiral_tag_assignment_pyerr)
@@ -5809,8 +5570,8 @@ molecular-context dependent; query descriptors from ``mol.atoms()[i]`` or
         bonds: Option<Vec<usize>>,
         max_recursive_iterations: u32,
     ) -> PyResult<Self> {
-        let mut options = cosmolkit_core::CipLabelOptions::default()
-            .with_max_recursive_iterations(max_recursive_iterations);
+        let mut options =
+            cosmolkit_core::CipLabelOptions::default().with_max_recursive_iterations(max_recursive_iterations);
         if let Some(indices) = atoms {
             options = options.with_atoms(indices.into_iter().map(cosmolkit_core::AtomId::new));
         }
@@ -5837,8 +5598,8 @@ remains complete and the error is raised to Python.
         bonds: Option<Vec<usize>>,
         max_recursive_iterations: u32,
     ) -> PyResult<()> {
-        let mut options = cosmolkit_core::CipLabelOptions::default()
-            .with_max_recursive_iterations(max_recursive_iterations);
+        let mut options =
+            cosmolkit_core::CipLabelOptions::default().with_max_recursive_iterations(max_recursive_iterations);
         if let Some(indices) = atoms {
             options = options.with_atoms(indices.into_iter().map(cosmolkit_core::AtomId::new));
         }
@@ -5890,9 +5651,7 @@ include_unassigned : bool, default True
                         None
                     }
                 }
-                cosmolkit_core::ChiralTag::TetrahedralCw => {
-                    Some((atom.id().index(), "CHI_TETRAHEDRAL_CW".to_string()))
-                }
+                cosmolkit_core::ChiralTag::TetrahedralCw => Some((atom.id().index(), "CHI_TETRAHEDRAL_CW".to_string())),
                 cosmolkit_core::ChiralTag::TetrahedralCcw => {
                     Some((atom.id().index(), "CHI_TETRAHEDRAL_CCW".to_string()))
                 }
@@ -5935,9 +5694,7 @@ Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
         reference: &Molecule,
         params: Option<&PyAlignmentParameters>,
     ) -> PyResult<PyAlignmentResult> {
-        let params = params
-            .map(PyAlignmentParameters::core_parameters)
-            .unwrap_or_default();
+        let params = params.map(PyAlignmentParameters::core_parameters).unwrap_or_default();
         self.inner
             .alignment_transform_to(&reference.inner, &params)
             .map(Into::into)
@@ -5962,11 +5719,7 @@ Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
 
     #[pyo3(signature = (reference, params=None))]
     #[doc = "Return the best aligned RMSD without changing either molecule's coordinates."]
-    fn best_rmsd_to(
-        &self,
-        reference: &Molecule,
-        params: Option<&PyBestAlignmentParameters>,
-    ) -> PyResult<f64> {
+    fn best_rmsd_to(&self, reference: &Molecule, params: Option<&PyBestAlignmentParameters>) -> PyResult<f64> {
         let params = params
             .map(PyBestAlignmentParameters::core_parameters)
             .unwrap_or_default();
@@ -5982,11 +5735,7 @@ Measure RMSD in the existing coordinate frame without alignment or mutation.
 This method corresponds to RDKit ``CalcRMS`` semantics, including map
 enumeration and optional terminal-group symmetrization.
 "#]
-    fn coordinate_rmsd_to(
-        &self,
-        reference: &Molecule,
-        params: Option<&PyCoordinateRmsdParameters>,
-    ) -> PyResult<f64> {
+    fn coordinate_rmsd_to(&self, reference: &Molecule, params: Option<&PyCoordinateRmsdParameters>) -> PyResult<f64> {
         let params = params
             .map(PyCoordinateRmsdParameters::core_parameters)
             .unwrap_or_default();
@@ -6021,9 +5770,7 @@ The source and reference molecules remain unchanged.
         reference: &Molecule,
         params: Option<&PyAlignmentParameters>,
     ) -> PyResult<(Molecule, PyAlignmentResult)> {
-        let params = params
-            .map(PyAlignmentParameters::core_parameters)
-            .unwrap_or_default();
+        let params = params.map(PyAlignmentParameters::core_parameters).unwrap_or_default();
         self.inner
             .with_alignment_to(&reference.inner, &params)
             .map(|(molecule, result)| (Molecule { inner: molecule }, result.into()))
@@ -6037,9 +5784,7 @@ The source and reference molecules remain unchanged.
         #[gen_stub(override_type(type_repr = "Molecule"))] reference: &Bound<'py, PyAny>,
         params: Option<&PyAlignmentParameters>,
     ) -> PyResult<PyAlignmentResult> {
-        let params = params
-            .map(PyAlignmentParameters::core_parameters)
-            .unwrap_or_default();
+        let params = params.map(PyAlignmentParameters::core_parameters).unwrap_or_default();
         let reference_inner = if slf.as_ptr() == reference.as_ptr() {
             slf.inner.clone()
         } else {
@@ -6096,20 +5841,16 @@ or ``(num_atoms, 3)``. Three-column input uses ``z_policy``:
 ``"error"``
     Reject three-column input.
 "#]
-    fn with_2d_coordinates(
-        &self,
-        coords: Option<&Bound<'_, PyAny>>,
-        z_policy: &str,
-    ) -> PyResult<Self> {
+    fn with_2d_coordinates(&self, coords: Option<&Bound<'_, PyAny>>, z_policy: &str) -> PyResult<Self> {
         let out = if let Some(coords) = coords {
             let coords = extract_2d_coordinates(coords, self.inner.atoms().len(), z_policy)?;
-            self.inner.with_2d_coordinate_block(coords).map_err(|err| {
-                PyValueError::new_err(format!("with_2d_coordinates failed: {err}"))
-            })?
+            self.inner
+                .with_2d_coordinate_block(coords)
+                .map_err(|err| PyValueError::new_err(format!("with_2d_coordinates failed: {err}")))?
         } else {
-            self.inner.with_2d_coordinates().map_err(|err| {
-                PyValueError::new_err(format!("with_2d_coordinates failed: {err}"))
-            })?
+            self.inner
+                .with_2d_coordinates()
+                .map_err(|err| PyValueError::new_err(format!("with_2d_coordinates failed: {err}")))?
         };
         Ok(Self { inner: out })
     }
@@ -6147,11 +5888,7 @@ Return a new molecule with an existing 3D conformer's coordinates replaced.
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 3)``.
 The source molecule must already have a conformer at ``conformer_index``.
 "#]
-    fn with_3d_coordinates(
-        &self,
-        coords: &Bound<'_, PyAny>,
-        conformer_index: usize,
-    ) -> PyResult<Self> {
+    fn with_3d_coordinates(&self, coords: &Bound<'_, PyAny>, conformer_index: usize) -> PyResult<Self> {
         let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         let out = self
             .inner
@@ -6166,11 +5903,7 @@ Replace an existing 3D conformer's coordinates in place.
 
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 3)``.
 "#]
-    fn set_3d_coordinates_(
-        &mut self,
-        coords: &Bound<'_, PyAny>,
-        conformer_index: usize,
-    ) -> PyResult<()> {
+    fn set_3d_coordinates_(&mut self, coords: &Bound<'_, PyAny>, conformer_index: usize) -> PyResult<()> {
         let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         self.inner
             .set_3d_coordinates_(coords, conformer_index)
@@ -6183,9 +5916,10 @@ Return a new molecule with all 3D conformers removed.
 2D coordinates, topology, and properties are preserved.
 "#]
     fn with_cleared_3d_conformers(&self) -> PyResult<Self> {
-        let out = self.inner.with_cleared_3d_conformers().map_err(|err| {
-            PyValueError::new_err(format!("with_cleared_3d_conformers failed: {err}"))
-        })?;
+        let out = self
+            .inner
+            .with_cleared_3d_conformers()
+            .map_err(|err| PyValueError::new_err(format!("with_cleared_3d_conformers failed: {err}")))?;
         Ok(Self { inner: out })
     }
 
@@ -6211,9 +5945,7 @@ Return a new molecule with one additional 3D conformer.
         let out = self
             .inner
             .with_added_3d_conformer(coords, is_3d)
-            .map_err(|err| {
-                PyValueError::new_err(format!("with_added_3d_conformer failed: {err}"))
-            })?;
+            .map_err(|err| PyValueError::new_err(format!("with_added_3d_conformer failed: {err}")))?;
         Ok(Self { inner: out })
     }
 
@@ -6245,9 +5977,7 @@ manual coordinate assignment.
         let out = self
             .inner
             .with_only_3d_conformer(coords, is_3d)
-            .map_err(|err| {
-                PyValueError::new_err(format!("with_only_3d_conformer failed: {err}"))
-            })?;
+            .map_err(|err| PyValueError::new_err(format!("with_only_3d_conformer failed: {err}")))?;
         Ok(Self { inner: out })
     }
 
@@ -6257,17 +5987,11 @@ Replace all 3D conformers in place with exactly one conformer.
 
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 3)``.
 "#]
-    fn set_only_3d_conformer_(
-        &mut self,
-        coords: &Bound<'_, PyAny>,
-        is_3d: bool,
-    ) -> PyResult<usize> {
+    fn set_only_3d_conformer_(&mut self, coords: &Bound<'_, PyAny>, is_3d: bool) -> PyResult<usize> {
         let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         self.inner
             .set_only_3d_conformer_(coords, is_3d)
-            .map_err(|err| {
-                PyValueError::new_err(format!("set_only_3d_conformer_ failed: {err}"))
-            })?;
+            .map_err(|err| PyValueError::new_err(format!("set_only_3d_conformer_ failed: {err}")))?;
         Ok(0)
     }
 
@@ -6295,10 +6019,7 @@ Generate one 3D conformer in place.
 
 This is the in-place version of ``with_3d_conformer()``.
 "#]
-    fn embed_3d_conformer_(
-        &mut self,
-        params: Option<PyRefMut<'_, PyEmbedParameters>>,
-    ) -> PyResult<()> {
+    fn embed_3d_conformer_(&mut self, params: Option<PyRefMut<'_, PyEmbedParameters>>) -> PyResult<()> {
         self.inner = self.embed_3d_conformer_result_(params)?.molecule.inner;
         Ok(())
     }
@@ -6319,8 +6040,7 @@ without relying on side effects on the input ``EmbedParameters`` object.
             .as_ref()
             .map(|value| value.inner.clone())
             .unwrap_or_else(cosmolkit_core::EmbedParameters::etkdg_v3);
-        let result = cosmolkit_core::embed_molecule_result(&self.inner, &mut embed_params)
-            .map_err(distgeom_pyerr)?;
+        let result = cosmolkit_core::embed_molecule_result(&self.inner, &mut embed_params).map_err(distgeom_pyerr)?;
         if let Some(value) = params.as_mut() {
             value.inner = embed_params.clone();
         }
@@ -6358,11 +6078,7 @@ Returns
 Molecule
     A new molecule value containing the generated 3D conformers.
 "#]
-    fn with_3d_conformers(
-        &self,
-        num_confs: u32,
-        params: Option<PyRefMut<'_, PyEmbedParameters>>,
-    ) -> PyResult<Self> {
+    fn with_3d_conformers(&self, num_confs: u32, params: Option<PyRefMut<'_, PyEmbedParameters>>) -> PyResult<Self> {
         Ok(self.with_3d_conformers_result(num_confs, params)?.molecule)
     }
 
@@ -6377,10 +6093,7 @@ This is the in-place version of ``with_3d_conformers()``.
         num_confs: u32,
         params: Option<PyRefMut<'_, PyEmbedParameters>>,
     ) -> PyResult<()> {
-        self.inner = self
-            .embed_3d_conformers_result_(num_confs, params)?
-            .molecule
-            .inner;
+        self.inner = self.embed_3d_conformers_result_(num_confs, params)?.molecule.inner;
         Ok(())
     }
 
@@ -6401,9 +6114,8 @@ reconstructing that state manually.
             .as_ref()
             .map(|value| value.inner.clone())
             .unwrap_or_else(cosmolkit_core::EmbedParameters::etkdg_v3);
-        let result =
-            cosmolkit_core::embed_multiple_confs_result(&self.inner, num_confs, &mut embed_params)
-                .map_err(distgeom_pyerr)?;
+        let result = cosmolkit_core::embed_multiple_confs_result(&self.inner, num_confs, &mut embed_params)
+            .map_err(distgeom_pyerr)?;
         if let Some(value) = params.as_mut() {
             value.inner = embed_params.clone();
         }
@@ -6463,21 +6175,13 @@ The z column is zero-filled.
     #[doc = r#"
 Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 "#]
-    fn coordinates_3d<'py>(
-        &self,
-        py: Python<'py>,
-        conformer_index: usize,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn coordinates_3d<'py>(&self, py: Python<'py>, conformer_index: usize) -> PyResult<Bound<'py, PyAny>> {
         let Some(coords) = self.inner.conformers_3d().get(conformer_index) else {
             return Err(PyValueError::new_err(format!(
                 "no 3D conformer present at index {conformer_index}"
             )));
         };
-        let rows: Vec<Vec<f64>> = coords
-            .coordinates()
-            .iter()
-            .map(|p| vec![p[0], p[1], p[2]])
-            .collect();
+        let rows: Vec<Vec<f64>> = coords.coordinates().iter().map(|p| vec![p[0], p[1], p[2]]).collect();
         PyArray2::from_vec2(py, &rows)
             .map(|array| array.into_any())
             .map_err(|err| PyValueError::new_err(format!("Molecule.coordinates_3d failed: {err}")))
@@ -6504,13 +6208,7 @@ conformer, for example from a 3D SDF, MOL, MOL2, or XYZ input.
         conf_id: isize,
         ignore_interfrag_interactions: bool,
     ) -> PyResult<UffOptimizeMoleculeResult> {
-        uff_optimize_molecule(
-            self,
-            max_iters,
-            vdw_thresh,
-            conf_id,
-            ignore_interfrag_interactions,
-        )
+        uff_optimize_molecule(self, max_iters, vdw_thresh, conf_id, ignore_interfrag_interactions)
     }
 
     #[pyo3(signature = (num_threads=1, max_iters=1000, vdw_thresh=10.0, ignore_interfrag_interactions=true))]
@@ -6524,13 +6222,7 @@ Return UFF optimization results for all 3D conformers as a new molecule value.
         vdw_thresh: f64,
         ignore_interfrag_interactions: bool,
     ) -> PyResult<UffOptimizeMoleculeConfsResult> {
-        uff_optimize_molecule_confs(
-            self,
-            num_threads,
-            max_iters,
-            vdw_thresh,
-            ignore_interfrag_interactions,
-        )
+        uff_optimize_molecule_confs(self, num_threads, max_iters, vdw_thresh, ignore_interfrag_interactions)
     }
 
     #[doc = r#"
@@ -6595,14 +6287,13 @@ Return the distance-geometry bounds matrix as a NumPy array.
 The returned array uses shape ``(num_atoms, num_atoms)``.
 "#]
     fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let rows = self.inner.dg_bounds_matrix().map_err(|err| {
-            PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
-        })?;
+        let rows = self
+            .inner
+            .dg_bounds_matrix()
+            .map_err(|err| PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}")))?;
         PyArray2::from_vec2(py, &rows)
             .map(|array| array.into_any())
-            .map_err(|err| {
-                PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
-            })
+            .map_err(|err| PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}")))
     }
 
     #[pyo3(signature = (width=300, height=300))]
@@ -6625,8 +6316,8 @@ Write an SVG depiction to a file.
             .inner
             .to_svg(width, height)
             .map_err(|err| PyNotImplementedError::new_err(format!("write_svg failed: {err}")))?;
-        let mut f = File::create(&expanded_path)
-            .map_err(|e| PyValueError::new_err(format!("write_svg create failed: {e}")))?;
+        let mut f =
+            File::create(&expanded_path).map_err(|e| PyValueError::new_err(format!("write_svg create failed: {e}")))?;
         f.write_all(svg.as_bytes())
             .map_err(|e| PyValueError::new_err(format!("write_svg write failed: {e}")))?;
         Ok(())
@@ -6642,8 +6333,8 @@ Write a PNG depiction to a file.
             .inner
             .to_png(width, height)
             .map_err(|err| PyNotImplementedError::new_err(format!("write_png failed: {err}")))?;
-        let mut f = File::create(&expanded_path)
-            .map_err(|e| PyValueError::new_err(format!("write_png create failed: {e}")))?;
+        let mut f =
+            File::create(&expanded_path).map_err(|e| PyValueError::new_err(format!("write_png create failed: {e}")))?;
         f.write_all(&png)
             .map_err(|e| PyValueError::new_err(format!("write_png write failed: {e}")))?;
         Ok(())
@@ -6653,12 +6344,7 @@ Write a PNG depiction to a file.
     #[doc = r#"
 Render the molecule to PNG bytes.
 "#]
-    fn to_png<'py>(
-        &self,
-        py: Python<'py>,
-        width: u32,
-        height: u32,
-    ) -> PyResult<Bound<'py, PyBytes>> {
+    fn to_png<'py>(&self, py: Python<'py>, width: u32, height: u32) -> PyResult<Bound<'py, PyBytes>> {
         let png = self.inner.to_png(width, height).map_err(svg_draw_pyerr)?;
         Ok(PyBytes::new(py, &png))
     }
@@ -6748,8 +6434,7 @@ Return a SMARTS string for this molecule or compiled query.
             rooted_at_atom,
             ..Default::default()
         };
-        cosmolkit_core::mol_to_smarts(&self.inner, &params)
-            .map_err(|error| PyValueError::new_err(error.to_string()))
+        cosmolkit_core::mol_to_smarts(&self.inner, &params).map_err(|error| PyValueError::new_err(error.to_string()))
     }
 
     #[pyo3(signature = (isomeric_smarts=true))]
@@ -6767,8 +6452,7 @@ Return a CXSMARTS string for this molecule or compiled query.
             do_isomeric_smiles: isomeric_smarts,
             ..Default::default()
         };
-        cosmolkit_core::mol_to_cx_smarts(&self.inner, &params)
-            .map_err(|error| PyValueError::new_err(error.to_string()))
+        cosmolkit_core::mol_to_cx_smarts(&self.inner, &params).map_err(|error| PyValueError::new_err(error.to_string()))
     }
 
     #[pyo3(signature = (options = ""))]
@@ -6797,19 +6481,13 @@ Return the molecule's InChIKey without mutating the molecule.
     #[doc = r#"
 Write the molecule as one SDF record.
 "#]
-    fn write_sdf(
-        &self,
-        path: &str,
-        format: Option<&str>,
-        include_stereo: bool,
-        kekulize: bool,
-    ) -> PyResult<()> {
+    fn write_sdf(&self, path: &str, format: Option<&str>, include_stereo: bool, kekulize: bool) -> PyResult<()> {
         let expanded_path = expand_user_path(path)?;
         let fmt = parse_sdf_format(format)?;
         let block = molecule_to_sdf_record_string(&self.inner, fmt, include_stereo, kekulize)
             .map_err(|err| PyValueError::new_err(format!("write_sdf failed: {err}")))?;
-        let mut f = File::create(&expanded_path)
-            .map_err(|e| PyValueError::new_err(format!("write_sdf create failed: {e}")))?;
+        let mut f =
+            File::create(&expanded_path).map_err(|e| PyValueError::new_err(format!("write_sdf create failed: {e}")))?;
         f.write_all(block.as_bytes())
             .map_err(|e| PyValueError::new_err(format!("write_sdf write failed: {e}")))?;
         Ok(())
@@ -6822,12 +6500,7 @@ Return the molecule as a 2D SDF record string.
 If the molecule does not already have 2D coordinates, they are generated for
 this export. The original ``Molecule`` value is left unchanged.
 "#]
-    fn to_2d_sdf_string(
-        &self,
-        format: Option<&str>,
-        include_stereo: bool,
-        kekulize: bool,
-    ) -> PyResult<String> {
+    fn to_2d_sdf_string(&self, format: Option<&str>, include_stereo: bool, kekulize: bool) -> PyResult<String> {
         let fmt = parse_sdf_format(format)?;
         molecule_to_2d_sdf_record_string(&self.inner, fmt, include_stereo, kekulize)
             .map_err(|err| PyValueError::new_err(format!("to_2d_sdf_string failed: {err}")))
@@ -6839,12 +6512,7 @@ Return the molecule as a 3D SDF record string.
 
 The molecule must already have a 3D conformer, for example from a 3D SDF record.
 "#]
-    fn to_3d_sdf_string(
-        &self,
-        format: Option<&str>,
-        include_stereo: bool,
-        kekulize: bool,
-    ) -> PyResult<String> {
+    fn to_3d_sdf_string(&self, format: Option<&str>, include_stereo: bool, kekulize: bool) -> PyResult<String> {
         let fmt = parse_sdf_format(format)?;
         molecule_to_3d_sdf_record_string(&self.inner, fmt, include_stereo, kekulize)
             .map_err(|err| PyValueError::new_err(format!("to_3d_sdf_string failed: {err}")))
@@ -6870,14 +6538,10 @@ str
         let expanded_directory = expand_user_path(directory)?;
         let dir = expanded_directory.as_path();
         if !dir.exists() {
-            return Err(PyValueError::new_err(format!(
-                "directory does not exist: {directory}"
-            )));
+            return Err(PyValueError::new_err(format!("directory does not exist: {directory}")));
         }
         if !dir.is_dir() {
-            return Err(PyValueError::new_err(format!(
-                "path is not a directory: {directory}"
-            )));
+            return Err(PyValueError::new_err(format!("path is not a directory: {directory}")));
         }
         let name = file_name.unwrap_or("molecule.sdf");
         if name.trim().is_empty() {
@@ -6912,12 +6576,7 @@ the public vector size, ``is_query`` selects query-molecule preprocessing,
 and ``bit_flags`` selects the Avalon feature families. The result does not
 mutate the source molecule.
 "#]
-    fn avalon_fingerprint(
-        &self,
-        n_bits: u32,
-        is_query: bool,
-        bit_flags: u32,
-    ) -> PyResult<Fingerprint> {
+    fn avalon_fingerprint(&self, n_bits: u32, is_query: bool, bit_flags: u32) -> PyResult<Fingerprint> {
         let params = make_avalon_fingerprint_params(n_bits, is_query, bit_flags);
         self.inner
             .avalon_fingerprint(&params)
@@ -7146,8 +6805,7 @@ Return the source-width sparse-count AtomPair fingerprint.
             custom_atom_invariants,
             false,
         );
-        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
-            .map_err(fingerprint_pyerr)?;
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params).map_err(fingerprint_pyerr)?;
         generator
             .sparse_count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
             .map(|inner| PySparseCountFingerprint { inner })
@@ -7202,8 +6860,7 @@ Return the folded-count AtomPair fingerprint.
             custom_atom_invariants,
             false,
         );
-        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
-            .map_err(fingerprint_pyerr)?;
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params).map_err(fingerprint_pyerr)?;
         generator
             .count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
             .map(|inner| PySparseCountFingerprint { inner })
@@ -7258,8 +6915,7 @@ Return the sparse-bit AtomPair fingerprint.
             custom_atom_invariants,
             false,
         );
-        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
-            .map_err(fingerprint_pyerr)?;
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params).map_err(fingerprint_pyerr)?;
         generator
             .sparse_bit_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
             .map(|inner| PySparseBitFingerprint { inner })
@@ -7622,10 +7278,7 @@ pre-folding values when density folding is enabled.
         self.inner
             .topological_fingerprint_with_output(
                 &params,
-                cosmolkit_core::TopologicalFingerprintOutputRequest {
-                    atom_bits,
-                    bit_info,
-                },
+                cosmolkit_core::TopologicalFingerprintOutputRequest { atom_bits, bit_info },
             )
             .map(Into::into)
             .map_err(fingerprint_pyerr)
@@ -7667,12 +7320,7 @@ Return the connected fragments as separate molecules.
     fn fragments(&self) -> PyResult<Vec<Molecule>> {
         self.inner
             .fragments()
-            .map(|fragments| {
-                fragments
-                    .into_iter()
-                    .map(|inner| Molecule { inner })
-                    .collect()
-            })
+            .map(|fragments| fragments.into_iter().map(|inner| Molecule { inner }).collect())
             .map_err(fragment_pyerr)
     }
 
@@ -7728,16 +7376,9 @@ Analyze potential stereochemistry without mutating this molecule.
 The returned analysis contains the isolated molecule state produced by the
 source-defined cleanup mode and ordered typed potential-stereo records.
 "#]
-    fn analyze_potential_stereo(
-        &self,
-        clean: bool,
-        flag_possible: bool,
-    ) -> PyResult<PyPotentialStereoAnalysis> {
+    fn analyze_potential_stereo(&self, clean: bool, flag_possible: bool) -> PyResult<PyPotentialStereoAnalysis> {
         self.inner
-            .analyze_potential_stereo(cosmolkit_core::PotentialStereoOptions {
-                clean,
-                flag_possible,
-            })
+            .analyze_potential_stereo(cosmolkit_core::PotentialStereoOptions { clean, flag_possible })
             .map(|analysis| PyPotentialStereoAnalysis {
                 molecule: analysis.molecule,
                 stereo_info: analysis.stereo_info,
@@ -7768,19 +7409,15 @@ method; other seed objects follow Python ``random.Random(seed)`` semantics.
         };
         let core_options = options.core_options();
         let inner = if let Some(random) = options.random_source(py)? {
-            cosmolkit_core::enumerate_stereoisomers_with_random_bits(
-                &self.inner,
-                core_options,
-                move |bit_count| {
-                    Python::attach(|py| {
-                        random
-                            .bind(py)
-                            .call_method1("getrandbits", (bit_count,))
-                            .and_then(|value| value.extract::<num_bigint::BigUint>())
-                            .map_err(|error| error.to_string())
-                    })
-                },
-            )
+            cosmolkit_core::enumerate_stereoisomers_with_random_bits(&self.inner, core_options, move |bit_count| {
+                Python::attach(|py| {
+                    random
+                        .bind(py)
+                        .call_method1("getrandbits", (bit_count,))
+                        .and_then(|value| value.extract::<num_bigint::BigUint>())
+                        .map_err(|error| error.to_string())
+                })
+            })
         } else {
             self.inner.stereoisomers(core_options)
         }
@@ -7791,10 +7428,7 @@ method; other seed objects follow Python ``random.Random(seed)`` semantics.
     #[pyo3(signature = (options=None))]
     #[doc = "Return the source-defined upper-bound stereoisomer count."]
     #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
-    fn stereoisomer_count(
-        &self,
-        options: Option<&PyStereoisomerOptions>,
-    ) -> PyResult<num_bigint::BigUint> {
+    fn stereoisomer_count(&self, options: Option<&PyStereoisomerOptions>) -> PyResult<num_bigint::BigUint> {
         let default_options;
         let options = if let Some(options) = options {
             options
@@ -7878,32 +7512,26 @@ impl BioStructure {
     #[doc = "Read a PDB file into the complete biomolecular structural model."]
     fn from_pdb(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
         let path = expand_user_path(path)?;
-        let inner = cosmolkit_core::BioStructure::from_pdb(&path)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        let inner =
+            cosmolkit_core::BioStructure::from_pdb(&path).map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
     #[doc = "Read PDB text into the complete biomolecular structural model."]
     fn from_pdb_str(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
-        let inner = cosmolkit_core::BioStructure::from_pdb_str(text)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        let inner =
+            cosmolkit_core::BioStructure::from_pdb_str(text).map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
     #[doc = "Read an mmCIF file into the complete biomolecular structural model."]
     fn from_mmcif(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
         let path = expand_user_path(path)?;
-        let inner = cosmolkit_core::BioStructure::from_mmcif(&path)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        let inner =
+            cosmolkit_core::BioStructure::from_mmcif(&path).map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
@@ -7912,9 +7540,7 @@ impl BioStructure {
     fn from_mmcif_str(_cls: &Bound<'_, PyType>, text: &str, path: &str) -> PyResult<Self> {
         let inner = cosmolkit_core::BioStructure::from_mmcif_str(text, path)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
@@ -7923,9 +7549,7 @@ impl BioStructure {
     fn from_structure_str(_cls: &Bound<'_, PyType>, text: &str, path: &str) -> PyResult<Self> {
         let inner = cosmolkit_core::BioStructure::from_structure_str(text, path)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[pyo3(signature = (options=None))]
@@ -7935,9 +7559,7 @@ impl BioStructure {
             cosmolkit_core::io::bio::MmcifWriteOptions::default,
             PyMmcifWriteOptions::core_options,
         );
-        self.inner
-            .to_mmcif_with_options(options)
-            .map_err(bio_write_pyerr)
+        self.inner.to_mmcif_with_options(options).map_err(bio_write_pyerr)
     }
 
     #[pyo3(signature = (path, options=None))]
@@ -8046,9 +7668,7 @@ the source ``BioStructure`` remains unchanged.
 "#]
     fn protein(&self) -> Protein {
         Protein {
-            inner: Arc::new(cosmolkit_core::Protein::project_from_bio_structure(
-                &self.inner,
-            )),
+            inner: Arc::new(cosmolkit_core::Protein::project_from_bio_structure(&self.inner)),
         }
     }
 
@@ -8059,13 +7679,7 @@ Convert the structural rows to a cheminformatics ``Molecule``.
 This is an explicit, potentially lossy model conversion. It follows the same
 RDKit-compatible graph construction options as ``Molecule.from_pdb_block()``.
 "#]
-    fn to_molecule(
-        &self,
-        sanitize: bool,
-        remove_hs: bool,
-        flavor: u32,
-        proximity_bonding: bool,
-    ) -> PyResult<Molecule> {
+    fn to_molecule(&self, sanitize: bool, remove_hs: bool, flavor: u32, proximity_bonding: bool) -> PyResult<Molecule> {
         let options = cosmolkit_core::StructureMoleculeOptions {
             sanitize,
             remove_hs,
@@ -8106,9 +7720,7 @@ fn normalize_python_index(index: isize, len: usize, kind: &str) -> PyResult<usiz
     let len = len as isize;
     let index = if index < 0 { len + index } else { index };
     if index < 0 || index >= len {
-        return Err(PyIndexError::new_err(format!(
-            "BioStructure {kind} index out of range"
-        )));
+        return Err(PyIndexError::new_err(format!("BioStructure {kind} index out of range")));
     }
     Ok(index as usize)
 }
@@ -8153,9 +7765,7 @@ impl StructureChain {
     }
 
     fn entity_index(&self) -> Option<usize> {
-        self.inner.chains()[self.index]
-            .entity_id
-            .map(|id| id.index() as usize)
+        self.inner.chains()[self.index].entity_id.map(|id| id.index() as usize)
     }
 
     fn kind(&self) -> String {
@@ -8237,24 +7847,18 @@ impl StructureResidue {
 
     #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
     fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let code =
-            cosmolkit_core::residue_code_from_name(self.inner.residues()[self.index].name.as_str());
+        let code = cosmolkit_core::residue_code_from_name(self.inner.residues()[self.index].name.as_str());
         residue_code_enum_member(py, code)
     }
 
     fn info(&self) -> PyResidueInfo {
         PyResidueInfo {
-            inner: cosmolkit_core::find_tabulated_residue(
-                self.inner.residues()[self.index].name.as_str(),
-            ),
+            inner: cosmolkit_core::find_tabulated_residue(self.inner.residues()[self.index].name.as_str()),
         }
     }
 
     fn source_sequence_number(&self) -> Option<i32> {
-        self.inner.residues()[self.index]
-            .source
-            .seq_id
-            .map(|id| id.seq_num)
+        self.inner.residues()[self.index].source.seq_id.map(|id| id.seq_num)
     }
 
     fn insertion_code(&self) -> Option<String> {
@@ -8332,10 +7936,7 @@ impl StructureAtom {
     }
 
     fn source_serial(&self) -> Option<i32> {
-        self.inner.atoms()[self.index]
-            .source
-            .serial
-            .map(|serial| serial.0)
+        self.inner.atoms()[self.index].source.serial.map(|serial| serial.0)
     }
 }
 
@@ -8348,10 +7949,7 @@ impl StructureEntity {
     }
 
     fn source_id(&self) -> String {
-        self.inner.entities()[self.index]
-            .source
-            .source_entity_id
-            .clone()
+        self.inner.entities()[self.index].source.source_entity_id.clone()
     }
 
     fn kind(&self) -> String {
@@ -8398,9 +7996,7 @@ result is a RDKit-compatible molecule conversion.
                 .ok_or_else(|| PyValueError::new_err("path must be valid UTF-8"))?,
         )
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
@@ -8410,11 +8006,9 @@ Read PDB text as a protein-focused structural value.
 This is the in-memory counterpart to ``Protein.from_pdb()``.
 "#]
     fn from_pdb_str(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
-        let inner = cosmolkit_core::Protein::from_pdb_str(text)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        let inner =
+            cosmolkit_core::Protein::from_pdb_str(text).map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
@@ -8430,9 +8024,7 @@ The result uses the same protein projection as ``Protein.from_pdb()``.
                 .ok_or_else(|| PyValueError::new_err("path must be valid UTF-8"))?,
         )
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[classmethod]
@@ -8444,9 +8036,7 @@ Read mmCIF text as a protein-focused structural value.
     fn from_mmcif_str(_cls: &Bound<'_, PyType>, text: &str, path: Option<&str>) -> PyResult<Self> {
         let inner = cosmolkit_core::Protein::from_mmcif_str(text, path.unwrap_or("input.cif"))
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     #[doc = "Return the number of coordinate models in the protein structure."]
@@ -8537,10 +8127,7 @@ impl ProteinChain {
     fn kind(&self) -> String {
         format!(
             "{:?}",
-            self.inner
-                .chain(self.index)
-                .expect("valid protein chain")
-                .kind()
+            self.inner.chain(self.index).expect("valid protein chain").kind()
         )
     }
 
@@ -8800,9 +8387,7 @@ impl PyResidueInfo {
     }
 
     fn canonical_one_letter_code(&self) -> Option<String> {
-        self.inner
-            .canonical_one_letter_code()
-            .map(|code| code.to_string())
+        self.inner.canonical_one_letter_code().map(|code| code.to_string())
     }
 
     #[gen_stub(override_return_type(type_repr = "ResidueCode | None"))]
@@ -8918,12 +8503,11 @@ impl Atom {
     fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let atomic_number = u8::try_from(self.atomic_num)
             .map_err(|_| PyValueError::new_err("atom atomic number is outside u8 range"))?;
-        let element =
-            cosmolkit_core::Element::from_atomic_number(atomic_number).ok_or_else(|| {
-                PyValueError::new_err(format!(
-                    "atom atomic number {atomic_number} is outside the Element domain"
-                ))
-            })?;
+        let element = cosmolkit_core::Element::from_atomic_number(atomic_number).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "atom atomic number {atomic_number} is outside the Element domain"
+            ))
+        })?;
         element_enum_member(py, element)
     }
     fn formal_charge(&self) -> i8 {
@@ -9098,12 +8682,7 @@ impl Bond {
     fn __repr__(&self) -> String {
         format!(
             "Bond(idx={}, begin_atom_idx={}, end_atom_idx={}, bond_type='{}', bond_dir='{}', stereo='{}')",
-            self.idx,
-            self.begin_atom_idx,
-            self.end_atom_idx,
-            self.bond_type_name,
-            self.bond_dir_name,
-            self.stereo_name
+            self.idx, self.begin_atom_idx, self.end_atom_idx, self.bond_type_name, self.bond_dir_name, self.stereo_name
         )
     }
 }
@@ -9133,14 +8712,9 @@ Add an atom by element symbol and return its atom index.
 "#]
     fn add_atom(&mut self, element: &str) -> PyResult<usize> {
         let Some(element) = cosmolkit_core::Element::from_symbol(element) else {
-            return Err(PyValueError::new_err(format!(
-                "unsupported element symbol '{element}'"
-            )));
+            return Err(PyValueError::new_err(format!("unsupported element symbol '{element}'")));
         };
-        Ok(self
-            .builder
-            .add_atom(cosmolkit_core::AtomSpec::new(element))
-            .index())
+        Ok(self.builder.add_atom(cosmolkit_core::AtomSpec::new(element)).index())
     }
 
     #[pyo3(signature = (begin, end, order))]
@@ -9166,9 +8740,7 @@ order : {"single", "double", "triple", "aromatic", "dative", "unspecified"}
             "hydrogen" => cosmolkit_core::BondOrder::Hydrogen,
             "unspecified" | "null" => cosmolkit_core::BondOrder::Null,
             _ => {
-                return Err(PyValueError::new_err(format!(
-                    "unsupported bond order '{order}'"
-                )));
+                return Err(PyValueError::new_err(format!("unsupported bond order '{order}'")));
             }
         };
         self.builder
@@ -9185,8 +8757,7 @@ order : {"single", "double", "triple", "aromatic", "dative", "unspecified"}
 Set an atom formal charge.
 "#]
     fn set_atom_charge(&mut self, atom_index: usize, charge: i32) -> PyResult<()> {
-        let charge =
-            i8::try_from(charge).map_err(|_| PyValueError::new_err("charge out of i8 range"))?;
+        let charge = i8::try_from(charge).map_err(|_| PyValueError::new_err("charge out of i8 range"))?;
         let built = self
             .builder
             .clone()
@@ -9226,16 +8797,8 @@ Commit staged edits and return a new molecule.
     fn __repr__(&self) -> String {
         format!(
             "MoleculeEdit(num_atoms={}, num_bonds={})",
-            self.builder
-                .clone()
-                .build()
-                .map(|m| m.num_atoms())
-                .unwrap_or(0),
-            self.builder
-                .clone()
-                .build()
-                .map(|m| m.num_bonds())
-                .unwrap_or(0)
+            self.builder.clone().build().map(|m| m.num_atoms()).unwrap_or(0),
+            self.builder.clone().build().map(|m| m.num_bonds()).unwrap_or(0)
         )
     }
 }
@@ -9482,10 +9045,7 @@ struct PyTopologicalTorsionGeneratorState {
 impl PyTopologicalTorsionGeneratorState {
     fn build(
         &self,
-    ) -> Result<
-        cosmolkit_core::TopologicalTorsionFingerprintGenerator,
-        cosmolkit_core::FingerprintError,
-    > {
+    ) -> Result<cosmolkit_core::TopologicalTorsionFingerprintGenerator, cosmolkit_core::FingerprintError> {
         cosmolkit_core::fingerprint::getTopologicalTorsionGenerator(
             &self.arguments,
             Some(self.atom_invariants_generator.clone()),
@@ -9499,9 +9059,9 @@ type SharedTopologicalTorsionGenerator = Arc<Mutex<PyTopologicalTorsionGenerator
 fn lock_topological_torsion_generator(
     state: &SharedTopologicalTorsionGenerator,
 ) -> PyResult<MutexGuard<'_, PyTopologicalTorsionGeneratorState>> {
-    state.lock().map_err(|_| {
-        PyRuntimeError::new_err("Topological Torsion generator state lock was poisoned")
-    })
+    state
+        .lock()
+        .map_err(|_| PyRuntimeError::new_err("Topological Torsion generator state lock was poisoned"))
 }
 
 fn topological_torsion_call_arguments(
@@ -9544,9 +9104,7 @@ fn require_complete_fingerprint_bulk<T>(values: Vec<Option<T>>) -> PyResult<Vec<
         .into_iter()
         .enumerate()
         .map(|(index, value)| {
-            value.ok_or_else(|| {
-                PyValueError::new_err(format!("fingerprint bulk result at index {index} is null"))
-            })
+            value.ok_or_else(|| PyValueError::new_err(format!("fingerprint bulk result at index {index} is null")))
         })
         .collect()
 }
@@ -9810,13 +9368,9 @@ impl PyTopologicalTorsionFingerprintGenerator {
             custom_bond_invariants,
             additional_output.as_deref(),
         );
-        let result = self
-            .core_generator()?
-            .getFingerprint(&molecule.inner, &mut arguments);
+        let result = self.core_generator()?.getFingerprint(&molecule.inner, &mut arguments);
         restore_topological_torsion_additional_output(&mut arguments, &mut additional_output);
-        result
-            .map(|inner| Fingerprint { inner })
-            .map_err(fingerprint_pyerr)
+        result.map(|inner| Fingerprint { inner }).map_err(fingerprint_pyerr)
     }
 
     #[pyo3(signature = (molecules, num_threads=1))]
@@ -9889,11 +9443,7 @@ impl PyTopologicalTorsionFingerprintGenerator {
     }
 
     #[pyo3(signature = (molecules, num_threads=1))]
-    fn get_fingerprints(
-        &self,
-        molecules: Vec<Molecule>,
-        num_threads: i32,
-    ) -> PyResult<Vec<Fingerprint>> {
+    fn get_fingerprints(&self, molecules: Vec<Molecule>, num_threads: i32) -> PyResult<Vec<Fingerprint>> {
         let refs = molecules
             .iter()
             .map(|molecule| Some(&molecule.inner))
@@ -9903,12 +9453,7 @@ impl PyTopologicalTorsionFingerprintGenerator {
                 .getFingerprints(&refs, num_threads)
                 .map_err(fingerprint_pyerr)?,
         )
-        .map(|values| {
-            values
-                .into_iter()
-                .map(|inner| Fingerprint { inner })
-                .collect()
-        })
+        .map(|values| values.into_iter().map(|inner| Fingerprint { inner }).collect())
     }
 
     fn get_options(&self) -> PyTopologicalTorsionFingerprintOptions {
@@ -9927,10 +9472,7 @@ impl PyTopologicalTorsionFingerprintGenerator {
         let state = lock_topological_torsion_generator(&self.state)?;
         Ok(format!(
             "{} --- {} --- {} --- {} --- No bond invariants generator",
-            state
-                .arguments
-                .fingerprint_arguments
-                .common_arguments_string(),
+            state.arguments.fingerprint_arguments.common_arguments_string(),
             state.arguments.infoString(),
             cosmolkit_core::fingerprint::TopologicalTorsionEnvGenerator::new().infoString(),
             state.atom_invariants_generator.infoString(),
@@ -10071,9 +9613,7 @@ impl From<cosmolkit_core::AtomPairFingerprintOutput> for AtomPairFingerprintResu
             fingerprint: Fingerprint {
                 inner: value.fingerprint,
             },
-            additional_output: value
-                .additional_output
-                .map(|inner| PyAdditionalOutput { inner }),
+            additional_output: value.additional_output.map(|inner| PyAdditionalOutput { inner }),
         }
     }
 }
@@ -10087,9 +9627,7 @@ impl AtomPairFingerprintResult {
 
     fn additional_output(&self) -> PyResult<PyAdditionalOutput> {
         self.additional_output.clone().ok_or_else(|| {
-            PyValueError::new_err(
-                "AtomPair additional output was not collected for this fingerprint result",
-            )
+            PyValueError::new_err("AtomPair additional output was not collected for this fingerprint result")
         })
     }
 
@@ -10198,9 +9736,7 @@ Return the Morgan additional output collected by ``fingerprint_morgan_with_outpu
 "#]
     fn additional_output(&self) -> PyResult<MorganAdditionalOutput> {
         self.additional_output.clone().ok_or_else(|| {
-            PyValueError::new_err(
-                "Morgan additional output was not collected for this fingerprint result",
-            )
+            PyValueError::new_err("Morgan additional output was not collected for this fingerprint result")
         })
     }
 
@@ -10243,17 +9779,13 @@ impl TopologicalFingerprintResult {
 
     fn atom_bits(&self) -> PyResult<Vec<Vec<u32>>> {
         self.atom_bits.clone().ok_or_else(|| {
-            PyValueError::new_err(
-                "topological atom_bits output was not requested for this fingerprint result",
-            )
+            PyValueError::new_err("topological atom_bits output was not requested for this fingerprint result")
         })
     }
 
     fn bit_info(&self) -> PyResult<BTreeMap<u32, Vec<Vec<i32>>>> {
         self.bit_info.clone().ok_or_else(|| {
-            PyValueError::new_err(
-                "topological bit_info output was not requested for this fingerprint result",
-            )
+            PyValueError::new_err("topological bit_info output was not requested for this fingerprint result")
         })
     }
 
@@ -10276,9 +9808,7 @@ struct PyAlignmentTransform {
 
 impl From<cosmolkit_core::AlignmentTransform> for PyAlignmentTransform {
     fn from(value: cosmolkit_core::AlignmentTransform) -> Self {
-        Self {
-            matrix: value.matrix,
-        }
+        Self { matrix: value.matrix }
     }
 }
 
@@ -10325,12 +9855,7 @@ impl PyAlignmentResult {
 
     #[doc = "Return the selected probe-to-reference atom map."]
     fn atom_map(&self) -> Vec<PyAlignmentAtomMap> {
-        self.inner
-            .atom_map
-            .iter()
-            .copied()
-            .map(Into::into)
-            .collect()
+        self.inner.atom_map.iter().copied().map(Into::into).collect()
     }
 
     fn __repr__(&self) -> String {
@@ -10418,9 +9943,7 @@ struct EmbedMoleculeResult {
 impl From<cosmolkit_core::EmbedMoleculeResult> for EmbedMoleculeResult {
     fn from(value: cosmolkit_core::EmbedMoleculeResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
+            molecule: Molecule { inner: value.molecule },
             conf_id: value.conf_id,
             params: PyEmbedParameters::from_inner(value.params),
         }
@@ -10480,9 +10003,7 @@ struct EmbedMultipleConfsResult {
 impl From<cosmolkit_core::EmbedMultipleConfsResult> for EmbedMultipleConfsResult {
     fn from(value: cosmolkit_core::EmbedMultipleConfsResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
+            molecule: Molecule { inner: value.molecule },
             conf_ids: value.conf_ids,
             requested_num_confs: value.requested_num_confs,
             params: PyEmbedParameters::from_inner(value.params),
@@ -10549,9 +10070,7 @@ struct UffOptimizeMoleculeResult {
 impl From<cosmolkit_core::UffOptimizeMoleculeResult> for UffOptimizeMoleculeResult {
     fn from(value: cosmolkit_core::UffOptimizeMoleculeResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
+            molecule: Molecule { inner: value.molecule },
             needs_more: value.needs_more,
             energy: value.energy,
         }
@@ -10648,14 +10167,8 @@ struct UffOptimizeMoleculeConfsResult {
 impl From<cosmolkit_core::UffOptimizeMoleculeConfsResult> for UffOptimizeMoleculeConfsResult {
     fn from(value: cosmolkit_core::UffOptimizeMoleculeConfsResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
-            conformer_results: value
-                .conformer_results
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            molecule: Molecule { inner: value.molecule },
+            conformer_results: value.conformer_results.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -10690,9 +10203,7 @@ struct MmffOptimizeMoleculeResult {
 impl From<cosmolkit_core::MmffOptimizeMoleculeResult> for MmffOptimizeMoleculeResult {
     fn from(value: cosmolkit_core::MmffOptimizeMoleculeResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
+            molecule: Molecule { inner: value.molecule },
             needs_more: value.needs_more,
         }
     }
@@ -10769,14 +10280,8 @@ struct MmffOptimizeMoleculeConfsResult {
 impl From<cosmolkit_core::MmffOptimizeMoleculeConfsResult> for MmffOptimizeMoleculeConfsResult {
     fn from(value: cosmolkit_core::MmffOptimizeMoleculeConfsResult) -> Self {
         Self {
-            molecule: Molecule {
-                inner: value.molecule,
-            },
-            conformer_results: value
-                .conformer_results
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            molecule: Molecule { inner: value.molecule },
+            conformer_results: value.conformer_results.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -11020,9 +10525,7 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
     }
     let schema: u16 = dict
         .get_item("pickle_schema")?
-        .ok_or_else(|| {
-            PyValueError::new_err("invalid Molecule pickle state: missing pickle_schema")
-        })?
+        .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing pickle_schema"))?
         .extract()?;
     if schema != 1 {
         return Err(PyValueError::new_err(format!(
@@ -11041,9 +10544,9 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
     let payload = dict
         .get_item("payload")?
         .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing payload"))?;
-    let payload = payload.cast::<PyBytes>().map_err(|_| {
-        PyValueError::new_err("invalid Molecule pickle state: payload must be bytes")
-    })?;
+    let payload = payload
+        .cast::<PyBytes>()
+        .map_err(|_| PyValueError::new_err("invalid Molecule pickle state: payload must be bytes"))?;
     let inner = cosmolkit_core::mol_from_binary(payload.as_bytes()).map_err(pickle_pyerr)?;
     Ok(Molecule { inner })
 }
@@ -11054,11 +10557,7 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
 Compile SMARTS text into a query-bearing ``Molecule``.
 "#]
 #[pyo3(signature = (smarts, merge_hs=false, replacements=None))]
-fn parse_smarts(
-    smarts: &str,
-    merge_hs: bool,
-    replacements: Option<BTreeMap<String, String>>,
-) -> PyResult<Molecule> {
+fn parse_smarts(smarts: &str, merge_hs: bool, replacements: Option<BTreeMap<String, String>>) -> PyResult<Molecule> {
     // RDKit✔️✔️: ROMol *MolFromSmarts(python::object ismarts, bool mergeHs,
     // RDKit✔️✔️:                      python::dict replDict) {
     // RDKit✔️✔️:   std::map<std::string, std::string> replacements;
@@ -11086,11 +10585,8 @@ fn parse_smarts(
         replacements: replacements.unwrap_or_default(),
         ..Default::default()
     };
-    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params)
-        .map_err(smarts_parse_pyerr)?;
-    Ok(Molecule {
-        inner: inner.into(),
-    })
+    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params).map_err(smarts_parse_pyerr)?;
+    Ok(Molecule { inner: inner.into() })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -11109,11 +10605,8 @@ fn parse_smarts_with_params(smarts: &str, params: &SmartsParserParams) -> PyResu
     // Complexity review: both convert one Python string and invoke the same
     // canonical compiler once. The cloned parameter value is bounded by the
     // replacements map and introduces no query graph copy or alternate parser.
-    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params.inner)
-        .map_err(smarts_parse_pyerr)?;
-    Ok(Molecule {
-        inner: inner.into(),
-    })
+    let inner = cosmolkit_core::smarts_parse::mol_from_smarts(smarts, &params.inner).map_err(smarts_parse_pyerr)?;
+    Ok(Molecule { inner: inner.into() })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -11260,9 +10753,7 @@ fn py_substruct_helper(
     // RDKit✔️✔️: }
     // Complexity review: GIL release and one core matcher call add constant
     // overhead; result allocation and callback dispatch match the source path.
-    Python::attach(|py| {
-        py.detach(|| cosmolkit_core::get_substruct_matches_with_params(mol, query, params))
-    })
+    Python::attach(|py| py.detach(|| cosmolkit_core::get_substruct_matches_with_params(mol, query, params)))
 }
 
 fn help_has_substruct_match(
@@ -11523,32 +11014,22 @@ fn get_substruct_matches_with_params(
         // call Python once per completed candidate. Rust clones Molecule's
         // Arc-backed blocks cheaply and preserves callback exceptions.
         let callback_error = Arc::clone(&callback_error);
-        Arc::new(
-            move |matched: &cosmolkit_core::Molecule, atom_ids: &[usize]| {
-                Python::attach(|py| {
-                    let result = Py::new(
-                        py,
-                        Molecule {
-                            inner: matched.clone(),
-                        },
-                    )
-                    .and_then(|py_molecule| {
-                        callback
-                            .call1(py, (py_molecule, atom_ids.to_vec()))
-                            .and_then(|value| value.extract::<bool>(py))
-                    });
-                    match result {
-                        Ok(accepted) => accepted,
-                        Err(error) => {
-                            *callback_error
-                                .lock()
-                                .expect("callback error mutex poisoned") = Some(error);
-                            false
-                        }
+        Arc::new(move |matched: &cosmolkit_core::Molecule, atom_ids: &[usize]| {
+            Python::attach(|py| {
+                let result = Py::new(py, Molecule { inner: matched.clone() }).and_then(|py_molecule| {
+                    callback
+                        .call1(py, (py_molecule, atom_ids.to_vec()))
+                        .and_then(|value| value.extract::<bool>(py))
+                });
+                match result {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        *callback_error.lock().expect("callback error mutex poisoned") = Some(error);
+                        false
                     }
-                })
-            },
-        ) as cosmolkit_core::ExtraFinalCheck
+                }
+            })
+        }) as cosmolkit_core::ExtraFinalCheck
     });
     let extra_atom_check = atom_match.map(|callback| {
         // RDKit✔️❌: template <typename T>
@@ -11578,22 +11059,17 @@ fn get_substruct_matches_with_params(
                   _target_molecule: &cosmolkit_core::Molecule,
                   target_atom: &cosmolkit_core::Atom| {
                 Python::attach(|py| {
-                    let result = Py::new(py, query_atoms[query_atom.id().index()].clone())
-                        .and_then(|py_query_atom| {
-                            Py::new(py, target_atoms[target_atom.id().index()].clone()).and_then(
-                                |py_target_atom| {
-                                    callback
-                                        .call1(py, (py_query_atom, py_target_atom))
-                                        .and_then(|value| value.extract::<bool>(py))
-                                },
-                            )
-                        });
+                    let result = Py::new(py, query_atoms[query_atom.id().index()].clone()).and_then(|py_query_atom| {
+                        Py::new(py, target_atoms[target_atom.id().index()].clone()).and_then(|py_target_atom| {
+                            callback
+                                .call1(py, (py_query_atom, py_target_atom))
+                                .and_then(|value| value.extract::<bool>(py))
+                        })
+                    });
                     match result {
                         Ok(accepted) => accepted,
                         Err(error) => {
-                            let mut stored = callback_error
-                                .lock()
-                                .expect("callback error mutex poisoned");
+                            let mut stored = callback_error.lock().expect("callback error mutex poisoned");
                             if stored.is_none() {
                                 *stored = Some(error);
                             }
@@ -11616,22 +11092,17 @@ fn get_substruct_matches_with_params(
         Arc::new(
             move |query_bond: &cosmolkit_core::Bond, target_bond: &cosmolkit_core::Bond| {
                 Python::attach(|py| {
-                    let result = Py::new(py, query_bonds[query_bond.id().index()].clone())
-                        .and_then(|py_query_bond| {
-                            Py::new(py, target_bonds[target_bond.id().index()].clone()).and_then(
-                                |py_target_bond| {
-                                    callback
-                                        .call1(py, (py_query_bond, py_target_bond))
-                                        .and_then(|value| value.extract::<bool>(py))
-                                },
-                            )
-                        });
+                    let result = Py::new(py, query_bonds[query_bond.id().index()].clone()).and_then(|py_query_bond| {
+                        Py::new(py, target_bonds[target_bond.id().index()].clone()).and_then(|py_target_bond| {
+                            callback
+                                .call1(py, (py_query_bond, py_target_bond))
+                                .and_then(|value| value.extract::<bool>(py))
+                        })
+                    });
                     match result {
                         Ok(accepted) => accepted,
                         Err(error) => {
-                            let mut stored = callback_error
-                                .lock()
-                                .expect("callback error mutex poisoned");
+                            let mut stored = callback_error.lock().expect("callback error mutex poisoned");
                             if stored.is_none() {
                                 *stored = Some(error);
                             }
@@ -11656,11 +11127,7 @@ fn get_substruct_matches_with_params(
         .into_iter()
         .map(Into::into)
         .collect();
-    if let Some(error) = callback_error
-        .lock()
-        .expect("callback error mutex poisoned")
-        .take()
-    {
+    if let Some(error) = callback_error.lock().expect("callback error mutex poisoned").take() {
         return Err(error);
     }
     Ok(matches)
@@ -11744,11 +11211,7 @@ The chemical graph and user-visible molecule properties are not mutated. The
 source-compatible computed Crippen descriptor cache may be populated on the
 input molecule, matching RDKit's property-cache behavior.
 "#]
-fn calc_crippen_descriptors(
-    molecule: PyRef<'_, Molecule>,
-    include_hs: bool,
-    force: bool,
-) -> PyResult<(f64, f64)> {
+fn calc_crippen_descriptors(molecule: PyRef<'_, Molecule>, include_hs: bool, force: bool) -> PyResult<(f64, f64)> {
     cosmolkit_core::calc_crippen_descriptors(&molecule.inner, include_hs, force)
         .map(|values| (values.logp, values.molar_refractivity))
         .map_err(descriptor_pyerr)
@@ -11874,10 +11337,7 @@ python_fixed_chi_descriptor!(calc_chi_2n);
 python_fixed_chi_descriptor!(calc_chi_3n);
 python_fixed_chi_descriptor!(calc_chi_4n);
 
-python_infallible_float_descriptor!(
-    calc_hall_kier_alpha,
-    "Return the Hall-Kier alpha descriptor."
-);
+python_infallible_float_descriptor!(calc_hall_kier_alpha, "Return the Hall-Kier alpha descriptor.");
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
@@ -11911,35 +11371,20 @@ python_count_descriptor!(calc_num_rings, "Return the SSSR ring count.");
 python_count_descriptor!(calc_num_heterocycles, "Return the heterocycle count.");
 python_count_descriptor!(calc_num_saturated_rings, "Return the saturated-ring count.");
 python_count_descriptor!(calc_num_aliphatic_rings, "Return the aliphatic-ring count.");
-python_count_descriptor!(
-    calc_num_aromatic_heterocycles,
-    "Return the aromatic heterocycle count."
-);
-python_count_descriptor!(
-    calc_num_aromatic_carbocycles,
-    "Return the aromatic carbocycle count."
-);
+python_count_descriptor!(calc_num_aromatic_heterocycles, "Return the aromatic heterocycle count.");
+python_count_descriptor!(calc_num_aromatic_carbocycles, "Return the aromatic carbocycle count.");
 python_count_descriptor!(
     calc_num_aliphatic_heterocycles,
     "Return the aliphatic heterocycle count."
 );
-python_count_descriptor!(
-    calc_num_aliphatic_carbocycles,
-    "Return the aliphatic carbocycle count."
-);
+python_count_descriptor!(calc_num_aliphatic_carbocycles, "Return the aliphatic carbocycle count.");
 python_count_descriptor!(
     calc_num_saturated_heterocycles,
     "Return the saturated heterocycle count."
 );
-python_count_descriptor!(
-    calc_num_saturated_carbocycles,
-    "Return the saturated carbocycle count."
-);
+python_count_descriptor!(calc_num_saturated_carbocycles, "Return the saturated carbocycle count.");
 python_count_descriptor!(calc_num_spiro_atoms, "Return the spiro-atom count.");
-python_count_descriptor!(
-    calc_num_bridgehead_atoms,
-    "Return the bridgehead-atom count."
-);
+python_count_descriptor!(calc_num_bridgehead_atoms, "Return the bridgehead-atom count.");
 python_count_descriptor!(
     calc_num_atom_stereo_centers,
     "Return the number of possible atom stereocenters."
@@ -11975,29 +11420,18 @@ fn calc_labute_asa_contributions(
     include_hydrogens: bool,
     force: bool,
 ) -> (f64, Vec<f64>, f64) {
-    let values =
-        cosmolkit_core::calc_labute_asa_contributions(&molecule.inner, include_hydrogens, force);
-    (
-        values.asa,
-        values.atom_contributions,
-        values.hydrogen_contribution,
-    )
+    let values = cosmolkit_core::calc_labute_asa_contributions(&molecule.inner, include_hydrogens, force);
+    (values.asa, values.atom_contributions, values.hydrogen_contribution)
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (molecule, bins=None, force=false))]
 #[doc = "Return the SlogP-VSA vector using default or caller-provided bin boundaries."]
-fn calc_slogp_vsa(
-    molecule: PyRef<'_, Molecule>,
-    bins: Option<Vec<f64>>,
-    force: bool,
-) -> PyResult<Vec<f64>> {
+fn calc_slogp_vsa(molecule: PyRef<'_, Molecule>, bins: Option<Vec<f64>>, force: bool) -> PyResult<Vec<f64>> {
     match bins {
         Some(bins) => cosmolkit_core::calc_slogp_vsa_with_bins(&molecule.inner, &bins, force),
-        None => {
-            cosmolkit_core::calc_slogp_vsa(&molecule.inner, force).map(|values| values.to_vec())
-        }
+        None => cosmolkit_core::calc_slogp_vsa(&molecule.inner, force).map(|values| values.to_vec()),
     }
     .map_err(descriptor_pyerr)
 }
@@ -12006,11 +11440,7 @@ fn calc_slogp_vsa(
 #[pyfunction]
 #[pyo3(signature = (molecule, bins=None, force=false))]
 #[doc = "Return the SMR-VSA vector using default or caller-provided bin boundaries."]
-fn calc_smr_vsa(
-    molecule: PyRef<'_, Molecule>,
-    bins: Option<Vec<f64>>,
-    force: bool,
-) -> PyResult<Vec<f64>> {
+fn calc_smr_vsa(molecule: PyRef<'_, Molecule>, bins: Option<Vec<f64>>, force: bool) -> PyResult<Vec<f64>> {
     match bins {
         Some(bins) => cosmolkit_core::calc_smr_vsa_with_bins(&molecule.inner, &bins, force),
         None => cosmolkit_core::calc_smr_vsa(&molecule.inner, force).map(|values| values.to_vec()),
@@ -12062,9 +11492,7 @@ fn get_element_info(atomic_number: u8) -> PyResult<PyElementInfo> {
             "atomic number {atomic_number} is outside the Element domain 0..=118"
         ))
     })?;
-    Ok(PyElementInfo {
-        inner: element.info(),
-    })
+    Ok(PyElementInfo { inner: element.info() })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
@@ -12094,9 +11522,7 @@ Return Gemmi-derived tabulated residue information by table index.
 "#]
 fn get_residue_info(idx: usize) -> PyResult<PyResidueInfo> {
     let Some(inner) = cosmolkit_core::get_residue_info_checked(idx) else {
-        return Err(PyIndexError::new_err(format!(
-            "residue info index {idx} out of range"
-        )));
+        return Err(PyIndexError::new_err(format!("residue info index {idx} out of range")));
     };
     Ok(PyResidueInfo { inner })
 }
@@ -12120,14 +11546,10 @@ Expand a deprecated Gemmi protein one-letter residue code alias.
 fn expand_protein_one_letter(code: &str) -> PyResult<Option<String>> {
     let mut chars = code.chars();
     let Some(c) = chars.next() else {
-        return Err(PyValueError::new_err(
-            "code must contain exactly one character",
-        ));
+        return Err(PyValueError::new_err("code must contain exactly one character"));
     };
     if chars.next().is_some() {
-        return Err(PyValueError::new_err(
-            "code must contain exactly one character",
-        ));
+        return Err(PyValueError::new_err("code must contain exactly one character"));
     }
     Ok(cosmolkit_core::expand_protein_one_letter(c).map(str::to_string))
 }
@@ -12167,14 +11589,10 @@ fn expand_one_letter(
 ) -> PyResult<Option<String>> {
     let mut chars = code.chars();
     let Some(c) = chars.next() else {
-        return Err(PyValueError::new_err(
-            "code must contain exactly one character",
-        ));
+        return Err(PyValueError::new_err("code must contain exactly one character"));
     };
     if chars.next().is_some() {
-        return Err(PyValueError::new_err(
-            "code must contain exactly one character",
-        ));
+        return Err(PyValueError::new_err("code must contain exactly one character"));
     }
     let kind = residue_info_kind_from_code(kind)?;
     Ok(cosmolkit_core::expand_one_letter(c, kind).map(str::to_string))
@@ -12248,14 +11666,9 @@ fn get_topological_torsion_generator(
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
-fn topological_torsion_generator_from_json(
-    json: &str,
-) -> PyResult<PyTopologicalTorsionFingerprintGenerator> {
-    let generator =
-        cosmolkit_core::fingerprint::generatorFromJSON(json).map_err(fingerprint_pyerr)?;
-    let cosmolkit_core::fingerprint::TypedFingerprintGenerator::TopologicalTorsion(generator) =
-        generator
-    else {
+fn topological_torsion_generator_from_json(json: &str) -> PyResult<PyTopologicalTorsionFingerprintGenerator> {
+    let generator = cosmolkit_core::fingerprint::generatorFromJSON(json).map_err(fingerprint_pyerr)?;
+    let cosmolkit_core::fingerprint::TypedFingerprintGenerator::TopologicalTorsion(generator) = generator else {
         return Err(PyValueError::new_err(
             "JSON does not describe a Topological Torsion fingerprint generator",
         ));
@@ -12316,12 +11729,8 @@ fn get_topological_torsion_fingerprint(
         4,
         include_chirality,
     );
-    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
-        .map_err(fingerprint_pyerr)?
-    {
-        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => {
-            Ok(PySparseCountFingerprint { inner })
-        }
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params).map_err(fingerprint_pyerr)? {
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => Ok(PySparseCountFingerprint { inner }),
         cosmolkit_core::TopologicalTorsionLegacyResult::Bit(_) => Err(PyRuntimeError::new_err(
             "legacy unfolded Topological Torsion returned an unexpected bit vector",
         )),
@@ -12354,12 +11763,8 @@ fn get_hashed_topological_torsion_fingerprint(
         4,
         include_chirality,
     );
-    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
-        .map_err(fingerprint_pyerr)?
-    {
-        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => {
-            Ok(PySparseCountFingerprint { inner })
-        }
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params).map_err(fingerprint_pyerr)? {
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => Ok(PySparseCountFingerprint { inner }),
         cosmolkit_core::TopologicalTorsionLegacyResult::Bit(_) => Err(PyRuntimeError::new_err(
             "legacy hashed-count Topological Torsion returned an unexpected bit vector",
         )),
@@ -12393,15 +11798,11 @@ fn get_hashed_topological_torsion_fingerprint_as_bit_vect(
         n_bits_per_entry,
         include_chirality,
     );
-    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
-        .map_err(fingerprint_pyerr)?
-    {
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params).map_err(fingerprint_pyerr)? {
         cosmolkit_core::TopologicalTorsionLegacyResult::Bit(inner) => Ok(Fingerprint { inner }),
-        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(_) => {
-            Err(PyRuntimeError::new_err(
-                "legacy hashed-bit Topological Torsion returned an unexpected count vector",
-            ))
-        }
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(_) => Err(PyRuntimeError::new_err(
+            "legacy hashed-bit Topological Torsion returned an unexpected count vector",
+        )),
     }
 }
 
@@ -12429,9 +11830,7 @@ fn get_atom_code(
 }
 
 fn atom_pair_symbol(type_index: usize) -> String {
-    let atomic_number = cosmolkit_core::ATOM_PAIR_ATOM_NUMBER_TYPES
-        .get(type_index)
-        .copied();
+    let atomic_number = cosmolkit_core::ATOM_PAIR_ATOM_NUMBER_TYPES.get(type_index).copied();
     atomic_number
         .and_then(|value| u8::try_from(value).ok())
         .and_then(cosmolkit_core::Element::from_atomic_number)
@@ -12520,12 +11919,7 @@ fn explain_atom_code<'py>(
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (molecule, path, size, atom_codes=None))]
-fn py_score_path(
-    molecule: &Molecule,
-    path: Vec<usize>,
-    size: usize,
-    atom_codes: Option<Vec<u32>>,
-) -> PyResult<u64> {
+fn py_score_path(molecule: &Molecule, path: Vec<usize>, size: usize, atom_codes: Option<Vec<u32>>) -> PyResult<u64> {
     // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 31-75.
     // RDKit✔️✔️: codes = [None] * size
     // RDKit✔️✔️: for i in range(size):
@@ -12539,9 +11933,7 @@ fn py_score_path(
         return Err(PyValueError::new_err("size must be greater than zero"));
     }
     if path.len() < size {
-        return Err(PyValueError::new_err(
-            "path must contain at least size atom indices",
-        ));
+        return Err(PyValueError::new_err("path must contain at least size atom indices"));
     }
     let atom_codes = normalize_fingerprint_indices(atom_codes);
     if atom_codes
@@ -12559,17 +11951,11 @@ fn py_score_path(
                 "atom index {atom_index} is out of range"
             )));
         }
-        let subtract = if position == 0 || position + 1 == size {
-            1
-        } else {
-            2
-        };
+        let subtract = if position == 0 || position + 1 == size { 1 } else { 2 };
         let code = if let Some(atom_codes) = atom_codes.as_ref() {
             atom_codes[atom_index]
                 .checked_sub(subtract)
-                .ok_or_else(|| {
-                    PyValueError::new_err("atom code is smaller than the path branch subtraction")
-                })?
+                .ok_or_else(|| PyValueError::new_err("atom code is smaller than the path branch subtraction"))?
         } else {
             cosmolkit_core::get_atom_code(
                 &molecule.inner,
@@ -12592,11 +11978,7 @@ fn py_score_path(
     imports = ("builtins")
 ))]
 #[pyo3(signature = (score, size=4))]
-fn explain_path_score<'py>(
-    py: Python<'py>,
-    mut score: u64,
-    size: usize,
-) -> PyResult<Bound<'py, PyTuple>> {
+fn explain_path_score<'py>(py: Python<'py>, mut score: u64, size: usize) -> PyResult<Bound<'py, PyTuple>> {
     // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 78-150.
     // RDKit✔️✔️: codeSize = rdMolDescriptors.AtomPairsParameters.codeSize
     // RDKit✔️✔️: codeMask = (1 << codeSize) - 1
@@ -12609,11 +11991,7 @@ fn explain_path_score<'py>(
     let code_mask = (1_u64 << cosmolkit_core::ATOM_PAIR_CODE_SIZE) - 1;
     let mut entries = Vec::with_capacity(size);
     for position in 0..size {
-        let subtract = if position == 0 || position + 1 == size {
-            1
-        } else {
-            2
-        };
+        let subtract = if position == 0 || position + 1 == size { 1 } else { 2 };
         let code = (score & code_mask) as u32;
         score >>= cosmolkit_core::ATOM_PAIR_CODE_SIZE;
         let (symbol, branches, pi_electrons, _) = explain_atom_code_fields(code, subtract, false);
@@ -12625,22 +12003,17 @@ fn explain_path_score<'py>(
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (molecule, torsion_atom_count=4))]
-fn get_topological_torsion_fingerprint_as_ids(
-    molecule: &Molecule,
-    torsion_atom_count: u32,
-) -> PyResult<Vec<u64>> {
+fn get_topological_torsion_fingerprint_as_ids(molecule: &Molecule, torsion_atom_count: u32) -> PyResult<Vec<u64>> {
     // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 153-159.
     // RDKit✔️✔️: nonZeroElements = GetTopologicalTorsionFingerprint(mol, targetSize).GetNonzeroElements()
     // RDKit✔️✔️: frequencies = sorted(nonZeroElements.items())
     // RDKit✔️✔️: res = []
     // RDKit✔️✔️: for k, v in frequencies: res.extend([k] * v)
-    let fingerprint =
-        get_topological_torsion_fingerprint(molecule, torsion_atom_count, None, None, None, false)?;
+    let fingerprint = get_topological_torsion_fingerprint(molecule, torsion_atom_count, None, None, None, false)?;
     let mut ids = Vec::new();
     for (&bit_id, &count) in fingerprint.inner.nonzero_elements() {
-        let count = usize::try_from(count).map_err(|_| {
-            PyValueError::new_err("Topological Torsion count cannot be expanded as ids")
-        })?;
+        let count = usize::try_from(count)
+            .map_err(|_| PyValueError::new_err("Topological Torsion count cannot be expanded as ids"))?;
         ids.extend(std::iter::repeat_n(bit_id, count));
     }
     Ok(ids)
@@ -12790,10 +12163,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calc_chi_3n, m)?)?;
     m.add_function(wrap_pyfunction!(calc_chi_4n, m)?)?;
     m.add_function(wrap_pyfunction!(calc_hall_kier_alpha, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        calc_hall_kier_alpha_with_contributions,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(calc_hall_kier_alpha_with_contributions, m)?)?;
     m.add_function(wrap_pyfunction!(calc_kappa_1, m)?)?;
     m.add_function(wrap_pyfunction!(calc_kappa_2, m)?)?;
     m.add_function(wrap_pyfunction!(calc_kappa_3, m)?)?;
@@ -12817,10 +12187,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calc_num_spiro_atoms, m)?)?;
     m.add_function(wrap_pyfunction!(calc_num_bridgehead_atoms, m)?)?;
     m.add_function(wrap_pyfunction!(calc_num_atom_stereo_centers, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        calc_num_unspecified_atom_stereo_centers,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(calc_num_unspecified_atom_stereo_centers, m)?)?;
     m.add_function(wrap_pyfunction!(calc_mqns, m)?)?;
     m.add_function(wrap_pyfunction!(calc_labute_asa, m)?)?;
     m.add_function(wrap_pyfunction!(calc_labute_asa_contributions, m)?)?;
@@ -12860,15 +12227,9 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
     m.add_function(wrap_pyfunction!(inchi_to_key, m)?)?;
     m.add_function(wrap_pyfunction!(get_topological_torsion_generator, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        topological_torsion_generator_from_json,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(topological_torsion_generator_from_json, m)?)?;
     m.add_function(wrap_pyfunction!(get_topological_torsion_fingerprint, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        get_hashed_topological_torsion_fingerprint,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(get_hashed_topological_torsion_fingerprint, m)?)?;
     m.add_function(wrap_pyfunction!(
         get_hashed_topological_torsion_fingerprint_as_bit_vect,
         m
@@ -12877,10 +12238,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(explain_atom_code, m)?)?;
     m.add_function(wrap_pyfunction!(py_score_path, m)?)?;
     m.add_function(wrap_pyfunction!(explain_path_score, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        get_topological_torsion_fingerprint_as_ids,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(get_topological_torsion_fingerprint_as_ids, m)?)?;
     confseq_py::add_confseq_module(m)?;
     Ok(())
 }

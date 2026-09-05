@@ -26,15 +26,14 @@ mod source;
 
 pub use source::rdkit::inchi::{
     AdapterAtom as InchiAtom, AdapterBond as InchiBond, AdapterDiagnostic as InchiDiagnostic,
-    AdapterDiagnosticLevel as InchiDiagnosticLevel, AdapterGraphError as InchiGraphError,
-    AdapterMol as InchiMolecule, AdapterToolkitError as InchiToolkitError,
-    BondDirection as InchiBondDirection, BondStereo as InchiBondStereo, BondType as InchiBondType,
-    ChiralTag as InchiChiralTag, InchiToMolToolkit, MolToInchiToolkit,
+    AdapterDiagnosticLevel as InchiDiagnosticLevel, AdapterGraphError as InchiGraphError, AdapterMol as InchiMolecule,
+    AdapterToolkitError as InchiToolkitError, BondDirection as InchiBondDirection, BondStereo as InchiBondStereo,
+    BondType as InchiBondType, ChiralTag as InchiChiralTag, InchiToMolToolkit, MolToInchiToolkit,
 };
 
 use source::rdkit::inchi::{
-    InchiToInchiKeyError, InchiToMolError, MolToInchiError, MolToInchiKeyError,
-    SourceInchiGenerationEngine, SourceInchiKeyEngine, SourceInchiStructureEngine,
+    InchiToInchiKeyError, InchiToMolError, MolToInchiError, MolToInchiKeyError, SourceInchiGenerationEngine,
+    SourceInchiKeyEngine, SourceInchiStructureEngine,
 };
 use source_types::{SourceHeap, SourceHeapError};
 
@@ -122,10 +121,7 @@ fn source_error(operation: &'static str, error: SourceHeapError) -> InchiError {
     }
 }
 
-fn toolkit_error(
-    operation: &'static str,
-    error: source::rdkit::inchi::AdapterToolkitError,
-) -> InchiError {
+fn toolkit_error(operation: &'static str, error: source::rdkit::inchi::AdapterToolkitError) -> InchiError {
     InchiError {
         operation,
         kind: if error.kind == "MolSanitizeException" {
@@ -216,14 +212,9 @@ pub fn mol_to_inchi(
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiGenerationEngine::new(&mut heap);
     let mut return_values = source::rdkit::inchi::ExtraInchiReturnValues::default();
-    let output = source::rdkit::inchi::mol_to_inchi(
-        &mut engine,
-        toolkit,
-        molecule,
-        &mut return_values,
-        options.as_deref(),
-    )
-    .map_err(|error| generation_error("mol_to_inchi", error))?;
+    let output =
+        source::rdkit::inchi::mol_to_inchi(&mut engine, toolkit, molecule, &mut return_values, options.as_deref())
+            .map_err(|error| generation_error("mol_to_inchi", error))?;
     Ok(MolToInchiOutput {
         inchi: output.inchi,
         return_values: InchiReturnValues {
@@ -289,15 +280,9 @@ pub fn mol_from_inchi(
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiStructureEngine::new(&mut heap);
     let mut return_values = source::rdkit::inchi::ExtraInchiReturnValues::default();
-    let output = source::rdkit::inchi::inchi_to_mol(
-        &mut engine,
-        toolkit,
-        inchi,
-        &mut return_values,
-        sanitize,
-        remove_hs,
-    )
-    .map_err(|error| structure_error("mol_from_inchi", error))?;
+    let output =
+        source::rdkit::inchi::inchi_to_mol(&mut engine, toolkit, inchi, &mut return_values, sanitize, remove_hs)
+            .map_err(|error| structure_error("mol_from_inchi", error))?;
     Ok(MolFromInchiOutput {
         molecule: output.molecule,
         return_values: InchiReturnValues {
@@ -378,10 +363,7 @@ mod scalar_api_tests {
     }
 
     impl MolToInchiToolkit for ScalarToolkit {
-        fn needs_update_property_cache(
-            &mut self,
-            _molecule: &InchiMolecule,
-        ) -> Result<bool, InchiToolkitError> {
+        fn needs_update_property_cache(&mut self, _molecule: &InchiMolecule) -> Result<bool, InchiToolkitError> {
             if self.fail_generation {
                 return Err(toolkit_failure("needs_update_property_cache"));
             }
@@ -397,11 +379,7 @@ mod scalar_api_tests {
             Ok(())
         }
 
-        fn kekulize(
-            &mut self,
-            _molecule: &mut InchiMolecule,
-            mark_atoms_bonds: bool,
-        ) -> Result<(), InchiToolkitError> {
+        fn kekulize(&mut self, _molecule: &mut InchiMolecule, mark_atoms_bonds: bool) -> Result<(), InchiToolkitError> {
             assert!(!mark_atoms_bonds);
             Ok(())
         }
@@ -416,11 +394,7 @@ mod scalar_api_tests {
             average_weight(atomic_number).ok_or_else(|| toolkit_failure("atomic_weight"))
         }
 
-        fn total_num_hydrogens(
-            &mut self,
-            molecule: &InchiMolecule,
-            atom_index: u32,
-        ) -> Result<u32, InchiToolkitError> {
+        fn total_num_hydrogens(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
             molecule
                 .atoms()
                 .get(atom_index as usize)
@@ -436,17 +410,11 @@ mod scalar_api_tests {
             Ok(0)
         }
 
-        fn total_degree(
-            &mut self,
-            molecule: &InchiMolecule,
-            atom_index: u32,
-        ) -> Result<u32, InchiToolkitError> {
+        fn total_degree(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
             Ok(molecule
                 .bonds()
                 .iter()
-                .filter(|bond| {
-                    bond.begin_atom_index() == atom_index || bond.end_atom_index() == atom_index
-                })
+                .filter(|bond| bond.begin_atom_index() == atom_index || bond.end_atom_index() == atom_index)
                 .count() as u32)
         }
     }
@@ -469,24 +437,15 @@ mod scalar_api_tests {
             Ok(())
         }
 
-        fn assign_atom_cip_ranks(
-            &mut self,
-            molecule: &mut InchiMolecule,
-        ) -> Result<Vec<u32>, InchiToolkitError> {
+        fn assign_atom_cip_ranks(&mut self, molecule: &mut InchiMolecule) -> Result<Vec<u32>, InchiToolkitError> {
             Ok((0..molecule.atoms().len() as u32).collect())
         }
 
-        fn remove_hydrogens(
-            &mut self,
-            _molecule: &mut InchiMolecule,
-        ) -> Result<(), InchiToolkitError> {
+        fn remove_hydrogens(&mut self, _molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
             Ok(())
         }
 
-        fn sanitize_molecule(
-            &mut self,
-            _molecule: &mut InchiMolecule,
-        ) -> Result<(), InchiToolkitError> {
+        fn sanitize_molecule(&mut self, _molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
             Ok(())
         }
 
@@ -566,8 +525,7 @@ mod scalar_api_tests {
         )
         .unwrap();
         let before = molecule.clone();
-        let output =
-            mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone")).unwrap();
+        let output = mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone")).unwrap();
 
         assert_eq!(molecule, before);
         assert_eq!(output.return_values.return_code, 0);
@@ -580,20 +538,9 @@ mod scalar_api_tests {
     fn inchi_core_scalar_api__generation_preserves_single_center_relative_and_racemic_stereo() {
         let molecule = bromochlorofluoromethane(InchiChiralTag::TetrahedralCw);
 
-        let absolute =
-            mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone")).unwrap();
-        let relative = mol_to_inchi(
-            &mut ScalarToolkit::default(),
-            &molecule,
-            Some(b"-AuxNone -SRel"),
-        )
-        .unwrap();
-        let racemic = mol_to_inchi(
-            &mut ScalarToolkit::default(),
-            &molecule,
-            Some(b"-AuxNone -SRac"),
-        )
-        .unwrap();
+        let absolute = mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone")).unwrap();
+        let relative = mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone -SRel")).unwrap();
+        let racemic = mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone -SRac")).unwrap();
 
         assert_eq!(absolute.inchi, b"InChI=1S/CHBrClF/c2-1(3)4/h1H/t1-/m1/s1");
         assert_eq!(relative.inchi, b"InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s2");
@@ -602,12 +549,9 @@ mod scalar_api_tests {
 
     #[test]
     fn inchi_core_scalar_api__generation_warning_and_structured_errors() {
-        let chiral = InchiMolecule::try_from_graph(
-            vec![carbon(0, InchiChiralTag::TetrahedralCw)],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap();
+        let chiral =
+            InchiMolecule::try_from_graph(vec![carbon(0, InchiChiralTag::TetrahedralCw)], Vec::new(), Vec::new())
+                .unwrap();
         let warning = mol_to_inchi(&mut ScalarToolkit::default(), &chiral, None).unwrap();
         assert_eq!(warning.diagnostics.len(), 1);
         assert_eq!(warning.diagnostics[0].level, InchiDiagnosticLevel::Warning);
@@ -622,19 +566,11 @@ mod scalar_api_tests {
             vec![Vec::new()],
         )
         .unwrap();
-        let error =
-            mol_to_inchi(&mut ScalarToolkit::default(), &invalid_conformer, None).unwrap_err();
+        let error = mol_to_inchi(&mut ScalarToolkit::default(), &invalid_conformer, None).unwrap_err();
         assert_eq!(error.operation, "mol_to_inchi");
         assert_eq!(error.kind, InchiErrorKind::InvalidInput);
 
-        let toolkit_error = mol_to_inchi(
-            &mut ScalarToolkit {
-                fail_generation: true,
-            },
-            &chiral,
-            None,
-        )
-        .unwrap_err();
+        let toolkit_error = mol_to_inchi(&mut ScalarToolkit { fail_generation: true }, &chiral, None).unwrap_err();
         assert_eq!(toolkit_error.kind, InchiErrorKind::Toolkit);
 
         assert_eq!(
@@ -659,12 +595,9 @@ mod scalar_api_tests {
         assert_eq!(invalid.atom_index, 1);
         assert_eq!(invalid.atom_count, 1);
 
-        let mut molecule = InchiMolecule::try_from_graph(
-            vec![carbon(0, InchiChiralTag::Unspecified)],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap();
+        let mut molecule =
+            InchiMolecule::try_from_graph(vec![carbon(0, InchiChiralTag::Unspecified)], Vec::new(), Vec::new())
+                .unwrap();
         let before = molecule.clone();
         assert!(
             molecule
@@ -681,17 +614,9 @@ mod scalar_api_tests {
     #[test]
     fn inchi_core_scalar_api__mol_from_inchi_preserves_isotope_and_stereo_fields() {
         let mut toolkit = ScalarToolkit::default();
-        let isotopic = mol_from_inchi(
-            &mut toolkit,
-            b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1",
-            true,
-            false,
-        )
-        .unwrap();
+        let isotopic = mol_from_inchi(&mut toolkit, b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", true, false).unwrap();
         assert_eq!(isotopic.return_values.return_code, 1);
-        let molecule = isotopic
-            .molecule
-            .expect("successful parse must return a graph");
+        let molecule = isotopic.molecule.expect("successful parse must return a graph");
         assert_eq!(molecule.atoms().len(), 4);
         assert_eq!(molecule.bonds().len(), 3);
         let center = &molecule.atoms()[0];
@@ -709,31 +634,17 @@ mod scalar_api_tests {
         const PHOSPHOSERINE: &[u8] =
             b"InChI=1S/C3H8NO6P/c4-2(3(5)6)1-10-11(7,8)9/h2H,1,4H2,(H,5,6)(H2,7,8,9)/t2-/m0/s1";
 
-        let unsanitized =
-            mol_from_inchi(&mut ScalarToolkit::default(), PHOSPHOSERINE, false, false)
-                .expect("source-defined phosphoserine InChI must parse");
-        let molecule = unsanitized
-            .molecule
-            .expect("successful parse must return a graph");
+        let unsanitized = mol_from_inchi(&mut ScalarToolkit::default(), PHOSPHOSERINE, false, false)
+            .expect("source-defined phosphoserine InChI must parse");
+        let molecule = unsanitized.molecule.expect("successful parse must return a graph");
         assert_eq!(molecule.atoms().len(), 12);
         assert_eq!(molecule.bonds().len(), 11);
         assert_eq!(
-            molecule
-                .atoms()
-                .iter()
-                .filter(|atom| atom.atomic_number == 1)
-                .count(),
+            molecule.atoms().iter().filter(|atom| atom.atomic_number == 1).count(),
             1
         );
 
-        assert_eq!(
-            molecule
-                .atoms()
-                .iter()
-                .map(|atom| atom.formal_charge)
-                .sum::<i32>(),
-            0
-        );
+        assert_eq!(molecule.atoms().iter().map(|atom| atom.formal_charge).sum::<i32>(), 0);
         assert!(matches!(
             molecule.atoms()[1].chiral_tag,
             InchiChiralTag::TetrahedralCw | InchiChiralTag::TetrahedralCcw
@@ -759,17 +670,11 @@ mod scalar_api_tests {
             false,
         )
         .expect("source-defined guanidinium alkaloid hydrochloride must parse");
-        let molecule = parsed
-            .molecule
-            .expect("successful parse must return a graph");
+        let molecule = parsed.molecule.expect("successful parse must return a graph");
         assert_eq!(molecule.atoms().len(), 35);
         assert_eq!(molecule.bonds().len(), 38);
         assert_eq!(
-            molecule
-                .atoms()
-                .iter()
-                .filter(|atom| atom.atomic_number == 1)
-                .count(),
+            molecule.atoms().iter().filter(|atom| atom.atomic_number == 1).count(),
             5
         );
     }

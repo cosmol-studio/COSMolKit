@@ -1,18 +1,15 @@
 //! Source-backed RDKit UFF atom typing helpers.
 
 use super::builder::{UffBuilderError, construct_force_field, select_uff_conformer_index};
-use super::params::{
-    AtomicParams, ParamCollection, RAD2DEG, UffAngle, UffBond, UffInv, UffParamError, UffTor,
-    UffVdw,
-};
+use super::params::{AtomicParams, ParamCollection, RAD2DEG, UffAngle, UffBond, UffInv, UffParamError, UffTor, UffVdw};
 use super::torsion_angle::calc_torsion_params;
 use super::utils::{
     UffUtilsError, calc_angle_force_constant, calc_bond_force_constant, calc_bond_rest_length,
     calc_inversion_coefficients, calc_nonbonded_depth, calc_nonbonded_minimum,
 };
 use crate::chemistry::valence::{
-    ValenceError, ValenceModel, assign_valence, bond_type_as_double,
-    periodic_table_outer_electrons, rdkit_default_valence, rdkit_element_symbol,
+    ValenceError, ValenceModel, assign_valence, bond_type_as_double, periodic_table_outer_electrons,
+    rdkit_default_valence, rdkit_element_symbol,
 };
 use crate::rings::RingFindingError;
 use crate::{Atom, Hybridization, Molecule};
@@ -44,9 +41,7 @@ pub enum UffPublicApiError {
     Missing3dConformer { conf_id: isize },
     #[error("UFF constructForceField conf_id must be >= -1, got {conf_id}")]
     InvalidConformerId { conf_id: isize },
-    #[error(
-        "UFF addTrigonalBipyramidAngles requires central atom parameters for atom {atom_index}"
-    )]
+    #[error("UFF addTrigonalBipyramidAngles requires central atom parameters for atom {atom_index}")]
     MissingTrigonalBipyramidCenterParams { atom_index: usize },
     #[error("UFF parameter length mismatch: atoms={atoms}, params={params}")]
     ParamsLengthMismatch { atoms: usize, params: usize },
@@ -141,12 +136,8 @@ fn public_error_from_atom_typer(err: UffAtomTyperError) -> UffPublicApiError {
 fn public_error_from_builder(err: UffBuilderError) -> UffPublicApiError {
     match err {
         UffBuilderError::EmptyMolecule => UffPublicApiError::EmptyMolecule,
-        UffBuilderError::Missing3dConformer { conf_id } => {
-            UffPublicApiError::Missing3dConformer { conf_id }
-        }
-        UffBuilderError::InvalidConformerId { conf_id } => {
-            UffPublicApiError::InvalidConformerId { conf_id }
-        }
+        UffBuilderError::Missing3dConformer { conf_id } => UffPublicApiError::Missing3dConformer { conf_id },
+        UffBuilderError::InvalidConformerId { conf_id } => UffPublicApiError::InvalidConformerId { conf_id },
         UffBuilderError::MissingTrigonalBipyramidCenterParams { atom_index } => {
             UffPublicApiError::MissingTrigonalBipyramidCenterParams { atom_index }
         }
@@ -154,9 +145,7 @@ fn public_error_from_builder(err: UffBuilderError) -> UffPublicApiError {
             UffPublicApiError::ParamsLengthMismatch { atoms, params }
         }
         UffBuilderError::RingFinding(err) => UffPublicApiError::RingFinding(err),
-        UffBuilderError::TorsionBondQuery(error) => {
-            UffPublicApiError::UnsupportedTorsionBondSmarts(error.to_string())
-        }
+        UffBuilderError::TorsionBondQuery(error) => UffPublicApiError::UnsupportedTorsionBondSmarts(error.to_string()),
         UffBuilderError::AtomTyper(err) => public_error_from_atom_typer(err),
         UffBuilderError::Valence(err) => UffPublicApiError::Valence(err),
         UffBuilderError::UffUtils(err) => UffPublicApiError::UffUtils(err),
@@ -217,9 +206,10 @@ pub fn get_uff_bond_stretch_params(
         }
     }
     let adjacency = &mol.topology_block().adjacency;
-    let bond = adjacency.neighbors_of(idx1).iter().find_map(|neighbor| {
-        (neighbor.atom_index == idx2).then_some(&mol.bonds()[neighbor.bond.index()])
-    });
+    let bond = adjacency
+        .neighbors_of(idx1)
+        .iter()
+        .find_map(|neighbor| (neighbor.atom_index == idx2).then_some(&mol.bonds()[neighbor.bond.index()]));
     // RDKit✔️❗:   bool res = bond != nullptr;
     let Some(bond) = bond else {
         return Ok(None);
@@ -353,14 +343,7 @@ pub fn get_uff_angle_bend_params(
     // RDKit✔️❗:     uffAngleBendParams.ka = UFF::Utils::calcAngleForceConstant(
     // RDKit✔️❗:         paramVect[1]->theta0, bondOrder12, bondOrder23, paramVect[0],
     // RDKit✔️❗:         paramVect[1], paramVect[2]);
-    let ka = calc_angle_force_constant(
-        param1.theta0,
-        bond_order12,
-        bond_order23,
-        &param0,
-        &param1,
-        &param2,
-    )?;
+    let ka = calc_angle_force_constant(param1.theta0, bond_order12, bond_order23, &param0, &param1, &param2)?;
     // RDKit✔️❗:   }
     // RDKit✔️❗:   return res;
     Ok(Some(UffAngle { ka, theta0 }))
@@ -397,9 +380,10 @@ pub fn get_uff_torsion_params(
         }
     }
     let adjacency = &mol.topology_block().adjacency;
-    let center_bond = adjacency.neighbors_of(idx2).iter().find_map(|neighbor| {
-        (neighbor.atom_index == idx3).then_some(&mol.bonds()[neighbor.bond.index()])
-    });
+    let center_bond = adjacency
+        .neighbors_of(idx2)
+        .iter()
+        .find_map(|neighbor| (neighbor.atom_index == idx3).then_some(&mol.bonds()[neighbor.bond.index()]));
     let Some(center_bond) = center_bond else {
         return Ok(None);
     };
@@ -556,9 +540,7 @@ pub fn get_uff_inversion_params(
             // RDKit✔️❗:                   (at2AtomicNum != 33) && (at2AtomicNum != 51) &&
             // RDKit✔️❗:                   (at2AtomicNum != 83)) ||
             // RDKit✔️❗:                  (atom->getDegree() != 3)));
-            if !matches!(at2_atomic_num, 6 | 7 | 8 | 15 | 33 | 51 | 83)
-                || adjacency.neighbors_of(idx[i]).len() != 3
-            {
+            if !matches!(at2_atomic_num, 6 | 7 | 8 | 15 | 33 | 51 | 83) || adjacency.neighbors_of(idx[i]).len() != 3 {
                 return Ok(None);
             }
             // RDKit✔️❗:       }
@@ -587,8 +569,7 @@ pub fn get_uff_inversion_params(
     // RDKit✔️❗:     auto invCoeffForceCon =
     // RDKit✔️❗:         UFF::Utils::calcInversionCoefficientsAndForceConstant(at2AtomicNum,
     // RDKit✔️❗:                                                               isBoundToSP2O);
-    let (k, _c0, _c1, _c2) =
-        calc_inversion_coefficients(i32::from(at2_atomic_num), is_bound_to_sp2_o);
+    let (k, _c0, _c1, _c2) = calc_inversion_coefficients(i32::from(at2_atomic_num), is_bound_to_sp2_o);
     // RDKit✔️❗:     uffInversionParams.K = std::get<0>(invCoeffForceCon);
     // RDKit✔️❗:   }
     // RDKit✔️❗:   return res;
@@ -597,11 +578,7 @@ pub fn get_uff_inversion_params(
     // END RDKIT CPP FUNCTION RDKit::UFF::getUFFInversionParams
 }
 
-pub fn get_uff_vdw_params(
-    mol: &Molecule,
-    idx1: usize,
-    idx2: usize,
-) -> Result<Option<UffVdw>, UffPublicApiError> {
+pub fn get_uff_vdw_params(mol: &Molecule, idx1: usize, idx2: usize) -> Result<Option<UffVdw>, UffPublicApiError> {
     // BEGIN RDKIT CPP FUNCTION RDKit::UFF::getUFFVdWParams (AtomTyper.cpp:713-733)
     // RDKit✔️❗: bool getUFFVdWParams(const ROMol &mol, unsigned int idx1, unsigned int idx2,
     // RDKit✔️❗:                      UFFVdW &uffVdWParams) {
@@ -1342,8 +1319,8 @@ pub(crate) fn get_atom_types_for_uff(
 mod tests {
     use crate::builder::MoleculeBuilder;
     use crate::chemistry::forcefield::uff::utils::{
-        calc_angle_force_constant, calc_bond_force_constant, calc_bond_rest_length,
-        calc_inversion_coefficients, calc_nonbonded_depth, calc_nonbonded_minimum,
+        calc_angle_force_constant, calc_bond_force_constant, calc_bond_rest_length, calc_inversion_coefficients,
+        calc_nonbonded_depth, calc_nonbonded_minimum,
     };
     use crate::{AtomId, AtomSpec, BondOrder, BondSpec, Conformer3D, Element};
 
@@ -1393,12 +1370,7 @@ mod tests {
         builder.build().expect("test molecule")
     }
 
-    fn bonded_pair(
-        first: AtomSpec,
-        second: AtomSpec,
-        order: BondOrder,
-        is_conjugated: bool,
-    ) -> Molecule {
+    fn bonded_pair(first: AtomSpec, second: AtomSpec, order: BondOrder, is_conjugated: bool) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(first);
         let a1 = builder.add_atom(second);
@@ -1417,9 +1389,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(first);
         let a1 = builder.add_atom(second);
-        builder
-            .add_bond(BondSpec::new(a0, a1, order))
-            .expect("test bond");
+        builder.add_bond(BondSpec::new(a0, a1, order)).expect("test bond");
         builder.add_3d_conformer(coords).expect("test 3d conformer");
         builder.build().expect("test bonded pair with conformer")
     }
@@ -1434,18 +1404,14 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(first);
         let a1 = builder.add_atom(second);
-        builder
-            .add_bond(BondSpec::new(a0, a1, order))
-            .expect("test bond");
+        builder.add_bond(BondSpec::new(a0, a1, order)).expect("test bond");
         builder
             .add_conformer(Conformer3D::new(0, first_coords, true))
             .expect("first conformer");
         builder
             .add_conformer(Conformer3D::new(7, second_coords, true))
             .expect("second conformer");
-        builder
-            .build()
-            .expect("test bonded pair with named conformers")
+        builder.build().expect("test bonded pair with named conformers")
     }
 
     fn bonded_triple(
@@ -1499,11 +1465,7 @@ mod tests {
         builder.build().expect("test bonded quad")
     }
 
-    fn trigonal_center_molecule(
-        center: AtomSpec,
-        neighbors: [AtomSpec; 3],
-        bond_orders: [BondOrder; 3],
-    ) -> Molecule {
+    fn trigonal_center_molecule(center: AtomSpec, neighbors: [AtomSpec; 3], bond_orders: [BondOrder; 3]) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         let center_id = builder.add_atom(center);
         let neighbor_ids: Vec<_> = neighbors
@@ -1515,9 +1477,7 @@ mod tests {
                 .add_bond(BondSpec::new(center_id, neighbor_id, bond_order))
                 .expect("trigonal-center bond should build");
         }
-        builder
-            .build()
-            .expect("trigonal-center molecule should build")
+        builder.build().expect("trigonal-center molecule should build")
     }
 
     fn flagged(
@@ -1575,98 +1535,35 @@ mod tests {
 
     #[test]
     fn uff_atom_typer_add_charge_flags_tolerates_fixed_family_mismatches() {
-        assert_eq!(
-            flagged(29, 0, 0, Hybridization::Unspecified, true, "Cu"),
-            "Cu+1"
-        );
-        assert_eq!(
-            flagged(4, 0, 0, Hybridization::Unspecified, true, "Be"),
-            "Be+2"
-        );
-        assert_eq!(
-            flagged(21, 0, 0, Hybridization::Unspecified, true, "Sc"),
-            "Sc+3"
-        );
-        assert_eq!(
-            flagged(2, 0, 0, Hybridization::Unspecified, true, "He"),
-            "He+4"
-        );
-        assert_eq!(
-            flagged(23, 0, 0, Hybridization::Unspecified, true, "V"),
-            "V+5"
-        );
-        assert_eq!(
-            flagged(42, 0, 0, Hybridization::Unspecified, true, "Mo"),
-            "Mo+6"
-        );
+        assert_eq!(flagged(29, 0, 0, Hybridization::Unspecified, true, "Cu"), "Cu+1");
+        assert_eq!(flagged(4, 0, 0, Hybridization::Unspecified, true, "Be"), "Be+2");
+        assert_eq!(flagged(21, 0, 0, Hybridization::Unspecified, true, "Sc"), "Sc+3");
+        assert_eq!(flagged(2, 0, 0, Hybridization::Unspecified, true, "He"), "He+4");
+        assert_eq!(flagged(23, 0, 0, Hybridization::Unspecified, true, "V"), "V+5");
+        assert_eq!(flagged(42, 0, 0, Hybridization::Unspecified, true, "Mo"), "Mo+6");
     }
 
     #[test]
     fn uff_atom_typer_add_charge_flags_leaves_unrecognized_fixed_family_mismatches_unchanged() {
-        assert_eq!(
-            flagged(29, 0, 0, Hybridization::Unspecified, false, "Cu"),
-            "Cu"
-        );
-        assert_eq!(
-            flagged(4, 0, 0, Hybridization::Unspecified, false, "Be"),
-            "Be"
-        );
-        assert_eq!(
-            flagged(21, 0, 0, Hybridization::Unspecified, false, "Sc"),
-            "Sc"
-        );
-        assert_eq!(
-            flagged(2, 0, 0, Hybridization::Unspecified, false, "He"),
-            "He"
-        );
-        assert_eq!(
-            flagged(23, 0, 0, Hybridization::Unspecified, false, "V"),
-            "V"
-        );
-        assert_eq!(
-            flagged(42, 0, 0, Hybridization::Unspecified, false, "Mo"),
-            "Mo"
-        );
+        assert_eq!(flagged(29, 0, 0, Hybridization::Unspecified, false, "Cu"), "Cu");
+        assert_eq!(flagged(4, 0, 0, Hybridization::Unspecified, false, "Be"), "Be");
+        assert_eq!(flagged(21, 0, 0, Hybridization::Unspecified, false, "Sc"), "Sc");
+        assert_eq!(flagged(2, 0, 0, Hybridization::Unspecified, false, "He"), "He");
+        assert_eq!(flagged(23, 0, 0, Hybridization::Unspecified, false, "V"), "V");
+        assert_eq!(flagged(42, 0, 0, Hybridization::Unspecified, false, "Mo"), "Mo");
     }
 
     #[test]
     fn uff_atom_typer_add_charge_flags_handles_mg_al_si_and_phosphorus() {
-        assert_eq!(
-            flagged(12, 2, 0, Hybridization::Unspecified, false, "Mg"),
-            "Mg+2"
-        );
-        assert_eq!(
-            flagged(12, 0, 0, Hybridization::Unspecified, true, "Mg"),
-            "Mg+2"
-        );
-        assert_eq!(
-            flagged(12, 0, 0, Hybridization::Unspecified, false, "Mg"),
-            "Mg"
-        );
-        assert_eq!(
-            flagged(13, 0, 0, Hybridization::Unspecified, true, "Al"),
-            "Al"
-        );
-        assert_eq!(
-            flagged(14, 0, 0, Hybridization::Unspecified, true, "Si"),
-            "Si"
-        );
-        assert_eq!(
-            flagged(15, 3, 0, Hybridization::Unspecified, false, "P_"),
-            "P_+3"
-        );
-        assert_eq!(
-            flagged(15, 5, 0, Hybridization::Unspecified, false, "P_"),
-            "P_+5"
-        );
-        assert_eq!(
-            flagged(15, 0, 0, Hybridization::Unspecified, true, "P_"),
-            "P_+5"
-        );
-        assert_eq!(
-            flagged(15, 0, 0, Hybridization::Unspecified, false, "P_"),
-            "P_"
-        );
+        assert_eq!(flagged(12, 2, 0, Hybridization::Unspecified, false, "Mg"), "Mg+2");
+        assert_eq!(flagged(12, 0, 0, Hybridization::Unspecified, true, "Mg"), "Mg+2");
+        assert_eq!(flagged(12, 0, 0, Hybridization::Unspecified, false, "Mg"), "Mg");
+        assert_eq!(flagged(13, 0, 0, Hybridization::Unspecified, true, "Al"), "Al");
+        assert_eq!(flagged(14, 0, 0, Hybridization::Unspecified, true, "Si"), "Si");
+        assert_eq!(flagged(15, 3, 0, Hybridization::Unspecified, false, "P_"), "P_+3");
+        assert_eq!(flagged(15, 5, 0, Hybridization::Unspecified, false, "P_"), "P_+5");
+        assert_eq!(flagged(15, 0, 0, Hybridization::Unspecified, true, "P_"), "P_+5");
+        assert_eq!(flagged(15, 0, 0, Hybridization::Unspecified, false, "P_"), "P_");
     }
 
     #[test]
@@ -1682,77 +1579,32 @@ mod tests {
     #[test]
     fn uff_atom_typer_add_charge_flags_handles_post_transition_special_groups() {
         for atomic_num in [30, 34, 48, 52, 80, 84] {
-            assert_eq!(
-                flagged(atomic_num, 2, 0, Hybridization::Unspecified, false, "X"),
-                "X+2"
-            );
-            assert_eq!(
-                flagged(atomic_num, 0, 0, Hybridization::Unspecified, true, "X"),
-                "X+2"
-            );
-            assert_eq!(
-                flagged(atomic_num, 0, 0, Hybridization::Unspecified, false, "X"),
-                "X"
-            );
+            assert_eq!(flagged(atomic_num, 2, 0, Hybridization::Unspecified, false, "X"), "X+2");
+            assert_eq!(flagged(atomic_num, 0, 0, Hybridization::Unspecified, true, "X"), "X+2");
+            assert_eq!(flagged(atomic_num, 0, 0, Hybridization::Unspecified, false, "X"), "X");
         }
         for atomic_num in [31, 33, 49, 51, 81, 82, 83] {
-            assert_eq!(
-                flagged(atomic_num, 3, 0, Hybridization::Unspecified, false, "X"),
-                "X+3"
-            );
-            assert_eq!(
-                flagged(atomic_num, 0, 0, Hybridization::Unspecified, true, "X"),
-                "X+3"
-            );
-            assert_eq!(
-                flagged(atomic_num, 0, 0, Hybridization::Unspecified, false, "X"),
-                "X"
-            );
+            assert_eq!(flagged(atomic_num, 3, 0, Hybridization::Unspecified, false, "X"), "X+3");
+            assert_eq!(flagged(atomic_num, 0, 0, Hybridization::Unspecified, true, "X"), "X+3");
+            assert_eq!(flagged(atomic_num, 0, 0, Hybridization::Unspecified, false, "X"), "X");
         }
     }
 
     #[test]
     fn uff_atom_typer_add_charge_flags_handles_rhenium_rewrites() {
-        assert_eq!(
-            flagged(75, 0, 0, Hybridization::Unspecified, true, "Re6"),
-            "Re6+5"
-        );
-        assert_eq!(
-            flagged(75, 0, 0, Hybridization::Unspecified, true, "Re3"),
-            "Re3+7"
-        );
-        assert_eq!(
-            flagged(75, 0, 0, Hybridization::Unspecified, true, "Re4"),
-            "Re4"
-        );
-        assert_eq!(
-            flagged(75, 0, 0, Hybridization::Unspecified, false, "Re6"),
-            "Re6"
-        );
+        assert_eq!(flagged(75, 0, 0, Hybridization::Unspecified, true, "Re6"), "Re6+5");
+        assert_eq!(flagged(75, 0, 0, Hybridization::Unspecified, true, "Re3"), "Re3+7");
+        assert_eq!(flagged(75, 0, 0, Hybridization::Unspecified, true, "Re4"), "Re4");
+        assert_eq!(flagged(75, 0, 0, Hybridization::Unspecified, false, "Re6"), "Re6");
     }
 
     #[test]
     fn uff_atom_typer_add_charge_flags_handles_lanthanide_boundaries() {
-        assert_eq!(
-            flagged(57, 6, 0, Hybridization::Unspecified, false, "La"),
-            "La+3"
-        );
-        assert_eq!(
-            flagged(71, 0, 0, Hybridization::Unspecified, true, "Lu"),
-            "Lu+3"
-        );
-        assert_eq!(
-            flagged(57, 0, 0, Hybridization::Unspecified, false, "La"),
-            "La"
-        );
-        assert_eq!(
-            flagged(56, 6, 0, Hybridization::Unspecified, true, "Ba"),
-            "Ba"
-        );
-        assert_eq!(
-            flagged(72, 6, 0, Hybridization::Unspecified, true, "Hf"),
-            "Hf"
-        );
+        assert_eq!(flagged(57, 6, 0, Hybridization::Unspecified, false, "La"), "La+3");
+        assert_eq!(flagged(71, 0, 0, Hybridization::Unspecified, true, "Lu"), "Lu+3");
+        assert_eq!(flagged(57, 0, 0, Hybridization::Unspecified, false, "La"), "La");
+        assert_eq!(flagged(56, 6, 0, Hybridization::Unspecified, true, "Ba"), "Ba");
+        assert_eq!(flagged(72, 6, 0, Hybridization::Unspecified, true, "Hf"), "Hf");
     }
 
     #[test]
@@ -1770,30 +1622,15 @@ mod tests {
     fn uff_atom_typer_get_atom_label_skips_hybridization_for_alkali_metals_and_halogens() {
         assert_eq!(label(1, 0, 0, Hybridization::Sp3, false, true, false), "H_");
         assert_eq!(label(3, 0, 0, Hybridization::Sp3, false, true, false), "Li");
-        assert_eq!(
-            label(17, 0, 0, Hybridization::Sp3, false, true, false),
-            "Cl"
-        );
+        assert_eq!(label(17, 0, 0, Hybridization::Sp3, false, true, false), "Cl");
     }
 
     #[test]
     fn uff_atom_typer_get_atom_label_handles_source_forced_hybridization_elements() {
-        assert_eq!(
-            label(12, 0, 0, Hybridization::Sp2, false, false, false),
-            "Mg3"
-        );
-        assert_eq!(
-            label(15, 0, 0, Hybridization::Sp2, false, false, false),
-            "P_3"
-        );
-        assert_eq!(
-            label(50, 0, 0, Hybridization::Sp, false, false, false),
-            "Sn3"
-        );
-        assert_eq!(
-            label(80, 0, 0, Hybridization::Sp3, false, false, false),
-            "Hg1"
-        );
+        assert_eq!(label(12, 0, 0, Hybridization::Sp2, false, false, false), "Mg3");
+        assert_eq!(label(15, 0, 0, Hybridization::Sp2, false, false, false), "P_3");
+        assert_eq!(label(50, 0, 0, Hybridization::Sp, false, false, false), "Sn3");
+        assert_eq!(label(80, 0, 0, Hybridization::Sp3, false, false, false), "Hg1");
     }
 
     #[test]
@@ -1817,39 +1654,18 @@ mod tests {
 
     #[test]
     fn uff_atom_typer_get_atom_label_uses_aromatic_or_conjugated_sp2_r_suffix() {
-        assert_eq!(
-            label(6, 0, 0, Hybridization::Sp2, false, false, true),
-            "C_R"
-        );
-        assert_eq!(
-            label(7, 0, 0, Hybridization::Sp2, true, false, false),
-            "N_R"
-        );
-        assert_eq!(
-            label(8, 0, 0, Hybridization::Sp2, false, false, true),
-            "O_R"
-        );
-        assert_eq!(
-            label(16, 0, 0, Hybridization::Sp2, true, false, false),
-            "S_R"
-        );
+        assert_eq!(label(6, 0, 0, Hybridization::Sp2, false, false, true), "C_R");
+        assert_eq!(label(7, 0, 0, Hybridization::Sp2, true, false, false), "N_R");
+        assert_eq!(label(8, 0, 0, Hybridization::Sp2, false, false, true), "O_R");
+        assert_eq!(label(16, 0, 0, Hybridization::Sp2, true, false, false), "S_R");
         assert_eq!(label(9, 0, 0, Hybridization::Sp2, true, false, true), "F_");
     }
 
     #[test]
     fn uff_atom_typer_get_atom_label_composes_charge_flags_after_label_suffixes() {
-        assert_eq!(
-            label(12, 2, 0, Hybridization::Sp3, false, false, false),
-            "Mg3+2"
-        );
-        assert_eq!(
-            label(29, 1, 0, Hybridization::Sp3, false, false, false),
-            "Cu3+1"
-        );
-        assert_eq!(
-            label(75, 0, 0, Hybridization::Sp3d2, false, true, false),
-            "Re6+5"
-        );
+        assert_eq!(label(12, 2, 0, Hybridization::Sp3, false, false, false), "Mg3+2");
+        assert_eq!(label(29, 1, 0, Hybridization::Sp3, false, false, false), "Cu3+1");
+        assert_eq!(label(75, 0, 0, Hybridization::Sp3d2, false, true, false), "Re6+5");
     }
 
     #[test]
@@ -1872,13 +1688,9 @@ mod tests {
     #[test]
     fn uff_atom_typer_get_atom_types_preserves_missing_param_slots_and_found_all_false() {
         let mol = molecule_with_atomic_numbers(&[6, 9]);
-        let (params, found_all) = get_atom_types_for_uff(
-            &mol,
-            &[0, 0],
-            &[Hybridization::S, Hybridization::Sp3],
-            &[false, false],
-        )
-        .expect("UFF atom types");
+        let (params, found_all) =
+            get_atom_types_for_uff(&mol, &[0, 0], &[Hybridization::S, Hybridization::Sp3], &[false, false])
+                .expect("UFF atom types");
 
         assert!(!found_all);
         assert_eq!(params.len(), 2);
@@ -1889,13 +1701,8 @@ mod tests {
     #[test]
     fn uff_atom_typer_get_atom_types_rejects_context_length_mismatch() {
         let mol = molecule_with_atomic_numbers(&[6, 8]);
-        let err = get_atom_types_for_uff(
-            &mol,
-            &[0],
-            &[Hybridization::Sp3, Hybridization::Sp2],
-            &[false],
-        )
-        .expect_err("context mismatch should fail");
+        let err = get_atom_types_for_uff(&mol, &[0], &[Hybridization::Sp3, Hybridization::Sp2], &[false])
+            .expect_err("context mismatch should fail");
 
         assert!(matches!(
             err,
@@ -1940,8 +1747,7 @@ mod tests {
     fn uff_public_api_get_uff_bond_stretch_params_returns_none_when_bond_is_absent() {
         let mol = molecule_with_atomic_numbers(&[6, 8]);
 
-        let params =
-            get_uff_bond_stretch_params(&mol, 0, 1).expect("bond lookup without edge should work");
+        let params = get_uff_bond_stretch_params(&mol, 0, 1).expect("bond lookup without edge should work");
 
         assert!(params.is_none());
     }
@@ -1955,8 +1761,8 @@ mod tests {
             false,
         );
 
-        let params = get_uff_bond_stretch_params(&mol, 0, 1)
-            .expect("missing atom params should not error structurally");
+        let params =
+            get_uff_bond_stretch_params(&mol, 0, 1).expect("missing atom params should not error structurally");
 
         assert!(params.is_none());
     }
@@ -1970,8 +1776,7 @@ mod tests {
             false,
         );
 
-        let err = get_uff_bond_stretch_params(&mol, 0, 2)
-            .expect_err("out-of-range atom index should fail");
+        let err = get_uff_bond_stretch_params(&mol, 0, 2).expect_err("out-of-range atom index should fail");
 
         assert_eq!(
             err,
@@ -2002,8 +1807,7 @@ mod tests {
         let c3 = collection.get("C_3").expect("C_3 params");
         let o3 = collection.get("O_3").expect("O_3 params");
         let expected_theta0 = RAD2DEG * c3.theta0;
-        let expected_ka =
-            calc_angle_force_constant(c3.theta0, 1.0, 1.0, c3, c3, o3).expect("force constant");
+        let expected_ka = calc_angle_force_constant(c3.theta0, 1.0, 1.0, c3, c3, o3).expect("force constant");
 
         assert_eq!(
             params,
@@ -2039,8 +1843,7 @@ mod tests {
     fn uff_public_api_get_uff_angle_bend_params_returns_none_for_missing_bond() {
         let mol = molecule_with_atomic_numbers(&[6, 6, 8]);
 
-        let params = get_uff_angle_bend_params(&mol, 0, 1, 2)
-            .expect("disconnected angle lookup should work");
+        let params = get_uff_angle_bend_params(&mol, 0, 1, 2).expect("disconnected angle lookup should work");
 
         assert!(params.is_none());
     }
@@ -2057,8 +1860,8 @@ mod tests {
             false,
         );
 
-        let params = get_uff_angle_bend_params(&mol, 0, 1, 2)
-            .expect("missing atom params should not error structurally");
+        let params =
+            get_uff_angle_bend_params(&mol, 0, 1, 2).expect("missing atom params should not error structurally");
 
         assert!(params.is_none());
     }
@@ -2075,8 +1878,7 @@ mod tests {
             false,
         );
 
-        let err = get_uff_angle_bend_params(&mol, 0, 1, 3)
-            .expect_err("out-of-range atom index should fail");
+        let err = get_uff_angle_bend_params(&mol, 0, 1, 3).expect_err("out-of-range atom index should fail");
 
         assert_eq!(
             err,
@@ -2217,10 +2019,9 @@ mod tests {
             false,
             false,
         );
-        let sp3_group6_non_group6_sp2_params =
-            get_uff_torsion_params(&sp3_group6_non_group6_sp2, 0, 1, 2, 3)
-                .expect("group6 sp3/non-group6 sp2 torsion params should compute")
-                .expect("group6 sp3/non-group6 sp2 torsion should return params");
+        let sp3_group6_non_group6_sp2_params = get_uff_torsion_params(&sp3_group6_non_group6_sp2, 0, 1, 2, 3)
+            .expect("group6 sp3/non-group6 sp2 torsion params should compute")
+            .expect("group6 sp3/non-group6 sp2 torsion should return params");
         assert_eq!(
             sp3_group6_non_group6_sp2_params,
             UffTor {
@@ -2232,8 +2033,7 @@ mod tests {
     }
 
     #[test]
-    fn uff_public_api_get_uff_torsion_params_returns_none_for_missing_bond_or_params_or_bad_hybridization()
-     {
+    fn uff_public_api_get_uff_torsion_params_returns_none_for_missing_bond_or_params_or_bad_hybridization() {
         let disconnected = molecule_with_atomic_numbers(&[6, 6, 6, 6]);
         assert!(
             get_uff_torsion_params(&disconnected, 0, 1, 2, 3)
@@ -2293,8 +2093,7 @@ mod tests {
             false,
         );
 
-        let err = get_uff_torsion_params(&mol, 0, 1, 2, 4)
-            .expect_err("out-of-range atom index should fail");
+        let err = get_uff_torsion_params(&mol, 0, 1, 2, 4).expect_err("out-of-range atom index should fail");
 
         assert_eq!(
             err,
@@ -2432,8 +2231,7 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
 
-        let err = get_uff_inversion_params(&mol, 1, 0, 2, 4)
-            .expect_err("out-of-range atom index should fail");
+        let err = get_uff_inversion_params(&mol, 1, 0, 2, 4).expect_err("out-of-range atom index should fail");
 
         assert_eq!(
             err,
@@ -2474,9 +2272,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3));
         builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3));
-        let mol = builder
-            .build()
-            .expect("disconnected typed atoms should build");
+        let mol = builder.build().expect("disconnected typed atoms should build");
 
         let params = get_uff_vdw_params(&mol, 0, 1)
             .expect("disconnected vdw lookup should work")
@@ -2531,8 +2327,7 @@ mod tests {
             false,
         );
 
-        let found_all =
-            uff_has_all_molecule_params(&mol).expect("UFF parameter coverage should compute");
+        let found_all = uff_has_all_molecule_params(&mol).expect("UFF parameter coverage should compute");
 
         assert!(found_all);
     }
@@ -2546,20 +2341,16 @@ mod tests {
             false,
         );
 
-        let found_all =
-            uff_has_all_molecule_params(&mol).expect("UFF parameter coverage should compute");
+        let found_all = uff_has_all_molecule_params(&mol).expect("UFF parameter coverage should compute");
 
         assert!(!found_all);
     }
 
     #[test]
     fn uff_public_api_uff_has_all_molecule_params_preserves_empty_molecule_true_boundary() {
-        let mol = MoleculeBuilder::new()
-            .build()
-            .expect("empty molecule should build");
+        let mol = MoleculeBuilder::new().build().expect("empty molecule should build");
 
-        let found_all =
-            uff_has_all_molecule_params(&mol).expect("empty UFF parameter coverage should compute");
+        let found_all = uff_has_all_molecule_params(&mol).expect("empty UFF parameter coverage should compute");
 
         assert!(found_all);
     }
@@ -2574,15 +2365,11 @@ mod tests {
         );
         let original_coords = mol.conformers_3d()[0].coordinates().to_vec();
 
-        let result =
-            uff_optimize_molecule(&mol, 25, 10.0, -1, true).expect("UFF optimize should run");
+        let result = uff_optimize_molecule(&mol, 25, 10.0, -1, true).expect("UFF optimize should run");
 
         assert!(matches!(result.needs_more, 0 | 1));
         assert!(result.energy.is_finite());
-        assert_eq!(
-            mol.conformers_3d()[0].coordinates(),
-            original_coords.as_slice()
-        );
+        assert_eq!(mol.conformers_3d()[0].coordinates(), original_coords.as_slice());
         assert_ne!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords.as_slice()
@@ -2614,8 +2401,7 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         );
 
-        let err = uff_optimize_molecule(&mol, 5, 10.0, -2, true)
-            .expect_err("conf_id below -1 should fail");
+        let err = uff_optimize_molecule(&mol, 5, 10.0, -2, true).expect_err("conf_id below -1 should fail");
 
         assert_eq!(err, UffPublicApiError::InvalidConformerId { conf_id: -2 });
     }
@@ -2629,8 +2415,7 @@ mod tests {
             false,
         );
 
-        let err = uff_optimize_molecule(&mol, 5, 10.0, -1, true)
-            .expect_err("missing conformer should fail");
+        let err = uff_optimize_molecule(&mol, 5, 10.0, -1, true).expect_err("missing conformer should fail");
 
         assert_eq!(err, UffPublicApiError::Missing3dConformer { conf_id: -1 });
     }
@@ -2644,8 +2429,7 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
 
-        let result =
-            uff_optimize_molecule(&mol, 0, 10.0, -1, true).expect("UFF optimize should run");
+        let result = uff_optimize_molecule(&mol, 0, 10.0, -1, true).expect("UFF optimize should run");
 
         assert_eq!(result.needs_more, 1);
         assert!(result.energy.is_finite());
@@ -2663,21 +2447,14 @@ mod tests {
         let first_coords = mol.conformers_3d()[0].coordinates().to_vec();
         let selected_coords = mol.conformers_3d()[1].coordinates().to_vec();
 
-        let result =
-            uff_optimize_molecule(&mol, 25, 10.0, 7, true).expect("UFF optimize should run");
+        let result = uff_optimize_molecule(&mol, 25, 10.0, 7, true).expect("UFF optimize should run");
 
-        assert_eq!(
-            result.molecule.conformers_3d()[0].coordinates(),
-            first_coords
-        );
+        assert_eq!(result.molecule.conformers_3d()[0].coordinates(), first_coords);
         assert_ne!(
             result.molecule.conformers_3d()[1].coordinates(),
             selected_coords.as_slice()
         );
-        assert_eq!(
-            mol.conformers_3d()[1].coordinates(),
-            selected_coords.as_slice()
-        );
+        assert_eq!(mol.conformers_3d()[1].coordinates(), selected_coords.as_slice());
     }
 
     #[test]
@@ -2692,8 +2469,8 @@ mod tests {
         let original_first = mol.conformers_3d()[0].coordinates().to_vec();
         let original_second = mol.conformers_3d()[1].coordinates().to_vec();
 
-        let result = uff_optimize_molecule_confs(&mol, 1, 25, 10.0, true)
-            .expect("UFF conformer optimization should run");
+        let result =
+            uff_optimize_molecule_confs(&mol, 1, 25, 10.0, true).expect("UFF conformer optimization should run");
 
         assert_eq!(result.conformer_results.len(), 2);
         assert!(
@@ -2702,14 +2479,8 @@ mod tests {
                 .iter()
                 .all(|entry| matches!(entry.needs_more, 0 | 1) && entry.energy.is_finite())
         );
-        assert_eq!(
-            mol.conformers_3d()[0].coordinates(),
-            original_first.as_slice()
-        );
-        assert_eq!(
-            mol.conformers_3d()[1].coordinates(),
-            original_second.as_slice()
-        );
+        assert_eq!(mol.conformers_3d()[0].coordinates(), original_first.as_slice());
+        assert_eq!(mol.conformers_3d()[1].coordinates(), original_second.as_slice());
         assert_ne!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_first.as_slice()
@@ -2751,8 +2522,7 @@ mod tests {
             false,
         );
 
-        let err = uff_optimize_molecule_confs(&mol, 1, 5, 10.0, true)
-            .expect_err("missing conformer should fail");
+        let err = uff_optimize_molecule_confs(&mol, 1, 5, 10.0, true).expect_err("missing conformer should fail");
 
         assert_eq!(err, UffPublicApiError::Missing3dConformer { conf_id: -1 });
     }
@@ -2766,8 +2536,8 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
 
-        let result = uff_optimize_molecule_confs(&mol, 1, 0, 10.0, true)
-            .expect("UFF conformer optimization should run");
+        let result =
+            uff_optimize_molecule_confs(&mol, 1, 0, 10.0, true).expect("UFF conformer optimization should run");
 
         assert_eq!(result.conformer_results.len(), 1);
         assert_eq!(result.conformer_results[0].needs_more, 1);
@@ -2775,8 +2545,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_forcefield_conformer_driver_uff_handles_non_positive_thread_request_like_non_threaded_rdkit_build()
-     {
+    fn shared_forcefield_conformer_driver_uff_handles_non_positive_thread_request_like_non_threaded_rdkit_build() {
         let mol = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3),
             AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3),

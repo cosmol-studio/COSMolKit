@@ -1,0 +1,44 @@
+[package]
+name = "cosmolkit-wasm"
+description = "Binding-facing WASM API for COSMolKit"
+keywords = ["cheminformatics", "wasm", "webassembly", "molecule"]
+categories = ["science", "wasm"]
+repository = "https://github.com/cosmol-studio/COSMolKit"
+homepage = "https://tools.cosmol.org/"
+documentation = "https://docs.rs/cosmolkit-wasm"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cosmolkit_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["full"]
+full = [
+    "batch",
+    "confseq",
+    "depict",
+    "descriptors",
+    "fingerprints",
+    "hashing",
+    "inchi",
+    "io",
+    "serialization",
+    "stereoisomers",
+]
+batch = ["cosmolkit/batch"]
+confseq = ["cosmolkit/confseq"]
+depict = ["cosmolkit/depict"]
+descriptors = ["cosmolkit/descriptors"]
+fingerprints = ["cosmolkit/fingerprints"]
+hashing = ["cosmolkit/hashing"]
+inchi = ["cosmolkit/inchi"]
+io = ["cosmolkit/io"]
+serialization = ["cosmolkit/serialization"]
+stereoisomers = ["cosmolkit/stereoisomers"]
+
+[dependencies]
+cosmolkit = { version = "0.3.0", path = "../crates/cosmolkit", default-features = false }

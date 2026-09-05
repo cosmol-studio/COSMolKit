@@ -2,8 +2,8 @@
 
 use super::query::{AtomRangeBounds, AtomRangeDataFunction, QueryNode, RecursiveStructureQuery};
 use crate::{
-    Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate,
-    ChiralTag, Element, Hybridization, Molecule, RingFindType, RingInfo, SmilesWriteParams,
+    Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, ChiralTag, Element,
+    Hybridization, Molecule, RingFindType, RingInfo, SmilesWriteParams,
 };
 use std::collections::BTreeSet;
 
@@ -74,12 +74,11 @@ pub(crate) fn query_graph_to_smarts(
     query: &crate::QueryGraph,
     params: &SmilesWriteParams,
 ) -> Result<String, SmartsWriteError> {
-    let molecule =
-        query
-            .to_molecule()
-            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
-                detail: "query graph cannot be materialized for SMARTS traversal",
-            })?;
+    let molecule = query
+        .to_molecule()
+        .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+            detail: "query graph cannot be materialized for SMARTS traversal",
+        })?;
     mol_to_smarts(&molecule, params)
 }
 
@@ -87,12 +86,11 @@ pub(crate) fn query_graph_to_cx_smarts(
     query: &crate::QueryGraph,
     params: &SmilesWriteParams,
 ) -> Result<String, SmartsWriteError> {
-    let molecule =
-        query
-            .to_molecule()
-            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
-                detail: "query graph cannot be materialized for CXSMARTS traversal",
-            })?;
+    let molecule = query
+        .to_molecule()
+        .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+            detail: "query graph cannot be materialized for CXSMARTS traversal",
+        })?;
     mol_to_cx_smarts(&molecule, params)
 }
 
@@ -102,12 +100,11 @@ pub(crate) fn query_graph_fragment_to_smarts(
     atoms: &[AtomId],
     bonds: Option<&[BondId]>,
 ) -> Result<String, SmartsWriteError> {
-    let molecule =
-        query
-            .to_molecule()
-            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
-                detail: "query graph cannot be materialized for SMARTS fragment traversal",
-            })?;
+    let molecule = query
+        .to_molecule()
+        .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+            detail: "query graph cannot be materialized for SMARTS fragment traversal",
+        })?;
     mol_fragment_to_smarts(&molecule, params, atoms, bonds)
 }
 
@@ -117,12 +114,11 @@ pub(crate) fn query_graph_fragment_to_cx_smarts(
     atoms: &[AtomId],
     bonds: Option<&[BondId]>,
 ) -> Result<String, SmartsWriteError> {
-    let molecule =
-        query
-            .to_molecule()
-            .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
-                detail: "query graph cannot be materialized for CXSMARTS fragment traversal",
-            })?;
+    let molecule = query
+        .to_molecule()
+        .map_err(|_| SmartsWriteError::QueryGraphTraversalUnsupported {
+            detail: "query graph cannot be materialized for CXSMARTS fragment traversal",
+        })?;
     mol_fragment_to_cx_smarts(&molecule, params, atoms, bonds)
 }
 
@@ -194,19 +190,15 @@ fn combine_child_smarts(
     let has_or = description.find("Or").is_some_and(|position| position > 0);
     let has_and = description.find("And").is_some_and(|position| position > 0);
     let separator = if has_or {
-        if (features1.contains(QueryBoolFeatures::HAS_LOW_AND)
-            && features1.contains(QueryBoolFeatures::HAS_OR))
-            || (features2.contains(QueryBoolFeatures::HAS_LOW_AND)
-                && features2.contains(QueryBoolFeatures::HAS_OR))
+        if (features1.contains(QueryBoolFeatures::HAS_LOW_AND) && features1.contains(QueryBoolFeatures::HAS_OR))
+            || (features2.contains(QueryBoolFeatures::HAS_LOW_AND) && features2.contains(QueryBoolFeatures::HAS_OR))
         {
             return Err(SmartsWriteError::OrAboveAndBelowAnd);
         }
         features.insert(QueryBoolFeatures::HAS_OR);
         ","
     } else if has_and {
-        if features1.contains(QueryBoolFeatures::HAS_OR)
-            || features2.contains(QueryBoolFeatures::HAS_OR)
-        {
+        if features1.contains(QueryBoolFeatures::HAS_OR) || features2.contains(QueryBoolFeatures::HAS_OR) {
             features.insert(QueryBoolFeatures::HAS_LOW_AND);
             ";"
         } else {
@@ -490,8 +482,7 @@ fn get_atom_smarts_simple(
                 if *aromatic {
                     symbol.make_ascii_lowercase();
                 }
-                if crate::notation::smiles_write::in_organic_subset(*atomic_number).unwrap_or(false)
-                {
+                if crate::notation::smiles_write::in_organic_subset(*atomic_number).unwrap_or(false) {
                     *need_paren = false;
                 }
                 symbol
@@ -815,23 +806,17 @@ fn get_bond_smarts_simple(
     match query {
         BondQueryPredicate::Any => Ok("~".to_owned()),
         BondQueryPredicate::IsInRing(_) => Ok("@".to_owned()),
-        BondQueryPredicate::OrderIn(orders)
-            if orders.as_slice() == [BondOrder::Single, BondOrder::Aromatic] =>
-        {
+        BondQueryPredicate::OrderIn(orders) if orders.as_slice() == [BondOrder::Single, BondOrder::Aromatic] => {
             Ok(match bond.direction() {
                 BondDirection::EndDownRight => "\\".to_owned(),
                 BondDirection::EndUpRight => "/".to_owned(),
                 _ => String::new(),
             })
         }
-        BondQueryPredicate::OrderIn(orders)
-            if orders.as_slice() == [BondOrder::Single, BondOrder::Double] =>
-        {
+        BondQueryPredicate::OrderIn(orders) if orders.as_slice() == [BondOrder::Single, BondOrder::Double] => {
             Ok("-,=".to_owned())
         }
-        BondQueryPredicate::OrderIn(orders)
-            if orders.as_slice() == [BondOrder::Double, BondOrder::Aromatic] =>
-        {
+        BondQueryPredicate::OrderIn(orders) if orders.as_slice() == [BondOrder::Double, BondOrder::Aromatic] => {
             Ok("=,:".to_owned())
         }
         BondQueryPredicate::OrderIn(orders)
@@ -842,19 +827,11 @@ fn get_bond_smarts_simple(
         BondQueryPredicate::Direction(BondDirection::EndDownRight) => Ok("\\".to_owned()),
         BondQueryPredicate::Direction(BondDirection::EndUpRight) => Ok("/".to_owned()),
         BondQueryPredicate::Direction(direction) => {
-            Err(SmartsWriteError::UnsupportedBondDirection {
-                direction: *direction,
-            })
+            Err(SmartsWriteError::UnsupportedBondDirection { direction: *direction })
         }
         BondQueryPredicate::Order(order) => {
-            let reverse_dative =
-                atom_to_left_idx.is_some_and(|atom_idx| bond.begin().index() != atom_idx);
-            Ok(get_basic_bond_repr(
-                *order,
-                bond.direction(),
-                reverse_dative,
-                params,
-            ))
+            let reverse_dative = atom_to_left_idx.is_some_and(|atom_idx| bond.begin().index() != atom_idx);
+            Ok(get_basic_bond_repr(*order, bond.direction(), reverse_dative, params))
         }
         _ => Err(SmartsWriteError::UnsupportedBondQuery {
             predicate: query.clone(),
@@ -1001,11 +978,7 @@ where
         return Err(SmartsWriteError::CompositeChildCount { kind: "atom" });
     }
     if negate {
-        description = if description == "AtomOr" {
-            "AtomAnd"
-        } else {
-            "AtomOr"
-        };
+        description = if description == "AtomOr" { "AtomAnd" } else { "AtomOr" };
     }
 
     let render_child = |child: &QueryNode<AtomQueryPredicate>,
@@ -1018,12 +991,7 @@ where
         match child {
             QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
                 child_features.insert(QueryBoolFeatures::HAS_RECURSION);
-                get_recursive_structure_query_smarts(
-                    recursive,
-                    child_negate,
-                    params,
-                    write_molecule,
-                )
+                get_recursive_structure_query_smarts(recursive, child_negate, params, write_molecule)
             }
             QueryNode::Predicate(predicate) => {
                 let mut need_paren = false;
@@ -1040,17 +1008,15 @@ where
                 }
                 Ok(result)
             }
-            QueryNode::And(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => {
-                recurse_get_smarts(
-                    atom,
-                    child,
-                    child_negate,
-                    child_features,
-                    params,
-                    stereo_written,
-                    write_molecule,
-                )
-            }
+            QueryNode::And(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => recurse_get_smarts(
+                atom,
+                child,
+                child_negate,
+                child_features,
+                params,
+                stereo_written,
+                write_molecule,
+            ),
         }
     };
 
@@ -1065,13 +1031,7 @@ where
     *features |= first_features;
     for child in &children[1..] {
         let mut child_features = QueryBoolFeatures::default();
-        let child_smarts = render_child(
-            child,
-            false,
-            &mut child_features,
-            stereo_written,
-            write_molecule,
-        )?;
+        let child_smarts = render_child(child, false, &mut child_features, stereo_written, write_molecule)?;
         result = combine_child_smarts(
             result,
             first_features,
@@ -1217,11 +1177,7 @@ fn recurse_bond_smarts(
         return Err(SmartsWriteError::CompositeChildCount { kind: "bond" });
     }
     if negate {
-        description = if description == "BondOr" {
-            "BondAnd"
-        } else {
-            "BondOr"
-        };
+        description = if description == "BondOr" { "BondAnd" } else { "BondOr" };
     }
 
     let render_child = |child: &QueryNode<BondQueryPredicate>,
@@ -1237,14 +1193,7 @@ fn recurse_bond_smarts(
                 Ok(result)
             }
             QueryNode::And(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => {
-                recurse_bond_smarts(
-                    bond,
-                    child,
-                    child_negate,
-                    atom_to_left_idx,
-                    child_features,
-                    params,
-                )
+                recurse_bond_smarts(bond, child, child_negate, atom_to_left_idx, child_features, params)
             }
         }
     };
@@ -1388,11 +1337,7 @@ where
                 atom_ordering.push(atom_id);
             }
             crate::notation::smiles_write::MolStackElem::Bond(bond_id, atom_to_left) => {
-                result.push_str(&write_bond(
-                    &molecule.bonds()[bond_id.index()],
-                    params,
-                    atom_to_left,
-                )?);
+                result.push_str(&write_bond(&molecule.bonds()[bond_id.index()], params, atom_to_left)?);
                 bond_ordering.push(bond_id);
             }
             crate::notation::smiles_write::MolStackElem::Ring { ring_idx, .. } => {
@@ -1410,11 +1355,7 @@ where
     Ok(result)
 }
 
-fn get_non_query_atom_smarts(
-    atom: &Atom,
-    do_isomeric_smarts: bool,
-    stereo_written: &mut bool,
-) -> String {
+fn get_non_query_atom_smarts(atom: &Atom, do_isomeric_smarts: bool, stereo_written: &mut bool) -> String {
     // BEGIN RDKIT CPP FUNCTION getNonQueryAtomSmarts
     // RDKit✔️✔️: std::string getNonQueryAtomSmarts(const Atom *atom) {
     // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
@@ -1493,10 +1434,7 @@ fn get_non_query_atom_smarts(
     }
     if let Some(symbol) = atom.prop("smilesSymbol") {
         result.push_str(symbol);
-    } else if matches!(
-        atom.atomic_number(),
-        0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53
-    ) {
+    } else if matches!(atom.atomic_number(), 0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53) {
         result.push('#');
         result.push_str(&atom.atomic_number().to_string());
     } else {
@@ -1540,11 +1478,7 @@ fn get_non_query_atom_smarts(
     result
 }
 
-fn get_non_query_bond_smarts(
-    bond: &Bond,
-    atom_to_left_idx: Option<usize>,
-    params: &SmilesWriteParams,
-) -> String {
+fn get_non_query_bond_smarts(bond: &Bond, atom_to_left_idx: Option<usize>, params: &SmilesWriteParams) -> String {
     // BEGIN RDKIT CPP FUNCTION getNonQueryBondSmarts
     // RDKit✔️✔️: std::string getNonQueryBondSmarts(const Bond *qbond, int atomToLeftIdx,
     // RDKit✔️✔️:                                   const SmilesWriteParams &params) {
@@ -1681,9 +1615,7 @@ where
             molecule
                 .bonds()
                 .iter()
-                .filter(|bond| {
-                    allowed_atoms.contains(&bond.begin()) && allowed_atoms.contains(&bond.end())
-                })
+                .filter(|bond| allowed_atoms.contains(&bond.begin()) && allowed_atoms.contains(&bond.end()))
                 .map(Bond::id)
                 .collect::<BTreeSet<_>>()
         },
@@ -1702,10 +1634,7 @@ where
                     .iter()
                     .find(|atom| {
                         remaining.contains(&atom.id())
-                            && !matches!(
-                                atom.chiral_tag(),
-                                ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw
-                            )
+                            && !matches!(atom.chiral_tag(), ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw)
                     })
                     .map(Atom::id)
             })
@@ -1719,11 +1648,7 @@ where
                 continue;
             }
             component_atoms.push(atom);
-            for neighbor in molecule
-                .topology_block()
-                .adjacency
-                .neighbors_of(atom.index())
-            {
+            for neighbor in molecule.topology_block().adjacency.neighbors_of(atom.index()) {
                 if allowed_bonds.contains(&neighbor.bond) {
                     let other = AtomId::new(neighbor.atom_index);
                     if allowed_atoms.contains(&other) {
@@ -1735,10 +1660,7 @@ where
         }
         component_atoms.sort_by_key(|atom| atom.index());
         let component_bonds = component_bonds.into_iter().collect::<Vec<_>>();
-        let ranks = component_atoms
-            .iter()
-            .map(|atom| atom.index())
-            .collect::<Vec<_>>();
+        let ranks = component_atoms.iter().map(|atom| atom.index()).collect::<Vec<_>>();
         result.smarts.push_str(&fragment_smarts_construct(
             &mut molecule,
             start,
@@ -1761,10 +1683,7 @@ where
     Ok(result)
 }
 
-pub fn get_atom_smarts(
-    atom: &Atom,
-    params: &SmilesWriteParams,
-) -> Result<String, SmartsWriteError> {
+pub fn get_atom_smarts(atom: &Atom, params: &SmilesWriteParams) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: std::string GetAtomSmarts(const Atom *atom, const SmilesWriteParams &params) {
     // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
     // RDKit✔️✔️:   std::string res;
@@ -1832,14 +1751,9 @@ pub fn get_atom_smarts(
     // query tree once. Rust uses caller-owned stereo state and monomorphized
     // recursive writing, with no query clone, reparse, or dynamic dispatch.
     let Some(query) = atom.query() else {
-        return Ok(get_non_query_atom_smarts(
-            atom,
-            params.do_isomeric_smiles,
-            &mut false,
-        ));
+        return Ok(get_non_query_atom_smarts(atom, params.do_isomeric_smiles, &mut false));
     };
-    let mut write_molecule = |recursive: &crate::QueryGraph,
-                              recursive_params: &SmilesWriteParams| {
+    let mut write_molecule = |recursive: &crate::QueryGraph, recursive_params: &SmilesWriteParams| {
         query_graph_to_smarts(recursive, recursive_params)
     };
     let (query, negated) = atom_query_without_not(query, false);
@@ -1981,10 +1895,7 @@ pub fn get_bond_smarts(
     }
 }
 
-pub fn mol_to_smarts(
-    molecule: &Molecule,
-    params: &SmilesWriteParams,
-) -> Result<String, SmartsWriteError> {
+pub fn mol_to_smarts(molecule: &Molecule, params: &SmilesWriteParams) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: std::string MolToSmarts(const ROMol &mol, const SmilesWriteParams &ps) {
     // RDKit✔️✔️:   const unsigned int nAtoms = mol.getNumAtoms();
     // RDKit✔️✔️:   if (!nAtoms) {
@@ -2009,9 +1920,7 @@ pub fn mol_to_smarts(
         &atoms_in_play,
         None,
         |atom, atom_params| get_atom_smarts(atom, atom_params),
-        |bond, bond_params, atom_to_left| {
-            get_bond_smarts(bond, bond_params, Some(atom_to_left.index()))
-        },
+        |bond, bond_params, atom_to_left| get_bond_smarts(bond, bond_params, Some(atom_to_left.index())),
     )
     .map(|result| result.smarts)
 }
@@ -2087,17 +1996,12 @@ pub fn mol_fragment_to_smarts(
         atoms_to_use,
         bonds_to_use,
         |atom, atom_params| get_atom_smarts(atom, atom_params),
-        |bond, bond_params, atom_to_left| {
-            get_bond_smarts(bond, bond_params, Some(atom_to_left.index()))
-        },
+        |bond, bond_params, atom_to_left| get_bond_smarts(bond, bond_params, Some(atom_to_left.index())),
     )
     .map(|result| result.smarts)
 }
 
-pub fn mol_to_cx_smarts(
-    molecule: &Molecule,
-    params: &SmilesWriteParams,
-) -> Result<String, SmartsWriteError> {
+pub fn mol_to_cx_smarts(molecule: &Molecule, params: &SmilesWriteParams) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: std::string MolToCXSmarts(const ROMol &mol, const SmilesWriteParams &params) {
     // RDKit✔️✔️:   SmilesWriteParams ps(params);
     // RDKit✔️✔️:   ps.includeDativeBonds = false;
@@ -2117,9 +2021,8 @@ pub fn mol_to_cx_smarts(
     cx_params.include_dative_bonds = false;
     let mut result = mol_to_smarts(molecule, &cx_params)?;
     if !result.is_empty() {
-        let extension =
-            crate::notation::smiles_write::get_cx_extensions(molecule, crate::CxSmilesFields::ALL)
-                .map_err(|source| SmartsWriteError::Traversal { source })?;
+        let extension = crate::notation::smiles_write::get_cx_extensions(molecule, crate::CxSmilesFields::ALL)
+            .map_err(|source| SmartsWriteError::Traversal { source })?;
         if !extension.is_empty() {
             result.push(' ');
             result.push_str(&extension);
@@ -2152,9 +2055,8 @@ pub fn mol_fragment_to_cx_smarts(
     // linear in the output. No fragment decoder or second CX core is added.
     let mut result = mol_fragment_to_smarts(molecule, params, atoms_to_use, bonds_to_use)?;
     if !result.is_empty() {
-        let extension =
-            crate::notation::smiles_write::get_cx_extensions(molecule, crate::CxSmilesFields::ALL)
-                .map_err(|source| SmartsWriteError::Traversal { source })?;
+        let extension = crate::notation::smiles_write::get_cx_extensions(molecule, crate::CxSmilesFields::ALL)
+            .map_err(|source| SmartsWriteError::Traversal { source })?;
         if !extension.is_empty() {
             result.push(' ');
             result.push_str(&extension);
@@ -2166,18 +2068,17 @@ pub fn mol_fragment_to_cx_smarts(
 #[cfg(test)]
 mod tests {
     use crate::{
-        AtomId, AtomQueryPredicate, AtomSpec, Bond, BondOrder, BondSpec, Element, Hybridization,
-        MoleculeBuilder, QueryNode, SmilesWriteParams,
+        AtomId, AtomQueryPredicate, AtomSpec, Bond, BondOrder, BondSpec, Element, Hybridization, MoleculeBuilder,
+        QueryNode, SmilesWriteParams,
     };
 
     use super::super::query::RecursiveStructureQuery;
 
     use super::{
-        QueryBoolFeatures, SmartsWriteError, combine_child_smarts, describe_query,
-        fragment_smarts_construct, get_atom_smarts, get_atom_smarts_simple, get_basic_bond_repr,
-        get_bond_smarts, get_bond_smarts_simple, get_non_query_atom_smarts,
-        get_non_query_bond_smarts, get_recursive_structure_query_smarts, mol_fragment_to_cx_smarts,
-        mol_fragment_to_smarts, mol_to_cx_smarts, mol_to_smarts, mol_to_smarts_internal,
+        QueryBoolFeatures, SmartsWriteError, combine_child_smarts, describe_query, fragment_smarts_construct,
+        get_atom_smarts, get_atom_smarts_simple, get_basic_bond_repr, get_bond_smarts, get_bond_smarts_simple,
+        get_non_query_atom_smarts, get_non_query_bond_smarts, get_recursive_structure_query_smarts,
+        mol_fragment_to_cx_smarts, mol_fragment_to_smarts, mol_to_cx_smarts, mol_to_smarts, mol_to_smarts_internal,
         recurse_bond_smarts, recurse_get_smarts,
     };
 
@@ -2312,10 +2213,8 @@ mod tests {
         builder.add_atom(AtomSpec::new(Element::C));
         builder.add_atom(AtomSpec::new(Element::O));
         let molecule = builder.build().unwrap();
-        let query = RecursiveStructureQuery::from_molecule(
-            crate::QueryGraph::from_concrete_molecule(&molecule).unwrap(),
-            0,
-        );
+        let query =
+            RecursiveStructureQuery::from_molecule(crate::QueryGraph::from_concrete_molecule(&molecule).unwrap(), 0);
         let params = SmilesWriteParams::default();
 
         let write_nested = |molecule: &crate::QueryGraph, _: &SmilesWriteParams| {
@@ -2327,20 +2226,14 @@ mod tests {
             "$(C=O)"
         );
         assert_eq!(
-            get_recursive_structure_query_smarts(&query, true, &params, |_, _| {
-                Ok("C=O".to_owned())
-            })
-            .unwrap(),
+            get_recursive_structure_query_smarts(&query, true, &params, |_, _| { Ok("C=O".to_owned()) }).unwrap(),
             "!$(C=O)"
         );
 
         assert_eq!(
-            get_recursive_structure_query_smarts(
-                &RecursiveStructureQuery::new(),
-                false,
-                &params,
-                |_, _| Ok(String::new()),
-            )
+            get_recursive_structure_query_smarts(&RecursiveStructureQuery::new(), false, &params, |_, _| Ok(
+                String::new()
+            ),)
             .unwrap_err(),
             super::SmartsWriteError::MissingRecursiveQueryMolecule
         );
@@ -2368,12 +2261,7 @@ mod tests {
             "/"
         );
         assert_eq!(
-            get_basic_bond_repr(
-                crate::BondOrder::Dative,
-                crate::BondDirection::None,
-                true,
-                &params,
-            ),
+            get_basic_bond_repr(crate::BondOrder::Dative, crate::BondDirection::None, true, &params,),
             "<-"
         );
         let no_dative = SmilesWriteParams {
@@ -2381,30 +2269,15 @@ mod tests {
             ..params.clone()
         };
         assert_eq!(
-            get_basic_bond_repr(
-                crate::BondOrder::Dative,
-                crate::BondDirection::None,
-                false,
-                &no_dative,
-            ),
+            get_basic_bond_repr(crate::BondOrder::Dative, crate::BondDirection::None, false, &no_dative,),
             "-"
         );
         assert_eq!(
-            get_basic_bond_repr(
-                crate::BondOrder::Zero,
-                crate::BondDirection::None,
-                false,
-                &params,
-            ),
+            get_basic_bond_repr(crate::BondOrder::Zero, crate::BondDirection::None, false, &params,),
             "~"
         );
         assert_eq!(
-            get_basic_bond_repr(
-                crate::BondOrder::Quintuple,
-                crate::BondDirection::None,
-                false,
-                &params,
-            ),
+            get_basic_bond_repr(crate::BondOrder::Quintuple, crate::BondDirection::None, false, &params,),
             ""
         );
     }
@@ -2431,10 +2304,7 @@ mod tests {
         assert_eq!(
             get_bond_smarts_simple(
                 bond,
-                &crate::BondQueryPredicate::OrderIn(vec![
-                    crate::BondOrder::Single,
-                    crate::BondOrder::Aromatic,
-                ]),
+                &crate::BondQueryPredicate::OrderIn(vec![crate::BondOrder::Single, crate::BondOrder::Aromatic,]),
                 None,
                 &params,
             )
@@ -2561,11 +2431,7 @@ mod tests {
         let carbon = builder.add_atom(AtomSpec::new(Element::C));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         builder
-            .add_bond(crate::BondSpec::new(
-                carbon,
-                oxygen,
-                crate::BondOrder::Single,
-            ))
+            .add_bond(crate::BondSpec::new(carbon, oxygen, crate::BondOrder::Single))
             .unwrap();
         let molecule = builder.build().unwrap();
         let bond = &molecule.bonds()[0];
@@ -2576,15 +2442,7 @@ mod tests {
             QueryNode::predicate(crate::BondQueryPredicate::IsInRing(true)),
         ]);
         assert_eq!(
-            recurse_bond_smarts(
-                bond,
-                &query,
-                false,
-                None,
-                &mut QueryBoolFeatures::default(),
-                &params,
-            )
-            .unwrap(),
+            recurse_bond_smarts(bond, &query, false, None, &mut QueryBoolFeatures::default(), &params,).unwrap(),
             "-&@"
         );
 
@@ -2593,15 +2451,7 @@ mod tests {
             QueryNode::predicate(crate::BondQueryPredicate::IsInRing(true)),
         ]));
         assert_eq!(
-            recurse_bond_smarts(
-                bond,
-                &negated,
-                false,
-                None,
-                &mut QueryBoolFeatures::default(),
-                &params,
-            )
-            .unwrap(),
+            recurse_bond_smarts(bond, &negated, false, None, &mut QueryBoolFeatures::default(), &params,).unwrap(),
             "!-&!@"
         );
 
@@ -2632,12 +2482,8 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::N));
         let a2 = builder.add_atom(AtomSpec::new(Element::O));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a0, a2, BondOrder::Double))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a0, a2, BondOrder::Double)).unwrap();
         let mut molecule = builder.build().unwrap();
         let atoms = vec![a0, a1, a2];
         let bonds = molecule.bonds().iter().map(Bond::id).collect::<Vec<_>>();
@@ -2718,22 +2564,14 @@ mod tests {
             .unwrap();
         let aromatic = builder.build().unwrap();
         let mut params = SmilesWriteParams::default();
-        assert_eq!(
-            get_non_query_bond_smarts(&aromatic.bonds()[0], Some(0), &params),
-            "\\"
-        );
+        assert_eq!(get_non_query_bond_smarts(&aromatic.bonds()[0], Some(0), &params), "\\");
         params.do_isomeric_smiles = false;
-        assert_eq!(
-            get_non_query_bond_smarts(&aromatic.bonds()[0], Some(0), &params),
-            ":"
-        );
+        assert_eq!(get_non_query_bond_smarts(&aromatic.bonds()[0], Some(0), &params), ":");
 
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::N));
         let a1 = builder.add_atom(AtomSpec::new(Element::B));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Dative))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Dative)).unwrap();
         let dative = builder.build().unwrap();
         params.include_dative_bonds = true;
         assert_eq!(
@@ -2756,9 +2594,11 @@ mod tests {
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
             QueryNode::predicate(AtomQueryPredicate::HydrogenCount(1)),
         ])));
-        builder.add_atom(AtomSpec::new(Element::O).with_query(QueryNode::not(
-            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
-        )));
+        builder.add_atom(
+            AtomSpec::new(Element::O).with_query(QueryNode::not(QueryNode::predicate(
+                AtomQueryPredicate::AtomicNumber(8),
+            ))),
+        );
         builder.add_atom(
             AtomSpec::new(Element::N)
                 .with_atom_map(12)
@@ -2776,35 +2616,17 @@ mod tests {
             crate::QueryGraph::from_concrete_molecule(&recursive_molecule).unwrap(),
             0,
         );
-        builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(
-            AtomQueryPredicate::RecursiveSmarts(recursive),
-        )));
+        builder.add_atom(
+            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive))),
+        );
         let molecule = builder.build().unwrap();
 
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[0], &params).unwrap(),
-            "[#6]"
-        );
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[1], &params).unwrap(),
-            "[#6&H1]"
-        );
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[2], &params).unwrap(),
-            "[!#8]"
-        );
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[3], &params).unwrap(),
-            "[#7:12]"
-        );
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[4], &params).unwrap(),
-            "[Q]"
-        );
-        assert_eq!(
-            get_atom_smarts(&molecule.atoms()[5], &params).unwrap(),
-            "[$([#7])]"
-        );
+        assert_eq!(get_atom_smarts(&molecule.atoms()[0], &params).unwrap(), "[#6]");
+        assert_eq!(get_atom_smarts(&molecule.atoms()[1], &params).unwrap(), "[#6&H1]");
+        assert_eq!(get_atom_smarts(&molecule.atoms()[2], &params).unwrap(), "[!#8]");
+        assert_eq!(get_atom_smarts(&molecule.atoms()[3], &params).unwrap(), "[#7:12]");
+        assert_eq!(get_atom_smarts(&molecule.atoms()[4], &params).unwrap(), "[Q]");
+        assert_eq!(get_atom_smarts(&molecule.atoms()[5], &params).unwrap(), "[$([#7])]");
     }
 
     #[test]
@@ -2816,22 +2638,18 @@ mod tests {
         let a3 = builder.add_atom(AtomSpec::new(Element::N));
         let a4 = builder.add_atom(AtomSpec::new(Element::C));
         let a5 = builder.add_atom(AtomSpec::new(Element::O));
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
         builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .add_bond(BondSpec::new(a2, a3, BondOrder::Single).with_query(QueryNode::and(vec![
+                QueryNode::predicate(crate::BondQueryPredicate::Order(BondOrder::Single)),
+                QueryNode::predicate(crate::BondQueryPredicate::IsInRing(true)),
+            ])))
             .unwrap();
         builder
             .add_bond(
-                BondSpec::new(a2, a3, BondOrder::Single).with_query(QueryNode::and(vec![
-                    QueryNode::predicate(crate::BondQueryPredicate::Order(BondOrder::Single)),
-                    QueryNode::predicate(crate::BondQueryPredicate::IsInRing(true)),
-                ])),
-            )
-            .unwrap();
-        builder
-            .add_bond(
-                BondSpec::new(a4, a5, BondOrder::Double).with_query(QueryNode::not(
-                    QueryNode::predicate(crate::BondQueryPredicate::Order(BondOrder::Double)),
-                )),
+                BondSpec::new(a4, a5, BondOrder::Double).with_query(QueryNode::not(QueryNode::predicate(
+                    crate::BondQueryPredicate::Order(BondOrder::Double),
+                ))),
             )
             .unwrap();
         let molecule = builder.build().unwrap();
@@ -2854,16 +2672,11 @@ mod tests {
     #[test]
     fn smarts_write_mol_to_smarts() {
         let empty = MoleculeBuilder::new().build().unwrap();
-        assert_eq!(
-            mol_to_smarts(&empty, &SmilesWriteParams::default()).unwrap(),
-            ""
-        );
+        assert_eq!(mol_to_smarts(&empty, &SmilesWriteParams::default()).unwrap(), "");
 
         let mut recursive_builder = MoleculeBuilder::new();
-        recursive_builder.add_atom(
-            AtomSpec::new(Element::N)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))),
-        );
+        recursive_builder
+            .add_atom(AtomSpec::new(Element::N).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))));
         let recursive_molecule = recursive_builder.build().unwrap();
         let recursive = RecursiveStructureQuery::from_molecule(
             crate::QueryGraph::from_concrete_molecule(&recursive_molecule).unwrap(),
@@ -2871,10 +2684,8 @@ mod tests {
         );
 
         let mut builder = MoleculeBuilder::new();
-        let carbon = builder.add_atom(
-            AtomSpec::new(Element::C)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))),
-        );
+        let carbon = builder
+            .add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O).with_query(QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
             QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
@@ -2893,18 +2704,12 @@ mod tests {
     #[test]
     fn smarts_write_mol_fragment_to_smarts() {
         let mut builder = MoleculeBuilder::new();
-        let carbon = builder.add_atom(
-            AtomSpec::new(Element::C)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))),
-        );
-        let nitrogen = builder.add_atom(
-            AtomSpec::new(Element::N)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))),
-        );
-        let oxygen = builder.add_atom(
-            AtomSpec::new(Element::O)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8))),
-        );
+        let carbon = builder
+            .add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))));
+        let nitrogen = builder
+            .add_atom(AtomSpec::new(Element::N).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))));
+        let oxygen = builder
+            .add_atom(AtomSpec::new(Element::O).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8))));
         builder
             .add_bond(BondSpec::new(carbon, nitrogen, BondOrder::Single))
             .unwrap();
@@ -2917,8 +2722,7 @@ mod tests {
         params.rooted_at_atom = Some(oxygen.index());
 
         assert_eq!(
-            mol_fragment_to_smarts(&molecule, &params, &[carbon, nitrogen], Some(&[first_bond]),)
-                .unwrap(),
+            mol_fragment_to_smarts(&molecule, &params, &[carbon, nitrogen], Some(&[first_bond]),).unwrap(),
             "[#6]-[#7]"
         );
         assert_eq!(
@@ -2934,10 +2738,7 @@ mod tests {
     #[test]
     fn smarts_write_mol_to_c_x_smarts() {
         let empty = MoleculeBuilder::new().build().unwrap();
-        assert_eq!(
-            mol_to_cx_smarts(&empty, &SmilesWriteParams::default()).unwrap(),
-            ""
-        );
+        assert_eq!(mol_to_cx_smarts(&empty, &SmilesWriteParams::default()).unwrap(), "");
 
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(
@@ -2971,8 +2772,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         assert_eq!(
-            mol_fragment_to_cx_smarts(&molecule, &SmilesWriteParams::default(), &[oxygen], None,)
-                .unwrap(),
+            mol_fragment_to_cx_smarts(&molecule, &SmilesWriteParams::default(), &[oxygen], None,).unwrap(),
             "[#8] |$left;right$|"
         );
     }
@@ -2983,9 +2783,7 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::O));
         let a2 = builder.add_atom(AtomSpec::new(Element::N));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Double))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Double)).unwrap();
         let molecule = builder.build().unwrap();
         let result = mol_to_smarts_internal(
             &molecule,

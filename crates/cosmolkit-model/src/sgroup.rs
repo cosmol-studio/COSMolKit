@@ -190,10 +190,7 @@ impl SubstanceGroup {
 
     #[must_use]
     pub fn bond_role(&self, bond: BondId) -> SGroupBondRole {
-        self.bond_roles
-            .get(&bond)
-            .copied()
-            .unwrap_or(SGroupBondRole::Crossing)
+        self.bond_roles.get(&bond).copied().unwrap_or(SGroupBondRole::Crossing)
     }
 
     #[must_use]
@@ -521,11 +518,7 @@ impl SubstanceGroup {
         self.props.remove(key);
     }
 
-    pub fn can_remap_without_parent(
-        &self,
-        atom_map: &[Option<AtomId>],
-        bond_map: &[Option<BondId>],
-    ) -> bool {
+    pub fn can_remap_without_parent(&self, atom_map: &[Option<AtomId>], bond_map: &[Option<BondId>]) -> bool {
         self.atoms
             .iter()
             .all(|atom| atom_map.get(atom.index()).is_some_and(Option::is_some))
@@ -538,20 +531,15 @@ impl SubstanceGroup {
                 .iter()
                 .all(|atom| atom_map.get(atom.index()).is_some_and(Option::is_some))
             && self.attach_points.iter().all(|attach_point| {
-                atom_map
-                    .get(attach_point.atom.index())
-                    .is_some_and(Option::is_some)
-                    && attach_point.leaving_atom.is_none_or(|leaving_atom| {
-                        atom_map
-                            .get(leaving_atom.index())
-                            .is_some_and(Option::is_some)
-                    })
+                atom_map.get(attach_point.atom.index()).is_some_and(Option::is_some)
+                    && attach_point
+                        .leaving_atom
+                        .is_none_or(|leaving_atom| atom_map.get(leaving_atom.index()).is_some_and(Option::is_some))
             })
-            && self.cstates.iter().all(|cstate| {
-                bond_map
-                    .get(cstate.bond.index())
-                    .is_some_and(Option::is_some)
-            })
+            && self
+                .cstates
+                .iter()
+                .all(|cstate| bond_map.get(cstate.bond.index()).is_some_and(Option::is_some))
     }
 
     pub fn remapped(
@@ -589,9 +577,7 @@ impl SubstanceGroup {
             .map(|attach_point| {
                 let atom = atom_map.get(attach_point.atom.index()).and_then(|x| *x)?;
                 let leaving_atom = match attach_point.leaving_atom {
-                    Some(leaving_atom) => {
-                        Some(atom_map.get(leaving_atom.index()).and_then(|x| *x)?)
-                    }
+                    Some(leaving_atom) => Some(atom_map.get(leaving_atom.index()).and_then(|x| *x)?),
                     None => None,
                 };
                 Some(SGroupAttachPoint {

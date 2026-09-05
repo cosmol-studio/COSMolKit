@@ -17,8 +17,7 @@ const HC_TABLE: &[&str] = &["H", "C"];
 // Avalon❗✔️:       (char *)NULL,             /* because of a trick in utils.c */
 // Avalon❗✔️:    };
 const NON_METAL_HETERO_ELEMENTS: &[&str] = &[
-    "He", "B", "N", "O", "F", "Ne", "Si", "P", "S", "Cl", "Ar", "As", "Se", "Br", "Kr", "Sb", "Te",
-    "I", "Xe", "At",
+    "He", "B", "N", "O", "F", "Ne", "Si", "P", "S", "Cl", "Ar", "As", "Se", "Br", "Kr", "Sb", "Te", "I", "Xe", "At",
 ];
 
 // Avalon❗✔️: char *metals[] =                /* pseudosymbol "M" */
@@ -41,11 +40,10 @@ const NON_METAL_HETERO_ELEMENTS: &[&str] = &[
 // Avalon❗✔️:       (char *)NULL,
 // Avalon❗✔️:   };
 const METALS: &[&str] = &[
-    "Li", "Be", "Na", "Mg", "Al", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu",
-    "Zn", "Ga", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn",
-    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb",
-    "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "Fr", "Ra",
-    "Ac", "Th", "Pa", "U", "Np", "Pu",
+    "Li", "Be", "Na", "Mg", "Al", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Rb",
+    "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Cs", "Ba", "La", "Ce", "Pr", "Nd",
+    "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au",
+    "Hg", "Tl", "Pb", "Bi", "Po", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu",
 ];
 
 // Avalon❗✔️: char *non_metal_small_solution[] =      /* pseudosymbol "Qs" */
@@ -57,9 +55,7 @@ const METALS: &[&str] = &[
 // Avalon❗✔️:                             "I",
 // Avalon❗✔️:       (char *)NULL,
 // Avalon❗✔️:    };
-const NON_METAL_SMALL_SOLUTION: &[&str] = &[
-    "H", "B", "C", "N", "O", "F", "Si", "P", "S", "Cl", "Se", "Br", "I",
-];
+const NON_METAL_SMALL_SOLUTION: &[&str] = &["H", "B", "C", "N", "O", "F", "Si", "P", "S", "Cl", "Se", "Br", "I"];
 
 // Avalon❗✔️: char *alkali_metals[] =                /* pseudosymbol "alk" */
 // Avalon❗✔️:    {
@@ -116,8 +112,8 @@ const HA2: &[&str] = &["Cl", "Br", "I", "At"];
 // Avalon❗✔️:       (char *)NULL,
 // Avalon❗✔️:    };
 const TRANSITION_METALS: &[&str] = &[
-    "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Y", "Zr", "Nb", "Mo", "Tc", "Ru",
-    "Rh", "Pd", "Ag", "Cd", "La", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
+    "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag",
+    "Cd", "La", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
 ];
 
 // Avalon❗✔️: char *tra[] =                /* pseudosymbol "tra" */
@@ -128,8 +124,8 @@ const TRANSITION_METALS: &[&str] = &[
 // Avalon❗✔️:       (char *)NULL,
 // Avalon❗✔️:    };
 const TRA: &[&str] = &[
-    "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Hf", "Ta",
-    "W", "Re", "Os", "Ir", "Pt",
+    "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Hf", "Ta", "W", "Re", "Os",
+    "Ir", "Pt",
 ];
 
 // Avalon❗✔️: char *trb[] =                /* pseudosymbol "trb" */
@@ -216,8 +212,8 @@ const LANTHANOIDS: &[&str] = &[
 // Avalon❗✔️:       (char *)NULL,
 // Avalon❗✔️:    };
 const AMINO_ACIDS: &[&str] = &[
-    "Ala", "Arg", "Asn", "Asp", "Cys", "Gln", "Glu", "Gly", "His", "Ile", "Leu", "Lys", "Met",
-    "Phe", "Pro", "Ser", "Thr", "Trp", "Tyr", "Val",
+    "Ala", "Arg", "Asn", "Asp", "Cys", "Gln", "Glu", "Gly", "His", "Ile", "Leu", "Lys", "Met", "Phe", "Pro", "Ser",
+    "Thr", "Trp", "Tyr", "Val",
 ];
 
 fn is_in_string_table(symbol: &str, table: &[&str]) -> bool {
@@ -430,9 +426,7 @@ pub(super) fn get_symbol_list(molecule: &MoleculeState, index: usize) -> Option<
     // Avalon❗✔️:    }
     // Avalon❗✔️:    return (slp);
     // Avalon❗✔️: }
-    let atom_number = index
-        .checked_add(1)
-        .and_then(|value| i32::try_from(value).ok())?;
+    let atom_number = index.checked_add(1).and_then(|value| i32::try_from(value).ok())?;
     molecule
         .symbol_lists
         .iter()
@@ -470,10 +464,7 @@ mod tests {
         ];
         for (pattern, member, nonmember) in cases {
             assert!(atom_symbol_match(member, pattern), "{member} in {pattern}");
-            assert!(
-                !atom_symbol_match(nonmember, pattern),
-                "{nonmember} not in {pattern}"
-            );
+            assert!(!atom_symbol_match(nonmember, pattern), "{nonmember} not in {pattern}");
         }
     }
 

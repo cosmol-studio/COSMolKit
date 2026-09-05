@@ -5,12 +5,10 @@ use crate::source::base::ichi_io::inchi_ios_init;
 use crate::source::base::readinch::{CreateInchi_Stereo0D, FreeInchi_Stereo0D};
 use crate::source::base::util::inchi_free;
 use crate::source_types::{
-    AB_PARITY_UNDF, AB_PARITY_UNKN, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INPUT_TYPE,
-    InchiInpData, MAX_ATOMS, MAX_SDF_HEADER, MAX_SDF_VALUE, STR_ERR_LEN, SourceHeap,
-    SourceHeapError, SourceMutPointer, inchi_Input, tagInputType_INPUT_INCHI_PLAIN,
-    tagRetValGetINCHI_inchi_Ret_EOF, tagRetValGetINCHI_inchi_Ret_ERROR,
-    tagRetValGetINCHI_inchi_Ret_FATAL, tagRetValGetINCHI_inchi_Ret_OKAY,
-    tagRetValGetINCHI_inchi_Ret_WARNING,
+    AB_PARITY_UNDF, AB_PARITY_UNKN, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INPUT_TYPE, InchiInpData,
+    MAX_ATOMS, MAX_SDF_HEADER, MAX_SDF_VALUE, STR_ERR_LEN, SourceHeap, SourceHeapError, SourceMutPointer, inchi_Input,
+    tagInputType_INPUT_INCHI_PLAIN, tagRetValGetINCHI_inchi_Ret_EOF, tagRetValGetINCHI_inchi_Ret_ERROR,
+    tagRetValGetINCHI_inchi_Ret_FATAL, tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_WARNING,
 };
 
 pub(crate) fn Get_std_inchi_Input_FromAuxInfo(
@@ -177,8 +175,7 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let aux_length_i32 =
-        i32::try_from(aux_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let aux_length_i32 = i32::try_from(aux_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let allocated_length = aux_length_i32
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -217,8 +214,7 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
     );
 
     let operation = parsed.and_then(|atom_count| {
-        output.bChiral =
-            i32::try_from(chiral).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        output.bChiral = i32::try_from(chiral).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         output.szErrMsg.copy_from_slice(
             heap.slice(error_buffer.as_const())?
                 .get(..STR_ERR_LEN as usize)
@@ -244,9 +240,7 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
             };
         }
 
-        if return_value != tagRetValGetINCHI_inchi_Ret_OKAY
-            && return_value != tagRetValGetINCHI_inchi_Ret_WARNING
-        {
+        if return_value != tagRetValGetINCHI_inchi_Ret_OKAY && return_value != tagRetValGetINCHI_inchi_Ret_WARNING {
             Free_inchi_Input(heap, &mut input_data)?;
             output.bChiral = 0;
         }
@@ -260,20 +254,14 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
     let header_cleanup = inchi_free(heap, header);
     let label_cleanup = inchi_free(heap, label);
     let error_cleanup = inchi_free(heap, error_buffer);
-    let cleanup = header_cleanup
-        .and(label_cleanup)
-        .and(error_cleanup)
-        .map(|_| ());
+    let cleanup = header_cleanup.and(label_cleanup).and(error_cleanup).map(|_| ());
     match operation {
         Ok(return_value) => cleanup.map(|_| return_value),
         Err(source_error) => Err(source_error),
     }
 }
 
-pub(crate) fn Free_inchi_Input(
-    heap: &mut SourceHeap,
-    input: &mut inchi_Input,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn Free_inchi_Input(heap: &mut SourceHeap, input: &mut inchi_Input) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/ichilnct.c:187 Free_inchi_Input
     // INCHI✔️❌: void INCHI_DECL Free_inchi_Input( inchi_Input *pInp )
     // INCHI✔️❌: {
@@ -291,10 +279,7 @@ pub(crate) fn Free_inchi_Input(
     Ok(())
 }
 
-pub(crate) fn Free_std_inchi_Input(
-    heap: &mut SourceHeap,
-    input: &mut inchi_Input,
-) -> Result<(), SourceHeapError> {
+pub(crate) fn Free_std_inchi_Input(heap: &mut SourceHeap, input: &mut inchi_Input) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/ichilnct.c:182 Free_std_inchi_Input
     // INCHI✔️✔️: void INCHI_DECL Free_std_inchi_Input( inchi_Input *pInp )
     // INCHI✔️✔️: {
@@ -604,12 +589,12 @@ pub(crate) fn InchiToInchi_Input(
                 } else if atom_old.is_null() {
                     input_data.atom = atom_new;
                     atom_new = SourceMutPointer::null();
-                    input_data.num_atoms = i16::try_from(new_atom_count)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    input_data.num_atoms =
+                        i16::try_from(new_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     input_data.stereo0D = stereo_new;
                     stereo_new = SourceMutPointer::null();
-                    input_data.num_stereo0D = i16::try_from(new_stereo_count)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    input_data.num_stereo0D =
+                        i16::try_from(new_stereo_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     new_stereo_count = 0;
                     let _ = new_stereo_count;
                 } else {
@@ -640,8 +625,8 @@ pub(crate) fn InchiToInchi_Input(
 
                         if input_data.num_atoms != 0 {
                             let offset = input_data.num_atoms;
-                            let new_atom_count_usize = usize::try_from(new_atom_count)
-                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                            let new_atom_count_usize =
+                                usize::try_from(new_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                             let atoms = heap.slice_mut(atom_new)?;
                             for atom in atoms
                                 .get_mut(..new_atom_count_usize)
@@ -667,8 +652,8 @@ pub(crate) fn InchiToInchi_Input(
                         if !atom_new.is_null() {
                             let destination_start = usize::try_from(input_data.num_atoms)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                            let new_atom_count_usize = usize::try_from(new_atom_count)
-                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                            let new_atom_count_usize =
+                                usize::try_from(new_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                             for index in 0..new_atom_count_usize {
                                 let atom = heap
                                     .slice(atom_new.as_const())?
@@ -683,17 +668,16 @@ pub(crate) fn InchiToInchi_Input(
                         }
 
                         if new_stereo_count > 0 && !stereo_new.is_null() {
-                            input_data.stereo0D =
-                                match CreateInchi_Stereo0D(heap, total_stereo_count) {
-                                    Ok(stereo) => stereo,
-                                    Err(SourceHeapError::AllocationFailed) => {
-                                        new_stereo_count = 0;
-                                        add_source_error(heap, error_text, "Out of RAM")?;
-                                        *error = -1;
-                                        SourceMutPointer::null()
-                                    }
-                                    Err(source_error) => return Err(source_error),
-                                };
+                            input_data.stereo0D = match CreateInchi_Stereo0D(heap, total_stereo_count) {
+                                Ok(stereo) => stereo,
+                                Err(SourceHeapError::AllocationFailed) => {
+                                    new_stereo_count = 0;
+                                    add_source_error(heap, error_text, "Out of RAM")?;
+                                    *error = -1;
+                                    SourceMutPointer::null()
+                                }
+                                Err(source_error) => return Err(source_error),
+                            };
 
                             if !input_data.stereo0D.is_null() {
                                 let old_stereo_count = usize::try_from(input_data.num_stereo0D)
@@ -755,15 +739,13 @@ pub(crate) fn InchiToInchi_Input(
                         input_data.num_atoms = input_data
                             .num_atoms
                             .checked_add(
-                                i16::try_from(new_atom_count)
-                                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                                i16::try_from(new_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                             )
                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                         input_data.num_stereo0D = input_data
                             .num_stereo0D
                             .checked_add(
-                                i16::try_from(new_stereo_count)
-                                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                                i16::try_from(new_stereo_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                             )
                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                     }
@@ -789,9 +771,7 @@ pub(crate) fn InchiToInchi_Input(
     }
 
     if *error != 0 {
-        let input_data = orig_at_data
-            .as_deref_mut()
-            .ok_or(SourceHeapError::NullPointer)?;
+        let input_data = orig_at_data.as_deref_mut().ok_or(SourceHeapError::NullPointer)?;
         FreeInchi_Input(heap, input_data)?;
     }
     if *error != 0
@@ -814,10 +794,10 @@ pub(crate) fn InchiToInchi_Input(
 mod tests {
     use super::*;
     use crate::source_types::{
-        FLAG_INP_AT_CHIRAL, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING,
-        MAX_SDF_HEADER, MAX_SDF_VALUE, STR_ERR_LEN, SourceFile, SourceMutPointer, inchi_Atom,
-        inchi_Stereo0D, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
-        tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagInputType_INPUT_INCHI_PLAIN,
+        FLAG_INP_AT_CHIRAL, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, MAX_SDF_HEADER,
+        MAX_SDF_VALUE, STR_ERR_LEN, SourceFile, SourceMutPointer, inchi_Atom, inchi_Stereo0D,
+        tagINCHIStereoParity0D_INCHI_PARITY_ODD, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
+        tagInputType_INPUT_INCHI_PLAIN,
     };
     use crate::test_support::allocate_source_fixture;
     use serde_json::{Value, json};
@@ -825,10 +805,7 @@ mod tests {
     use std::process::Command;
 
     fn string_stream(heap: &mut SourceHeap, text: &[u8]) -> (INCHI_IOSTREAM, SourceMutPointer<i8>) {
-        let allocation = allocate_source_fixture(
-            heap,
-            text.iter().map(|byte| *byte as i8).collect::<Vec<_>>(),
-        );
+        let allocation = allocate_source_fixture(heap, text.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
         (
             INCHI_IOSTREAM {
                 s: INCHI_IOS_STRING {
@@ -887,11 +864,7 @@ mod tests {
         (heap, aux, input, output, status)
     }
 
-    fn cleanup_focused_aux_case(
-        mut heap: SourceHeap,
-        aux: SourceMutPointer<i8>,
-        input: SourceMutPointer<inchi_Input>,
-    ) {
+    fn cleanup_focused_aux_case(mut heap: SourceHeap, aux: SourceMutPointer<i8>, input: SourceMutPointer<inchi_Input>) {
         let mut state = heap.slice(input.as_const()).unwrap()[0].clone();
         Free_inchi_Input(&mut heap, &mut state).unwrap();
         inchi_free(&mut heap, aux).unwrap();
@@ -903,10 +876,7 @@ mod tests {
         let mut null_heap = SourceHeap::default();
         let null_aux = allocate_source_fixture(
             &mut null_heap,
-            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
+            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0".iter().map(|byte| *byte as i8).collect(),
         );
         assert_eq!(
             Get_std_inchi_Input_FromAuxInfo(&mut null_heap, null_aux, 0, None),
@@ -918,10 +888,7 @@ mod tests {
             let mut heap = SourceHeap::default();
             let aux = allocate_source_fixture(
                 &mut heap,
-                b"AuxInfo=1/rA:1C/rB:/rC:;\n\0"
-                    .iter()
-                    .map(|byte| *byte as i8)
-                    .collect(),
+                b"AuxInfo=1/rA:1C/rB:/rC:;\n\0".iter().map(|byte| *byte as i8).collect(),
             );
             let input_pointer = allocate_source_fixture(&mut heap, vec![inchi_Input::default()]);
             let mut output = InchiInpData {
@@ -953,10 +920,7 @@ mod tests {
         let mut heap = SourceHeap::default();
         let aux = allocate_source_fixture(
             &mut heap,
-            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
+            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0".iter().map(|byte| *byte as i8).collect(),
         );
         assert_eq!(
             Get_inchi_Input_FromAuxInfo(&mut heap, aux, 0, 0, None),
@@ -1012,10 +976,7 @@ mod tests {
         let parsed = heap.slice(input_pointer.as_const()).unwrap()[0].clone();
         assert_eq!(parsed.szOptions, options);
         assert_eq!((parsed.num_atoms, parsed.num_stereo0D), (2, 0));
-        assert_eq!(
-            heap.slice(parsed.atom.as_const()).unwrap()[0].neighbor[0],
-            1
-        );
+        assert_eq!(heap.slice(parsed.atom.as_const()).unwrap()[0].neighbor[0], 1);
         assert_eq!(heap.slice(old_atom_alias).unwrap().len(), 1);
         assert_eq!(heap.slice(old_stereo_alias).unwrap().len(), 1);
         let mut parsed_cleanup = parsed;
@@ -1043,8 +1004,7 @@ mod tests {
             ),
         ] {
             let mut case_heap = SourceHeap::default();
-            let case_options =
-                allocate_source_fixture(&mut case_heap, vec![b'-' as i8, b'X' as i8, 0]);
+            let case_options = allocate_source_fixture(&mut case_heap, vec![b'-' as i8, b'X' as i8, 0]);
             let case_input = allocate_source_fixture(
                 &mut case_heap,
                 vec![inchi_Input {
@@ -1052,10 +1012,7 @@ mod tests {
                     ..inchi_Input::default()
                 }],
             );
-            let case_aux = allocate_source_fixture(
-                &mut case_heap,
-                text.iter().map(|byte| *byte as i8).collect(),
-            );
+            let case_aux = allocate_source_fixture(&mut case_heap, text.iter().map(|byte| *byte as i8).collect());
             let mut case_output = InchiInpData {
                 pInp: case_input,
                 bChiral: 8,
@@ -1078,8 +1035,7 @@ mod tests {
         }
 
         let mut warning_heap = SourceHeap::default();
-        let warning_input =
-            allocate_source_fixture(&mut warning_heap, vec![inchi_Input::default()]);
+        let warning_input = allocate_source_fixture(&mut warning_heap, vec![inchi_Input::default()]);
         let warning_aux = allocate_source_fixture(
             &mut warning_heap,
             b"AuxInfo=1/rA:2CO/rB:a1;/rC:;;\n\0"
@@ -1092,13 +1048,7 @@ mod tests {
             ..InchiInpData::default()
         };
         assert_eq!(
-            Get_inchi_Input_FromAuxInfo(
-                &mut warning_heap,
-                warning_aux,
-                0,
-                0,
-                Some(&mut warning_output),
-            ),
+            Get_inchi_Input_FromAuxInfo(&mut warning_heap, warning_aux, 0, 0, Some(&mut warning_output),),
             Ok(tagRetValGetINCHI_inchi_Ret_ERROR)
         );
         assert_eq!(
@@ -1107,10 +1057,7 @@ mod tests {
         );
         assert_eq!(warning_output.bChiral, 0);
         let mut warning_state = warning_heap.slice(warning_input.as_const()).unwrap()[0].clone();
-        assert_eq!(
-            (warning_state.num_atoms, warning_state.num_stereo0D),
-            (0, 0)
-        );
+        assert_eq!((warning_state.num_atoms, warning_state.num_stereo0D), (0, 0));
         Free_inchi_Input(&mut warning_heap, &mut warning_state).unwrap();
         inchi_free(&mut warning_heap, warning_aux).unwrap();
         inchi_free(&mut warning_heap, warning_input).unwrap();
@@ -1119,10 +1066,7 @@ mod tests {
         let fatal_input = allocate_source_fixture(&mut fatal_heap, vec![inchi_Input::default()]);
         let fatal_aux = allocate_source_fixture(
             &mut fatal_heap,
-            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
+            b"AuxInfo=1/rA:1C/rB:/rC:;\n\0".iter().map(|byte| *byte as i8).collect(),
         );
         let mut fatal_output = InchiInpData {
             pInp: fatal_input,
@@ -1142,28 +1086,20 @@ mod tests {
         inchi_free(&mut fatal_heap, fatal_aux).unwrap();
         inchi_free(&mut fatal_heap, fatal_input).unwrap();
 
-        let (no_h_heap, no_h_aux, no_h_input, _, no_h_status) =
-            focused_aux_case("AuxInfo=1/rA:1C/rB:/rC:;\n", 1, 0);
+        let (no_h_heap, no_h_aux, no_h_input, _, no_h_status) = focused_aux_case("AuxInfo=1/rA:1C/rB:/rC:;\n", 1, 0);
         assert_eq!(no_h_status, tagRetValGetINCHI_inchi_Ret_OKAY);
         let no_h_state = &no_h_heap.slice(no_h_input.as_const()).unwrap()[0];
-        assert_eq!(
-            no_h_heap.slice(no_h_state.atom.as_const()).unwrap()[0].num_iso_H[0],
-            0
-        );
+        assert_eq!(no_h_heap.slice(no_h_state.atom.as_const()).unwrap()[0].num_iso_H[0], 0);
         cleanup_focused_aux_case(no_h_heap, no_h_aux, no_h_input);
 
         let merge_text = "AuxInfo=1/rA:1C/rB:/rC:;\n\
 AuxInfo=1/rA:2NO0o/rB:s1;/rC:;;\n";
-        let (merge_heap, merge_aux, merge_input, _, merge_status) =
-            focused_aux_case(merge_text, 0, 0);
+        let (merge_heap, merge_aux, merge_input, _, merge_status) = focused_aux_case(merge_text, 0, 0);
         assert_eq!(merge_status, tagRetValGetINCHI_inchi_Ret_OKAY);
         let merge_state = &merge_heap.slice(merge_input.as_const()).unwrap()[0];
         assert_eq!((merge_state.num_atoms, merge_state.num_stereo0D), (3, 1));
         let merge_atoms = merge_heap.slice(merge_state.atom.as_const()).unwrap();
-        assert_eq!(
-            (merge_atoms[1].neighbor[0], merge_atoms[2].neighbor[0]),
-            (2, 1)
-        );
+        assert_eq!((merge_atoms[1].neighbor[0], merge_atoms[2].neighbor[0]), (2, 1));
         assert_eq!(
             merge_heap.slice(merge_state.stereo0D.as_const()).unwrap()[0].central_atom,
             2
@@ -1178,27 +1114,20 @@ AuxInfo=1/rA:2NO0o/rB:s1;/rC:;;\n";
             let unknown_state = &unknown_heap.slice(unknown_input.as_const()).unwrap()[0];
             assert_eq!(unknown_state.num_stereo0D, 1);
             assert_eq!(
-                unknown_heap
-                    .slice(unknown_state.stereo0D.as_const())
-                    .unwrap()[0]
-                    .parity,
+                unknown_heap.slice(unknown_state.stereo0D.as_const()).unwrap()[0].parity,
                 3
             );
             cleanup_focused_aux_case(unknown_heap, unknown_aux, unknown_input);
         }
 
         let max_text = generated_aux_input_text(1);
-        let (max_heap, max_aux, max_input, max_output, max_status) =
-            focused_aux_case(&max_text, 0, 0);
+        let (max_heap, max_aux, max_input, max_output, max_status) = focused_aux_case(&max_text, 0, 0);
         assert_eq!(max_status, tagRetValGetINCHI_inchi_Ret_ERROR);
         assert_eq!(
             inline_c_text(&max_output.szErrMsg),
             "Too many atoms [did you forget 'LargeMolecules' switch?]"
         );
-        assert_eq!(
-            max_heap.slice(max_input.as_const()).unwrap()[0],
-            inchi_Input::default()
-        );
+        assert_eq!(max_heap.slice(max_input.as_const()).unwrap()[0], inchi_Input::default());
         cleanup_focused_aux_case(max_heap, max_aux, max_input);
     }
 
@@ -1260,8 +1189,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         let (mut labeled_stream, labeled_allocation) = string_stream(&mut heap, labeled);
         let label = allocate_source_fixture(&mut heap, vec![0_i8; MAX_SDF_HEADER as usize]);
         let value = allocate_source_fixture(&mut heap, vec![0_i8; MAX_SDF_VALUE as usize]);
-        let labeled_error_text =
-            allocate_source_fixture(&mut heap, vec![b'X' as i8; STR_ERR_LEN as usize]);
+        let labeled_error_text = allocate_source_fixture(&mut heap, vec![b'X' as i8; STR_ERR_LEN as usize]);
         heap.slice_mut(labeled_error_text).unwrap()[1] = 0;
         let mut labeled_output = inchi_Input::default();
         let mut labeled_id = -1;
@@ -1294,10 +1222,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
         );
         assert_eq!(labeled_output.num_atoms, 2);
         assert!(!labeled_output.atom.is_null());
-        assert_eq!(
-            heap.slice(labeled_output.atom.as_const()).unwrap()[0].neighbor[0],
-            1
-        );
+        assert_eq!(heap.slice(labeled_output.atom.as_const()).unwrap()[0].neighbor[0], 1);
         FreeInchi_Input(&mut heap, &mut labeled_output).unwrap();
         for allocation in [labeled_allocation, label, value, labeled_error_text] {
             inchi_free(&mut heap, allocation).unwrap();
@@ -1338,18 +1263,11 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         assert_eq!(merged_output.num_atoms, 4);
         assert_eq!(merged_output.num_stereo0D, 1);
         assert_eq!(
-            (
-                merge_id,
-                c_text(&heap, merge_label),
-                c_text(&heap, merge_value)
-            ),
+            (merge_id, c_text(&heap, merge_label), c_text(&heap, merge_value)),
             (3, "THIRD".into(), "three".into())
         );
         let merged_atoms = heap.slice(merged_output.atom.as_const()).unwrap();
-        assert_eq!(
-            (merged_atoms[1].neighbor[0], merged_atoms[2].neighbor[0]),
-            (2, 1)
-        );
+        assert_eq!((merged_atoms[1].neighbor[0], merged_atoms[2].neighbor[0]), (2, 1));
         let merged_stereo = &heap.slice(merged_output.stereo0D.as_const()).unwrap()[0];
         assert_eq!(merged_stereo.central_atom, 3);
         assert_eq!(merged_stereo.neighbor, [3; 4]);
@@ -1385,12 +1303,10 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         inchi_free(&mut heap, empty_allocation).unwrap();
         inchi_free(&mut heap, empty_error_text).unwrap();
 
-        let (mut boundary_stream, boundary_allocation) =
-            string_stream(&mut heap, b"AuxInfo=1/rA:1C/rB:/rC:;\n");
+        let (mut boundary_stream, boundary_allocation) = string_stream(&mut heap, b"AuxInfo=1/rA:1C/rB:/rC:;\n");
         let boundary_atom = allocate_source_fixture(&mut heap, vec![inchi_Atom::default()]);
         let boundary_alias = boundary_atom.as_const();
-        let boundary_error_text =
-            allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
+        let boundary_error_text = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
         let mut boundary_output = inchi_Input {
             atom: boundary_atom,
             num_atoms: MAX_ATOMS as i16 - 1,
@@ -1420,20 +1336,15 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             c_text(&heap, boundary_error_text),
             "Too many atoms [did you forget 'LargeMolecules' switch?]"
         );
-        assert_eq!(
-            heap.slice(boundary_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(boundary_alias), Err(SourceHeapError::MissingAllocation));
         assert_eq!(boundary_output, inchi_Input::default());
         inchi_free(&mut heap, boundary_allocation).unwrap();
         inchi_free(&mut heap, boundary_error_text).unwrap();
 
-        let (mut malformed_stream, malformed_allocation) =
-            string_stream(&mut heap, b"AuxInfo=1/rA:2CO/rB:x/rC:;;\n");
+        let (mut malformed_stream, malformed_allocation) = string_stream(&mut heap, b"AuxInfo=1/rA:2CO/rB:x/rC:;;\n");
         let malformed_atom = allocate_source_fixture(&mut heap, vec![inchi_Atom::default()]);
         let malformed_alias = malformed_atom.as_const();
-        let malformed_error_text =
-            allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
+        let malformed_error_text = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
         let mut malformed_output = inchi_Input {
             atom: malformed_atom,
             num_atoms: 1,
@@ -1460,18 +1371,13 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         );
         assert_eq!(malformed_error, 40);
         assert_eq!(c_text(&heap, malformed_error_text), "Wrong bonds data");
-        assert_eq!(
-            heap.slice(malformed_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(malformed_alias), Err(SourceHeapError::MissingAllocation));
         assert_eq!(malformed_output, inchi_Input::default());
         inchi_free(&mut heap, malformed_allocation).unwrap();
         inchi_free(&mut heap, malformed_error_text).unwrap();
 
-        let (mut unknown_stream, unknown_allocation) =
-            string_stream(&mut heap, b"AuxInfo=1/rA:1C/rB:/rC:;\n");
-        let unknown_error_text =
-            allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
+        let (mut unknown_stream, unknown_allocation) = string_stream(&mut heap, b"AuxInfo=1/rA:1C/rB:/rC:;\n");
+        let unknown_error_text = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
         let mut unknown_output = inchi_Input::default();
         let mut unknown_error = 77;
         assert_eq!(
@@ -1510,8 +1416,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         ] {
             let mut failure_heap = SourceHeap::default();
             let (mut failure_stream, failure_allocation) = string_stream(&mut failure_heap, text);
-            let failure_error_text =
-                allocate_source_fixture(&mut failure_heap, vec![0_i8; STR_ERR_LEN as usize]);
+            let failure_error_text = allocate_source_fixture(&mut failure_heap, vec![0_i8; STR_ERR_LEN as usize]);
             let mut failure_output = inchi_Input::default();
             let mut failure_error = 0;
             failure_heap.fail_after_allocations(allocations_before_failure);
@@ -1573,15 +1478,9 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         let input = &official["input"];
         let text = input["text"].as_str().expect("input text must be text");
         let file_mode = input["mode"].as_str() == Some("file");
-        let input_type = input["input_type"]
-            .as_i64()
-            .expect("input_type must be integer") as INPUT_TYPE;
-        let merge_all = input["merge_all"]
-            .as_i64()
-            .expect("merge_all must be integer") as i32;
-        let do_not_add_h = input["do_not_add_h"]
-            .as_i64()
-            .expect("do_not_add_h must be integer") as i32;
+        let input_type = input["input_type"].as_i64().expect("input_type must be integer") as INPUT_TYPE;
+        let merge_all = input["merge_all"].as_i64().expect("merge_all must be integer") as i32;
+        let do_not_add_h = input["do_not_add_h"].as_i64().expect("do_not_add_h must be integer") as i32;
         let ab_parity_unknown = input["ab_parity_unknown"]
             .as_i64()
             .expect("ab_parity_unknown must be integer") as i32;
@@ -1590,26 +1489,18 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             .expect("initial_atom_count must be integer") as i16;
         let initial_atom_storage = input["initial_atom_storage"]
             .as_u64()
-            .expect("initial_atom_storage must be integer")
-            as usize;
+            .expect("initial_atom_storage must be integer") as usize;
         let initial_stereo_count = input["initial_stereo_count"]
             .as_i64()
-            .expect("initial_stereo_count must be integer")
-            as i16;
+            .expect("initial_stereo_count must be integer") as i16;
         let initial_stereo_storage = input["initial_stereo_storage"]
             .as_u64()
-            .expect("initial_stereo_storage must be integer")
-            as usize;
+            .expect("initial_stereo_storage must be integer") as usize;
         let allocation_failure_ordinal = input["allocation_failure_ordinal"]
             .as_u64()
             .expect("allocation_failure_ordinal must be integer");
-        let initial_error = input["initial_error"]
-            .as_i64()
-            .expect("initial_error must be integer") as i32;
-        let omit_output = input["omit_output"]
-            .as_i64()
-            .expect("omit_output must be integer")
-            != 0;
+        let initial_error = input["initial_error"].as_i64().expect("initial_error must be integer") as i32;
+        let omit_output = input["omit_output"].as_i64().expect("omit_output must be integer") != 0;
         let omit_optional_outputs = input["omit_optional_outputs"]
             .as_i64()
             .expect("omit_optional_outputs must be integer")
@@ -1707,9 +1598,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             Some(&mut error),
             (!omit_optional_outputs).then_some(error_text),
         )
-        .unwrap_or_else(|source_error| {
-            panic!("Rust source model returned {source_error:?} for {case_id}")
-        });
+        .unwrap_or_else(|source_error| panic!("Rust source model returned {source_error:?} for {case_id}"));
         let allocation_calls = heap.source_allocation_calls();
         let input_position = if file_mode {
             heap.slice(file_allocation.as_const()).unwrap()[0].position as i64
@@ -1763,8 +1652,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             };
             (atoms, bond_fields, stereo)
         };
-        let pointer_state = |pointer: SourceMutPointer<inchi_Atom>,
-                             original: SourceMutPointer<inchi_Atom>| {
+        let pointer_state = |pointer: SourceMutPointer<inchi_Atom>, original: SourceMutPointer<inchi_Atom>| {
             if pointer.is_null() {
                 "null"
             } else if !original.is_null() && pointer == original {
@@ -1939,26 +1827,18 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             .as_i64()
             .expect("generated_text must be integer");
         let text = if generated_text == 0 {
-            input["text"]
-                .as_str()
-                .expect("literal AuxInfo must be text")
-                .to_owned()
+            input["text"].as_str().expect("literal AuxInfo must be text").to_owned()
         } else {
             generated_aux_input_text(generated_text)
         };
-        let do_not_add_h = input["do_not_add_h"]
-            .as_i64()
-            .expect("do_not_add_h must be integer") as i32;
+        let do_not_add_h = input["do_not_add_h"].as_i64().expect("do_not_add_h must be integer") as i32;
         let distinguish_unknown_undefined_stereo = input["distinguish_unknown_undefined_stereo"]
             .as_i64()
-            .expect("distinguish flag must be integer")
-            as i32;
+            .expect("distinguish flag must be integer") as i32;
         let allocation_failure_ordinal = input["allocation_failure_ordinal"]
             .as_u64()
             .expect("allocation failure ordinal must be integer");
-        let output_mode = input["output_mode"]
-            .as_i64()
-            .expect("output mode must be integer") as i32;
+        let output_mode = input["output_mode"].as_i64().expect("output mode must be integer") as i32;
         let seed_old_allocations = input["seed_old_allocations"]
             .as_i64()
             .expect("seed_old_allocations must be integer")
@@ -1968,8 +1848,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         let mut aux_bytes = text.bytes().map(|byte| byte as i8).collect::<Vec<_>>();
         aux_bytes.push(0);
         let aux_info = allocate_source_fixture(&mut heap, aux_bytes);
-        let original_options =
-            allocate_source_fixture(&mut heap, vec![b'-' as i8, b'X' as i8, 0, b'Z' as i8]);
+        let original_options = allocate_source_fixture(&mut heap, vec![b'-' as i8, b'X' as i8, 0, b'Z' as i8]);
 
         let mut original_atom_value = inchi_Atom::default();
         original_atom_value.x = -0.0;
@@ -2033,9 +1912,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
                 output_argument,
             )
         }
-        .unwrap_or_else(|source_error| {
-            panic!("Rust source model returned {source_error:?} for {case_id}")
-        });
+        .unwrap_or_else(|source_error| panic!("Rust source model returned {source_error:?} for {case_id}"));
         let allocation_calls = heap.source_allocation_calls();
         let input_bytes = heap.slice(aux_info.as_const()).unwrap()[..=text.len()]
             .iter()
@@ -2066,10 +1943,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             let atom_count = usize::try_from(state.num_atoms.max(0)).unwrap();
             if atom_count > 0 && !state.atom.is_null() {
                 let atom_slice = &heap.slice(state.atom.as_const()).unwrap()[..atom_count];
-                atoms = atom_slice
-                    .iter()
-                    .map(inchi_input_atom_json)
-                    .collect::<Vec<_>>();
+                atoms = atom_slice.iter().map(inchi_input_atom_json).collect::<Vec<_>>();
                 bond_fields = atom_slice
                     .iter()
                     .enumerate()
@@ -2123,13 +1997,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             .then(|| output.szErrMsg.iter().position(|byte| *byte == 0))
             .flatten();
         let error_text = error_terminator.map(|length| {
-            String::from_utf8(
-                output.szErrMsg[..length]
-                    .iter()
-                    .map(|byte| *byte as u8)
-                    .collect(),
-            )
-            .unwrap()
+            String::from_utf8(output.szErrMsg[..length].iter().map(|byte| *byte as u8).collect()).unwrap()
         });
         let record = json!({
             "schema_version": "cosmolkit-inchi-official-c-v1",
@@ -2334,18 +2202,9 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         assert_eq!(input.szOptions, options);
         assert_eq!(input.num_atoms, 0);
         assert_eq!(input.num_stereo0D, 0);
-        assert_eq!(
-            heap.slice(atom_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(stereo_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(options.as_const()).unwrap(),
-            &[b'-' as i8, b'S' as i8, 0]
-        );
+        assert_eq!(heap.slice(atom_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(stereo_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(options.as_const()).unwrap(), &[b'-' as i8, b'S' as i8, 0]);
         assert_eq!(inchi_free(&mut heap, options), Ok(()));
 
         let null_options = SourceMutPointer::null();
@@ -2387,8 +2246,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
 
         let atom_allocation = allocate_source_fixture(&mut heap, vec![inchi_Atom::default()]);
         let atom_alias = atom_allocation.as_const();
-        let stereo_allocation =
-            allocate_source_fixture(&mut heap, vec![inchi_Stereo0D::default(); 2]);
+        let stereo_allocation = allocate_source_fixture(&mut heap, vec![inchi_Stereo0D::default(); 2]);
         let mut invalid_stereo_input = inchi_Input {
             atom: atom_allocation,
             stereo0D: stereo_allocation.offset(1).unwrap(),
@@ -2401,16 +2259,10 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
             Err(SourceHeapError::FreeOfInteriorPointer)
         );
         assert!(invalid_stereo_input.atom.is_null());
-        assert_eq!(
-            invalid_stereo_input.stereo0D,
-            stereo_allocation.offset(1).unwrap()
-        );
+        assert_eq!(invalid_stereo_input.stereo0D, stereo_allocation.offset(1).unwrap());
         assert_eq!(invalid_stereo_input.num_atoms, 1);
         assert_eq!(invalid_stereo_input.num_stereo0D, 2);
-        assert_eq!(
-            heap.slice(atom_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(atom_alias), Err(SourceHeapError::MissingAllocation));
         assert_eq!(heap.slice(stereo_allocation.as_const()).unwrap().len(), 2);
         assert_eq!(inchi_free(&mut heap, stereo_allocation), Ok(()));
     }
@@ -2436,18 +2288,9 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
         assert!(input.stereo0D.is_null());
         assert_eq!(input.szOptions, options);
         assert_eq!((input.num_atoms, input.num_stereo0D), (0, 0));
-        assert_eq!(
-            heap.slice(atom_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(stereo_alias),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(options.as_const()).unwrap(),
-            &[b'-' as i8, b'S' as i8, 0]
-        );
+        assert_eq!(heap.slice(atom_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(stereo_alias), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(options.as_const()).unwrap(), &[b'-' as i8, b'S' as i8, 0]);
         assert_eq!(inchi_free(&mut heap, options), Ok(()));
 
         let mut empty = inchi_Input {

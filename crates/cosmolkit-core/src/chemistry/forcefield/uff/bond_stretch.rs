@@ -99,8 +99,7 @@ impl BondStretchContrib {
 
         // RDKit✔️✔️:   double distTerm =
         // RDKit✔️✔️:       dp_forceField->distance(d_end1Idx, d_end2Idx, pos) - d_restLen;
-        let dist_term =
-            force_field.distance(self.end1_idx, self.end2_idx, Some(pos)) - self.rest_len;
+        let dist_term = force_field.distance(self.end1_idx, self.end2_idx, Some(pos)) - self.rest_len;
         // RDKit✔️✔️:   double res = 0.5 * d_forceConstant * distTerm * distTerm;
         // RDKit✔️✔️:   return res;
         // RDKit✔️✔️: }
@@ -176,9 +175,7 @@ mod tests {
     use crate::chemistry::forcefield::core::ForceFieldVec3;
 
     use super::*;
-    use crate::chemistry::forcefield::uff::utils::{
-        calc_bond_force_constant, calc_bond_rest_length,
-    };
+    use crate::chemistry::forcefield::uff::utils::{calc_bond_force_constant, calc_bond_rest_length};
 
     const EPS: f64 = 1.0e-12;
 
@@ -217,8 +214,7 @@ mod tests {
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
 
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.5, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.5, &end1, &end2).expect("valid constructor");
         let expected_rest_len = calc_bond_rest_length(1.5, &end1, &end2).expect("valid bond order");
         let expected_force_constant =
             calc_bond_force_constant(expected_rest_len, &end1, &end2).expect("valid rest length");
@@ -267,8 +263,7 @@ mod tests {
         let ff = initialized_force_field();
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
         let pos = [0.0, 0.0, 0.0, contrib.rest_len(), 0.0, 0.0];
 
         assert!(contrib.get_energy(&pos).abs() < EPS);
@@ -279,8 +274,7 @@ mod tests {
         let ff = initialized_force_field();
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
         let dist = contrib.rest_len() + 0.25;
         let pos = [0.0, 0.0, 0.0, dist, 0.0, 0.0];
         let expected = 0.5 * contrib.force_constant() * 0.25_f64 * 0.25_f64;
@@ -293,8 +287,7 @@ mod tests {
         let ff = initialized_force_field();
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
         let pos = [0.0, 0.0, 0.0, contrib.rest_len(), 0.0, 0.0];
         let mut grad = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let original = grad;
@@ -309,8 +302,7 @@ mod tests {
         let ff = initialized_force_field();
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
         let offset = 0.25;
         let dist = contrib.rest_len() + offset;
         let pos = [0.0, 0.0, 0.0, dist, 0.0, 0.0];
@@ -332,8 +324,7 @@ mod tests {
         let ff = initialized_force_field();
         let end1 = atomic_params(0.757, 5.343, 1.912);
         let end2 = atomic_params(0.658, 8.741, 2.3);
-        let contrib =
-            BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
+        let contrib = BondStretchContrib::new(&ff, 0, 1, 1.0, &end1, &end2).expect("valid constructor");
         let pos = [0.0; 6];
         let mut grad = [0.0; 6];
         let d_grad = contrib.force_constant() * 0.01;

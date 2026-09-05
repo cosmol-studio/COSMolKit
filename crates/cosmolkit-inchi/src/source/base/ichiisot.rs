@@ -1,15 +1,10 @@
 use crate::source_types::{
-    AT_FLAG_ISO_H_POINT, AT_ISO_SORT_KEY, AT_ISO_SORT_KEY_MULT, SourceHeap, SourceHeapError,
-    SourceMutPointer, T_GROUP_INFO, sp_ATOM,
+    AT_FLAG_ISO_H_POINT, AT_ISO_SORT_KEY, AT_ISO_SORT_KEY_MULT, SourceHeap, SourceHeapError, SourceMutPointer,
+    T_GROUP_INFO, sp_ATOM,
 };
 
 #[allow(non_snake_case)]
-pub(crate) fn make_iso_sort_key(
-    iso_atw_diff: i32,
-    num_1H: i32,
-    num_2H: i32,
-    num_3H: i32,
-) -> AT_ISO_SORT_KEY {
+pub(crate) fn make_iso_sort_key(iso_atw_diff: i32, num_1H: i32, num_2H: i32, num_3H: i32) -> AT_ISO_SORT_KEY {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiisot.c:47 make_iso_sort_key
     // INCHI✔️✔️: AT_ISO_SORT_KEY make_iso_sort_key( int iso_atw_diff, int num_1H, int num_2H, int num_3H )
     // INCHI✔️✔️: {
@@ -102,15 +97,9 @@ pub(crate) fn set_atom_iso_sort_keys(
         *output = 0;
     }
 
-    let has_t_group =
-        t_group_info.is_some_and(|info| !info.t_group.is_null() && info.num_t_groups > 0);
-    let has_isotopic_endpoint_numbers =
-        t_group_info.is_some_and(|info| !info.nIsotopicEndpointAtomNumber.is_null());
-    let mut atoms = if num_at > 0 {
-        Some(heap.slice_mut(at)?)
-    } else {
-        None
-    };
+    let has_t_group = t_group_info.is_some_and(|info| !info.t_group.is_null() && info.num_t_groups > 0);
+    let has_isotopic_endpoint_numbers = t_group_info.is_some_and(|info| !info.nIsotopicEndpointAtomNumber.is_null());
+    let mut atoms = if num_at > 0 { Some(heap.slice_mut(at)?) } else { None };
     let mut num_isotopic = 0_i32;
     let mut i = 0_i32;
     while i < num_at {
@@ -118,8 +107,7 @@ pub(crate) fn set_atom_iso_sort_keys(
             .as_deref_mut()
             .and_then(|atoms| atoms.get_mut(i as usize))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let merged_t_group =
-            has_isotopic_endpoint_numbers && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0;
+        let merged_t_group = has_isotopic_endpoint_numbers && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0;
         let iso_sort_key = if (atom.endpoint == 0 || !has_t_group) && !merged_t_group {
             make_iso_sort_key(
                 i32::from(atom.iso_atw_diff),
@@ -130,10 +118,7 @@ pub(crate) fn set_atom_iso_sort_keys(
         } else {
             if let Some(output) = bHasIsotopicInTautomerGroups.as_deref_mut() {
                 *output = output.wrapping_add(i32::from(
-                    atom.num_iso_H[0] != 0
-                        || atom.num_iso_H[1] != 0
-                        || atom.num_iso_H[2] != 0
-                        || merged_t_group,
+                    atom.num_iso_H[0] != 0 || atom.num_iso_H[1] != 0 || atom.num_iso_H[2] != 0 || merged_t_group,
                 ));
             }
             make_iso_sort_key(i32::from(atom.iso_atw_diff), 0, 0, 0)
@@ -238,9 +223,7 @@ mod tests {
             },
         ]);
         let atom_pointer = heap.allocate_model_storage(atoms).unwrap();
-        let group_pointer = heap
-            .allocate_model_storage(vec![T_GROUP::default()])
-            .unwrap();
+        let group_pointer = heap.allocate_model_storage(vec![T_GROUP::default()]).unwrap();
         let isotope_endpoints = heap.allocate_model_storage(vec![0_u16]).unwrap();
         let active_info = T_GROUP_INFO {
             t_group: group_pointer,

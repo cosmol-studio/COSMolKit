@@ -117,10 +117,7 @@ fn pattern_uses_the_shared_query_match_hash_and_vector_cores() {
 
     assert!(pattern_source.contains("is_complex_atom_query(atom)"));
     assert_eq!(
-        occurrences(
-            &pattern_source,
-            "try_get_substruct_matches_with_params_and_context("
-        ),
+        occurrences(&pattern_source, "try_get_substruct_matches_with_params_and_context("),
         1,
         "Pattern must have one match call through the shared VF2 core"
     );

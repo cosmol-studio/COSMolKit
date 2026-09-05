@@ -79,11 +79,9 @@ pub(crate) fn extend_paths(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Subgraphs::extendPaths
-    let matrix_len = dim
-        .checked_mul(dim)
-        .ok_or(SubgraphPathError::InvalidArguments {
-            reason: "path adjacency matrix dimensions overflow",
-        })?;
+    let matrix_len = dim.checked_mul(dim).ok_or(SubgraphPathError::InvalidArguments {
+        reason: "path adjacency matrix dimensions overflow",
+    })?;
     if adjacency.len() != matrix_len {
         return Err(SubgraphPathError::InvalidArguments {
             reason: "path adjacency matrix has invalid dimensions",
@@ -114,9 +112,7 @@ pub(crate) fn extend_paths(
             if adjacency[row_offset + other_idx] != 1 {
                 continue;
             }
-            if distance_matrix.is_some_and(|matrix| {
-                matrix[start * dim + other_idx] - (path.len() as f64) < -0.001
-            }) {
+            if distance_matrix.is_some_and(|matrix| matrix[start * dim + other_idx] - (path.len() as f64) < -0.001) {
                 continue;
             }
             if !path.contains(&other_idx) {
@@ -190,10 +186,9 @@ fn path_finder_helper(
             reason: "minimum path length exceeds maximum path length",
         });
     }
-    let allow_ring_closures =
-        i64::try_from(max_len).map_err(|_| SubgraphPathError::InvalidArguments {
-            reason: "path length exceeds supported range",
-        })?;
+    let allow_ring_closures = i64::try_from(max_len).map_err(|_| SubgraphPathError::InvalidArguments {
+        reason: "path length exceeds supported range",
+    })?;
 
     let mut result = BTreeMap::new();
     let mut paths = Vec::new();
@@ -217,11 +212,7 @@ fn path_finder_helper(
     Ok(result)
 }
 
-pub(crate) fn rdkit_fp_bond_between_atoms(
-    molecule: &Molecule,
-    begin: usize,
-    end: usize,
-) -> Option<usize> {
+pub(crate) fn rdkit_fp_bond_between_atoms(molecule: &Molecule, begin: usize, end: usize) -> Option<usize> {
     // RDKit source: GraphMol/ROMol.cpp lines 338-350.
     // RDKit✔️✔️: const Bond *ROMol::getBondBetweenAtoms(unsigned int idx1,
     // RDKit✔️✔️:                                        unsigned int idx2) const {
@@ -372,14 +363,12 @@ pub(crate) fn find_all_paths_of_lengths_m_to_n(
         });
     }
 
-    let distance_matrix = only_shortest_paths
-        .then(|| crate::chemistry::matrices::topological_distance_matrix(molecule));
+    let distance_matrix =
+        only_shortest_paths.then(|| crate::chemistry::matrices::topological_distance_matrix(molecule));
     let dim = molecule.num_atoms();
-    let matrix_len = dim
-        .checked_mul(dim)
-        .ok_or(SubgraphPathError::InvalidArguments {
-            reason: "path adjacency matrix dimensions overflow",
-        })?;
+    let matrix_len = dim.checked_mul(dim).ok_or(SubgraphPathError::InvalidArguments {
+        reason: "path adjacency matrix dimensions overflow",
+    })?;
     let mut adjacency = vec![0u8; matrix_len];
     if let Some(matrix) = distance_matrix.as_deref() {
         for first in 0..dim {
@@ -394,10 +383,7 @@ pub(crate) fn find_all_paths_of_lengths_m_to_n(
         for bond in molecule.bonds() {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            if use_hs
-                || (molecule.atoms()[begin].atomic_number() != 1
-                    && molecule.atoms()[end].atomic_number() != 1)
-            {
+            if use_hs || (molecule.atoms()[begin].atomic_number() != 1 && molecule.atoms()[end].atomic_number() != 1) {
                 adjacency[begin * dim + end] = 1;
                 adjacency[end * dim + begin] = 1;
             }
@@ -405,16 +391,12 @@ pub(crate) fn find_all_paths_of_lengths_m_to_n(
     }
 
     if use_bonds {
-        lower_len = lower_len
-            .checked_add(1)
-            .ok_or(SubgraphPathError::InvalidArguments {
-                reason: "minimum bond path length exceeds supported range",
-            })?;
-        upper_len = upper_len
-            .checked_add(1)
-            .ok_or(SubgraphPathError::InvalidArguments {
-                reason: "maximum bond path length exceeds supported range",
-            })?;
+        lower_len = lower_len.checked_add(1).ok_or(SubgraphPathError::InvalidArguments {
+            reason: "minimum bond path length exceeds supported range",
+        })?;
+        upper_len = upper_len.checked_add(1).ok_or(SubgraphPathError::InvalidArguments {
+            reason: "maximum bond path length exceeds supported range",
+        })?;
     }
     let atom_paths = path_finder_helper(
         &adjacency,
@@ -445,11 +427,11 @@ pub(crate) fn find_all_paths_of_lengths_m_to_n(
                     let mut invariant = vec![false; molecule.num_bonds()];
                     let mut bond_path = Vec::with_capacity(path_length);
                     for atom_pair in atom_path[..path_length].windows(2) {
-                        let bond_index =
-                            rdkit_fp_bond_between_atoms(molecule, atom_pair[0], atom_pair[1])
-                                .ok_or(SubgraphPathError::InvalidArguments {
-                                    reason: "path contains no connecting bond",
-                                })?;
+                        let bond_index = rdkit_fp_bond_between_atoms(molecule, atom_pair[0], atom_pair[1]).ok_or(
+                            SubgraphPathError::InvalidArguments {
+                                reason: "path contains no connecting bond",
+                            },
+                        )?;
                         bond_path.push(bond_index);
                         invariant[bond_index] = true;
                     }
@@ -458,10 +440,7 @@ pub(crate) fn find_all_paths_of_lengths_m_to_n(
                         if use_bonds {
                             result.entry(path_length - 1).or_default().push(bond_path);
                         } else {
-                            result
-                                .entry(path_length)
-                                .or_default()
-                                .push(atom_path.clone());
+                            result.entry(path_length).or_default().push(atom_path.clone());
                         }
                     }
                 }

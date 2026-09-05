@@ -1,84 +1,72 @@
 use crate::source::base::{
     ichican2::{
-        AddNodeSet2ToNodeSet1, AddNodesToRadEndpoints, DoNodeSetsIntersect, IsNodeSetEmpty,
-        NodeSetCreate, NodeSetFree, NodeSetFromRadEndpoints, RemoveFromNodeSet, SetBitCreate,
+        AddNodeSet2ToNodeSet1, AddNodesToRadEndpoints, DoNodeSetsIntersect, IsNodeSetEmpty, NodeSetCreate, NodeSetFree,
+        NodeSetFromRadEndpoints, RemoveFromNodeSet, SetBitCreate,
     },
     ichicano::bInchiTimeIsOver,
     ichisort::insertions_sort_typed,
     ichister::get_opposite_sb_atom_slice,
     ichitaut::{
-        MakeIsotopicHGroup, MarkChargeGroups, MarkSaltChargeGroups, MarkSaltChargeGroups2,
-        MarkTautomerGroups, MergeSaltTautGroups, is_centerpoint_elem, nGetEndpointInfo,
-        nGetEndpointInfo_KET, nGetEndpointInfo_PT_06_00, nGetEndpointInfo_PT_13_00,
-        nGetEndpointInfo_PT_16_00, nGetEndpointInfo_PT_18_00, nGetEndpointInfo_PT_22_00,
+        MakeIsotopicHGroup, MarkChargeGroups, MarkSaltChargeGroups, MarkSaltChargeGroups2, MarkTautomerGroups,
+        MergeSaltTautGroups, is_centerpoint_elem, nGetEndpointInfo, nGetEndpointInfo_KET, nGetEndpointInfo_PT_06_00,
+        nGetEndpointInfo_PT_13_00, nGetEndpointInfo_PT_16_00, nGetEndpointInfo_PT_18_00, nGetEndpointInfo_PT_22_00,
         nGetEndpointInfo_PT_39_00,
     },
     strutil::bHeteroAtomMayHaveXchgIsoH,
     util::{
-        detect_unusual_el_valence, get_el_valence, get_endpoint_valence, inchi_calloc, inchi_free,
-        inchi_malloc, ion_el_group, is_el_a_metal, n_no_metal_bonds_valence,
-        n_no_metal_neigh_index, n_no_metal_num_bonds, n_no_metal_other_neigh_index,
-        n_no_metal_other_neigh_index2, num_of_H,
+        detect_unusual_el_valence, get_el_valence, get_endpoint_valence, inchi_calloc, inchi_free, inchi_malloc,
+        ion_el_group, is_el_a_metal, n_no_metal_bonds_valence, n_no_metal_neigh_index, n_no_metal_num_bonds,
+        n_no_metal_other_neigh_index, n_no_metal_other_neigh_index2, num_of_H,
     },
 };
 use crate::source_types::{
-    AATG_MARK_IN_PATH, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF,
-    ADD_CAPACITY_RADICAL, ALT_PATH_MODE_4_SALT, ALT_PATH_MODE_4_SALT2, ALT_PATH_MODE_ADD2H_CHG,
-    ALT_PATH_MODE_ADD2H_TST, ALT_PATH_MODE_CHARGE, ALT_PATH_MODE_REM_PROTON,
-    ALT_PATH_MODE_REM2H_CHG, ALT_PATH_MODE_REM2H_TST, ALT_PATH_MODE_TAUTOM,
-    ALT_PATH_MODE_TAUTOM_KET, ALT_PATH_MODE_TAUTOM_PT_06_00, ALT_PATH_MODE_TAUTOM_PT_13_00,
+    AATG_MARK_IN_PATH, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF, ADD_CAPACITY_RADICAL,
+    ALT_PATH_MODE_4_SALT, ALT_PATH_MODE_4_SALT2, ALT_PATH_MODE_ADD2H_CHG, ALT_PATH_MODE_ADD2H_TST,
+    ALT_PATH_MODE_CHARGE, ALT_PATH_MODE_REM_PROTON, ALT_PATH_MODE_REM2H_CHG, ALT_PATH_MODE_REM2H_TST,
+    ALT_PATH_MODE_TAUTOM, ALT_PATH_MODE_TAUTOM_KET, ALT_PATH_MODE_TAUTOM_PT_06_00, ALT_PATH_MODE_TAUTOM_PT_13_00,
     ALT_PATH_MODE_TAUTOM_PT_16_00, ALT_PATH_MODE_TAUTOM_PT_18_00, ALT_PATH_MODE_TAUTOM_PT_22_00,
-    ALT_PATH_MODE_TAUTOM_PT_39_00, AROM_BOND_EDGE_CAP, AT_NUMB, ATT_ACIDIC_CO, ATT_ACIDIC_S,
-    ATT_ATOM_N, ATT_ATOM_P, ATT_HalAcid, ATT_HalAnion, ATT_N_O, ATT_NO, ATT_NONE, ATT_NP_MINUS_V23,
-    ATT_O_PLUS, ATT_OH_MINUS, ATT_OO, ATT_OTHER_NEG_O, ATT_OTHER_ZO, ATT_PROTON, ATT_ZOO,
-    BLOSSOM_BASE, BN_AATG, BN_DATA, BN_MAX_ALTP, BN_STRUCT, BNS_ADD_ATOMS, BNS_ADD_EDGES,
-    BNS_ADD_SUPER_TGROUP, BNS_ALT_PATH, BNS_ALTBOND_ERR, BNS_ALTPATH_OVFL, BNS_BOND_ERR,
-    BNS_CANT_SET_BOND, BNS_CAP_FLOW_ERR, BNS_EDGE, BNS_EDGE_FORBIDDEN_MASK, BNS_EF_ALTR_BONDS,
-    BNS_EF_ALTR_NS, BNS_EF_CHNG_BONDS, BNS_EF_CHNG_FLOW, BNS_EF_CHNG_RSTR, BNS_EF_RAD_SRCH,
-    BNS_EF_RSTR_FLOW, BNS_EF_SAVE_ALL, BNS_EF_SET_NOSTEREO, BNS_EF_UPD_H_CHARGE,
-    BNS_EF_UPD_RAD_ORI, BNS_ERR, BNS_FLOW_CHANGES, BNS_IEDGE, BNS_MAX_ERR_VALUE, BNS_OUT_OF_RAM,
-    BNS_PROGRAM_ERR, BNS_PROTECT_FROM_TAUT, BNS_RAD_SEARCH, BNS_RADICAL_ERR, BNS_REINIT_ERR,
-    BNS_SET_ALTP_ERR, BNS_TIMEOUT, BNS_VERT_EDGE_OVFL, BNS_VERT_TYPE_ACID, BNS_VERT_TYPE_ANY_GROUP,
-    BNS_VERT_TYPE_ATOM, BNS_VERT_TYPE_C_GROUP, BNS_VERT_TYPE_C_NEGATIVE, BNS_VERT_TYPE_C_POINT,
-    BNS_VERT_TYPE_ENDPOINT, BNS_VERT_TYPE_TEMP, BNS_VERT_TYPE_TGROUP, BNS_VERTEX, BNS_WRONG_PARMS,
-    BOND_ALT_13, BOND_ALT_23, BOND_ALT_123, BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE, BOND_MARK_ALL,
-    BOND_MARK_ALT12, BOND_MARK_ALT12NS, BOND_MARK_ALT13, BOND_MARK_ALT23, BOND_MARK_ALT123,
-    BOND_MARK_MASK, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BOND_TYPE_MASK, BRS_MODE, C_CANDIDATE,
-    C_GROUP, C_GROUP_INFO, CANON_GLOBALS, CT_OUT_OF_RAM, EDGE_FLOW_MASK, EDGE_FLOW_PATH,
-    EDGE_FLOW_ST_MASK, EDGE_FLOW_ST_PATH, ENDPOINT_INFO, Edge, EdgeIndex, FIX_AROM_RADICAL,
-    FIX_NORM_BUG_ADD_ION_PAIR, FIX_NP_MINUS_BUG, FIX_NUM_TG,
-    FIX_RENUM_BUG_FOR_CASE_OF_ACIDIC_OH_AT_P_PLUS, FLAG_PROTON_AC_HARD_ADDED,
-    FLAG_PROTON_AC_HARD_REMOVED, FLAG_PROTON_AC_SIMPLE_ADDED, FLAG_PROTON_AC_SIMPLE_REMOVED,
-    FLAG_PROTON_CHARGE_CANCEL, FLAG_PROTON_NP_HARD_REMOVED, FLAG_PROTON_NPO_SIMPLE_REMOVED,
-    FLAG_PROTON_SINGLE_REMOVED, HAL_ACID_H_XCHG, INCHI_CLOCK, KETO_ENOL_TAUT,
-    MAX_ALT_AATG_ARRAY_LEN, MAX_BOND_EDGE_CAP, MAX_NUM_STEREO_BONDS, MIN_NUM_STEREO_BOND_NEIGH,
-    NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
-    RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO,
-    SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
-    SourceMutPointer, StableSourceConstSlice, StableSourceSlice, T_GROUP, T_GROUP_INFO,
-    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00,
-    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_HARD_ADD_REM_PROTONS,
-    TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE,
-    TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00,
-    TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00,
-    TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS, TG_FLAG_TEST_TAUT__SALTS_DONE,
-    TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE, TG_FLAG_TEST_TAUT3_SALTS_DONE,
-    TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION, clock_t,
-    inchiTime, inp_ATOM,
+    ALT_PATH_MODE_TAUTOM_PT_39_00, AROM_BOND_EDGE_CAP, AT_NUMB, ATT_ACIDIC_CO, ATT_ACIDIC_S, ATT_ATOM_N, ATT_ATOM_P,
+    ATT_HalAcid, ATT_HalAnion, ATT_N_O, ATT_NO, ATT_NONE, ATT_NP_MINUS_V23, ATT_O_PLUS, ATT_OH_MINUS, ATT_OO,
+    ATT_OTHER_NEG_O, ATT_OTHER_ZO, ATT_PROTON, ATT_ZOO, BLOSSOM_BASE, BN_AATG, BN_DATA, BN_MAX_ALTP, BN_STRUCT,
+    BNS_ADD_ATOMS, BNS_ADD_EDGES, BNS_ADD_SUPER_TGROUP, BNS_ALT_PATH, BNS_ALTBOND_ERR, BNS_ALTPATH_OVFL, BNS_BOND_ERR,
+    BNS_CANT_SET_BOND, BNS_CAP_FLOW_ERR, BNS_EDGE, BNS_EDGE_FORBIDDEN_MASK, BNS_EF_ALTR_BONDS, BNS_EF_ALTR_NS,
+    BNS_EF_CHNG_BONDS, BNS_EF_CHNG_FLOW, BNS_EF_CHNG_RSTR, BNS_EF_RAD_SRCH, BNS_EF_RSTR_FLOW, BNS_EF_SAVE_ALL,
+    BNS_EF_SET_NOSTEREO, BNS_EF_UPD_H_CHARGE, BNS_EF_UPD_RAD_ORI, BNS_ERR, BNS_FLOW_CHANGES, BNS_IEDGE,
+    BNS_MAX_ERR_VALUE, BNS_OUT_OF_RAM, BNS_PROGRAM_ERR, BNS_PROTECT_FROM_TAUT, BNS_RAD_SEARCH, BNS_RADICAL_ERR,
+    BNS_REINIT_ERR, BNS_SET_ALTP_ERR, BNS_TIMEOUT, BNS_VERT_EDGE_OVFL, BNS_VERT_TYPE_ACID, BNS_VERT_TYPE_ANY_GROUP,
+    BNS_VERT_TYPE_ATOM, BNS_VERT_TYPE_C_GROUP, BNS_VERT_TYPE_C_NEGATIVE, BNS_VERT_TYPE_C_POINT, BNS_VERT_TYPE_ENDPOINT,
+    BNS_VERT_TYPE_TEMP, BNS_VERT_TYPE_TGROUP, BNS_VERTEX, BNS_WRONG_PARMS, BOND_ALT_13, BOND_ALT_23, BOND_ALT_123,
+    BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE, BOND_MARK_ALL, BOND_MARK_ALT12, BOND_MARK_ALT12NS, BOND_MARK_ALT13,
+    BOND_MARK_ALT23, BOND_MARK_ALT123, BOND_MARK_MASK, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BOND_TYPE_MASK, BRS_MODE,
+    C_CANDIDATE, C_GROUP, C_GROUP_INFO, CANON_GLOBALS, CT_OUT_OF_RAM, EDGE_FLOW_MASK, EDGE_FLOW_PATH,
+    EDGE_FLOW_ST_MASK, EDGE_FLOW_ST_PATH, ENDPOINT_INFO, Edge, EdgeIndex, FIX_AROM_RADICAL, FIX_NORM_BUG_ADD_ION_PAIR,
+    FIX_NP_MINUS_BUG, FIX_NUM_TG, FIX_RENUM_BUG_FOR_CASE_OF_ACIDIC_OH_AT_P_PLUS, FLAG_PROTON_AC_HARD_ADDED,
+    FLAG_PROTON_AC_HARD_REMOVED, FLAG_PROTON_AC_SIMPLE_ADDED, FLAG_PROTON_AC_SIMPLE_REMOVED, FLAG_PROTON_CHARGE_CANCEL,
+    FLAG_PROTON_NP_HARD_REMOVED, FLAG_PROTON_NPO_SIMPLE_REMOVED, FLAG_PROTON_SINGLE_REMOVED, HAL_ACID_H_XCHG,
+    INCHI_CLOCK, KETO_ENOL_TAUT, MAX_ALT_AATG_ARRAY_LEN, MAX_BOND_EDGE_CAP, MAX_NUM_STEREO_BONDS,
+    MIN_NUM_STEREO_BOND_NEIGH, NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
+    RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR, SALT_DONOR_H,
+    SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError, SourceMutPointer, StableSourceConstSlice,
+    StableSourceSlice, T_GROUP, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00,
+    TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE,
+    TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00,
+    TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS,
+    TG_FLAG_TEST_TAUT__SALTS_DONE, TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE,
+    TG_FLAG_TEST_TAUT3_SALTS_DONE, TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION,
+    clock_t, inchiTime, inp_ATOM,
     local_ichi_bns::{
-        AA_HARD_TYP_CO, AA_HARD_TYP_H, AA_HARD_TYP_NEG, AA_HARD_TYP_POS, AA_SIMPLE_TYP1,
-        AA_SIMPLE_TYP4, ALT_PATH_CHANGES, AR_HARD_TYP_HA, AR_HARD_TYP_HN, AR_HARD_TYP_NEG,
-        AR_HARD_TYP_POS, AR_SIMPLE_STEPS, AR_SIMPLE_TYP1, BNS_CHK_ALTP_NO_ALTPATH,
-        BNS_CHK_ALTP_SAME_TGROUP, BNS_CHK_ALTP_SAME_VERTEX, BNS_CHK_ALTP_SET_SUCCESS,
-        BNS_MARK_ONLY_BLOCKS, BNS_MAX_NUM_FLOW_CHANGES, BT_ALT_BOND_MASK, BT_ALTERN_BOND,
-        BT_ALTERN_NS_BOND, BT_IGNORE_BOND, BT_OTHER_ALTERN_BOND, BT_TAUTOM_BOND, KNOWN_ACIDIC_TYPE,
-        PR_HARD_TYP_H, PR_HARD_TYP_NEG, PR_HARD_TYP_POS, PR_SIMPLE_TYP, RESET_EDGE_FORBIDDEN_MASK,
-        TREE_IN_1, TREE_IN_2, TREE_IN_2BLOSS, TREE_NOT_IN_M,
+        AA_HARD_TYP_CO, AA_HARD_TYP_H, AA_HARD_TYP_NEG, AA_HARD_TYP_POS, AA_SIMPLE_TYP1, AA_SIMPLE_TYP4,
+        ALT_PATH_CHANGES, AR_HARD_TYP_HA, AR_HARD_TYP_HN, AR_HARD_TYP_NEG, AR_HARD_TYP_POS, AR_SIMPLE_STEPS,
+        AR_SIMPLE_TYP1, BNS_CHK_ALTP_NO_ALTPATH, BNS_CHK_ALTP_SAME_TGROUP, BNS_CHK_ALTP_SAME_VERTEX,
+        BNS_CHK_ALTP_SET_SUCCESS, BNS_MARK_ONLY_BLOCKS, BNS_MAX_NUM_FLOW_CHANGES, BT_ALT_BOND_MASK, BT_ALTERN_BOND,
+        BT_ALTERN_NS_BOND, BT_IGNORE_BOND, BT_OTHER_ALTERN_BOND, BT_TAUTOM_BOND, KNOWN_ACIDIC_TYPE, PR_HARD_TYP_H,
+        PR_HARD_TYP_NEG, PR_HARD_TYP_POS, PR_SIMPLE_TYP, RESET_EDGE_FORBIDDEN_MASK, TREE_IN_1, TREE_IN_2,
+        TREE_IN_2BLOSS, TREE_NOT_IN_M,
     },
     tagAltPathConst_iALTP_END_ATOM, tagAltPathConst_iALTP_FLOW, tagAltPathConst_iALTP_HDR_LEN,
     tagAltPathConst_iALTP_MAX_LEN, tagAltPathConst_iALTP_NEIGHBOR, tagAltPathConst_iALTP_PATH_LEN,
-    tagAltPathConst_iALTP_START_ATOM, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT,
-    tagBnsRadSrchMode_RAD_SRCH_NORM,
+    tagAltPathConst_iALTP_START_ATOM, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT, tagBnsRadSrchMode_RAD_SRCH_NORM,
 };
 
 #[allow(non_snake_case)]
@@ -1108,11 +1096,7 @@ fn work_set<T: 'static>(
     Ok(())
 }
 
-fn bns_vertex(
-    heap: &SourceHeap,
-    p_bns: &BN_STRUCT,
-    index: i32,
-) -> Result<BNS_VERTEX, SourceHeapError> {
+fn bns_vertex(heap: &SourceHeap, p_bns: &BN_STRUCT, index: i32) -> Result<BNS_VERTEX, SourceHeapError> {
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(p_bns.vert.as_const())?
         .get(offset)
@@ -1150,11 +1134,7 @@ fn bns_edge_mut<'a>(
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
-fn bns_edge_index(
-    heap: &SourceHeap,
-    vertex: &BNS_VERTEX,
-    index: i32,
-) -> Result<i32, SourceHeapError> {
+fn bns_edge_index(heap: &SourceHeap, vertex: &BNS_VERTEX, index: i32) -> Result<i32, SourceHeapError> {
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(vertex.iedge.as_const())?
         .get(offset)
@@ -1190,10 +1170,7 @@ fn input_atom_bond_type(atom: &inp_ATOM, index: i32) -> Result<i32, SourceHeapEr
 }
 
 fn input_atom_numh(atom: &inp_ATOM) -> i32 {
-    i32::from(atom.num_H)
-        + i32::from(atom.num_iso_H[0])
-        + i32::from(atom.num_iso_H[1])
-        + i32::from(atom.num_iso_H[2])
+    i32::from(atom.num_H) + i32::from(atom.num_iso_H[0]) + i32::from(atom.num_iso_H[1]) + i32::from(atom.num_iso_H[2])
 }
 
 fn atom_parity_well_def(parity: i8) -> bool {
@@ -1323,8 +1300,7 @@ const AR_HARD_MSK_NEG: i32 = ATBIT_MSK_NP | ATBIT_MSK_OS;
 const AR_HARD_MSK_HA: i32 = att_bit(ATTOT_NUM_CO) | att_bit(ATTOT_NUM_NO);
 const AR_HARD_MSK_HN: i32 = (ATBIT_MSK_NP | ATBIT_MSK_OS) & !AR_HARD_MSK_HA;
 const AA_HARD_MSK_POS: i32 = ATBIT_MSK_NP;
-const AA_HARD_MSK_NEG: i32 =
-    (ATBIT_MSK_NP | ATBIT_MSK_OS) & !(att_bit(ATTOT_NUM_CO) | att_bit(ATTOT_NUM_NO));
+const AA_HARD_MSK_NEG: i32 = (ATBIT_MSK_NP | ATBIT_MSK_OS) & !(att_bit(ATTOT_NUM_CO) | att_bit(ATTOT_NUM_NO));
 const AA_HARD_MSK_CO: i32 = att_bit(ATTOT_NUM_CO) | att_bit(ATTOT_NUM_NO);
 const AA_HARD_MSK_H: i32 = ATBIT_MSK_NP | ATBIT_MSK_OS;
 const PR_HARD_MSK_POS: i32 = ATBIT_MSK_NP;
@@ -1351,9 +1327,7 @@ fn finish_atom_charge_type(
                 for i in 0..ATTOT_ARRAY_LEN {
                     let bit = if i < 31 { att_bit(i) } else { 0 };
                     if (bit & mask) != 0 {
-                        let total = slice
-                            .get_mut(i)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let total = slice.get_mut(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         *total = total.wrapping_add(delta);
                     }
                 }
@@ -1362,8 +1336,7 @@ fn finish_atom_charge_type(
                 let total_charge = slice
                     .get_mut(ATTOT_TOT_CHARGE)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                *total_charge =
-                    total_charge.wrapping_add(delta.wrapping_mul(i32::from(atom_charge)));
+                *total_charge = total_charge.wrapping_add(delta.wrapping_mul(i32::from(atom_charge)));
                 let charge_count = slice
                     .get_mut(ATTOT_NUM_CHARGES)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1439,8 +1412,7 @@ pub(crate) fn fix_special_bonds(
 
     // SAFETY: the source function treats `at` as read-only. The BNS helpers
     // mutate separate edge/vertex allocations and never free or resize `at`.
-    let atoms_view: StableSourceConstSlice<inp_ATOM> =
-        unsafe { heap.stable_slice(atoms_ptr.as_const())? };
+    let atoms_view: StableSourceConstSlice<inp_ATOM> = unsafe { heap.stable_slice(atoms_ptr.as_const())? };
     let atoms = atoms_view.prefix(atoms_view.len())?;
     let edge_forbidden_mask = forbidden_mask as S_CHAR;
     pBNS.edge_forbidden_mask |= edge_forbidden_mask;
@@ -1533,13 +1505,7 @@ pub(crate) fn fix_special_bonds(
                                     && input_atom_ref(&atoms, n1)?.radical == 0
                                     && input_atom_bond_type(atom, i1)? & 15 == 2
                                 {
-                                    mark_forbidden_atom_edge(
-                                        heap,
-                                        pBNS,
-                                        i,
-                                        i1,
-                                        edge_forbidden_mask,
-                                    )?;
+                                    mark_forbidden_atom_edge(heap, pBNS, i, i1, edge_forbidden_mask)?;
                                     num_changes += 1;
                                     num_other += 1;
                                 }
@@ -1551,13 +1517,7 @@ pub(crate) fn fix_special_bonds(
                                 && input_atom_ref(&atoms, neighbors[k_n as usize])?.radical == 0
                                 && input_atom_bond_type(atom, indices[k_n as usize])? & 15 == 2
                             {
-                                mark_forbidden_atom_edge(
-                                    heap,
-                                    pBNS,
-                                    i,
-                                    indices[k_n as usize],
-                                    edge_forbidden_mask,
-                                )?;
+                                mark_forbidden_atom_edge(heap, pBNS, i, indices[k_n as usize], edge_forbidden_mask)?;
                                 num_changes += 1;
                             }
                             true
@@ -1684,10 +1644,8 @@ pub(crate) fn fix_special_bonds(
                 for i1 in 0..i32::from(atom.valence) {
                     if i1 != i2 {
                         let n1 = input_atom_neighbor(atom, i1)?;
-                        if input_atom_ref(&atoms, n2)?.el_number
-                            == input_atom_ref(&atoms, n1)?.el_number
-                            && input_atom_ref(&atoms, n2)?.nRingSystem
-                                == input_atom_ref(&atoms, n1)?.nRingSystem
+                        if input_atom_ref(&atoms, n2)?.el_number == input_atom_ref(&atoms, n1)?.el_number
+                            && input_atom_ref(&atoms, n2)?.nRingSystem == input_atom_ref(&atoms, n1)?.nRingSystem
                         {
                             b_do_not_fix_any_bond += 1;
                         }
@@ -1738,8 +1696,7 @@ pub(crate) fn fix_special_bonds(
                     n2 = n1;
                     i2 = i1;
                     if (input_atom_ref(&atoms, n1)?.charge == 0
-                        || (input_atom_ref(&atoms, n1)?.charge == 1
-                            && input_atom_ref(&atoms, n1)?.valence == 2))
+                        || (input_atom_ref(&atoms, n1)?.charge == 1 && input_atom_ref(&atoms, n1)?.valence == 2))
                         && input_atom_ref(&atoms, n1)?.radical == 0
                         && num_of_H(&atoms, n1)? == 0
                         && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
@@ -1751,10 +1708,8 @@ pub(crate) fn fix_special_bonds(
                     && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
                     && num_of_H(&atoms, n1)? <= 1
-                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1)
-                        as i32
-                        + (((input_atom_ref(&atoms, n1)?.charge == -1)
-                            && num_of_H(&atoms, n1)? == 0) as i32))
+                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1) as i32
+                        + (((input_atom_ref(&atoms, n1)?.charge == -1) && num_of_H(&atoms, n1)? == 0) as i32))
                         == 1
                 {
                     num_oh += 1;
@@ -1801,8 +1756,7 @@ pub(crate) fn fix_special_bonds(
                 if bond_type == 2 {
                     num_n += 1;
                     if (input_atom_ref(&atoms, n1)?.charge == 0
-                        || (input_atom_ref(&atoms, n1)?.charge == 1
-                            && input_atom_ref(&atoms, n1)?.valence == 2))
+                        || (input_atom_ref(&atoms, n1)?.charge == 1 && input_atom_ref(&atoms, n1)?.valence == 2))
                         && input_atom_ref(&atoms, n1)?.radical == 0
                         && num_of_H(&atoms, n1)? == 0
                         && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
@@ -1814,10 +1768,8 @@ pub(crate) fn fix_special_bonds(
                     && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
                     && num_of_H(&atoms, n1)? <= 1
-                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1)
-                        as i32
-                        + (((input_atom_ref(&atoms, n1)?.charge == -1)
-                            && num_of_H(&atoms, n1)? == 0) as i32))
+                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1) as i32
+                        + (((input_atom_ref(&atoms, n1)?.charge == -1) && num_of_H(&atoms, n1)? == 0) as i32))
                         == 1
                 {
                     num_oh += 1;
@@ -1887,8 +1839,7 @@ pub(crate) fn SetForbiddenEdges(
 
     // SAFETY: SetForbiddenEdges only reads `at`; all writes below target
     // allocations owned by `pBNS`, matching the two disjoint C pointers.
-    let atoms_view: StableSourceConstSlice<inp_ATOM> =
-        unsafe { heap.stable_slice(atoms_ptr.as_const())? };
+    let atoms_view: StableSourceConstSlice<inp_ATOM> = unsafe { heap.stable_slice(atoms_ptr.as_const())? };
     let atoms = atoms_view.prefix(atoms_view.len())?;
     let edge_forbidden_mask = forbidden_mask as S_CHAR;
     pBNS.edge_forbidden_mask |= edge_forbidden_mask;
@@ -1942,22 +1893,13 @@ pub(crate) fn SetForbiddenEdges(
         }
     }
 
-    num_found += fix_special_bonds(
-        heap,
-        pBNS,
-        atoms_ptr,
-        num_atoms,
-        i32::from(edge_forbidden_mask),
-    )?;
+    num_found += fix_special_bonds(heap, pBNS, atoms_ptr, num_atoms, i32::from(edge_forbidden_mask))?;
 
     Ok(num_found)
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn SetInitCapFlowToCurrent(
-    heap: &mut SourceHeap,
-    pBNS: &BN_STRUCT,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn SetInitCapFlowToCurrent(heap: &mut SourceHeap, pBNS: &BN_STRUCT) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4094 SetInitCapFlowToCurrent
     // INCHI✔️❌: int SetInitCapFlowToCurrent( BN_STRUCT *pBNS )
     // INCHI✔️❌: {
@@ -2022,10 +1964,7 @@ pub(crate) fn is_z_atom(el_number: u8) -> i32 {
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_Z_atom
 
-    matches!(
-        el_number,
-        6 | 7 | 15 | 33 | 51 | 16 | 34 | 52 | 17 | 35 | 53
-    ) as i32
+    matches!(el_number, 6 | 7 | 15 | 33 | 51 | 16 | 34 | 52 | 17 | 35 | 53) as i32
 }
 
 #[allow(non_snake_case)]
@@ -2682,15 +2621,7 @@ pub(crate) fn GetAtomChargeType(
     if at.valence == 0 && at.charge == 1 && at.num_H == 0 && at.radical == 0 && at.el_number == 1 {
         type_ = ATT_PROTON as i32;
         mask = att_bit(ATTOT_NUM_PROTON);
-        return finish_atom_charge_type(
-            type_,
-            mask,
-            at.charge,
-            delta,
-            true,
-            n_at_type_totals,
-            p_mask,
-        );
+        return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
     }
     if at.valence == 0
         && at.charge == -1
@@ -2700,15 +2631,7 @@ pub(crate) fn GetAtomChargeType(
     {
         type_ = ATT_HalAnion as i32;
         mask = att_bit(ATTOT_NUM_HAL_ANION);
-        return finish_atom_charge_type(
-            type_,
-            mask,
-            at.charge,
-            delta,
-            true,
-            n_at_type_totals,
-            p_mask,
-        );
+        return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
     }
     if HAL_ACID_H_XCHG == 1
         && ((at.valence == 0
@@ -2724,15 +2647,7 @@ pub(crate) fn GetAtomChargeType(
     {
         type_ = ATT_HalAcid as i32;
         mask = att_bit(ATTOT_NUM_HAL_ACID);
-        return finish_atom_charge_type(
-            type_,
-            mask,
-            at.charge,
-            delta,
-            true,
-            n_at_type_totals,
-            p_mask,
-        );
+        return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
     }
 
     if detect_unusual_el_valence(
@@ -2757,29 +2672,13 @@ pub(crate) fn GetAtomChargeType(
             if neighbor.charge != 0 && at.charge != 0 {
                 if b_no_adj_ion {
                     if FIX_RENUM_BUG_FOR_CASE_OF_ACIDIC_OH_AT_P_PLUS == 1 {
-                        return finish_atom_charge_type(
-                            type_,
-                            mask,
-                            at.charge,
-                            delta,
-                            true,
-                            n_at_type_totals,
-                            p_mask,
-                        );
+                        return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
                     }
                     return Ok(0);
                 }
                 type_ = ATT_NONE as i32;
                 mask = 0;
-                return finish_atom_charge_type(
-                    type_,
-                    mask,
-                    at.charge,
-                    delta,
-                    true,
-                    n_at_type_totals,
-                    p_mask,
-                );
+                return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
             }
         }
         let neighbor = input_atom_ref(atoms, neigh)?;
@@ -2827,15 +2726,7 @@ pub(crate) fn GetAtomChargeType(
             if num_m == at.valence as i32 {
                 return Ok(0);
             }
-            return finish_atom_charge_type(
-                type_,
-                mask,
-                at.charge,
-                delta,
-                true,
-                n_at_type_totals,
-                p_mask,
-            );
+            return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
         } else if at.valence != 0 {
             let neigh = input_atom_neighbor(at, 0)?;
             let neighbor = input_atom_ref(atoms, neigh)?;
@@ -2946,15 +2837,7 @@ pub(crate) fn GetAtomChargeType(
             if num_m == at.valence as i32 {
                 return Ok(0);
             }
-            return finish_atom_charge_type(
-                type_,
-                mask,
-                at.charge,
-                delta,
-                true,
-                n_at_type_totals,
-                p_mask,
-            );
+            return finish_atom_charge_type(type_, mask, at.charge, delta, true, n_at_type_totals, p_mask);
         }
         type_ = if at.el_number == 7 {
             ATT_ATOM_N as i32
@@ -3009,9 +2892,7 @@ pub(crate) fn GetAtomChargeType(
             for i in 0..ATTOT_ARRAY_LEN {
                 let bit = if i < 31 { att_bit(i) } else { 0 };
                 if (bit & mask) != 0 {
-                    let total = slice
-                        .get_mut(i)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let total = slice.get_mut(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     *total = total.wrapping_add(delta);
                 }
             }
@@ -3092,21 +2973,13 @@ pub(crate) fn mark_at_type(
 
     if let Some(totals) = n_at_type_totals.as_deref_mut() {
         for index in 0..ATTOT_ARRAY_LEN {
-            *totals
-                .get_mut(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+            *totals.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
         }
     }
 
     for i in 0..num_atoms {
         let mut mask = 0_i32;
-        let type_ = GetAtomChargeType(
-            &*atoms,
-            i,
-            n_at_type_totals.as_deref_mut(),
-            Some(&mut mask),
-            0,
-        )?;
+        let type_ = GetAtomChargeType(&*atoms, i, n_at_type_totals.as_deref_mut(), Some(&mut mask), 0)?;
         let offset = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         atoms
             .get_mut(offset)
@@ -3164,21 +3037,10 @@ pub(crate) fn AddChangedAtHChargeBNS(
     for i in 0..num_atoms {
         let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if *mark.get(index).ok_or(SourceHeapError::PointerOutOfBounds)? != 0 {
-            *mark
-                .get_mut(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+            *mark.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
             let mut mask = 0_i32;
-            let type_ = GetAtomChargeType(
-                &*atoms,
-                i,
-                Some(&mut *n_at_type_totals),
-                Some(&mut mask),
-                -2,
-            )?;
-            atoms
-                .get_mut(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .at_type = type_ as AT_NUMB;
+            let type_ = GetAtomChargeType(&*atoms, i, Some(&mut *n_at_type_totals), Some(&mut mask), -2)?;
+            atoms.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?.at_type = type_ as AT_NUMB;
             num += 1;
         }
     }
@@ -3369,8 +3231,7 @@ pub(crate) fn AddOrRemoveExplOrImplH(
     let mut num_h = i32::from(atoms[at_index].num_H);
     let mut num_iso_h = atoms[at_index].num_iso_H;
 
-    let num_atoms_usize =
-        usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let num_atoms_usize = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if num_atoms_usize > atoms.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -3389,8 +3250,7 @@ pub(crate) fn AddOrRemoveExplOrImplH(
                 let removed = atoms[current_index].clone();
                 let shift_end = num_atoms_usize
                     .checked_add(
-                        usize::try_from(n_num_removed_explicit_h)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        usize::try_from(n_num_removed_explicit_h).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 for idx in current_index..shift_end {
@@ -3430,13 +3290,12 @@ pub(crate) fn AddOrRemoveExplOrImplH(
                                     Some(&mut pinxt_sb_parity_ord),
                                 )? > 0
                                 {
-                                    let pnxt_index = usize::try_from(pnxt_atom)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    let pnxt_index =
+                                        usize::try_from(pnxt_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     let parity_index = usize::try_from(pinxt_sb_parity_ord)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     atoms[at_index].sb_parity[m] = AB_PARITY_UNDF as i8;
-                                    atoms[pnxt_index].sb_parity[parity_index] =
-                                        AB_PARITY_UNDF as i8;
+                                    atoms[pnxt_index].sb_parity[parity_index] = AB_PARITY_UNDF as i8;
                                 }
                             }
                         }
@@ -3454,20 +3313,17 @@ pub(crate) fn AddOrRemoveExplOrImplH(
         if iso < 0 {
             while tot_num_iso_h < num_h && 0 < n_num2_remove {
                 num_h -= 1;
-                t_group_info.tni.nNumRemovedProtons =
-                    t_group_info.tni.nNumRemovedProtons.wrapping_add(1);
+                t_group_info.tni.nNumRemovedProtons = t_group_info.tni.nNumRemovedProtons.wrapping_add(1);
                 n_num2_remove -= 1;
             }
         } else {
-            let iso_index =
-                usize::try_from(iso).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let iso_index = usize::try_from(iso).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             while num_iso_h[iso_index] != 0 && num_h != 0 && 0 < n_num2_remove {
                 num_h -= 1;
                 num_iso_h[iso_index] = num_iso_h[iso_index].wrapping_sub(1);
                 t_group_info.tni.nNumRemovedProtonsIsotopic[iso_index] =
                     t_group_info.tni.nNumRemovedProtonsIsotopic[iso_index].wrapping_add(1);
-                t_group_info.tni.nNumRemovedProtons =
-                    t_group_info.tni.nNumRemovedProtons.wrapping_add(1);
+                t_group_info.tni.nNumRemovedProtons = t_group_info.tni.nNumRemovedProtons.wrapping_add(1);
                 n_num2_remove -= 1;
             }
         }
@@ -3617,31 +3473,20 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
     let mut err = 0_i32;
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let path = pBNS.alt_path;
-        let mut v1 =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_START_ATOM as i32)?.number();
-        let path_len =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
-        let mut delta =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_FLOW as i32)?.flow(0);
-        let v_last =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_END_ATOM as i32)?.number();
+        let mut v1 = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_START_ATOM as i32)?.number();
+        let path_len = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
+        let mut delta = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_FLOW as i32)?.flow(0);
+        let v_last = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_END_ATOM as i32)?.number();
         let mut v0 = NO_VERTEX;
         let mut v2 = NO_VERTEX;
 
         let mut i = 0_i32;
         while i < path_len {
             let ineigh1 = i32::from(
-                work_get::<BNS_ALT_PATH>(
-                    heap,
-                    path,
-                    (tagAltPathConst_iALTP_NEIGHBOR as i32).wrapping_add(i),
-                )?
-                .ineigh(0),
+                work_get::<BNS_ALT_PATH>(heap, path, (tagAltPathConst_iALTP_NEIGHBOR as i32).wrapping_add(i))?
+                    .ineigh(0),
             );
             let vertex = bns_vertex(heap, pBNS, v1)?;
             let edge_index = bns_edge_index(heap, &vertex, ineigh1)?;
@@ -3668,37 +3513,20 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
                     }
                 }
                 if n_delta_h != 0 || n_delta_charge != 0 {
-                    let atom_index =
-                        usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom_index = usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if b_subtract != 0 {
-                        let mark_slot = mark
-                            .get_mut(atom_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let mark_slot = mark.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if *mark_slot == 0 {
                             let mut mask = 0_i32;
-                            let _type = GetAtomChargeType(
-                                &*atoms,
-                                v1,
-                                Some(n_at_type_totals),
-                                Some(&mut mask),
-                                2,
-                            )?;
+                            let _type = GetAtomChargeType(&*atoms, v1, Some(n_at_type_totals), Some(&mut mask), 2)?;
                             ret = ret.wrapping_add(1);
                             *mark_slot = (*mark_slot).wrapping_add(1);
                         }
                     } else {
-                        let atom = atoms
-                            .get_mut(atom_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let atom = atoms.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         atom.charge = atom.charge.wrapping_add(n_delta_charge as S_CHAR);
                         if n_delta_h != 0 {
-                            AddOrRemoveExplOrImplH(
-                                n_delta_h,
-                                atoms,
-                                num_atoms,
-                                v1 as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            AddOrRemoveExplOrImplH(n_delta_h, atoms, num_atoms, v1 as AT_NUMB, t_group_info)?;
                         }
                         ret = ret.wrapping_add(1);
                     }
@@ -3816,31 +3644,20 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
     let mut err = 0_i32;
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let path = pBNS.alt_path;
-        let mut v1 =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_START_ATOM as i32)?.number();
-        let n =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
-        let mut delta =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_FLOW as i32)?.flow(0);
-        let v_last =
-            work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_END_ATOM as i32)?.number();
+        let mut v1 = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_START_ATOM as i32)?.number();
+        let n = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
+        let mut delta = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_FLOW as i32)?.flow(0);
+        let v_last = work_get::<BNS_ALT_PATH>(heap, path, tagAltPathConst_iALTP_END_ATOM as i32)?.number();
         let mut v0 = NO_VERTEX;
         let mut v2 = NO_VERTEX;
 
         let mut i = 0_i32;
         while i < n {
             let ineigh1 = i32::from(
-                work_get::<BNS_ALT_PATH>(
-                    heap,
-                    path,
-                    (tagAltPathConst_iALTP_NEIGHBOR as i32).wrapping_add(i),
-                )?
-                .ineigh(0),
+                work_get::<BNS_ALT_PATH>(heap, path, (tagAltPathConst_iALTP_NEIGHBOR as i32).wrapping_add(i))?
+                    .ineigh(0),
             );
             let vertex = bns_vertex(heap, pBNS, v1)?;
             let edge_index = bns_edge_index(heap, &vertex, ineigh1)?;
@@ -3848,11 +3665,8 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
             v2 = i32::from(edge.neighbor12) ^ v1;
 
             if v1 < num_atoms
-                && ((v0 >= num_atoms
-                    && (bns_vertex(heap, pBNS, v0)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB) != 0)
-                    || (v2 >= num_atoms
-                        && (bns_vertex(heap, pBNS, v2)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB)
-                            != 0))
+                && ((v0 >= num_atoms && (bns_vertex(heap, pBNS, v0)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB) != 0)
+                    || (v2 >= num_atoms && (bns_vertex(heap, pBNS, v2)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB) != 0))
             {
                 let mut cg_pos = 0_i32;
                 let mut cg_neg = 0_i32;
@@ -4148,23 +3962,12 @@ pub(crate) fn MarkAtomsAtTautGroups(
     let mut pass = pBNS.num_altp.wrapping_sub(1);
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mut v1 =
-            work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32)?
-                .number();
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let mut v1 = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32)?.number();
         let v_first = v1;
-        let n =
-            work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_PATH_LEN as i32)?
-                .number();
-        let mut delta =
-            work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32)?
-                .flow(0);
-        let v_last =
-            work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32)?
-                .number();
+        let n = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
+        let mut delta = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32)?.flow(0);
+        let v_last = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32)?.number();
         let mut v2 = NO_VERTEX;
         pAATG.nNumFound = 0;
 
@@ -4177,11 +3980,7 @@ pub(crate) fn MarkAtomsAtTautGroups(
 
         let mut i = 0_i32;
         while i < n {
-            let neighbor = work_get::<BNS_ALT_PATH>(
-                heap,
-                pBNS.alt_path,
-                tagAltPathConst_iALTP_NEIGHBOR as i32 + i,
-            )?;
+            let neighbor = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_NEIGHBOR as i32 + i)?;
             let ineigh1 = i32::from(neighbor.ineigh(0));
             let _ineigh2 = neighbor.ineigh(1);
             let vertex = bns_vertex(heap, pBNS, v1)?;
@@ -4203,8 +4002,7 @@ pub(crate) fn MarkAtomsAtTautGroups(
 
             if v1 >= num_atoms && v1_group_or_temp && v2_atom {
                 if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
-                    let index = usize::try_from(n_len_delta)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let index = usize::try_from(n_len_delta).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     c_delta[index] = delta as S_CHAR;
                     n_vertex[index] = v2 as AT_NUMB;
                     n_len_delta += 1;
@@ -4223,24 +4021,21 @@ pub(crate) fn MarkAtomsAtTautGroups(
                 };
                 if v2 >= num_atoms && v2_group_or_temp && v1_atom {
                     if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
-                        let index = usize::try_from(n_len_delta)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let index = usize::try_from(n_len_delta).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         c_delta[index] = delta as S_CHAR;
                         n_vertex[index] = v1 as AT_NUMB;
                         n_len_delta += 1;
                     }
                 } else if (0 <= v1 && v1 == nEnd1) || (v1 == nEnd2 && 0 <= v2 && v2 < num_atoms) {
                     if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
-                        let index = usize::try_from(n_len_delta)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let index = usize::try_from(n_len_delta).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         c_delta[index] = delta.wrapping_neg() as S_CHAR;
                         n_vertex[index] = v1 as AT_NUMB;
                         n_len_delta += 1;
                     }
                 } else if (0 <= v2 && v2 == nEnd1) || (v2 == nEnd2 && 0 <= v1 && v1 < num_atoms) {
                     if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
-                        let index = usize::try_from(n_len_delta)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let index = usize::try_from(n_len_delta).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         c_delta[index] = delta.wrapping_neg() as S_CHAR;
                         n_vertex[index] = v2 as AT_NUMB;
                         n_len_delta += 1;
@@ -4261,28 +4056,18 @@ pub(crate) fn MarkAtomsAtTautGroups(
             let mut i = 1_i32;
             let mut j = 0_i32;
             while i < n_len_delta {
-                let j_index =
-                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let i_index =
-                    usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if (c_delta[j_index] > 0 && c_delta[i_index] > 0)
-                    || (c_delta[j_index] < 0 && c_delta[i_index] < 0)
-                {
+                let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let i_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if (c_delta[j_index] > 0 && c_delta[i_index] > 0) || (c_delta[j_index] < 0 && c_delta[i_index] < 0) {
                     if j == last_i {
                         return Ok(0);
                     }
                     v1 = i32::from(n_vertex[j_index]);
-                    if (i32::from(work_get::<S_CHAR>(heap, pAATG.nMarkedAtom, v1)?)
-                        & AATG_MARK_IN_PATH as i32)
-                        == 0
-                    {
+                    if (i32::from(work_get::<S_CHAR>(heap, pAATG.nMarkedAtom, v1)?) & AATG_MARK_IN_PATH as i32) == 0 {
                         n_num_found += 1;
                     }
                     v2 = i32::from(n_vertex[i_index]);
-                    if (i32::from(work_get::<S_CHAR>(heap, pAATG.nMarkedAtom, v2)?)
-                        & AATG_MARK_IN_PATH as i32)
-                        == 0
-                    {
+                    if (i32::from(work_get::<S_CHAR>(heap, pAATG.nMarkedAtom, v2)?) & AATG_MARK_IN_PATH as i32) == 0 {
                         n_num_found += 1;
                     }
                     last_i = i;
@@ -4303,17 +4088,10 @@ pub(crate) fn MarkAtomsAtTautGroups(
             let mut i = 1_i32;
             let mut j = 0_i32;
             while i < n_len_delta {
-                let j_index =
-                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let i_index =
-                    usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if (c_delta[j_index] > 0 && c_delta[i_index] > 0)
-                    || (c_delta[j_index] < 0 && c_delta[i_index] < 0)
-                {
-                    v1 = i32::from(
-                        n_vertex[usize::try_from(i - 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
-                    );
+                let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let i_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if (c_delta[j_index] > 0 && c_delta[i_index] > 0) || (c_delta[j_index] < 0 && c_delta[i_index] < 0) {
+                    v1 = i32::from(n_vertex[usize::try_from(i - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?]);
                     let mark = work_get::<S_CHAR>(heap, pAATG.nMarkedAtom, v1)?;
                     if (i32::from(mark) & AATG_MARK_IN_PATH as i32) == 0 {
                         work_set(
@@ -4407,36 +4185,15 @@ pub(crate) fn SimpleRemoveHplusNPO(
         let mut mask = 0_i32;
         let type_ = GetAtomChargeType(&*atoms, i, None, Some(&mut mask), 0)?;
         if (PR_SIMPLE_TYP as i32 & type_) != 0 && (PR_SIMPLE_MSK & mask) != 0 {
-            let _ = GetAtomChargeType(
-                &*atoms,
-                i,
-                n_at_type_totals.as_deref_mut(),
-                Some(&mut mask),
-                1,
-            )?;
+            let _ = GetAtomChargeType(&*atoms, i, n_at_type_totals.as_deref_mut(), Some(&mut mask), 1)?;
             let offset = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            atoms
-                .get_mut(offset)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .charge = 0;
+            atoms.get_mut(offset).ok_or(SourceHeapError::PointerOutOfBounds)?.charge = 0;
             AddOrRemoveExplOrImplH(-1, atoms, num_atoms, i as AT_NUMB, t_group_info)?;
             num_removed += 1;
             if FIX_NORM_BUG_ADD_ION_PAIR == 1 {
-                let _ = GetAtomChargeType(
-                    &*atoms,
-                    i,
-                    n_at_type_totals.as_deref_mut(),
-                    Some(&mut mask),
-                    0,
-                )?;
+                let _ = GetAtomChargeType(&*atoms, i, n_at_type_totals.as_deref_mut(), Some(&mut mask), 0)?;
             } else {
-                let _ = GetAtomChargeType(
-                    &*atoms,
-                    i,
-                    n_at_type_totals.as_deref_mut(),
-                    Some(&mut mask),
-                    1,
-                )?;
+                let _ = GetAtomChargeType(&*atoms, i, n_at_type_totals.as_deref_mut(), Some(&mut mask), 1)?;
             }
         }
     }
@@ -4547,8 +4304,7 @@ pub(crate) fn SimpleRemoveAcidicProtons(
     let mut max_j = -1_i32;
     let mut num = [0_i32; AR_SIMPLE_STEPS as usize + 1];
     let mut j = 0_i32;
-    while AR_TYP_MASK[usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] != 0
-    {
+    while AR_TYP_MASK[usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] != 0 {
         max_j = j;
         num[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = 0;
         j += 1;
@@ -4561,13 +4317,9 @@ pub(crate) fn SimpleRemoveAcidicProtons(
             let type_ = GetAtomChargeType(&*atoms, i, None, Some(&mut mask), 0)?;
             if type_ != 0 {
                 for j in 0..=max_j {
-                    let table_index =
-                        usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if (type_ & AR_TYP_MASK[table_index]) != 0
-                        && (mask != 0 && AR_TYP_MASK[table_index + 1] != 0)
-                    {
-                        num[usize::try_from(j)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                    let table_index = usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if (type_ & AR_TYP_MASK[table_index]) != 0 && (mask != 0 && AR_TYP_MASK[table_index + 1] != 0) {
+                        num[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
                         break;
                     }
                 }
@@ -4596,22 +4348,18 @@ pub(crate) fn SimpleRemoveAcidicProtons(
             let type_ = GetAtomChargeType(&*atoms, i, None, Some(&mut mask), 0)?;
             if type_ != 0 {
                 for j in 0..=max_j {
-                    let table_index =
-                        usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let num_index =
-                        usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let table_index = usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let num_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if num[num_index] != 0
                         && (type_ & AR_TYP_MASK[table_index]) != 0
                         && (mask != 0 && AR_TYP_MASK[table_index + 1] != 0)
                     {
                         {
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
+                            let _ = GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
                         }
                         num[num_index] -= 1;
-                        let atom_index =
-                            usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let new_charge = atoms[atom_index].charge.wrapping_sub(1);
                         atoms
                             .get_mut(atom_index)
@@ -4622,19 +4370,12 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                                 .slice_mut(p_aatg.t_group_info)?
                                 .get_mut(0)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            AddOrRemoveExplOrImplH(
-                                -1,
-                                atoms,
-                                num_atoms,
-                                i as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            AddOrRemoveExplOrImplH(-1, atoms, num_atoms, i as AT_NUMB, t_group_info)?;
                         }
                         num_removed += 1;
                         {
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
+                            let _ = GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
                         }
                         break;
                     }
@@ -4826,8 +4567,7 @@ pub(crate) fn SimpleAddAcidicProtons(
     let mut max_j = -1_i32;
     let mut num = [0_i32; AR_SIMPLE_STEPS as usize + 1];
     let mut j = 0_i32;
-    while AA_TYP_MASK[usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] != 0
-    {
+    while AA_TYP_MASK[usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] != 0 {
         max_j = j;
         num[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = 0;
         j += 1;
@@ -4840,13 +4580,9 @@ pub(crate) fn SimpleAddAcidicProtons(
             let type_ = GetAtomChargeType(&*atoms, i, None, Some(&mut mask), 0)?;
             if type_ != 0 {
                 for j in 0..=max_j {
-                    let table_index =
-                        usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if (type_ & AA_TYP_MASK[table_index]) != 0
-                        && (mask != 0 && AA_TYP_MASK[table_index + 1] != 0)
-                    {
-                        num[usize::try_from(j)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                    let table_index = usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if (type_ & AA_TYP_MASK[table_index]) != 0 && (mask != 0 && AA_TYP_MASK[table_index + 1] != 0) {
+                        num[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
                         break;
                     }
                 }
@@ -4875,22 +4611,18 @@ pub(crate) fn SimpleAddAcidicProtons(
             let type_ = GetAtomChargeType(&*atoms, i, None, Some(&mut mask), 0)?;
             if type_ != 0 {
                 for j in 0..=max_j {
-                    let table_index =
-                        usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let num_index =
-                        usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let table_index = usize::try_from(2 * j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let num_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if num[num_index] != 0
                         && (type_ & AA_TYP_MASK[table_index]) != 0
                         && (mask != 0 && AA_TYP_MASK[table_index + 1] != 0)
                     {
                         {
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
+                            let _ = GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
                         }
                         num[num_index] -= 1;
-                        let atom_index =
-                            usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let new_charge = atoms[atom_index].charge.wrapping_add(1);
                         atoms
                             .get_mut(atom_index)
@@ -4901,19 +4633,12 @@ pub(crate) fn SimpleAddAcidicProtons(
                                 .slice_mut(p_aatg.t_group_info)?
                                 .get_mut(0)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            AddOrRemoveExplOrImplH(
-                                1,
-                                atoms,
-                                num_atoms,
-                                i as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            AddOrRemoveExplOrImplH(1, atoms, num_atoms, i as AT_NUMB, t_group_info)?;
                         }
                         num_added += 1;
                         {
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
+                            let _ = GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
                         }
                         break;
                     }
@@ -5090,11 +4815,7 @@ pub(crate) fn bIsHDonorAccAtomType(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bIsNegAtomType(
-    atoms: &[inp_ATOM],
-    endpoint: i32,
-    c_sub_type: &mut i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn bIsNegAtomType(atoms: &[inp_ATOM], endpoint: i32, c_sub_type: &mut i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:3539 bIsNegAtomType
     // INCHI✔️✔️: int bIsNegAtomType( inp_ATOM *at, int endpoint, int *cSubType )
     // INCHI✔️✔️: {
@@ -5179,11 +4900,7 @@ pub(crate) fn bIsNegAtomType(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bIsHardRemHCandidate(
-    atoms: &[inp_ATOM],
-    i: i32,
-    c_sub_type: &mut i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn bIsHardRemHCandidate(atoms: &[inp_ATOM], i: i32, c_sub_type: &mut i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:3582 bIsHardRemHCandidate
     // INCHI✔️✔️: int bIsHardRemHCandidate( inp_ATOM *at, int i, int *cSubType )
     // INCHI✔️✔️: {
@@ -5305,23 +5022,15 @@ pub(crate) fn HardRemoveAcidicProtons(
         Ok(())
     }
 
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
+    fn aatg_total(heap: &SourceHeap, p_aatg: &BN_AATG, index: usize) -> Result<i32, SourceHeapError> {
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
@@ -5353,23 +5062,9 @@ pub(crate) fn HardRemoveAcidicProtons(
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
     let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h_other = CreateTGroupInBnStruct(
-        heap,
-        &atoms,
-        num_atoms,
-        pBNS,
-        AR_HARD_TYP_HN as i32,
-        AR_HARD_MSK_HN,
-    )?;
+    let tg_h_other = CreateTGroupInBnStruct(heap, &atoms, num_atoms, pBNS, AR_HARD_TYP_HN as i32, AR_HARD_MSK_HN)?;
     let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h_acid = CreateTGroupInBnStruct(
-        heap,
-        &atoms,
-        num_atoms,
-        pBNS,
-        AR_HARD_TYP_HA as i32,
-        AR_HARD_MSK_HA,
-    )?;
+    let tg_h_acid = CreateTGroupInBnStruct(heap, &atoms, num_atoms, pBNS, AR_HARD_TYP_HA as i32, AR_HARD_MSK_HA)?;
 
     let mut n_num_moved2_acid_h = 0_i32;
     let mut n_num_neutralized = 0_i32;
@@ -5410,8 +5105,7 @@ pub(crate) fn HardRemoveAcidicProtons(
         if n_num_moved2_acid_h != 0
             && cg_minus >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
                 let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
@@ -5466,17 +5160,12 @@ pub(crate) fn HardRemoveAcidicProtons(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
+    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)? != 0
         && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
     if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != 0 {
         return Ok(BNS_PROGRAM_ERR);
     }
@@ -5570,23 +5259,15 @@ pub(crate) fn HardAddAcidicProtons(
         Ok(())
     }
 
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
+    fn aatg_total(heap: &SourceHeap, p_aatg: &BN_AATG, index: usize) -> Result<i32, SourceHeapError> {
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
@@ -5603,15 +5284,7 @@ pub(crate) fn HardAddAcidicProtons(
         1,
     )?;
     let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_minus_co = CreateCGroupInBnStruct(
-        heap,
-        &atoms,
-        num_atoms,
-        pBNS,
-        AA_HARD_TYP_CO as i32,
-        AA_HARD_MSK_CO,
-        -1,
-    )?;
+    let cg_minus_co = CreateCGroupInBnStruct(heap, &atoms, num_atoms, pBNS, AA_HARD_TYP_CO as i32, AA_HARD_MSK_CO, -1)?;
     let atoms = clone_atoms(heap, at, num_atoms)?;
     let cg_minus_other = CreateCGroupInBnStruct(
         heap,
@@ -5628,14 +5301,7 @@ pub(crate) fn HardAddAcidicProtons(
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
     let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h = CreateTGroupInBnStruct(
-        heap,
-        &atoms,
-        num_atoms,
-        pBNS,
-        AA_HARD_TYP_H as i32,
-        AA_HARD_MSK_H,
-    )?;
+    let tg_h = CreateTGroupInBnStruct(heap, &atoms, num_atoms, pBNS, AA_HARD_TYP_H as i32, AA_HARD_MSK_H)?;
 
     let mut n_num_moved2_acid_minus = 0_i32;
     let mut n_num_neutralized = 0_i32;
@@ -5678,8 +5344,7 @@ pub(crate) fn HardAddAcidicProtons(
         if n_num_moved2_acid_minus != 0
             && cg_minus_other >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
                 let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
@@ -5736,17 +5401,12 @@ pub(crate) fn HardAddAcidicProtons(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
+    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)? != 0
         && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
     if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != 0 {
         return Ok(BNS_PROGRAM_ERR);
     }
@@ -5894,11 +5554,7 @@ pub(crate) fn HardRemoveHplusNP(
         Ok(())
     }
 
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
+    fn aatg_total(heap: &SourceHeap, p_aatg: &BN_AATG, index: usize) -> Result<i32, SourceHeapError> {
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
@@ -5914,12 +5570,8 @@ pub(crate) fn HardRemoveHplusNP(
             .nNumRemovedProtons as i32)
     }
 
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
@@ -5946,14 +5598,7 @@ pub(crate) fn HardRemoveHplusNP(
         -1,
     )?;
     let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h = CreateTGroupInBnStruct(
-        heap,
-        &atoms,
-        num_atoms,
-        pBNS,
-        PR_HARD_TYP_H as i32,
-        PR_HARD_MSK_H,
-    )?;
+    let tg_h = CreateTGroupInBnStruct(heap, &atoms, num_atoms, pBNS, PR_HARD_TYP_H as i32, PR_HARD_MSK_H)?;
 
     let mut n_num_removed_protons = 0_i32;
     let mut n_num_neutralized = 0_i32;
@@ -6001,8 +5646,7 @@ pub(crate) fn HardRemoveHplusNP(
         if (n_num_removed_protons != 0 || bCancelChargesAlways != 0)
             && cg_minus >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
                 let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
@@ -6064,19 +5708,13 @@ pub(crate) fn HardRemoveHplusNP(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
+    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)? != 0
         && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != n_num_removed_protons
-    {
+    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)? - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?) / 2;
+    if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != n_num_removed_protons {
         return Ok(BNS_PROGRAM_ERR);
     }
 
@@ -6145,9 +5783,8 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .tni
             .nNumRemovedExplicitH;
-        let count =
-            usize::try_from(i64::from(num_atoms).wrapping_add(i64::from(removed_explicit_h)))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let count = usize::try_from(i64::from(num_atoms).wrapping_add(i64::from(removed_explicit_h)))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atoms = heap.slice(at.as_const())?;
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -6220,8 +5857,7 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     }
 
     if pAATG.nMarkedAtom.is_null() {
-        let byte_count =
-            u64::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationSizeOverflow)?;
+        let byte_count = u64::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationSizeOverflow)?;
         if let Ok(marked_atom) = inchi_malloc(heap, byte_count) {
             pAATG.nMarkedAtom = marked_atom;
             pAATG.nAllocLen = num_atoms;
@@ -6626,21 +6262,14 @@ pub(crate) fn CreateCGroupInBnStruct(
     *bns_vertex_mut(heap, p_bns, num_vertices)? = BNS_VERTEX::default();
     let previous_vertex = bns_vertex(heap, p_bns, num_vertices - 1)?;
     let mut vert_ficpoint = bns_vertex(heap, p_bns, num_vertices)?;
-    vert_ficpoint.iedge = previous_vertex
-        .iedge
-        .offset(i64::from(previous_vertex.max_adj_edges))?;
+    vert_ficpoint.iedge = previous_vertex.iedge.offset(i64::from(previous_vertex.max_adj_edges))?;
     vert_ficpoint.max_adj_edges = (num_c_points + BNS_ADD_EDGES as i32) as AT_NUMB;
     vert_ficpoint.num_adj_edges = 0;
     vert_ficpoint.st_edge.flow = 0;
     vert_ficpoint.st_edge.flow0 = 0;
     vert_ficpoint.st_edge.cap = 0;
     vert_ficpoint.st_edge.cap0 = 0;
-    vert_ficpoint.type_ = (BNS_VERT_TYPE_C_GROUP
-        | if n_charge < 0 {
-            BNS_VERT_TYPE_C_NEGATIVE
-        } else {
-            0
-        }) as AT_NUMB;
+    vert_ficpoint.type_ = (BNS_VERT_TYPE_C_GROUP | if n_charge < 0 { BNS_VERT_TYPE_C_NEGATIVE } else { 0 }) as AT_NUMB;
     *bns_vertex_mut(heap, p_bns, num_vertices)? = vert_ficpoint;
 
     let cg = 1_i32;
@@ -6954,11 +6583,8 @@ pub(crate) fn CreateTGroupInBnStruct(
     *bns_vertex_mut(heap, p_bns, num_vertices)? = BNS_VERTEX::default();
     let previous_vertex = bns_vertex(heap, p_bns, num_vertices - 1)?;
     let mut vert_ficpoint = bns_vertex(heap, p_bns, num_vertices)?;
-    vert_ficpoint.iedge = previous_vertex
-        .iedge
-        .offset(i64::from(previous_vertex.max_adj_edges))?;
-    vert_ficpoint.max_adj_edges =
-        (num_endpoints + BNS_ADD_EDGES as i32 + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
+    vert_ficpoint.iedge = previous_vertex.iedge.offset(i64::from(previous_vertex.max_adj_edges))?;
+    vert_ficpoint.max_adj_edges = (num_endpoints + BNS_ADD_EDGES as i32 + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
     vert_ficpoint.num_adj_edges = 0;
     vert_ficpoint.st_edge.flow = 0;
     vert_ficpoint.st_edge.flow0 = 0;
@@ -7204,9 +6830,7 @@ pub(crate) fn bAddNewVertex(
     new_vertex.st_edge.flow = nFlow;
     new_vertex.st_edge.flow0 = nFlow;
     new_vertex.st_edge.pass = 0;
-    new_vertex.iedge = last_vertex
-        .iedge
-        .offset(i64::from(last_vertex.max_adj_edges))?;
+    new_vertex.iedge = last_vertex.iedge.offset(i64::from(last_vertex.max_adj_edges))?;
     new_vertex.type_ = BNS_VERT_TYPE_TEMP as AT_NUMB;
     *nDots = (*nDots).wrapping_add(nCap.wrapping_sub(nFlow));
 
@@ -7218,12 +6842,7 @@ pub(crate) fn bAddNewVertex(
     work_set(heap, vert2.iedge, i32::from(vert2.num_adj_edges), iedge)?;
     vert2.num_adj_edges = vert2.num_adj_edges.wrapping_add(1);
 
-    work_set(
-        heap,
-        new_vertex.iedge,
-        i32::from(new_vertex.num_adj_edges),
-        iedge,
-    )?;
+    work_set(heap, new_vertex.iedge, i32::from(new_vertex.num_adj_edges), iedge)?;
     new_vertex.num_adj_edges = new_vertex.num_adj_edges.wrapping_add(1);
 
     *nDots = (*nDots).wrapping_sub(vert2.st_edge.cap.wrapping_sub(vert2.st_edge.flow));
@@ -7309,13 +6928,7 @@ pub(crate) fn AddNewEdge(
     // END INCHI ACTIVE MACRO CONFIGURATION: AddNewEdge
 
     let ie = pBNS.num_edges;
-    if ip1 >= pBNS.max_vertices
-        || ip1 < 0
-        || ip2 >= pBNS.max_vertices
-        || ip2 < 0
-        || ie >= pBNS.max_edges
-        || ie < 0
-    {
+    if ip1 >= pBNS.max_vertices || ip1 < 0 || ip2 >= pBNS.max_vertices || ip2 < 0 || ie >= pBNS.max_edges || ie < 0 {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
@@ -7446,11 +7059,7 @@ pub(crate) fn GetEdgeToGroupVertex(
             let edge = bns_edge(heap, pBNS, edge_index)?;
             let v2 = i32::from(edge.neighbor12) ^ v1;
             if bns_vertex(heap, pBNS, v2)?.type_ == type_ {
-                return Ok(if edge.forbidden != 0 {
-                    NO_VERTEX
-                } else {
-                    edge_index
-                });
+                return Ok(if edge.forbidden != 0 { NO_VERTEX } else { edge_index });
             }
             i -= 1;
         }
@@ -7691,11 +7300,7 @@ pub(crate) fn bAddStCapToAVertex(
                 continue;
             }
 
-            let n_new_cap = vert
-                .st_edge
-                .cap
-                .min(vert1_st_cap)
-                .min(MAX_BOND_EDGE_CAP as VertexFlow);
+            let n_new_cap = vert.st_edge.cap.min(vert1_st_cap).min(MAX_BOND_EDGE_CAP as VertexFlow);
             edge.cap = n_new_cap;
             *bns_edge_mut(heap, pBNS, iedge)? = edge;
         }
@@ -7872,15 +7477,7 @@ pub(crate) fn bSetBnsToCheckAltPath(
             if v1t != NO_VERTEX {
                 return Ok(BNS_BOND_ERR);
             }
-            n = bAddStCapToAVertex(
-                heap,
-                pBNS,
-                v1,
-                v2_act,
-                &mut apc.nOldCapsVert[iapc],
-                nDots,
-                0,
-            )?;
+            n = bAddStCapToAVertex(heap, pBNS, v1, v2_act, &mut apc.nOldCapsVert[iapc], nDots, 0)?;
             apc.bSetOldCapsVert[iapc] = n as S_CHAR;
             apc.vOldVert[iapc] = v1;
             iapc += 1;
@@ -7889,15 +7486,7 @@ pub(crate) fn bSetBnsToCheckAltPath(
             if v2t == NO_VERTEX {
                 return Ok(BNS_BOND_ERR);
             }
-            n = bAddStCapToAVertex(
-                heap,
-                pBNS,
-                v2t,
-                v1_act,
-                &mut apc.nOldCapsVert[iapc],
-                nDots,
-                0,
-            )?;
+            n = bAddStCapToAVertex(heap, pBNS, v2t, v1_act, &mut apc.nOldCapsVert[iapc], nDots, 0)?;
             apc.bSetOldCapsVert[iapc] = n as S_CHAR;
             apc.vOldVert[iapc] = v2t;
         }
@@ -7908,8 +7497,7 @@ pub(crate) fn bSetBnsToCheckAltPath(
     }
 
     if is_2h_mode {
-        let b_donors = path_type == ALT_PATH_MODE_REM2H_CHG as i32
-            || path_type == ALT_PATH_MODE_REM2H_TST as i32;
+        let b_donors = path_type == ALT_PATH_MODE_REM2H_CHG as i32 || path_type == ALT_PATH_MODE_REM2H_TST as i32;
 
         *apc = ALT_PATH_CHANGES::default();
         set_fcd_sentinel(heap, fcd, ifcd)?;
@@ -8313,8 +7901,8 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
                         if j < i32::from(old_vert.num_adj_edges) {
                             let iedge = work_get(heap, old_vert.iedge, j)?;
                             let mut edge = bns_edge(heap, pBNS, iedge)?;
-                            edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                            edge.cap = apc.nOldCapsVert[i]
+                                [usize::try_from(j + 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                             *bns_edge_mut(heap, pBNS, iedge)? = edge;
                         }
                     }
@@ -8333,8 +7921,8 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
                     if j < i32::from(old_vert.num_adj_edges) {
                         let iedge = work_get(heap, old_vert.iedge, j)?;
                         let mut edge = bns_edge(heap, pBNS, iedge)?;
-                        edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        edge.cap = apc.nOldCapsVert[i]
+                            [usize::try_from(j + 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         *bns_edge_mut(heap, pBNS, iedge)? = edge;
                     }
                 }
@@ -8371,11 +7959,7 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bIsBnsEndpoint(
-    heap: &SourceHeap,
-    pBNS: &BN_STRUCT,
-    v: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn bIsBnsEndpoint(heap: &SourceHeap, pBNS: &BN_STRUCT, v: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:7561 bIsBnsEndpoint
     // INCHI✔️❌: int bIsBnsEndpoint( BN_STRUCT *pBNS, int v )
     // INCHI✔️❌: {
@@ -8609,16 +8193,10 @@ pub(crate) fn RemoveLastGroupFromBnStruct(
         *bns_edge_mut(heap, p_bns, iedge)? = BNS_EDGE::default();
         num_edges = num_edges.wrapping_sub(1);
         if is_t_group == 1 && endpoint < num_atoms {
-            atoms
-                .get_mut(0)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .endpoint = 0;
+            atoms.get_mut(0).ok_or(SourceHeapError::PointerOutOfBounds)?.endpoint = 0;
         }
         if is_c_group == 1 && endpoint < num_atoms {
-            atoms
-                .get_mut(0)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .c_point = 0;
+            atoms.get_mut(0).ok_or(SourceHeapError::PointerOutOfBounds)?.c_point = 0;
         }
         k = k.wrapping_sub(1);
     }
@@ -8664,12 +8242,7 @@ pub(crate) struct GetEdgePointerResult {
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn GetEdgePointer(
-    _pBNS: &BN_STRUCT,
-    u: Vertex,
-    v: Vertex,
-    iuv: EdgeIndex,
-) -> GetEdgePointerResult {
+pub(crate) fn GetEdgePointer(_pBNS: &BN_STRUCT, u: Vertex, v: Vertex, iuv: EdgeIndex) -> GetEdgePointerResult {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9879 GetEdgePointer
     // INCHI✔️✔️: int GetEdgePointer( BN_STRUCT *pBNS,
     // INCHI✔️✔️:                     Vertex u,
@@ -8988,9 +8561,7 @@ pub(crate) fn AugmentEdge(
                 st_edge.flow &= !(EDGE_FLOW_ST_PATH as i32);
                 vertex.st_edge = st_edge;
                 heap.slice_mut(pBNS.vert)?
-                    .get_mut(
-                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone_from(&vertex);
             } else if f < 0 || f > st_edge.cap {
@@ -9001,103 +8572,52 @@ pub(crate) fn AugmentEdge(
                 } else if delta != 0 {
                     st_edge.pass = st_edge.pass.wrapping_add(1);
                 }
-                st_edge.flow =
-                    (flow & !(EDGE_FLOW_ST_PATH as i32 | EDGE_FLOW_ST_MASK as i32)).wrapping_add(f);
+                st_edge.flow = (flow & !(EDGE_FLOW_ST_PATH as i32 | EDGE_FLOW_ST_MASK as i32)).wrapping_add(f);
                 vertex.st_edge = st_edge;
                 heap.slice_mut(pBNS.vert)?
-                    .get_mut(
-                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone_from(&vertex);
 
                 if bReverse != 0 {
                     match s_or_t {
                         1 => {
-                            let mut entry = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_END_ATOM as i32,
-                            )?;
+                            let mut entry =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32)?;
                             entry.set_number(v / 2 - 1);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_END_ATOM as i32,
-                                entry,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32, entry)?;
                         }
                         2 | 3 => ret = BNS_WRONG_PARMS,
                         4 => {
-                            let mut start = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_START_ATOM as i32,
-                            )?;
+                            let mut start =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32)?;
                             start.set_number(u / 2 - 1);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_START_ATOM as i32,
-                                start,
-                            )?;
-                            let mut flow_entry = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_FLOW as i32,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32, start)?;
+                            let mut flow_entry =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32)?;
                             flow_entry.set_flow(0, delta);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_FLOW as i32,
-                                flow_entry,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32, flow_entry)?;
                         }
                         _ => ret = BNS_WRONG_PARMS,
                     }
                 } else {
                     match s_or_t {
                         1 => {
-                            let mut start = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_START_ATOM as i32,
-                            )?;
+                            let mut start =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32)?;
                             start.set_number(v / 2 - 1);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_START_ATOM as i32,
-                                start,
-                            )?;
-                            let mut flow_entry = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_FLOW as i32,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_START_ATOM as i32, start)?;
+                            let mut flow_entry =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32)?;
                             flow_entry.set_flow(0, delta);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_FLOW as i32,
-                                flow_entry,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32, flow_entry)?;
                         }
                         2 | 3 => ret = BNS_WRONG_PARMS,
                         4 => {
-                            let mut end = work_get::<BNS_ALT_PATH>(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_END_ATOM as i32,
-                            )?;
+                            let mut end =
+                                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32)?;
                             end.set_number(u / 2 - 1);
-                            work_set(
-                                heap,
-                                pBNS.alt_path,
-                                tagAltPathConst_iALTP_END_ATOM as i32,
-                                end,
-                            )?;
+                            work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_END_ATOM as i32, end)?;
                         }
                         _ => ret = BNS_WRONG_PARMS,
                     }
@@ -9112,9 +8632,7 @@ pub(crate) fn AugmentEdge(
         if delta == 0 {
             edge.flow &= !(EDGE_FLOW_PATH as i32);
             heap.slice_mut(pBNS.edge)?
-                .get_mut(
-                    usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get_mut(usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone_from(&edge);
         } else if f < 0 || f > edge.cap {
@@ -9129,35 +8647,21 @@ pub(crate) fn AugmentEdge(
             }
             edge.flow = (edge.flow & !(EDGE_FLOW_PATH as i32 | EDGE_FLOW_MASK as i32)) | f;
             heap.slice_mut(pBNS.edge)?
-                .get_mut(
-                    usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get_mut(usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone_from(&edge);
 
-            let path_len = work_get::<BNS_ALT_PATH>(
-                heap,
-                pBNS.alt_path,
-                tagAltPathConst_iALTP_PATH_LEN as i32,
-            )?
-            .number();
-            let max_len = work_get::<BNS_ALT_PATH>(
-                heap,
-                pBNS.alt_path,
-                tagAltPathConst_iALTP_MAX_LEN as i32,
-            )?
-            .number();
+            let path_len =
+                work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_PATH_LEN as i32)?.number();
+            let max_len = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_MAX_LEN as i32)?.number();
             if tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len < max_len {
                 let indx = if bReverse != 0 {
                     (i32::from(edge.neighbor1) == iv) as usize
                 } else {
                     (i32::from(edge.neighbor1) == iu) as usize
                 };
-                let mut neighbor = work_get::<BNS_ALT_PATH>(
-                    heap,
-                    pBNS.alt_path,
-                    tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len,
-                )?;
+                let mut neighbor =
+                    work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len)?;
                 neighbor.set_ineigh(0, edge.neigh_ord[1 - indx]);
                 neighbor.set_ineigh(1, edge.neigh_ord[indx]);
                 work_set(
@@ -9166,11 +8670,8 @@ pub(crate) fn AugmentEdge(
                     tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len,
                     neighbor,
                 )?;
-                let mut path_len_entry = work_get::<BNS_ALT_PATH>(
-                    heap,
-                    pBNS.alt_path,
-                    tagAltPathConst_iALTP_PATH_LEN as i32,
-                )?;
+                let mut path_len_entry =
+                    work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_PATH_LEN as i32)?;
                 path_len_entry.set_number(path_len.wrapping_add(1));
                 work_set(
                     heap,
@@ -9179,18 +8680,9 @@ pub(crate) fn AugmentEdge(
                     path_len_entry,
                 )?;
             } else {
-                let mut flow_entry = work_get::<BNS_ALT_PATH>(
-                    heap,
-                    pBNS.alt_path,
-                    tagAltPathConst_iALTP_FLOW as i32,
-                )?;
+                let mut flow_entry = work_get::<BNS_ALT_PATH>(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32)?;
                 flow_entry.set_flow(1, 1);
-                work_set(
-                    heap,
-                    pBNS.alt_path,
-                    tagAltPathConst_iALTP_FLOW as i32,
-                    flow_entry,
-                )?;
+                work_set(heap, pBNS.alt_path, tagAltPathConst_iALTP_FLOW as i32, flow_entry)?;
                 ret = BNS_ALTPATH_OVFL;
             }
         }
@@ -9392,11 +8884,7 @@ pub(crate) fn rescap_mark(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn GetVertexDegree(
-    heap: &SourceHeap,
-    pBNS: &BN_STRUCT,
-    v: Vertex,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn GetVertexDegree(heap: &SourceHeap, pBNS: &BN_STRUCT, v: Vertex) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9774 GetVertexDegree
     // INCHI✔️❌: int GetVertexDegree( BN_STRUCT* pBNS, Vertex v )
     // INCHI✔️❌: {
@@ -9480,11 +8968,7 @@ pub(crate) fn Get2ndEdgeVertex(
         let edge = bns_edge(heap, pBNS, uv[1])?;
         return Ok(((uv[0] - 2) ^ (2 * i32::from(edge.neighbor12) + 1)) + 2);
     }
-    if uv[0] <= 1 {
-        Ok(-(1 + uv[1]))
-    } else {
-        Ok(uv[0] % 2)
-    }
+    if uv[0] <= 1 { Ok(-(1 + uv[1])) } else { Ok(uv[0] % 2) }
 }
 
 #[allow(non_snake_case)]
@@ -10747,13 +10231,10 @@ pub(crate) fn RegisterRadEndpoint(
                                 let v2 = v / 2 - 1;
                                 if v2 < pBNS.num_atoms
                                     && bns_vertex(heap, pBNS, v2)?.st_edge.cap
-                                        == (bns_vertex(heap, pBNS, v2)?.st_edge.flow
-                                            & EDGE_FLOW_ST_MASK as i32)
+                                        == (bns_vertex(heap, pBNS, v2)?.st_edge.flow & EDGE_FLOW_ST_MASK as i32)
                                 {
                                     if pBNS.type_TACN != 0
-                                        && bRadChangesAtomType(
-                                            heap, pBNS, pBD, v, NO_VERTEX, NO_VERTEX,
-                                        )? != 0
+                                        && bRadChangesAtomType(heap, pBNS, pBD, v, NO_VERTEX, NO_VERTEX)? != 0
                                     {
                                         v = GetPrevVertex(heap, pBNS, v, pBD.SwitchEdge, &mut iuv)?;
                                         continue;
@@ -10769,19 +10250,9 @@ pub(crate) fn RegisterRadEndpoint(
                                     }
                                     if i >= pBD.nNumRadEndpoints {
                                         if pBD.nNumRadEndpoints + 2 <= pBD.max_num_vertices {
-                                            work_set(
-                                                heap,
-                                                pBD.RadEndpoints,
-                                                pBD.nNumRadEndpoints,
-                                                u,
-                                            )?;
+                                            work_set(heap, pBD.RadEndpoints, pBD.nNumRadEndpoints, u)?;
                                             pBD.nNumRadEndpoints += 1;
-                                            work_set(
-                                                heap,
-                                                pBD.RadEndpoints,
-                                                pBD.nNumRadEndpoints,
-                                                v2,
-                                            )?;
+                                            work_set(heap, pBD.RadEndpoints, pBD.nNumRadEndpoints, v2)?;
                                             pBD.nNumRadEndpoints += 1;
                                             num_found += 1;
                                         } else {
@@ -10831,9 +10302,7 @@ pub(crate) fn RegisterRadEndpoint(
             u = v;
             let mut i = 0;
             while i < pBD.nNumRadEndpoints {
-                if work_get(heap, pBD.RadEndpoints, i)? == u
-                    && work_get(heap, pBD.RadEndpoints, i + 1)? == w
-                {
+                if work_get(heap, pBD.RadEndpoints, i)? == u && work_get(heap, pBD.RadEndpoints, i + 1)? == w {
                     break;
                 }
                 i += 2;
@@ -10969,10 +10438,7 @@ pub(crate) fn RemoveRadEndpoints(
         let edge = bns_edge(heap, pBNS, ie)?;
         let v1 = i32::from(edge.neighbor1);
         let v2 = i32::from(edge.neighbor12) ^ v1;
-        if ie
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            != pBNS.num_edges
+        if ie.checked_add(1).ok_or(SourceHeapError::PointerOutOfBounds)? != pBNS.num_edges
             || v1 < 0
             || v1 >= pBNS.num_vertices
             || v2 < 0
@@ -10991,9 +10457,7 @@ pub(crate) fn RemoveRadEndpoints(
             .num_adj_edges
             .checked_sub(1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if work_get(heap, p2.iedge, i32::from(p2_last))? != ie
-            || work_get(heap, p1.iedge, i32::from(p1_last))? != ie
-        {
+        if work_get(heap, p2.iedge, i32::from(p2_last))? != ie || work_get(heap, p1.iedge, i32::from(p1_last))? != ie {
             return Ok(BNS_PROGRAM_ERR as i32);
         }
 
@@ -11005,11 +10469,7 @@ pub(crate) fn RemoveRadEndpoints(
         p1.st_edge.flow = p1.st_edge.flow.wrapping_sub(edge.flow);
 
         if p2.num_adj_edges == 0 && v2 >= pBNS.num_atoms {
-            if v2
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != pBNS.num_vertices
-            {
+            if v2.checked_add(1).ok_or(SourceHeapError::PointerOutOfBounds)? != pBNS.num_vertices {
                 return Ok(BNS_PROGRAM_ERR as i32);
             }
             *bns_vertex_mut(heap, pBNS, v2)? = BNS_VERTEX::default();
@@ -11019,11 +10479,7 @@ pub(crate) fn RemoveRadEndpoints(
         }
 
         if p1.num_adj_edges == 0 && v1 >= pBNS.num_atoms {
-            if v1
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != pBNS.num_vertices
-            {
+            if v1.checked_add(1).ok_or(SourceHeapError::PointerOutOfBounds)? != pBNS.num_vertices {
                 return Ok(BNS_PROGRAM_ERR as i32);
             }
             *bns_vertex_mut(heap, pBNS, v1)? = BNS_VERTEX::default();
@@ -11162,25 +10618,15 @@ pub(crate) fn RestoreRadicalsOnly(
         let p1_num_adj_edges = i32::from(edge.neigh_ord[0]);
         let p2_num_adj_edges = i32::from(edge.neigh_ord[1]);
 
-        if work_get(heap, p2.iedge, p2_num_adj_edges)? != ie
-            || work_get(heap, p1.iedge, p1_num_adj_edges)? != ie
-        {
+        if work_get(heap, p2.iedge, p2_num_adj_edges)? != ie || work_get(heap, p1.iedge, p1_num_adj_edges)? != ie {
             return Ok(BNS_PROGRAM_ERR as i32);
         }
 
         if let Some(atoms) = at.as_deref_mut() {
             if v1 < pBNS.num_atoms {
-                let delta = p1
-                    .st_edge
-                    .cap
-                    .wrapping_sub(p1.st_edge.flow)
-                    .wrapping_add(edge.flow);
-                let offset =
-                    usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let mut rad = atoms
-                    .get(offset)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .radical;
+                let delta = p1.st_edge.cap.wrapping_sub(p1.st_edge.flow).wrapping_add(edge.flow);
+                let offset = usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let mut rad = atoms.get(offset).ok_or(SourceHeapError::PointerOutOfBounds)?.radical;
                 match delta {
                     0 => {
                         if rad == RADICAL_DOUBLET as i8 {
@@ -11545,9 +10991,9 @@ pub(crate) fn AllocateAndInitBnStruct(
         Err(_) => return Ok(SourceMutPointer::null()),
     };
 
-    let edge = match source_count(max_edges).and_then(|count| {
-        inchi_calloc::<BNS_EDGE>(heap, count, std::mem::size_of::<BNS_EDGE>() as u64)
-    }) {
+    let edge = match source_count(max_edges)
+        .and_then(|count| inchi_calloc::<BNS_EDGE>(heap, count, std::mem::size_of::<BNS_EDGE>() as u64))
+    {
         Ok(pointer) => pointer,
         Err(_) => return cleanup(heap, p_bns),
     };
@@ -11556,9 +11002,9 @@ pub(crate) fn AllocateAndInitBnStruct(
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .edge = edge;
 
-    let vert = match source_count(max_vertices).and_then(|count| {
-        inchi_calloc::<BNS_VERTEX>(heap, count, std::mem::size_of::<BNS_VERTEX>() as u64)
-    }) {
+    let vert = match source_count(max_vertices)
+        .and_then(|count| inchi_calloc::<BNS_VERTEX>(heap, count, std::mem::size_of::<BNS_VERTEX>() as u64))
+    {
         Ok(pointer) => pointer,
         Err(_) => return cleanup(heap, p_bns),
     };
@@ -11567,9 +11013,9 @@ pub(crate) fn AllocateAndInitBnStruct(
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .vert = vert;
 
-    let iedge = match source_count(max_iedges).and_then(|count| {
-        inchi_calloc::<BNS_IEDGE>(heap, count, std::mem::size_of::<BNS_IEDGE>() as u64)
-    }) {
+    let iedge = match source_count(max_iedges)
+        .and_then(|count| inchi_calloc::<BNS_IEDGE>(heap, count, std::mem::size_of::<BNS_IEDGE>() as u64))
+    {
         Ok(pointer) => pointer,
         Err(_) => return cleanup(heap, p_bns),
     };
@@ -11580,9 +11026,9 @@ pub(crate) fn AllocateAndInitBnStruct(
 
     let mut num_altp = 0_i32;
     while num_altp < max_altp && num_altp < BN_MAX_ALTP as i32 {
-        let altp = match source_count(len_alt_path).and_then(|count| {
-            inchi_calloc::<BNS_ALT_PATH>(heap, count, std::mem::size_of::<BNS_ALT_PATH>() as u64)
-        }) {
+        let altp = match source_count(len_alt_path)
+            .and_then(|count| inchi_calloc::<BNS_ALT_PATH>(heap, count, std::mem::size_of::<BNS_ALT_PATH>() as u64))
+        {
             Ok(pointer) => pointer,
             Err(_) => return cleanup(heap, p_bns),
         };
@@ -11598,8 +11044,7 @@ pub(crate) fn AllocateAndInitBnStruct(
             .slice_mut(p_bns)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        bns.altp[usize::try_from(num_altp).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
-            altp;
+        bns.altp[usize::try_from(num_altp).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = altp;
         bns.len_alt_path = len_alt_path;
         num_altp += 1;
     }
@@ -11618,8 +11063,7 @@ pub(crate) fn AllocateAndInitBnStruct(
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .iedge = bns.iedge;
     for i in 0..atom_count {
-        let max_adj_edges =
-            i32::from(atoms[i].valence).wrapping_add(n_max_add_edges + NUM_KINDS_OF_GROUPS as i32);
+        let max_adj_edges = i32::from(atoms[i].valence).wrapping_add(n_max_add_edges + NUM_KINDS_OF_GROUPS as i32);
         let current_iedge = heap
             .slice(bns.vert.as_const())?
             .get(i)
@@ -11656,18 +11100,14 @@ pub(crate) fn AllocateAndInitBnStruct(
     let mut n_edges = 0_i32;
     let mut num_changed_bonds = 0_i32;
     for i in 0..atom_count {
-        let valence = usize::try_from(i32::from(atoms[i].valence))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = usize::try_from(i32::from(atoms[i].valence)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut st_flow = 0_i32;
         for j in 0..valence {
             let neigh = i32::from(atoms[i].neighbor[j]);
-            let neigh_index =
-                usize::try_from(neigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let neigh_atom = atoms
-                .get(neigh_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let neigh_valence = usize::try_from(i32::from(neigh_atom.valence))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neigh_index = usize::try_from(neigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neigh_atom = atoms.get(neigh_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neigh_valence =
+                usize::try_from(i32::from(neigh_atom.valence)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let mut k = 0_usize;
             while k < neigh_valence {
                 if neigh_atom.neighbor[k] == i as AT_NUMB {
@@ -11678,10 +11118,7 @@ pub(crate) fn AllocateAndInitBnStruct(
 
             let mut bond_type = atoms[i].bond_type[j] & BOND_TYPE_MASK as u8;
             let bond_mark = atoms[i].bond_type[j] & !(BOND_TYPE_MASK as u8);
-            if bond_type != BOND_SINGLE as u8
-                && bond_type != BOND_DOUBLE as u8
-                && bond_type != BOND_TRIPLE as u8
-            {
+            if bond_type != BOND_SINGLE as u8 && bond_type != BOND_DOUBLE as u8 && bond_type != BOND_TRIPLE as u8 {
                 bond_type = 1;
                 atoms[i].bond_type[j] = bond_mark | bond_type;
                 num_changed_bonds = num_changed_bonds.wrapping_add(1);
@@ -11690,11 +11127,7 @@ pub(crate) fn AllocateAndInitBnStruct(
             let edge_flow;
             if neigh > i as i32 {
                 let f1 = MAX_AT_FLOW_SOURCE_MACRO(&atoms[i]);
-                let f2 = MAX_AT_FLOW_SOURCE_MACRO(
-                    atoms
-                        .get(neigh_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
+                let f2 = MAX_AT_FLOW_SOURCE_MACRO(atoms.get(neigh_index).ok_or(SourceHeapError::PointerOutOfBounds)?);
                 let mut edge_flow_local = i32::from(bond_type).wrapping_sub(1);
                 let edge_cap = if edge_flow_local > MAX_BOND_EDGE_CAP as i32 {
                     edge_flow_local = 0;
@@ -11706,10 +11139,7 @@ pub(crate) fn AllocateAndInitBnStruct(
                 {
                     let edge_slot = heap
                         .slice_mut(bns.edge)?
-                        .get_mut(
-                            usize::try_from(n_edges)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(n_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge_slot.neighbor1 = i as AT_NUMB;
                     edge_slot.neighbor12 = (i as i32 ^ neigh) as AT_NUMB;
@@ -11846,8 +11276,7 @@ pub(crate) fn DeAllocateBnStruct(
 
     let max_altp = bns.max_altp.min(BN_MAX_ALTP as i32);
     for index in 0..max_altp {
-        let pointer =
-            bns.altp[usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+        let pointer = bns.altp[usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
         if !pointer.is_null() {
             inchi_free(heap, pointer)?;
         }
@@ -12027,11 +11456,7 @@ pub(crate) fn SetRadEndpoints(
             }
 
             let p_rad = bns_vertex(heap, pBNS, v_rad)?;
-            let edge_index = work_get(
-                heap,
-                p_rad.iedge,
-                i32::from(p_rad.num_adj_edges).wrapping_sub(1),
-            )?;
+            let edge_index = work_get(heap, p_rad.iedge, i32::from(p_rad.num_adj_edges).wrapping_sub(1))?;
             work_set(heap, pBD.RadEdges, pBD.nNumRadEdges, edge_index)?;
             pBD.nNumRadEdges = pBD.nNumRadEdges.wrapping_add(1);
 
@@ -12386,11 +11811,8 @@ pub(crate) fn SetRadEndpoints2(
         {
             vert.st_edge.cap = vert.st_edge.cap.wrapping_sub(delta);
             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
-            v_rad_list
-                [usize::try_from(n_num_rad).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = i;
-            v_rad_equel
-                [usize::try_from(n_num_rad).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
-                n_num_rad;
+            v_rad_list[usize::try_from(n_num_rad).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = i;
+            v_rad_equel[usize::try_from(n_num_rad).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = n_num_rad;
             n_num_rad += 1;
             *bns_vertex_mut(heap, pBNS, i)? = vert;
         }
@@ -12404,10 +11826,8 @@ pub(crate) fn SetRadEndpoints2(
     let v_rad_list_pointer = heap.allocate_model_storage(v_rad_list.to_vec())?;
 
     while j < n_num_rad {
-        let idx = usize::try_from(
-            v_rad_list[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?],
-        )
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let idx = usize::try_from(v_rad_list[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?])
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         pBD.nNumRadEndpoints = 0;
         pBD.nNumRadEdges = 0;
         pBD.bRadSrchMode = bRadSrchMode;
@@ -12455,14 +11875,7 @@ pub(crate) fn SetRadEndpoints2(
                         return Ok(ret);
                     }
                 }
-                NodeSetFromRadEndpoints(
-                    heap,
-                    pCG,
-                    &vert_set,
-                    j,
-                    pBD.RadEndpoints,
-                    pBD.nNumRadEndpoints,
-                )?;
+                NodeSetFromRadEndpoints(heap, pCG, &vert_set, j, pBD.RadEndpoints, pBD.nNumRadEndpoints)?;
                 RemoveFromNodeSet(heap, pCG, &vert_set, j, v_rad_list_pointer, n_num_rad)?;
             }
         }
@@ -12471,8 +11884,7 @@ pub(crate) fn SetRadEndpoints2(
 
     let mut restore = 0_i32;
     while restore < n_num_rad {
-        let atom_index = v_rad_list
-            [usize::try_from(restore).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+        let atom_index = v_rad_list[usize::try_from(restore).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
         let mut vert = bns_vertex(heap, pBNS, atom_index)?;
         vert.st_edge.cap = vert.st_edge.cap.wrapping_add(delta);
         *bns_vertex_mut(heap, pBNS, atom_index)? = vert;
@@ -12483,9 +11895,7 @@ pub(crate) fn SetRadEndpoints2(
     if n_num_rad > 1 {
         let mut i0 = 0_i32;
         while i0 < n_num_rad {
-            if v_rad_equel[usize::try_from(i0).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                != i0
-            {
+            if v_rad_equel[usize::try_from(i0).map_err(|_| SourceHeapError::PointerOutOfBounds)?] != i0 {
                 i0 += 1;
                 continue;
             }
@@ -12493,14 +11903,11 @@ pub(crate) fn SetRadEndpoints2(
                 n = 0;
                 let mut j0 = i0 + 1;
                 while j0 < n_num_rad {
-                    if v_rad_equel
-                        [usize::try_from(j0).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                        == j0
+                    if v_rad_equel[usize::try_from(j0).map_err(|_| SourceHeapError::PointerOutOfBounds)?] == j0
                         && DoNodeSetsIntersect(heap, &vert_set, i0, j0)? != 0
                     {
                         AddNodeSet2ToNodeSet1(heap, &vert_set, i0, j0)?;
-                        v_rad_equel[usize::try_from(j0)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] = i0;
+                        v_rad_equel[usize::try_from(j0).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = i0;
                         n += 1;
                     }
                     j0 += 1;
@@ -12519,18 +11926,14 @@ pub(crate) fn SetRadEndpoints2(
                 if IsNodeSetEmpty(heap, &vert_set, i)? == 0 {
                     j = i + 1;
                     while j < n_num_rad {
-                        if i == v_rad_equel
-                            [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                        {
+                        if i == v_rad_equel[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] {
                             work_set(heap, pBD.RadEndpoints, n, v_rad_list[i_usize])?;
                             n += 1;
                             work_set(
                                 heap,
                                 pBD.RadEndpoints,
                                 n,
-                                -v_rad_list[usize::try_from(j)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                                    - 2,
+                                -v_rad_list[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?] - 2,
                             )?;
                             n += 1;
                         }
@@ -12589,15 +11992,7 @@ pub(crate) fn SetRadEndpoints2(
                 }
                 j += 2;
             }
-            let v_rad = bAddNewVertex(
-                heap,
-                pBNS,
-                w_rad,
-                delta2,
-                delta2,
-                n_num_edges + 1,
-                &mut n_dots,
-            )?;
+            let v_rad = bAddNewVertex(heap, pBNS, w_rad, delta2, delta2, n_num_edges + 1, &mut n_dots)?;
             if is_bns_error(v_rad) {
                 ret = v_rad;
                 goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
@@ -12944,8 +12339,8 @@ pub(crate) fn bExistsAltPath(
             &mut n_dots,
         )?;
 
-        let b_adjust_radicals = (b_change_flow & BNS_EF_UPD_RAD_ORI as i32) != 0
-            && (b_change_flow & BNS_EF_RSTR_FLOW as i32) == 0;
+        let b_adjust_radicals =
+            (b_change_flow & BNS_EF_UPD_RAD_ORI as i32) != 0 && (b_change_flow & BNS_EF_RSTR_FLOW as i32) == 0;
 
         match ret {
             x if x == BNS_CHK_ALTP_NO_ALTPATH as i32 => {
@@ -12967,11 +12362,10 @@ pub(crate) fn bExistsAltPath(
                         n_delta = 2_i32.wrapping_mul(ret).wrapping_sub(n_dots);
                         if let Some(p_aatg) = pAATG.as_deref_mut() {
                             if !p_aatg.nMarkedAtom.is_null() {
-                                if !p_aatg.nAtTypeTotals.is_null()
-                                    && (b_change_flow & BNS_EF_UPD_H_CHARGE as i32) != 0
+                                if !p_aatg.nAtTypeTotals.is_null() && (b_change_flow & BNS_EF_UPD_H_CHARGE as i32) != 0
                                 {
-                                    let count = usize::try_from(num_atoms)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    let count =
+                                        usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     {
                                         let marks = heap.slice_mut(p_aatg.nMarkedAtom)?;
                                         if marks.len() < count {
@@ -12980,10 +12374,8 @@ pub(crate) fn bExistsAltPath(
                                         marks[..count].fill(0);
                                     }
                                     let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                    let mut totals =
-                                        clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
-                                    let mut marks =
-                                        clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
+                                    let mut totals = clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
+                                    let mut marks = clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
                                     let mut dummy_t_group_info = T_GROUP_INFO::default();
                                     SubtractOrChangeAtHChargeBNS(
                                         heap,
@@ -13004,11 +12396,9 @@ pub(crate) fn bExistsAltPath(
                                         .first()
                                         .cloned()
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                    let atom_storage_count = num_atoms.wrapping_add(i32::from(
-                                        t_group_info.tni.nNumRemovedExplicitH,
-                                    ));
-                                    let mut atoms =
-                                        clone_heap_prefix(heap, at, atom_storage_count)?;
+                                    let atom_storage_count =
+                                        num_atoms.wrapping_add(i32::from(t_group_info.tni.nNumRemovedExplicitH));
+                                    let mut atoms = clone_heap_prefix(heap, at, atom_storage_count)?;
                                     let mut empty_totals: [i32; 0] = [];
                                     let mut empty_marks: [S_CHAR; 0] = [];
                                     SubtractOrChangeAtHChargeBNS(
@@ -13040,20 +12430,12 @@ pub(crate) fn bExistsAltPath(
                             }
                         }
                         if b_do_mark_changed_bonds != 0 {
-                            let ret_val = bSetBondsAfterCheckOneBond(
-                                heap,
-                                pBNS,
-                                fcd,
-                                -1,
-                                at,
-                                num_atoms,
-                                b_change_flow,
-                            )?;
+                            let ret_val =
+                                bSetBondsAfterCheckOneBond(heap, pBNS, fcd, -1, at, num_atoms, b_change_flow)?;
                             if is_bns_error(ret_val) {
                                 b_error = ret_val;
                             }
-                            ret =
-                                SetBondsFromBnStructFlow(heap, pBNS, at, num_atoms, b_change_flow)?;
+                            ret = SetBondsFromBnStructFlow(heap, pBNS, at, num_atoms, b_change_flow)?;
                             if is_bns_error(ret) {
                                 b_error = ret;
                             } else if (ret & 1) == 0 && (ret_val & 1) == 0 {
@@ -13074,40 +12456,21 @@ pub(crate) fn bExistsAltPath(
                                     {
                                         if b_adjust_radicals {
                                             let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                            let ret_val = RestoreRadicalsOnly(
-                                                &*heap,
-                                                pBNS,
-                                                pBD,
-                                                Some(&mut atoms),
-                                            )?;
+                                            let ret_val = RestoreRadicalsOnly(&*heap, pBNS, pBD, Some(&mut atoms))?;
                                             write_heap_prefix(heap, at, &atoms, num_atoms)?;
                                             if is_bns_error(ret_val) {
                                                 b_error = ret_val;
                                             }
                                         }
                                         let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                        let mut totals =
-                                            clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
-                                        let mut marks =
-                                            clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
-                                        AddChangedAtHChargeBNS(
-                                            &mut atoms,
-                                            num_atoms,
-                                            &mut totals,
-                                            &mut marks,
-                                        )?;
+                                        let mut totals = clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
+                                        let mut marks = clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
+                                        AddChangedAtHChargeBNS(&mut atoms, num_atoms, &mut totals, &mut marks)?;
                                         write_heap_prefix(heap, at, &atoms, num_atoms)?;
                                         write_heap_prefix(heap, p_aatg.nAtTypeTotals, &totals, 33)?;
-                                        write_heap_prefix(
-                                            heap,
-                                            p_aatg.nMarkedAtom,
-                                            &marks,
-                                            num_atoms,
-                                        )?;
+                                        write_heap_prefix(heap, p_aatg.nMarkedAtom, &marks, num_atoms)?;
                                         if (b_change_flow & BNS_EF_CHNG_FLOW as i32) != 0 {
-                                            EliminatePlusMinusChargeAmbiguity(
-                                                heap, pBNS, num_atoms,
-                                            )?;
+                                            EliminatePlusMinusChargeAmbiguity(heap, pBNS, num_atoms)?;
                                         }
                                     }
                                 }
@@ -13265,11 +12628,7 @@ pub(crate) struct BnsSearchWorkspace {
 }
 
 impl BnsSearchWorkspace {
-    pub(crate) fn new(
-        heap: &mut SourceHeap,
-        bns: &BN_STRUCT,
-        data: &BN_DATA,
-    ) -> Result<Self, SourceHeapError> {
+    pub(crate) fn new(heap: &mut SourceHeap, bns: &BN_STRUCT, data: &BN_DATA) -> Result<Self, SourceHeapError> {
         let writable_ids = [
             data.BasePtr.allocation_identity(),
             data.SwitchEdge.allocation_identity(),
@@ -13326,9 +12685,9 @@ impl BnsSearchWorkspace {
         };
 
         let uses_contiguous_adjacency = !bns.iedge.is_null()
-            && vertices.as_ref().is_some_and(|vertices| {
-                vertices.len() == 0 || vertices.get(0).is_ok_and(|v| v.iedge == bns.iedge)
-            });
+            && vertices
+                .as_ref()
+                .is_some_and(|vertices| vertices.len() == 0 || vertices.get(0).is_ok_and(|v| v.iedge == bns.iedge));
         let contiguous_adjacency = if uses_contiguous_adjacency {
             // The source allocation places every vertex adjacency list in the
             // single pBNS->iedge block and stores interior pointers in vert[].
@@ -13389,10 +12748,7 @@ impl BnsSearchWorkspace {
             let Some(num_edges) = num_edges else {
                 return false;
             };
-            let Some(required_data_slots) = max_vertices
-                .checked_mul(2)
-                .and_then(|count| count.checked_add(2))
-            else {
+            let Some(required_data_slots) = max_vertices.checked_mul(2).and_then(|count| count.checked_add(2)) else {
                 return false;
             };
             data_slots >= required_data_slots
@@ -13405,9 +12761,7 @@ impl BnsSearchWorkspace {
                 && scan_q.len() >= data_slots
                 && pu.as_ref().is_some_and(|path| path.len() >= path_slots)
                 && pv.as_ref().is_some_and(|path| path.len() >= path_slots)
-                && vertices
-                    .as_ref()
-                    .is_some_and(|vertices| vertices.len() >= max_vertices)
+                && vertices.as_ref().is_some_and(|vertices| vertices.len() >= max_vertices)
                 && edges.as_ref().is_some_and(|edges| edges.len() >= max_edges)
                 && adjacency.len() >= max_iedges
         });
@@ -13460,10 +12814,7 @@ impl BnsSearchWorkspace {
         slice.get_mut(Self::index(index)?)
     }
 
-    fn reinit_data<const SOURCE_LAYOUT: bool>(
-        &mut self,
-        data: &mut BN_DATA,
-    ) -> Result<i32, SourceHeapError> {
+    fn reinit_data<const SOURCE_LAYOUT: bool>(&mut self, data: &mut BN_DATA) -> Result<i32, SourceHeapError> {
         let mut ret = 0_i32;
         if data.ScanQ.is_null() {
             ret += 2;
@@ -13514,10 +12865,7 @@ impl BnsSearchWorkspace {
     }
 
     #[inline(always)]
-    fn vertex<const SOURCE_LAYOUT: bool>(
-        &self,
-        index: i32,
-    ) -> Result<&BNS_VERTEX, SourceHeapError> {
+    fn vertex<const SOURCE_LAYOUT: bool>(&self, index: i32) -> Result<&BNS_VERTEX, SourceHeapError> {
         if SOURCE_LAYOUT {
             debug_assert!(index >= 0);
             // SAFETY: `source_layout` is true only after `new` proves that the
@@ -13549,19 +12897,12 @@ impl BnsSearchWorkspace {
     }
 
     #[inline(always)]
-    fn get2nd_edge_vertex<const SOURCE_LAYOUT: bool>(
-        &self,
-        uv: Edge,
-    ) -> Result<Vertex, SourceHeapError> {
+    fn get2nd_edge_vertex<const SOURCE_LAYOUT: bool>(&self, uv: Edge) -> Result<Vertex, SourceHeapError> {
         if uv[1] >= 0 {
             let edge = self.edge::<SOURCE_LAYOUT>(uv[1])?;
             return Ok(((uv[0] - 2) ^ (2 * i32::from(edge.neighbor12) + 1)) + 2);
         }
-        if uv[0] <= 1 {
-            Ok(-(1 + uv[1]))
-        } else {
-            Ok(uv[0] % 2)
-        }
+        if uv[0] <= 1 { Ok(-(1 + uv[1])) } else { Ok(uv[0] % 2) }
     }
 
     #[inline(always)]
@@ -13625,8 +12966,7 @@ impl BnsSearchWorkspace {
                 // base from the same allocation, and the C degree bound keeps
                 // `base + neighbor_index` within `max_iedges`. No buffer is
                 // resized or freed for the lifetime of this workspace.
-                let (_, adjacency) =
-                    unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
+                let (_, adjacency) = unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
                 let base = unsafe { contiguous_base.unwrap_unchecked() };
                 debug_assert!(neighbor_index >= 0);
                 let index = base + neighbor_index as usize;
@@ -13689,9 +13029,7 @@ impl BnsSearchWorkspace {
         }
         // INCHI✔️✔️:         if (s_or_t)
         let (capacity, flow) = if edge_pointer.s_or_t != 0 {
-            let edge = &self
-                .vertex::<SOURCE_LAYOUT>(edge_pointer.target_index)?
-                .st_edge;
+            let edge = &self.vertex::<SOURCE_LAYOUT>(edge_pointer.target_index)?.st_edge;
             // INCHI✔️✔️:             f = ( pst_edge->flow & EDGE_FLOW_ST_MASK );
             (edge.cap, edge.flow & EDGE_FLOW_ST_MASK as i32)
         } else {
@@ -13708,10 +13046,7 @@ impl BnsSearchWorkspace {
     }
 
     #[inline(always)]
-    fn find_base<const SOURCE_LAYOUT: bool>(
-        &mut self,
-        vertex: Vertex,
-    ) -> Result<Vertex, SourceHeapError> {
+    fn find_base<const SOURCE_LAYOUT: bool>(&mut self, vertex: Vertex) -> Result<Vertex, SourceHeapError> {
         let mut base = vertex;
         loop {
             let parent = *Self::slot::<_, SOURCE_LAYOUT>(&self.base_ptr, base)?;
@@ -13733,11 +13068,7 @@ impl BnsSearchWorkspace {
     }
 
     #[inline(always)]
-    fn tree_mark<const SOURCE_LAYOUT: bool>(
-        &mut self,
-        vertex: Vertex,
-        mark: S_CHAR,
-    ) -> Result<(), SourceHeapError> {
+    fn tree_mark<const SOURCE_LAYOUT: bool>(&mut self, vertex: Vertex, mark: S_CHAR) -> Result<(), SourceHeapError> {
         let slot = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, vertex)?;
         if *slot < mark {
             *slot = mark;
@@ -13746,24 +13077,11 @@ impl BnsSearchWorkspace {
     }
 
     fn path(&self, use_pu: bool) -> Result<&StableSourceSlice<Vertex>, SourceHeapError> {
-        if use_pu {
-            self.pu.as_ref()
-        } else {
-            self.pv.as_ref()
-        }
-        .ok_or(SourceHeapError::NullPointer)
+        if use_pu { self.pu.as_ref() } else { self.pv.as_ref() }.ok_or(SourceHeapError::NullPointer)
     }
 
-    fn path_mut(
-        &mut self,
-        use_pu: bool,
-    ) -> Result<&mut StableSourceSlice<Vertex>, SourceHeapError> {
-        if use_pu {
-            self.pu.as_mut()
-        } else {
-            self.pv.as_mut()
-        }
-        .ok_or(SourceHeapError::NullPointer)
+    fn path_mut(&mut self, use_pu: bool) -> Result<&mut StableSourceSlice<Vertex>, SourceHeapError> {
+        if use_pu { self.pu.as_mut() } else { self.pv.as_mut() }.ok_or(SourceHeapError::NullPointer)
     }
 
     fn previous_vertex<const SOURCE_LAYOUT: bool>(
@@ -13809,10 +13127,7 @@ impl BnsSearchWorkspace {
         if bns.type_TACN == 0 || u <= 1 || v <= 1 {
             return Ok(false);
         }
-        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0
-            || bns.type_T == 0
-            || bns.type_CN == 0
-        {
+        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0 || bns.type_T == 0 || bns.type_CN == 0 {
             return Ok(false);
         }
         let u_type = self.vertex::<SOURCE_LAYOUT>(u / 2 - 1)?.type_;
@@ -13829,8 +13144,7 @@ impl BnsSearchWorkspace {
         let (degree, adjacency_base) = self.vertex_scan::<SOURCE_LAYOUT>(bns, v)?;
         for index in 0..degree {
             let mut edge_index = 0;
-            let neighbor =
-                self.vertex_neighbor::<SOURCE_LAYOUT>(v, index, adjacency_base, &mut edge_index)?;
+            let neighbor = self.vertex_neighbor::<SOURCE_LAYOUT>(v, index, adjacency_base, &mut edge_index)?;
             if neighbor == NO_VERTEX || neighbor <= 1 || neighbor == u {
                 continue;
             }
@@ -13857,10 +13171,7 @@ impl BnsSearchWorkspace {
         if v <= 1 || w <= 1 || bns.type_TACN == 0 {
             return Ok(false);
         }
-        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0
-            || bns.type_T == 0
-            || bns.type_CN == 0
-        {
+        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0 || bns.type_T == 0 || bns.type_CN == 0 {
             return Ok(false);
         }
         let mut edge_index = 0;
@@ -13950,9 +13261,7 @@ impl BnsSearchWorkspace {
         let mut switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
         let mut z = switch[0];
         let mut izw = switch[1];
-        while base != Vertex_s as Vertex
-            && self.residual_capacity::<SOURCE_LAYOUT>(bns, z, base, izw)? >= 2
-        {
+        while base != Vertex_s as Vertex && self.residual_capacity::<SOURCE_LAYOUT>(bns, z, base, izw)? >= 2 {
             i += 1;
             base = *Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?;
             switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
@@ -13970,16 +13279,12 @@ impl BnsSearchWorkspace {
                 *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, z)? = base;
                 let complement = z ^ 1;
                 *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, complement)? = base;
-                if *Self::slot::<_, SOURCE_LAYOUT>(&workspace.tree, complement)?
-                    < TREE_IN_2BLOSS as S_CHAR
-                {
-                    let switch =
-                        Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.switch_edge, complement)?;
+                if *Self::slot::<_, SOURCE_LAYOUT>(&workspace.tree, complement)? < TREE_IN_2BLOSS as S_CHAR {
+                    let switch = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.switch_edge, complement)?;
                     switch[0] = predecessor;
                     switch[1] = edge_index;
                     *q_size = q_size.wrapping_add(1);
-                    *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, *q_size)? =
-                        complement;
+                    *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, *q_size)? = complement;
                     workspace.tree_mark::<SOURCE_LAYOUT>(complement, TREE_IN_2BLOSS as S_CHAR)?;
                 }
                 path_index -= 1;
@@ -14221,34 +13526,24 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
     let mut q_size = pBD.QSize;
     let mut ret = 0;
     (|| -> Result<i32, SourceHeapError> {
-        let b_rad_search =
-            (BNS_EF_RAD_SRCH as i32 & bChangeFlow) != 0 && !pBD.RadEndpoints.is_null();
+        let b_rad_search = (BNS_EF_RAD_SRCH as i32 & bChangeFlow) != 0 && !pBD.RadEndpoints.is_null();
         let b_rad_srch_mode = if b_rad_search {
             pBD.nNumRadEndpoints = 0;
             pBD.bRadSrchMode
         } else {
             tagBnsRadSrchMode_RAD_SRCH_NORM
         };
-        let b_rad_search_prelim = b_rad_search
-            && pBNS.type_TACN != 0
-            && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_NORM;
+        let b_rad_search_prelim =
+            b_rad_search && pBNS.type_TACN != 0 && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_NORM;
 
         q_size = 0;
         let mut k = 0;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, q_size)? =
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, q_size)? = Vertex_s as Vertex;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, Vertex_t as Vertex)? =
             Vertex_s as Vertex;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-            &mut workspace.base_ptr,
-            Vertex_t as Vertex,
-        )? = Vertex_s as Vertex;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-            &mut workspace.base_ptr,
-            Vertex_s as Vertex,
-        )? = BLOSSOM_BASE;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-            &mut workspace.tree,
-            Vertex_s as Vertex,
-        )? = TREE_IN_1 as S_CHAR;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, Vertex_s as Vertex)? = BLOSSOM_BASE;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.tree, Vertex_s as Vertex)? =
+            TREE_IN_1 as S_CHAR;
 
         loop {
             let u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.scan_q, k)?;
@@ -14260,18 +13555,14 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
             while i < degree {
                 let mut iuv: EdgeIndex = 0;
                 // INCHI✔️✔️:             v = GetVertexNeighbor( pBNS, u, i, &iuv );
-                let v =
-                    workspace.vertex_neighbor::<SOURCE_LAYOUT>(u, i, adjacency_base, &mut iuv)?;
+                let v = workspace.vertex_neighbor::<SOURCE_LAYOUT>(u, i, adjacency_base, &mut iuv)?;
                 // INCHI✔️✔️:             if (v == NO_VERTEX) { continue; }
                 if v == NO_VERTEX {
                     i = i.wrapping_add(1);
                     continue;
                 }
                 // INCHI✔️✔️:             if (!k && bRadSrchMode == RAD_SRCH_FROM_FICT && v / 2 <= pBNS->num_atoms) { continue; }
-                if k == 0
-                    && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_FROM_FICT
-                    && v / 2 <= pBNS.num_atoms
-                {
+                if k == 0 && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_FROM_FICT && v / 2 <= pBNS.num_atoms {
                     i = i.wrapping_add(1);
                     continue;
                 }
@@ -14282,10 +13573,9 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
                 }
 
                 // INCHI✔️✔️:             ( SwitchEdge_Vert1( u ) != v || SwitchEdge_Vert2( u ) != u )
-                let switch_u =
-                    *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.switch_edge, u)?;
-                let switch_u_avoids_t = switch_u[0] != v
-                    || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_u)? != u;
+                let switch_u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.switch_edge, u)?;
+                let switch_u_avoids_t =
+                    switch_u[0] != v || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_u)? != u;
                 // INCHI✔️✔️:                  && ( ret = rescap( pBNS, u, v, iuv ) ) > 0
                 if switch_u_avoids_t {
                     ret = workspace.residual_capacity::<SOURCE_LAYOUT>(pBNS, u, v, iuv)?;
@@ -14308,44 +13598,28 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
                     let b_v = workspace.find_base::<SOURCE_LAYOUT>(v)?;
                     if b_v == NO_VERTEX {
                         q_size += 1;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-                            &mut workspace.scan_q,
-                            q_size,
-                        )? = v;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, q_size)? = v;
                         workspace.tree_mark::<SOURCE_LAYOUT>(v, TREE_IN_1 as S_CHAR)?;
                         workspace.tree_mark::<SOURCE_LAYOUT>(v ^ 1, TREE_IN_2 as S_CHAR)?;
-                        let switch_v = BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-                            &mut workspace.switch_edge,
-                            v,
-                        )?;
+                        let switch_v = BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.switch_edge, v)?;
                         switch_v[0] = u;
                         switch_v[1] = iuv;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-                            &mut workspace.base_ptr,
-                            v ^ 1,
-                        )? = v;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
-                            &mut workspace.base_ptr,
-                            v,
-                        )? = BLOSSOM_BASE;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, v ^ 1)? = v;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, v)? = BLOSSOM_BASE;
                         n += 1;
                     } else {
                         let prim_v = v ^ 1;
                         let prim_u = u ^ 1;
-                        let switch_prim_u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(
-                            &workspace.switch_edge,
-                            prim_u,
-                        )?;
+                        let switch_prim_u =
+                            *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.switch_edge, prim_u)?;
                         let avoids_t_prime = switch_prim_u[0] != prim_v
-                            || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_prim_u)?
-                                != prim_u;
+                            || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_prim_u)? != prim_u;
                         if *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.tree, prim_v)?
                             >= TREE_IN_2BLOSS as S_CHAR
                             && avoids_t_prime
                             && b_u != b_v
                             && !(pBNS.type_TACN != 0
-                                && workspace
-                                    .ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, prim_v, u)?)
+                                && workspace.ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, prim_v, u)?)
                         {
                             n += 1;
                             let w = workspace.make_blossom::<SOURCE_LAYOUT>(
@@ -14507,10 +13781,7 @@ pub(crate) fn run_balanced_network_search_with_workspace(
     let mut pass = 0_i32;
     while pass < pBNS.max_altp {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         pBNS.bChangeFlow = 0;
         delta = balanced_network_search_with_workspace(heap, pBNS, pBD, bChangeFlow, workspace)?;
         workspace.reinit_data_for_layout(pBD)?;
@@ -14572,23 +13843,14 @@ pub(crate) fn RunBalancedNetworkSearch(
             .slice_mut(pBNS.ic)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        return Ok(
-            if bInchiTimeIsOver(clock, tick_start.as_ref(), clock_result) != 0 {
-                BNS_TIMEOUT
-            } else {
-                0
-            },
-        );
+        return Ok(if bInchiTimeIsOver(clock, tick_start.as_ref(), clock_result) != 0 {
+            BNS_TIMEOUT
+        } else {
+            0
+        });
     }
     let mut workspace = BnsSearchWorkspace::new(heap, pBNS, pBD)?;
-    run_balanced_network_search_with_workspace(
-        heap,
-        pBNS,
-        pBD,
-        bChangeFlow,
-        clock_result,
-        &mut workspace,
-    )
+    run_balanced_network_search_with_workspace(heap, pBNS, pBD, bChangeFlow, clock_result, &mut workspace)
 }
 
 #[allow(non_snake_case)]
@@ -14722,8 +13984,7 @@ pub(crate) fn BnsAdjustFlowBondsRad(
             b_ignore = b_ignore.wrapping_add(i32::from(n_alt_bonds > 3));
             if b_ignore == 0 && n_val_minus_bonds_val > 0 {
                 if pc_val_minus_bonds_val.is_null() {
-                    let count = usize::try_from(num_atoms)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     match allocate_zeroed::<i32>(heap, count) {
                         Ok(pointer) => pc_val_minus_bonds_val = pointer,
                         Err(SourceHeapError::AllocationFailed) => return Ok(BNS_OUT_OF_RAM),
@@ -14738,21 +13999,14 @@ pub(crate) fn BnsAdjustFlowBondsRad(
 
         loop {
             let mut num_removed = 0_i32;
-            let mut ret =
-                RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)?;
+            let mut ret = RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)?;
             if BNS_ERR <= ret && ret <= BNS_MAX_ERR_VALUE {
                 b_error = ret;
             } else {
                 n_orig_delta = n_orig_delta.wrapping_add(ret);
                 num_removed = pBNS.num_altp;
                 if ret > 0 {
-                    ret = SetBondsFromBnStructFlow(
-                        heap,
-                        pBNS,
-                        at,
-                        num_atoms,
-                        BNS_EF_SAVE_ALL as i32,
-                    )?;
+                    ret = SetBondsFromBnStructFlow(heap, pBNS, at, num_atoms, BNS_EF_SAVE_ALL as i32)?;
                     if BNS_ERR <= ret && ret <= BNS_MAX_ERR_VALUE {
                         b_error = ret;
                     }
@@ -14810,10 +14064,7 @@ pub(crate) fn BnsAdjustFlowBondsRad(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn ReInitBnData(
-    heap: &mut SourceHeap,
-    pBD: Option<&mut BN_DATA>,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn ReInitBnData(heap: &mut SourceHeap, pBD: Option<&mut BN_DATA>) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9718 ReInitBnData
     // INCHI✔️❌: int ReInitBnData( BN_DATA *pBD )
     // INCHI✔️❌: {
@@ -15193,9 +14444,7 @@ pub(crate) fn SetAtomBondType(
         _ => return 0,
     };
 
-    if ((bChangeFlow as u32) & BNS_EF_CHNG_BONDS) != 0
-        && ((bChangeFlow as u32) & BNS_EF_ALTR_NS) != BNS_EF_ALTR_NS
-    {
+    if ((bChangeFlow as u32) & BNS_EF_CHNG_BONDS) != 0 && ((bChangeFlow as u32) & BNS_EF_ALTR_NS) != BNS_EF_ALTR_NS {
         let new_bond_type = flow2.wrapping_add(BOND_SINGLE as i32) as u8;
         if *bond_type12 != new_bond_type {
             *bond_type12 = new_bond_type;
@@ -15217,9 +14466,7 @@ pub(crate) fn SetAtomBondType(
     match bond_type {
         BOND_SINGLE | BOND_DOUBLE | BOND_TRIPLE => {
             (bond_type, bond_mark) = match (flow1, flow2) {
-                (0, 1) if ((bChangeFlow as u32) & BNS_EF_SET_NOSTEREO) != 0 => {
-                    (BOND_ALT12NS, BOND_MARK_ALT12NS)
-                }
+                (0, 1) if ((bChangeFlow as u32) & BNS_EF_SET_NOSTEREO) != 0 => (BOND_ALT12NS, BOND_MARK_ALT12NS),
                 (0, 1) => (BOND_ALTERN, BOND_MARK_ALT12),
                 (0, 2) => (BOND_ALT_13, BOND_MARK_ALT13),
                 (1, 2) => (BOND_ALT_23, BOND_MARK_ALT23),
@@ -15237,11 +14484,7 @@ pub(crate) fn SetAtomBondType(
             let mut new_bond_type = bond_type;
             let old_mark = u32::from(*bond_type12) & BOND_MARK_MASK;
             bond_mark = match old_mark {
-                BOND_MARK_ALT12
-                    if ((bChangeFlow as u32) & BNS_EF_SET_NOSTEREO) != 0
-                        && flow1 == 0
-                        && flow2 == 1 =>
-                {
+                BOND_MARK_ALT12 if ((bChangeFlow as u32) & BNS_EF_SET_NOSTEREO) != 0 && flow1 == 0 && flow2 == 1 => {
                     new_bond_type = BOND_ALT12NS;
                     BOND_MARK_ALT12NS
                 }
@@ -15270,9 +14513,7 @@ pub(crate) fn SetAtomBondType(
             };
             bond_type = match bond_type {
                 BOND_TAUTOM => bond_type,
-                BOND_ALTERN | BOND_ALT12NS | BOND_ALT_123 | BOND_ALT_13 | BOND_ALT_23 => {
-                    new_bond_type
-                }
+                BOND_ALTERN | BOND_ALT12NS | BOND_ALT_123 | BOND_ALT_13 | BOND_ALT_23 => new_bond_type,
                 _ => return BNS_BOND_ERR,
             };
         }
@@ -15554,10 +14795,7 @@ pub(crate) fn SetBondsFromBnStructFlow(
     let mut pass = pBNS.num_altp.wrapping_sub(1);
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let path = pBNS.alt_path;
         let v1_initial = work_get::<BNS_ALT_PATH>(heap, path, 3)?.number();
         let path_len = work_get::<BNS_ALT_PATH>(heap, path, 2)?.number();
@@ -15602,8 +14840,7 @@ pub(crate) fn SetBondsFromBnStructFlow(
             v2 = i32::from(edge.neighbor12) ^ v1;
 
             if (bChangeFlow & BNS_EF_CHNG_BONDS as i32) != 0 && v1 < num_atoms {
-                let atom_index =
-                    usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice_mut(at)?
                     .get_mut(atom_index)
@@ -15617,29 +14854,14 @@ pub(crate) fn SetBondsFromBnStructFlow(
 
             if edge.pass != 0 {
                 if v1 < num_atoms && v2 < num_atoms {
-                    let first_index =
-                        usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_index =
-                        usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let (
-                        first_valence,
-                        second_valence,
-                        first_ring,
-                        second_ring,
-                        mut first_type,
-                        mut second_type,
-                    ) = {
+                    let first_index = usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let second_index = usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let first_neighbor = usize::try_from(ineigh1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let second_neighbor = usize::try_from(ineigh2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let (first_valence, second_valence, first_ring, second_ring, mut first_type, mut second_type) = {
                         let atoms = heap.slice(at.as_const())?;
-                        let first_atom = atoms
-                            .get(first_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let second_atom = atoms
-                            .get(second_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let first_atom = atoms.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let second_atom = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         (
                             i32::from(first_atom.valence),
                             i32::from(second_atom.valence),
@@ -15802,8 +15024,7 @@ pub(crate) fn BnsTestAndMarkAltBonds(
         let mut ineigh = 0_i32;
         while ineigh < valence && b_error == 0 {
             let atom_now = atoms.get(atom_index)?;
-            let neighbor_index =
-                usize::try_from(ineigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index = usize::try_from(ineigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neigh = i32::from(
                 *atom_now
                     .neighbor
@@ -15871,26 +15092,13 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                         b_error = ret;
                     } else if ret > 0 {
                         if 2 * ret == n_dots {
-                            let ret = bSetBondsAfterCheckOneBond(
-                                heap,
-                                pBNS,
-                                fcd,
-                                n_test_flow,
-                                at,
-                                num_atoms,
-                                bChangeFlow,
-                            )?;
+                            let ret =
+                                bSetBondsAfterCheckOneBond(heap, pBNS, fcd, n_test_flow, at, num_atoms, bChangeFlow)?;
                             if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                                 b_error = ret;
                             } else {
                                 n_changes += ret & 1;
-                                let ret = SetBondsFromBnStructFlow(
-                                    heap,
-                                    pBNS,
-                                    at,
-                                    num_atoms,
-                                    bChangeFlow,
-                                )?;
+                                let ret = SetBondsFromBnStructFlow(heap, pBNS, at, num_atoms, bChangeFlow)?;
                                 if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                                     b_error = ret;
                                 } else if ret >= 0 {
@@ -15900,23 +15108,14 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                                 }
                             }
                         }
-                        let ret =
-                            RestoreBnStructFlow(heap, pBNS, bChangeFlow & BNS_EF_CHNG_RSTR as i32)?;
+                        let ret = RestoreBnStructFlow(heap, pBNS, bChangeFlow & BNS_EF_CHNG_RSTR as i32)?;
                         if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                             b_error = ret;
                         }
                     }
                     ReInitBnStructAltPaths(heap, pBNS)?;
                 } else if n_dots == 0 {
-                    let ret = bSetBondsAfterCheckOneBond(
-                        heap,
-                        pBNS,
-                        fcd,
-                        n_test_flow,
-                        at,
-                        num_atoms,
-                        bChangeFlow,
-                    )?;
+                    let ret = bSetBondsAfterCheckOneBond(heap, pBNS, fcd, n_test_flow, at, num_atoms, bChangeFlow)?;
                     if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                         b_error = ret;
                     } else {
@@ -16148,10 +15347,8 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
             if v1 < num_atoms && v2 < num_atoms && new_flow != p_edge.flow0 {
                 let vert1 = bns_vertex(heap, pBNS, v1)?;
                 let vert2 = bns_vertex(heap, pBNS, v2)?;
-                if (vert1.st_edge.cap0 == vert1.st_edge.flow0)
-                    != (vert1.st_edge.cap == vert1.st_edge.flow)
-                    || (vert2.st_edge.cap0 == vert2.st_edge.flow0)
-                        != (vert2.st_edge.cap == vert2.st_edge.flow)
+                if (vert1.st_edge.cap0 == vert1.st_edge.flow0) != (vert1.st_edge.cap == vert1.st_edge.flow)
+                    || (vert2.st_edge.cap0 == vert2.st_edge.flow0) != (vert2.st_edge.cap == vert2.st_edge.flow)
                 {
                     bChangeFlow |= BNS_EF_SET_NOSTEREO as i32;
                     nChanges |= BNS_EF_SET_NOSTEREO as i32;
@@ -16186,20 +15383,14 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
             let ineigh1 = i32::from(edge.neigh_ord[0]);
             let ineigh2 = i32::from(edge.neigh_ord[1]);
             let ret_val = {
-                let atom_index1 =
-                    usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let atom_index2 =
-                    usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index1 = usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index2 = usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let mut result;
                 if atom_index1 == atom_index2 {
                     let atoms = heap.slice_mut(at)?;
-                    let atom = atoms
-                        .get_mut(atom_index1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom = atoms.get_mut(atom_index1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let first_neighbor = usize::try_from(ineigh1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let second_neighbor = usize::try_from(ineigh2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let mut second_value = *atom
                         .bond_type
                         .get(second_neighbor)
@@ -16218,18 +15409,12 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
                         .get_mut(second_neighbor)
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = second_value;
                 } else {
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let first_neighbor = usize::try_from(ineigh1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let second_neighbor = usize::try_from(ineigh2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let (first_type, second_type) = {
                         let atoms = heap.slice(at.as_const())?;
-                        let first_atom = atoms
-                            .get(atom_index1)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let second_atom = atoms
-                            .get(atom_index2)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let first_atom = atoms.get(atom_index1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let second_atom = atoms.get(atom_index2).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         (
                             *first_atom
                                 .bond_type
@@ -16276,9 +15461,7 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
         {
             let edges = heap.slice_mut(pBNS.edge)?;
             let idx = usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            *edges
-                .get_mut(idx)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = edge;
+            *edges.get_mut(idx).ok_or(SourceHeapError::PointerOutOfBounds)? = edge;
         }
     }
 
@@ -16346,8 +15529,7 @@ pub(crate) fn bRestoreFlowAfterCheckOneBond(
     }
     for rev_index in (0..ifcd).rev() {
         let entry = fcd_entries[rev_index].clone();
-        let edge_index =
-            usize::try_from(entry.iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let edge_index = usize::try_from(entry.iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         {
             let edge = heap
                 .slice_mut(pBNS.edge)?
@@ -16648,8 +15830,7 @@ pub(crate) fn bSetFlowToCheckOneBond(
     let mask_edge = EDGE_FLOW_MASK as i32;
     let mask_st = EDGE_FLOW_ST_MASK as i32;
     let clear_masked = |value: i32, mask: i32| value & !mask;
-    let replace_masked =
-        |value: i32, mask: i32, new_masked: i32| (value & !mask) | (new_masked & mask);
+    let replace_masked = |value: i32, mask: i32, new_masked: i32| (value & !mask) | (new_masked & mask);
 
     let mut edge = bns_edge(heap, pBNS, iedge)?;
     let f12 = edge.flow & mask_edge;
@@ -16689,16 +15870,10 @@ pub(crate) fn bSetFlowToCheckOneBond(
         let mut delta2 = flow - f12;
 
         if f12 > 0 {
-            v1_vertex.st_edge.cap = replace_masked(
-                v1_vertex.st_edge.cap,
-                mask_st,
-                (v1_vertex.st_edge.cap & mask_st) - f12,
-            );
-            v2_vertex.st_edge.cap = replace_masked(
-                v2_vertex.st_edge.cap,
-                mask_st,
-                (v2_vertex.st_edge.cap & mask_st) - f12,
-            );
+            v1_vertex.st_edge.cap =
+                replace_masked(v1_vertex.st_edge.cap, mask_st, (v1_vertex.st_edge.cap & mask_st) - f12);
+            v2_vertex.st_edge.cap =
+                replace_masked(v2_vertex.st_edge.cap, mask_st, (v2_vertex.st_edge.cap & mask_st) - f12);
             v1_vertex.st_edge.flow = replace_masked(
                 v1_vertex.st_edge.flow,
                 mask_st,
@@ -16717,16 +15892,12 @@ pub(crate) fn bSetFlowToCheckOneBond(
         edge.cap = clear_masked(edge.cap, mask_edge);
         work_set(heap, pBNS.edge, iedge, edge.clone())?;
 
-        let mut st_edge_rescap =
-            (v1_vertex.st_edge.cap & mask_st) - (v1_vertex.st_edge.flow & mask_st);
+        let mut st_edge_rescap = (v1_vertex.st_edge.cap & mask_st) - (v1_vertex.st_edge.flow & mask_st);
         while st_edge_rescap != 0 && delta1 != 0 {
             st_edge_rescap -= 1;
             delta1 -= 1;
-            v1_vertex.st_edge.cap = replace_masked(
-                v1_vertex.st_edge.cap,
-                mask_st,
-                (v1_vertex.st_edge.cap & mask_st) - 1,
-            );
+            v1_vertex.st_edge.cap =
+                replace_masked(v1_vertex.st_edge.cap, mask_st, (v1_vertex.st_edge.cap & mask_st) - 1);
             nDots -= 1;
             work_set(heap, pBNS.vert, v1, v1_vertex.clone())?;
         }
@@ -16735,11 +15906,8 @@ pub(crate) fn bSetFlowToCheckOneBond(
         while st_edge_rescap != 0 && delta2 != 0 {
             st_edge_rescap -= 1;
             delta2 -= 1;
-            v2_vertex.st_edge.cap = replace_masked(
-                v2_vertex.st_edge.cap,
-                mask_st,
-                (v2_vertex.st_edge.cap & mask_st) - 1,
-            );
+            v2_vertex.st_edge.cap =
+                replace_masked(v2_vertex.st_edge.cap, mask_st, (v2_vertex.st_edge.cap & mask_st) - 1);
             nDots -= 1;
             work_set(heap, pBNS.vert, v2, v2_vertex.clone())?;
         }
@@ -16780,23 +15948,16 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 while f != 0 && delta1 != 0 {
                     f -= 1;
                     delta1 -= 1;
-                    edge_i.flow =
-                        replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
+                    edge_i.flow = replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
                     v_i_vertex.st_edge.flow = replace_masked(
                         v_i_vertex.st_edge.flow,
                         mask_st,
                         (v_i_vertex.st_edge.flow & mask_st) - 1,
                     );
-                    v1_vertex.st_edge.cap = replace_masked(
-                        v1_vertex.st_edge.cap,
-                        mask_st,
-                        (v1_vertex.st_edge.cap & mask_st) - 1,
-                    );
-                    v1_vertex.st_edge.flow = replace_masked(
-                        v1_vertex.st_edge.flow,
-                        mask_st,
-                        (v1_vertex.st_edge.flow & mask_st) - 1,
-                    );
+                    v1_vertex.st_edge.cap =
+                        replace_masked(v1_vertex.st_edge.cap, mask_st, (v1_vertex.st_edge.cap & mask_st) - 1);
+                    v1_vertex.st_edge.flow =
+                        replace_masked(v1_vertex.st_edge.flow, mask_st, (v1_vertex.st_edge.flow & mask_st) - 1);
                     nDots += 1;
                     work_set(heap, pBNS.edge, iedge_i, edge_i.clone())?;
                     work_set(heap, pBNS.vert, v_i, v_i_vertex.clone())?;
@@ -16842,23 +16003,16 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 while f != 0 && delta2 != 0 {
                     f -= 1;
                     delta2 -= 1;
-                    edge_i.flow =
-                        replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
+                    edge_i.flow = replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
                     v_i_vertex.st_edge.flow = replace_masked(
                         v_i_vertex.st_edge.flow,
                         mask_st,
                         (v_i_vertex.st_edge.flow & mask_st) - 1,
                     );
-                    v2_vertex.st_edge.cap = replace_masked(
-                        v2_vertex.st_edge.cap,
-                        mask_st,
-                        (v2_vertex.st_edge.cap & mask_st) - 1,
-                    );
-                    v2_vertex.st_edge.flow = replace_masked(
-                        v2_vertex.st_edge.flow,
-                        mask_st,
-                        (v2_vertex.st_edge.flow & mask_st) - 1,
-                    );
+                    v2_vertex.st_edge.cap =
+                        replace_masked(v2_vertex.st_edge.cap, mask_st, (v2_vertex.st_edge.cap & mask_st) - 1);
+                    v2_vertex.st_edge.flow =
+                        replace_masked(v2_vertex.st_edge.flow, mask_st, (v2_vertex.st_edge.flow & mask_st) - 1);
                     nDots += 1;
                     work_set(heap, pBNS.edge, iedge_i, edge_i.clone())?;
                     work_set(heap, pBNS.vert, v_i, v_i_vertex.clone())?;
@@ -16914,16 +16068,10 @@ pub(crate) fn bSetFlowToCheckOneBond(
             mask_st,
             (v2_vertex.st_edge.flow & mask_st) - f12,
         );
-        v1_vertex.st_edge.cap = replace_masked(
-            v1_vertex.st_edge.cap,
-            mask_st,
-            (v1_vertex.st_edge.cap & mask_st) - flow,
-        );
-        v2_vertex.st_edge.cap = replace_masked(
-            v2_vertex.st_edge.cap,
-            mask_st,
-            (v2_vertex.st_edge.cap & mask_st) - flow,
-        );
+        v1_vertex.st_edge.cap =
+            replace_masked(v1_vertex.st_edge.cap, mask_st, (v1_vertex.st_edge.cap & mask_st) - flow);
+        v2_vertex.st_edge.cap =
+            replace_masked(v2_vertex.st_edge.cap, mask_st, (v2_vertex.st_edge.cap & mask_st) - flow);
         edge.flow = clear_masked(edge.flow, mask_edge);
         edge.cap = clear_masked(edge.cap, mask_edge);
         work_set(heap, pBNS.vert, v1, v1_vertex)?;
@@ -17011,10 +16159,7 @@ pub(crate) fn RestoreBnStructFlow(
     let mut err = 0_i32;
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        pBNS.alt_path = *pBNS
-            .altp
-            .get(pass_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        pBNS.alt_path = *pBNS.altp.get(pass_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let path = pBNS.alt_path;
         let mut v1 = work_get::<BNS_ALT_PATH>(heap, path, 3)?.number();
         let path_len = work_get::<BNS_ALT_PATH>(heap, path, 2)?.number();
@@ -17612,11 +16757,8 @@ pub(crate) fn MarkRingSystemsAltBns(
                         nDfs = nDfs.wrapping_add(1);
                         work_set(heap, nLowNumber, u, nDfs)?;
                         work_set(heap, nDfsNumber, u, nDfs)?;
-                    } else if nStackTop != 0
-                        && u != i32::from(work_get::<AT_NUMB>(heap, nStackAtom, nStackTop - 1)?)
-                    {
-                        if work_get::<AT_NUMB>(heap, nDfsNumber, u)?
-                            < work_get::<AT_NUMB>(heap, nDfsNumber, i)?
+                    } else if nStackTop != 0 && u != i32::from(work_get::<AT_NUMB>(heap, nStackAtom, nStackTop - 1)?) {
+                        if work_get::<AT_NUMB>(heap, nDfsNumber, u)? < work_get::<AT_NUMB>(heap, nDfsNumber, i)?
                             && !nBondStack.is_null()
                         {
                             nBondTop += 1;
@@ -17634,9 +16776,7 @@ pub(crate) fn MarkRingSystemsAltBns(
 
                 if i != start {
                     u = i32::from(work_get::<AT_NUMB>(heap, nStackAtom, nStackTop - 1)?);
-                    if work_get::<AT_NUMB>(heap, nLowNumber, i)?
-                        >= work_get::<AT_NUMB>(heap, nDfsNumber, u)?
-                    {
+                    if work_get::<AT_NUMB>(heap, nLowNumber, i)? >= work_get::<AT_NUMB>(heap, nDfsNumber, u)? {
                         nNumRingSystems += 1;
                         let mut nNumAtInRingSystem: AT_NUMB = 1;
                         while nRingTop >= 0 {
@@ -17652,10 +16792,8 @@ pub(crate) fn MarkRingSystemsAltBns(
                             nBondTop -= 1;
                             mark_bns_edge(heap, pBNS, w, nNumRingSystems, nNumAtInRingSystem)?;
                             let edge = bns_edge(heap, pBNS, w)?;
-                            if (i == i32::from(edge.neighbor1)
-                                && u == i32::from(edge.neighbor12 ^ (i as AT_NUMB)))
-                                || (u == i32::from(edge.neighbor1)
-                                    && i == i32::from(edge.neighbor12 ^ (u as AT_NUMB)))
+                            if (i == i32::from(edge.neighbor1) && u == i32::from(edge.neighbor12 ^ (i as AT_NUMB)))
+                                || (u == i32::from(edge.neighbor1) && i == i32::from(edge.neighbor12 ^ (u as AT_NUMB)))
                             {
                                 break;
                             }
@@ -17698,10 +16836,7 @@ pub(crate) fn MarkRingSystemsAltBns(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn ReInitBnStructAltPaths(
-    heap: &mut SourceHeap,
-    pBNS: &mut BN_STRUCT,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn ReInitBnStructAltPaths(heap: &mut SourceHeap, pBNS: &mut BN_STRUCT) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9042 ReInitBnStructAltPaths
     // INCHI✔️❌: int ReInitBnStructAltPaths( BN_STRUCT *pBNS )
     // INCHI✔️❌: {
@@ -17732,8 +16867,7 @@ pub(crate) fn ReInitBnStructAltPaths(
 
     let mut i = 0_i32;
     while i < pBNS.max_altp && i < BN_MAX_ALTP as i32 {
-        let alt_path =
-            pBNS.altp[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+        let alt_path = pBNS.altp[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
         if !alt_path.is_null() {
             let path = heap.slice_mut(alt_path)?;
             path.get_mut(tagAltPathConst_iALTP_FLOW as usize)
@@ -17790,11 +16924,7 @@ impl ReInitBnStructWorkspace {
         else {
             return Ok(None);
         };
-        if num_atoms > num_vertices
-            || num_vertices > max_vertices
-            || num_edges > max_edges
-            || bns.iedge.is_null()
-        {
+        if num_atoms > num_vertices || num_vertices > max_vertices || num_edges > max_edges || bns.iedge.is_null() {
             return Ok(None);
         }
 
@@ -17882,11 +17012,7 @@ impl ReInitBnStructWorkspace {
     }
 
     #[inline(always)]
-    unsafe fn adjacency_index(
-        &self,
-        vertex_adjacency: SourceMutPointer<BNS_IEDGE>,
-        neighbor: i32,
-    ) -> BNS_IEDGE {
+    unsafe fn adjacency_index(&self, vertex_adjacency: SourceMutPointer<BNS_IEDGE>, neighbor: i32) -> BNS_IEDGE {
         debug_assert!(neighbor >= 0);
         // SAFETY: `new` proves the official contiguous adjacency layout. The
         // source loop bounds `neighbor` by this vertex's declared degree.
@@ -17917,11 +17043,8 @@ impl ReInitBnStructWorkspace {
             };
             for fictitious_neighbor in 0..fictitious_degree {
                 // SAFETY: the C loop bounds this index by num_adj_edges.
-                let fictitious_edge =
-                    unsafe { self.adjacency_index(fictitious_adjacency, fictitious_neighbor) };
-                debug_assert!(
-                    fictitious_edge >= 0 && (fictitious_edge as usize) < self.edges.len()
-                );
+                let fictitious_edge = unsafe { self.adjacency_index(fictitious_adjacency, fictitious_neighbor) };
+                debug_assert!(fictitious_edge >= 0 && (fictitious_edge as usize) < self.edges.len());
                 // SAFETY: source adjacency entries index edge[max_edges].
                 let endpoint = i32::from(
                     unsafe { self.edges.get_unchecked(fictitious_edge as usize) }.neighbor12
@@ -17950,13 +17073,11 @@ impl ReInitBnStructWorkspace {
                 };
                 for endpoint_neighbor in 0..endpoint_degree {
                     // SAFETY: the C loop bounds this index by num_adj_edges.
-                    let edge_index =
-                        unsafe { self.adjacency_index(endpoint_adjacency, endpoint_neighbor) };
+                    let edge_index = unsafe { self.adjacency_index(endpoint_adjacency, endpoint_neighbor) };
                     debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
                     // SAFETY: source adjacency entries index edge[max_edges].
                     let centerpoint = i32::from(
-                        unsafe { self.edges.get_unchecked(edge_index as usize) }.neighbor12
-                            ^ (endpoint as AT_NUMB),
+                        unsafe { self.edges.get_unchecked(edge_index as usize) }.neighbor12 ^ (endpoint as AT_NUMB),
                     );
                     {
                         // SAFETY: as above; this is the unique edge workspace.
@@ -17968,8 +17089,7 @@ impl ReInitBnStructWorkspace {
                     }
                     debug_assert!(centerpoint >= 0 && (centerpoint as usize) < self.vertices.len());
                     // SAFETY: the opposite endpoint indexes vert[max_vertices].
-                    let centerpoint_vertex =
-                        unsafe { self.vertices.get_unchecked_mut(centerpoint as usize) };
+                    let centerpoint_vertex = unsafe { self.vertices.get_unchecked_mut(centerpoint as usize) };
                     centerpoint_vertex.st_edge.cap = centerpoint_vertex.st_edge.cap0;
                     centerpoint_vertex.st_edge.flow = centerpoint_vertex.st_edge.flow0;
                 }
@@ -17989,8 +17109,7 @@ impl ReInitBnStructWorkspace {
                 let vertex = unsafe { self.vertices.get_unchecked_mut(atom_index as usize) };
                 vertex.num_adj_edges = i32::from(vertex.max_adj_edges)
                     .wrapping_sub(bns.nMaxAddEdges)
-                    .wrapping_sub(NUM_KINDS_OF_GROUPS as i32)
-                    as AT_NUMB;
+                    .wrapping_sub(NUM_KINDS_OF_GROUPS as i32) as AT_NUMB;
             }
         }
         ret
@@ -18014,8 +17133,7 @@ impl ReInitBnStructWorkspace {
                 // SAFETY: source adjacency entries index edge[max_edges].
                 let edge_before = unsafe { self.edges.get_unchecked(edge_index as usize) };
                 if i32::from(edge_before.neighbor1) == vertex_index {
-                    let neighbor_atom_index =
-                        usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
+                    let neighbor_atom_index = usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
                     debug_assert!(neighbor_atom_index < num_atoms as usize);
                     // SAFETY: the source graph invariant keeps both endpoints
                     // in at[num_atoms], and inp_ATOM bond arrays have the
@@ -18023,11 +17141,8 @@ impl ReInitBnStructWorkspace {
                     let atoms = unsafe { self.atoms.as_ref().unwrap_unchecked() };
                     let atom = unsafe { atoms.get_unchecked(vertex_index as usize) };
                     debug_assert!((neighbor_index as usize) < atom.bond_type.len());
-                    let mut bond_type =
-                        u32::from(atom.bond_type[neighbor_index as usize]) & BOND_TYPE_MASK;
-                    if atom.endpoint != 0
-                        || unsafe { atoms.get_unchecked(neighbor_atom_index) }.endpoint != 0
-                    {
+                    let mut bond_type = u32::from(atom.bond_type[neighbor_index as usize]) & BOND_TYPE_MASK;
+                    if atom.endpoint != 0 || unsafe { atoms.get_unchecked(neighbor_atom_index) }.endpoint != 0 {
                         bond_type = 0;
                     }
 
@@ -18083,12 +17198,9 @@ fn reinit_bn_struct_checked(
         let vertex = bns_vertex(heap, bns, fictitious_vertex)?;
         for fictitious_neighbor in 0..i32::from(vertex.num_adj_edges) {
             let fictitious_edge = bns_edge_index(heap, &vertex, fictitious_neighbor)?;
-            let endpoint = i32::from(
-                bns_edge(heap, bns, fictitious_edge)?.neighbor12 ^ (fictitious_vertex as AT_NUMB),
-            );
+            let endpoint = i32::from(bns_edge(heap, bns, fictitious_edge)?.neighbor12 ^ (fictitious_vertex as AT_NUMB));
             if remove_groups_from_atoms != 0 && endpoint < num_at {
-                let atom_offset =
-                    usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_offset = usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let endpoint_atom = heap
                     .slice_mut(at)?
                     .get_mut(atom_offset)
@@ -18126,8 +17238,7 @@ fn reinit_bn_struct_checked(
             let vertex = bns_vertex_mut(heap, bns, atom_index)?;
             vertex.num_adj_edges = i32::from(vertex.max_adj_edges)
                 .wrapping_sub(bns.nMaxAddEdges)
-                .wrapping_sub(NUM_KINDS_OF_GROUPS as i32)
-                as AT_NUMB;
+                .wrapping_sub(NUM_KINDS_OF_GROUPS as i32) as AT_NUMB;
         }
     }
     Ok(ret)
@@ -18533,11 +17644,7 @@ pub(crate) fn AddTGroups2BnStruct(
     if bRELEASE_VERSION != 1 {
         insertions_sort_typed(groups, CompTGroupNumber);
         for i in 1..groups.len() {
-            if groups[i]
-                .nGroupNumber
-                .wrapping_sub(groups[i - 1].nGroupNumber)
-                != 1
-            {
+            if groups[i].nGroupNumber.wrapping_sub(groups[i - 1].nGroupNumber) != 1 {
                 return Ok(BNS_BOND_ERR);
             }
         }
@@ -18571,10 +17678,8 @@ pub(crate) fn AddTGroups2BnStruct(
     let mut edges = unsafe { heap.stable_slice_mut(edge_pointer)? };
     let mut incident_edges = unsafe { heap.stable_slice_mut(incident_edge_pointer)? };
 
-    let first_new_vertex =
-        usize::try_from(num_vertices).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let added_vertex_count =
-        usize::try_from(max_t_group_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first_new_vertex = usize::try_from(num_vertices).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let added_vertex_count = usize::try_from(max_t_group_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let end_new_vertex = first_new_vertex
         .checked_add(added_vertex_count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -18588,17 +17693,13 @@ pub(crate) fn AddTGroups2BnStruct(
     for group_index in 0..group_count {
         let group = groups.get(group_index)?;
         let fictpoint = num_vertices + i32::from(group.nGroupNumber) - 1;
-        let previous = vertices.get(
-            usize::try_from(previous_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )?;
+        let previous =
+            vertices.get(usize::try_from(previous_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         let next_incident_edge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-        let vertex = vertices.get_mut(
-            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )?;
+        let vertex = vertices.get_mut(usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         vertex.iedge = next_incident_edge;
-        vertex.max_adj_edges = (i32::from(group.nNumEndpoints)
-            + BNS_ADD_EDGES as i32
-            + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
+        vertex.max_adj_edges =
+            (i32::from(group.nNumEndpoints) + BNS_ADD_EDGES as i32 + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
         vertex.num_adj_edges = 0;
         vertex.st_edge.flow = 0;
         vertex.st_edge.flow0 = 0;
@@ -18615,10 +17716,8 @@ pub(crate) fn AddTGroups2BnStruct(
             continue;
         }
         let fictpoint = i32::from(endpoint_atom.endpoint) + num_vertices - 1;
-        let endpoint_index =
-            usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let fictpoint_index =
-            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let endpoint_index = usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let fictpoint_index = usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut vert_ficpoint = vertices.get(fictpoint_index)?.clone();
         let mut vert_endpoint = vertices.get(endpoint_index)?.clone();
         if fictpoint >= pBNS.max_vertices
@@ -18636,25 +17735,20 @@ pub(crate) fn AddTGroups2BnStruct(
         };
 
         vert_endpoint.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
-        let endpoint_incident_start =
-            usize::try_from(vert_endpoint.iedge.difference(incident_edge_pointer)?)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let endpoint_incident_start = usize::try_from(vert_endpoint.iedge.difference(incident_edge_pointer)?)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for k in 0..i32::from(vert_endpoint.num_adj_edges) {
             let incident_index = endpoint_incident_start
                 .checked_add(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let iedge = *incident_edges.get(incident_index)?;
-            let edge_index =
-                usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge_index = usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edge = edges.get(edge_index)?;
             if edge.cap == 0 {
                 let centerpoint = i32::from(edge.neighbor12 ^ (endpoint as AT_NUMB));
                 if centerpoint < pBNS.num_atoms
                     && vertices
-                        .get(
-                            usize::try_from(centerpoint)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )?
+                        .get(usize::try_from(centerpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?
                         .st_edge
                         .cap
                         >= 1
@@ -18671,8 +17765,7 @@ pub(crate) fn AddTGroups2BnStruct(
             }
         }
 
-        let new_edge_index =
-            usize::try_from(num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let new_edge_index = usize::try_from(num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut edge = edges.get(new_edge_index)?.clone();
         edge.cap = 1;
         edge.flow = 0;
@@ -18693,9 +17786,8 @@ pub(crate) fn AddTGroups2BnStruct(
         let endpoint_slot = endpoint_incident_start
             .checked_add(usize::from(vert_endpoint.num_adj_edges))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let fictpoint_incident_start =
-            usize::try_from(vert_ficpoint.iedge.difference(incident_edge_pointer)?)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let fictpoint_incident_start = usize::try_from(vert_ficpoint.iedge.difference(incident_edge_pointer)?)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let fictpoint_slot = fictpoint_incident_start
             .checked_add(usize::from(vert_ficpoint.num_adj_edges))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -18971,11 +18063,7 @@ pub(crate) fn AddCGroups2BnStruct(
     if bRELEASE_VERSION != 1 {
         groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
         for i in 1..groups.len() {
-            if groups[i]
-                .nGroupNumber
-                .wrapping_sub(groups[i - 1].nGroupNumber)
-                != 1
-            {
+            if groups[i].nGroupNumber.wrapping_sub(groups[i - 1].nGroupNumber) != 1 {
                 return Ok(BNS_BOND_ERR);
             }
         }
@@ -19375,9 +18463,9 @@ pub(crate) fn AllocateAndInitBnData(
         .Pu = pu;
 
     if BNS_RAD_SEARCH == 1 {
-        let rad_endpoints = match source_count(max_len_Pu_Pv).and_then(|count| {
-            inchi_calloc::<Vertex>(heap, count, std::mem::size_of::<Vertex>() as u64)
-        }) {
+        let rad_endpoints = match source_count(max_len_Pu_Pv)
+            .and_then(|count| inchi_calloc::<Vertex>(heap, count, std::mem::size_of::<Vertex>() as u64))
+        {
             Ok(pointer) => pointer,
             Err(_) => return cleanup(heap, p_bd),
         };
@@ -19386,9 +18474,9 @@ pub(crate) fn AllocateAndInitBnData(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .RadEndpoints = rad_endpoints;
 
-        let rad_edges = match source_count(max_len_Pu_Pv).and_then(|count| {
-            inchi_calloc::<EdgeIndex>(heap, count, std::mem::size_of::<EdgeIndex>() as u64)
-        }) {
+        let rad_edges = match source_count(max_len_Pu_Pv)
+            .and_then(|count| inchi_calloc::<EdgeIndex>(heap, count, std::mem::size_of::<EdgeIndex>() as u64))
+        {
             Ok(pointer) => pointer,
             Err(_) => return cleanup(heap, p_bd),
         };
@@ -19494,8 +18582,7 @@ pub(crate) fn ReInitBnStructAddGroups(
     // SAFETY: neither helper frees, resizes, or mutates the `atoms` allocation
     // while this view is live. The full allocation is retained so malformed
     // source counts keep the same helper-level bounds/error ordering.
-    let atoms_view: StableSourceConstSlice<inp_ATOM> =
-        unsafe { heap.stable_slice(atoms.as_const())? };
+    let atoms_view: StableSourceConstSlice<inp_ATOM> = unsafe { heap.stable_slice(atoms.as_const())? };
     let atoms = atoms_view.prefix(atoms_view.len())?;
     let taut_flags = work_get(heap, pBNS.pbTautFlags, 0)?;
     if (taut_flags & TG_FLAG_MOVE_POS_CHARGES as u64) != 0 {
@@ -19526,17 +18613,12 @@ fn initialize_alt_bns_checked(
             let edge_index = bns_edge_index(heap, &vertex, neighbor_index)?;
             let edge_before = bns_edge(heap, bns, edge_index)?;
             if i32::from(edge_before.neighbor1) == vertex_index {
-                let atom_index = usize::try_from(vertex_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let neighbor_atom_index =
-                    usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
-                let neighbor_slot = usize::try_from(neighbor_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let neighbor_atom_index = usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
+                let neighbor_slot = usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let mut bond_type = {
                     let atoms = heap.slice(at.as_const())?;
-                    let source_atom = atoms
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let source_atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     u32::from(
                         *source_atom
                             .bond_type
@@ -19714,12 +18796,9 @@ pub(crate) fn ReInitBnStructForAltBns(
 
     if bUnknAltAsNoStereo != 0 {
         if pBNS.num_edges > 0 {
-            let edge_count =
-                usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge_count = usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edges = heap.slice_mut(pBNS.edge)?;
-            let edges = edges
-                .get_mut(..edge_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let edges = edges.get_mut(..edge_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
             for edge in edges {
                 edge.pass = 0;
             }
@@ -19727,11 +18806,7 @@ pub(crate) fn ReInitBnStructForAltBns(
     }
 
     let mut ret = ReInitBnStruct(heap, Some(pBNS), at, num_atoms, 0)?;
-    if ret != 0
-        || pBNS.num_atoms != num_atoms
-        || pBNS.num_vertices != num_atoms
-        || pBNS.num_bonds != pBNS.num_edges
-    {
+    if ret != 0 || pBNS.num_atoms != num_atoms || pBNS.num_vertices != num_atoms || pBNS.num_bonds != pBNS.num_edges {
         ret = BNS_REINIT_ERR;
         return Ok(ret);
     }
@@ -19835,19 +18910,14 @@ pub(crate) fn MarkNonStereoAltBns(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: MarkNonStereoAltBns
 
-    if pBNS.num_atoms != num_atoms
-        || pBNS.num_vertices != num_atoms
-        || pBNS.num_bonds != pBNS.num_edges
-    {
+    if pBNS.num_atoms != num_atoms || pBNS.num_vertices != num_atoms || pBNS.num_bonds != pBNS.num_edges {
         return Ok(BNS_REINIT_ERR);
     }
 
     let mut ret = 0_i32;
     for ibond in 0..pBNS.num_bonds {
         let bond = bns_edge(heap, pBNS, ibond)?;
-        if i32::from(bond.pass) != BT_ALTERN_BOND as i32
-            && i32::from(bond.pass) != BT_IGNORE_BOND as i32
-        {
+        if i32::from(bond.pass) != BT_ALTERN_BOND as i32 && i32::from(bond.pass) != BT_IGNORE_BOND as i32 {
             continue;
         }
 
@@ -19858,12 +18928,7 @@ pub(crate) fn MarkNonStereoAltBns(
         let source_bond_type = {
             let atoms = heap.slice(at.as_const())?;
             let atom = atoms.get(iat1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            u32::from(
-                *atom
-                    .bond_type
-                    .get(ib1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            ) & BOND_TYPE_MASK
+            u32::from(*atom.bond_type.get(ib1).ok_or(SourceHeapError::PointerOutOfBounds)?) & BOND_TYPE_MASK
         };
         let should_mark = (i32::from(bond.pass) == BT_ALTERN_BOND as i32 && bond.cap <= 3)
             || (i32::from(bond.pass) == BT_IGNORE_BOND as i32 && source_bond_type == BOND_ALTERN);
@@ -19904,11 +18969,7 @@ pub(crate) fn MarkNonStereoAltBns(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bNeedToTestTheFlow(
-    bond_type: i32,
-    nTestFlow: i32,
-    bTestForNonStereoBond: i32,
-) -> i32 {
+pub(crate) fn bNeedToTestTheFlow(bond_type: i32, nTestFlow: i32, bTestForNonStereoBond: i32) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1590 bNeedToTestTheFlow
     // INCHI✔️❌: int bNeedToTestTheFlow( int bond_type,
     // INCHI✔️❌:                         int nTestFlow,
@@ -20058,10 +19119,7 @@ pub(crate) fn bNeedToTestTheFlow(
                 }
             }
             2 => {
-                if nBondAttrib == BOND_MARK_ALT12
-                    || nBondAttrib == BOND_MARK_ALT23
-                    || nBondAttrib == BOND_MARK_ALT123
-                {
+                if nBondAttrib == BOND_MARK_ALT12 || nBondAttrib == BOND_MARK_ALT23 || nBondAttrib == BOND_MARK_ALT123 {
                     return 0;
                 }
             }
@@ -20870,10 +19928,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
     // END INCHI ACTIVE MACRO CONFIGURATION: mark_alt_bonds_and_taut_groups
     // SourceHeap preserves pointer identity, but checked map-backed accesses are slower than C.
 
-    fn one<T: Clone + 'static>(
-        heap: &SourceHeap,
-        pointer: SourceMutPointer<T>,
-    ) -> Result<T, SourceHeapError> {
+    fn one<T: Clone + 'static>(heap: &SourceHeap, pointer: SourceMutPointer<T>) -> Result<T, SourceHeapError> {
         heap.slice(pointer.as_const())?
             .first()
             .cloned()
@@ -20938,10 +19993,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
     } else {
         inpbTautFlagsDone
     };
-    let fcd = heap.allocate_model_storage(vec![
-        BNS_FLOW_CHANGES::default();
-        BNS_MAX_NUM_FLOW_CHANGES as usize + 1
-    ])?;
+    let fcd = heap.allocate_model_storage(vec![BNS_FLOW_CHANGES::default(); BNS_MAX_NUM_FLOW_CHANGES as usize + 1])?;
     let totals_pointer = heap.allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN])?;
     let tgi_work = if let Some(info) = tgi.as_ref() {
         heap.allocate_model_storage(vec![info.clone()])?
@@ -20966,8 +20018,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
         let mut n_arom_radicals = 0_i32;
 
         if FIX_AROM_RADICAL == 1 {
-            let atom_count =
-                usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             for index in 0..atom_count {
                 let atom = heap
                     .slice(at.as_const())?
@@ -20980,16 +20031,15 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                 {
                     n_arom_radicals = n_arom_radicals.wrapping_add(1);
                     if stored_radicals.is_null() {
-                        stored_radicals =
-                            match source_count(i64::from(num_atoms)).and_then(|count| {
-                                inchi_calloc::<i32>(heap, count, std::mem::size_of::<i32>() as u64)
-                            }) {
-                                Ok(pointer) => pointer,
-                                Err(_) => {
-                                    b_error = BNS_OUT_OF_RAM;
-                                    break;
-                                }
-                            };
+                        stored_radicals = match source_count(i64::from(num_atoms))
+                            .and_then(|count| inchi_calloc::<i32>(heap, count, std::mem::size_of::<i32>() as u64))
+                        {
+                            Ok(pointer) => pointer,
+                            Err(_) => {
+                                b_error = BNS_OUT_OF_RAM;
+                                break;
+                            }
+                        };
                         heap.slice_mut(stored_radicals)?[index] = RADICAL_DOUBLET as i32;
                         let atom = heap
                             .slice_mut(at)?
@@ -21004,15 +20054,15 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
 
         let flags = work_get(heap, flags_pointer, 0)?;
         if b_error == 0 && flags & TG_FLAG_MOVE_POS_CHARGES as u64 != 0 && num_atoms > 1 {
-            c_group_info.c_group = match source_count(i64::from(num_atoms / 2)).and_then(|count| {
-                inchi_calloc::<C_GROUP>(heap, count, std::mem::size_of::<C_GROUP>() as u64)
-            }) {
+            c_group_info.c_group = match source_count(i64::from(num_atoms / 2))
+                .and_then(|count| inchi_calloc::<C_GROUP>(heap, count, std::mem::size_of::<C_GROUP>() as u64))
+            {
                 Ok(pointer) => pointer,
                 Err(_) => SourceMutPointer::null(),
             };
-            c_group_info.c_candidate = match source_count(i64::from(num_atoms)).and_then(|count| {
-                inchi_calloc::<C_CANDIDATE>(heap, count, std::mem::size_of::<C_CANDIDATE>() as u64)
-            }) {
+            c_group_info.c_candidate = match source_count(i64::from(num_atoms))
+                .and_then(|count| inchi_calloc::<C_CANDIDATE>(heap, count, std::mem::size_of::<C_CANDIDATE>() as u64))
+            {
                 Ok(pointer) => pointer,
                 Err(_) => SourceMutPointer::null(),
             };
@@ -21025,9 +20075,9 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
         }
 
         if b_error == 0 && flags & TG_FLAG_TEST_TAUT__SALTS as u64 != 0 && has_t_group_info {
-            s_group_info.s_candidate = match source_count(i64::from(num_atoms)).and_then(|count| {
-                inchi_calloc::<S_CANDIDATE>(heap, count, std::mem::size_of::<S_CANDIDATE>() as u64)
-            }) {
+            s_group_info.s_candidate = match source_count(i64::from(num_atoms))
+                .and_then(|count| inchi_calloc::<S_CANDIDATE>(heap, count, std::mem::size_of::<S_CANDIDATE>() as u64))
+            {
                 Ok(pointer) => pointer,
                 Err(_) => SourceMutPointer::null(),
             };
@@ -21045,9 +20095,9 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     info.tGroupNumber = SourceMutPointer::null();
                 }
                 let count = i64::from(num_atoms).wrapping_mul(2).wrapping_add(1);
-                info.tGroupNumber = match source_count(count).and_then(|count| {
-                    inchi_calloc::<AT_NUMB>(heap, count, std::mem::size_of::<AT_NUMB>() as u64)
-                }) {
+                info.tGroupNumber = match source_count(count)
+                    .and_then(|count| inchi_calloc::<AT_NUMB>(heap, count, std::mem::size_of::<AT_NUMB>() as u64))
+                {
                     Ok(pointer) => pointer,
                     Err(_) => SourceMutPointer::null(),
                 };
@@ -21101,17 +20151,9 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                 }
 
                 if FIX_AROM_RADICAL == 1 && n_arom_radicals != 0 {
-                    let ret = BnsAdjustFlowBondsRad(
-                        heap,
-                        &mut bns,
-                        &mut bd,
-                        at,
-                        num_atoms,
-                        clock_result,
-                    )?;
+                    let ret = BnsAdjustFlowBondsRad(heap, &mut bns, &mut bd, at, num_atoms, clock_result)?;
                     if !stored_radicals.is_null() {
-                        let atom_count = usize::try_from(num_atoms)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         for index in 0..atom_count {
                             let radical = heap.slice(stored_radicals.as_const())?[index];
                             if radical != 0 {
@@ -21130,14 +20172,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                 }
 
                 if b_error == 0 {
-                    let ret = BnsAdjustFlowBondsRad(
-                        heap,
-                        &mut bns,
-                        &mut bd,
-                        at,
-                        num_atoms,
-                        clock_result,
-                    )?;
+                    let ret = BnsAdjustFlowBondsRad(heap, &mut bns, &mut bd, at, num_atoms, clock_result)?;
                     if is_bns_error(ret) {
                         b_error = ret;
                     } else {
@@ -21150,8 +20185,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     b_change_flow |= BNS_EF_SET_NOSTEREO as i32;
                 }
 
-                if b_error == 0 && flags & TG_FLAG_VARIABLE_PROTONS as u64 != 0 && has_t_group_info
-                {
+                if b_error == 0 && flags & TG_FLAG_VARIABLE_PROTONS as u64 != 0 && has_t_group_info {
                     let mut totals = vec![0_i32; ATTOT_ARRAY_LEN];
                     let mark_result = {
                         let atoms = heap.slice_mut(at)?;
@@ -21159,8 +20193,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     };
                     if mark_result != 0 && totals[ATTOT_NUM_CHARGES] != 0 {
                         let info = tgi.as_mut().expect("t-group info exists");
-                        let n_num_orig_tot_atoms =
-                            i32::from(info.tni.nNumRemovedExplicitH).wrapping_add(num_atoms);
+                        let n_num_orig_tot_atoms = i32::from(info.tni.nNumRemovedExplicitH).wrapping_add(num_atoms);
                         heap.slice_mut(totals_pointer)?[..ATTOT_ARRAY_LEN].copy_from_slice(&totals);
                         store_one(heap, tgi_work, info.clone())?;
                         let ret = RemoveNPProtonsAndAcidCharges(
@@ -21214,20 +20247,13 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                         if ret != 0 {
                             n_changes = n_changes.wrapping_add(ret);
                             let atoms = heap.slice(at.as_const())?.to_vec();
-                            let ret2 = AddCGroups2BnStruct(
-                                heap,
-                                pCG,
-                                &mut bns,
-                                &atoms,
-                                num_atoms,
-                                Some(&mut c_group_info),
-                            )?;
+                            let ret2 =
+                                AddCGroups2BnStruct(heap, pCG, &mut bns, &atoms, num_atoms, Some(&mut c_group_info))?;
                             if is_bns_error(ret2) {
                                 b_error = ret2;
                                 break;
                             }
-                            let done = work_get(heap, flags_done_pointer, 0)?
-                                | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
+                            let done = work_get(heap, flags_done_pointer, 0)? | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
                             work_set(heap, flags_done_pointer, 0, done)?;
                         }
                         if ret <= 0 {
@@ -21283,8 +20309,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                             b_error = ret;
                         }
                         if taut_found != 0 && salt_pass == 0 {
-                            let done = work_get(heap, flags_done_pointer, 0)?
-                                | TG_FLAG_TEST_TAUT__ATOMS_DONE as u64;
+                            let done = work_get(heap, flags_done_pointer, 0)? | TG_FLAG_TEST_TAUT__ATOMS_DONE as u64;
                             work_set(heap, flags_done_pointer, 0, done)?;
                         }
 
@@ -21305,9 +20330,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                 break;
                             }
 
-                            if work_get(heap, flags_pointer, 0)? & TG_FLAG_MOVE_POS_CHARGES as u64
-                                != 0
-                            {
+                            if work_get(heap, flags_pointer, 0)? & TG_FLAG_MOVE_POS_CHARGES as u64 != 0 {
                                 loop {
                                     let ret = MarkChargeGroups(
                                         heap,
@@ -21326,12 +20349,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                     }
                                     n_changes = n_changes.wrapping_add(ret);
                                     if ret > 0 {
-                                        load_tgi_flags(
-                                            heap,
-                                            flags_pointer,
-                                            flags_done_pointer,
-                                            &mut tgi,
-                                        )?;
+                                        load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
                                         let ret2 = ReInitBnStructAddGroups(
                                             heap,
                                             pCG,
@@ -21341,12 +20359,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                             tgi.as_mut(),
                                             Some(&mut c_group_info),
                                         )?;
-                                        store_tgi_flags(
-                                            heap,
-                                            flags_pointer,
-                                            flags_done_pointer,
-                                            &tgi,
-                                        )?;
+                                        store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
                                         if is_bns_error(ret2) {
                                             b_error = ret2;
                                             break;
@@ -21416,8 +20429,8 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                     break;
                                 }
                                 if salt_found > 0 {
-                                    let done = work_get(heap, flags_done_pointer, 0)?
-                                        | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
+                                    let done =
+                                        work_get(heap, flags_done_pointer, 0)? | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
                                     work_set(heap, flags_done_pointer, 0, done)?;
                                 }
                                 salt_step = i32::from(salt_found == 0);
@@ -21442,8 +20455,8 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                     break;
                                 }
                                 if salt_found == 1 || salt_found == 5 {
-                                    let mut done = work_get(heap, flags_done_pointer, 0)?
-                                        | TG_FLAG_TEST_TAUT2_SALTS_DONE as u64;
+                                    let mut done =
+                                        work_get(heap, flags_done_pointer, 0)? | TG_FLAG_TEST_TAUT2_SALTS_DONE as u64;
                                     if salt_found == 5 {
                                         done |= TG_FLAG_TEST_TAUT3_SALTS_DONE as u64;
                                     }
@@ -21474,8 +20487,8 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                                 break;
                             }
                             if salt_found > 0 {
-                                let done = work_get(heap, flags_done_pointer, 0)?
-                                    | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
+                                let done =
+                                    work_get(heap, flags_done_pointer, 0)? | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
                                 work_set(heap, flags_done_pointer, 0, done)?;
                             }
                             salt_pass = salt_pass.wrapping_add(1);
@@ -21503,8 +20516,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     if ret < 0 {
                         b_error = ret;
                     } else if ret > 0 {
-                        let done = work_get(heap, flags_done_pointer, 0)?
-                            | TG_FLAG_MERGE_TAUT_SALTS_DONE as u64;
+                        let done = work_get(heap, flags_done_pointer, 0)? | TG_FLAG_MERGE_TAUT_SALTS_DONE as u64;
                         work_set(heap, flags_done_pointer, 0, done)?;
                     }
                 }
@@ -21514,17 +20526,10 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     if let Some(info) = tgi.as_mut() {
                         if info.bTautFlags & TG_FLAG_VARIABLE_PROTONS as u64 != 0
                             && info.bTautFlagsDone
-                                & (TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as u64
-                                    | TG_FLAG_FOUND_ISOTOPIC_H_DONE as u64)
+                                & (TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as u64 | TG_FLAG_FOUND_ISOTOPIC_H_DONE as u64)
                                 != 0
                         {
-                            let ret = MakeIsotopicHGroup(
-                                heap,
-                                at,
-                                num_atoms,
-                                Some(&mut s_group_info),
-                                Some(info),
-                            )?;
+                            let ret = MakeIsotopicHGroup(heap, at, num_atoms, Some(&mut s_group_info), Some(info))?;
                             work_set(heap, flags_pointer, 0, info.bTautFlags)?;
                             work_set(heap, flags_done_pointer, 0, info.bTautFlagsDone)?;
                             if ret < 0 {
@@ -21624,11 +20629,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nMaxFlow2Check(
-    heap: &SourceHeap,
-    pBNS: &BN_STRUCT,
-    iedge: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn nMaxFlow2Check(heap: &SourceHeap, pBNS: &BN_STRUCT, iedge: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:6010 nMaxFlow2Check
     // INCHI✔️❌: int nMaxFlow2Check( BN_STRUCT *pBNS, int iedge )
     // INCHI✔️❌: {
@@ -21656,11 +20657,7 @@ pub(crate) fn nMaxFlow2Check(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nCurFlow2Check(
-    heap: &SourceHeap,
-    pBNS: &BN_STRUCT,
-    iedge: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn nCurFlow2Check(heap: &SourceHeap, pBNS: &BN_STRUCT, iedge: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:6024 nCurFlow2Check
     // INCHI✔️❌: int nCurFlow2Check( BN_STRUCT *pBNS, int iedge )
     // INCHI✔️❌: {
@@ -21678,11 +20675,7 @@ pub(crate) fn nCurFlow2Check(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nMinFlow2Check(
-    heap: &SourceHeap,
-    pBNS: &BN_STRUCT,
-    iedge: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn nMinFlow2Check(heap: &SourceHeap, pBNS: &BN_STRUCT, iedge: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:6033 nMinFlow2Check
     // INCHI✔️❌: int nMinFlow2Check( BN_STRUCT *pBNS, int iedge )
     // INCHI✔️❌: {
@@ -21737,8 +20730,7 @@ pub(crate) fn nMinFlow2Check(
                 continue;
             }
             let adj_edge = bns_edge(heap, pBNS, iedge_i)?;
-            rescap1 +=
-                (adj_edge.cap & EDGE_FLOW_MASK as i32) - (adj_edge.flow & EDGE_FLOW_MASK as i32);
+            rescap1 += (adj_edge.cap & EDGE_FLOW_MASK as i32) - (adj_edge.flow & EDGE_FLOW_MASK as i32);
         }
 
         let mut rescap2 = 0_i32;
@@ -21749,8 +20741,7 @@ pub(crate) fn nMinFlow2Check(
                 continue;
             }
             let adj_edge = bns_edge(heap, pBNS, iedge_i)?;
-            rescap2 +=
-                (adj_edge.cap & EDGE_FLOW_MASK as i32) - (adj_edge.flow & EDGE_FLOW_MASK as i32);
+            rescap2 += (adj_edge.cap & EDGE_FLOW_MASK as i32) - (adj_edge.flow & EDGE_FLOW_MASK as i32);
         }
 
         let rescap12 = rescap1.min(rescap2).min(f12);
@@ -21861,9 +20852,8 @@ mod tests {
 
     use super::*;
     use crate::source_types::{
-        BNS_ALT_PATH, BNS_EDGE, BNS_VERTEX, BOND_DOUBLE, BOND_SINGLE, BOND_TRIPLE, C_GROUP,
-        INCHI_CLOCK, T_GROUP, TG_FLAG_ALLOW_NO_NEGTV_O, TG_FLAG_ALLOW_NO_NEGTV_O_DONE,
-        TG_FLAG_TEST_TAUT__ATOMS,
+        BNS_ALT_PATH, BNS_EDGE, BNS_VERTEX, BOND_DOUBLE, BOND_SINGLE, BOND_TRIPLE, C_GROUP, INCHI_CLOCK, T_GROUP,
+        TG_FLAG_ALLOW_NO_NEGTV_O, TG_FLAG_ALLOW_NO_NEGTV_O_DONE, TG_FLAG_TEST_TAUT__ATOMS,
         local_ichi_bns::{BT_OTHER_ALTERN_BOND, TREE_IN_1},
     };
 
@@ -21899,10 +20889,7 @@ mod tests {
 
         let mut groups = [group(u16::MAX), group(17), group(0), group(17)];
         groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
-        assert_eq!(
-            groups.map(|entry| entry.nGroupNumber),
-            [0, 17, 17, u16::MAX]
-        );
+        assert_eq!(groups.map(|entry| entry.nGroupNumber), [0, 17, 17, u16::MAX]);
     }
 
     #[test]
@@ -21924,10 +20911,7 @@ mod tests {
 
         let mut groups = [group(u16::MAX), group(23), group(0), group(23)];
         groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
-        assert_eq!(
-            groups.map(|entry| entry.nGroupNumber),
-            [0, 23, 23, u16::MAX]
-        );
+        assert_eq!(groups.map(|entry| entry.nGroupNumber), [0, 23, 23, u16::MAX]);
     }
 
     #[test]
@@ -21955,8 +20939,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         let mut saw_null_context = false;
         let mut saw_nonnull_context = false;
@@ -21997,10 +20980,7 @@ mod tests {
             .expect("official result must fit i32");
             assert_eq!(rust, expected, "{case_id}");
             assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
-            assert_eq!(
-                second, second_before,
-                "{case_id}: Rust second input mutation"
-            );
+            assert_eq!(second, second_before, "{case_id}: Rust second input mutation");
             assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["context_unchanged"], true, "{case_id}");
@@ -22036,8 +21016,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         let mut saw_null_context = false;
         let mut saw_nonnull_context = false;
@@ -22078,10 +21057,7 @@ mod tests {
             .expect("official result must fit i32");
             assert_eq!(rust, expected, "{case_id}");
             assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
-            assert_eq!(
-                second, second_before,
-                "{case_id}: Rust second input mutation"
-            );
+            assert_eq!(second, second_before, "{case_id}: Rust second input mutation");
             assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["context_unchanged"], true, "{case_id}");
@@ -22117,8 +21093,7 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output =
-            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -22179,41 +21154,23 @@ mod tests {
                 inp_ATOM::default(),
             ])
             .unwrap();
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(1)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(1));
 
         heap.slice_mut(atoms).unwrap()[2].charge = 0;
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(0)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(0));
         heap.slice_mut(atoms).unwrap()[3].charge = 1;
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(1)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(1));
 
         heap.slice_mut(atoms).unwrap()[0].valence = 0;
         heap.slice_mut(atoms).unwrap()[0].neighbor[0] = u16::MAX;
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(0)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(0));
         heap.slice_mut(atoms).unwrap()[0].valence = -1;
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(0)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(0));
 
         heap.slice_mut(atoms).unwrap()[0].valence = 2;
         heap.slice_mut(atoms).unwrap()[0].neighbor[..2].copy_from_slice(&[1, u16::MAX]);
         heap.slice_mut(atoms).unwrap()[1].charge = -128;
-        assert_eq!(
-            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
-            Ok(1)
-        );
+        assert_eq!(bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0), Ok(1));
         heap.slice_mut(atoms).unwrap()[1].charge = 0;
         assert_eq!(
             bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
@@ -22254,13 +21211,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__addremoveprotonsrestr__line_12056() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -22287,16 +21238,7 @@ mod tests {
             flags: u64,
             num_tg: i32,
         ) -> Result<i32, SourceHeapError> {
-            AddRemoveProtonsRestr(
-                atoms,
-                num_atoms,
-                protons,
-                restricted,
-                flags,
-                num_tg,
-                i32::MIN,
-                i32::MAX,
-            )
+            AddRemoveProtonsRestr(atoms, num_atoms, protons, restricted, flags, num_tg, i32::MIN, i32::MAX)
         }
 
         let mut zero_atoms = vec![atom(6, 0, 0, 0, 0)];
@@ -22307,10 +21249,7 @@ mod tests {
 
         let mut negative_atoms = vec![atom(6, 0, 0, 0, 0)];
         let mut negative_protons = -1;
-        assert_eq!(
-            run(&mut negative_atoms, -1, &mut negative_protons, 0, 0, 0),
-            Ok(0)
-        );
+        assert_eq!(run(&mut negative_atoms, -1, &mut negative_protons, 0, 0, 0), Ok(0));
         assert_eq!(negative_protons, -1);
         assert_eq!(negative_atoms[0].at_type, 555);
 
@@ -22324,10 +21263,7 @@ mod tests {
 
         let mut remove_atoms = acidic_oxygen(1, 0);
         let mut remove_protons = -1;
-        assert_eq!(
-            run(&mut remove_atoms, 2, &mut remove_protons, 0, 0, 0),
-            Ok(1)
-        );
+        assert_eq!(run(&mut remove_atoms, 2, &mut remove_protons, 0, 0, 0), Ok(1));
         assert_eq!(remove_protons, 0);
         assert_eq!((remove_atoms[0].charge, remove_atoms[0].num_H), (-1, 0));
         assert_eq!((remove_atoms[1].charge, remove_atoms[1].num_H), (0, 0));
@@ -22407,17 +21343,10 @@ mod tests {
         broken[1].neighbor[0] = 2;
         broken[1].bond_type[0] = BOND_SINGLE as u8;
         let mut broken_protons = -1;
-        assert_eq!(
-            run(&mut broken, 4, &mut broken_protons, 0, 0, 1),
-            Ok(RI_ERR_PROGR)
-        );
+        assert_eq!(run(&mut broken, 4, &mut broken_protons, 0, 0, 1), Ok(RI_ERR_PROGR));
         assert_eq!(broken_protons, -1);
 
-        let mut hard = vec![
-            atom(8, 1, 2, 0, 0),
-            atom(6, 1, 4, 0, 0),
-            atom(7, 0, 0, 3, 0),
-        ];
+        let mut hard = vec![atom(8, 1, 2, 0, 0), atom(6, 1, 4, 0, 0), atom(7, 0, 0, 3, 0)];
         hard[0].endpoint = 1;
         hard[0].neighbor[0] = 1;
         hard[0].bond_type[0] = BOND_DOUBLE as u8;
@@ -22461,15 +21390,9 @@ mod tests {
         let mut untouched = vec![exchange_atom(7, 3, 0)];
         let original = untouched.clone();
         let mut zero = [0_i16; 3];
-        assert_eq!(
-            AddRemoveIsoProtonsRestr(&mut untouched, i32::MAX, &mut zero, 1),
-            Ok(0)
-        );
+        assert_eq!(AddRemoveIsoProtonsRestr(&mut untouched, i32::MAX, &mut zero, 1), Ok(0));
         assert_eq!(untouched, original);
-        assert_eq!(
-            AddRemoveIsoProtonsRestr(&mut untouched, i32::MIN, &mut zero, 1),
-            Ok(0)
-        );
+        assert_eq!(AddRemoveIsoProtonsRestr(&mut untouched, i32::MIN, &mut zero, 1), Ok(0));
 
         let mut negative_atoms = vec![exchange_atom(7, 3, 0)];
         let mut negative = [0_i16, 0, -1];
@@ -22501,15 +21424,9 @@ mod tests {
             3
         ];
         let mut proton_balance = [1_i16, 1, 1];
+        assert_eq!(AddRemoveIsoProtonsRestr(&mut protons, 3, &mut proton_balance, 0), Ok(3));
         assert_eq!(
-            AddRemoveIsoProtonsRestr(&mut protons, 3, &mut proton_balance, 0),
-            Ok(3)
-        );
-        assert_eq!(
-            protons
-                .iter()
-                .map(|atom| atom.iso_atw_diff)
-                .collect::<Vec<_>>(),
+            protons.iter().map(|atom| atom.iso_atw_diff).collect::<Vec<_>>(),
             vec![3, 2, 1]
         );
         assert_eq!(proton_balance, [0, 0, 0]);
@@ -22613,10 +21530,7 @@ mod tests {
 
         let mut short = vec![exchange_atom(7, 3, 0)];
         let mut short_balance = [0_i16, 0, 1];
-        assert_eq!(
-            AddRemoveIsoProtonsRestr(&mut short, 2, &mut short_balance, 0),
-            Ok(1)
-        );
+        assert_eq!(AddRemoveIsoProtonsRestr(&mut short, 2, &mut short_balance, 0), Ok(1));
         assert_eq!(short_balance, [0, 0, 0]);
         let mut still_short = vec![exchange_atom(7, 0, 0)];
         still_short[0].chem_bonds_valence = 3;
@@ -22627,11 +21541,7 @@ mod tests {
         );
     }
 
-    fn make_graph(
-        heap: &mut SourceHeap,
-        atom_count: usize,
-        definitions: &[(usize, usize, i8)],
-    ) -> BN_STRUCT {
+    fn make_graph(heap: &mut SourceHeap, atom_count: usize, definitions: &[(usize, usize, i8)]) -> BN_STRUCT {
         let mut adjacency = vec![Vec::<i32>::new(); atom_count];
         let mut orders = Vec::with_capacity(definitions.len());
         for (edge_index, &(left, right, _)) in definitions.iter().enumerate() {
@@ -22645,11 +21555,7 @@ mod tests {
         let mut edges = Vec::with_capacity(definitions.len());
         for (edge_index, &(left, right, bond_type)) in definitions.iter().enumerate() {
             let (neighbor1, neighbor12, neigh_ord) = if left < right {
-                (
-                    left as u16,
-                    (left as u16) ^ (right as u16),
-                    orders[edge_index],
-                )
+                (left as u16, (left as u16) ^ (right as u16), orders[edge_index])
             } else {
                 (
                     right as u16,
@@ -22712,8 +21618,7 @@ mod tests {
                 .enumerate()
                 .find_map(|(order, &edge_index)| {
                     let edge = &heap.slice(bns.edge.as_const()).unwrap()[edge_index as usize];
-                    ((usize::from(edge.neighbor12) ^ current) == next)
-                        .then_some((order, edge_index))
+                    ((usize::from(edge.neighbor12) ^ current) == next).then_some((order, edge_index))
                 })
                 .unwrap();
             let next_vertex = heap.slice(bns.vert.as_const()).unwrap()[next].clone();
@@ -22763,24 +21668,15 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut bns = charge_group_graph(&mut heap, 0, 2);
-        assert_eq!(
-            EliminatePlusMinusChargeAmbiguity(&mut heap, &mut bns, 1),
-            Ok(1)
-        );
+        assert_eq!(EliminatePlusMinusChargeAmbiguity(&mut heap, &mut bns, 1), Ok(1));
         {
             let edges = heap.slice(bns.edge.as_const()).unwrap();
             assert_eq!((edges[0].flow, edges[1].flow), (2, 0));
         }
         {
             let vertices = heap.slice(bns.vert.as_const()).unwrap();
-            assert_eq!(
-                (vertices[1].st_edge.cap, vertices[1].st_edge.flow),
-                (12, 22)
-            );
-            assert_eq!(
-                (vertices[2].st_edge.cap, vertices[2].st_edge.flow),
-                (28, 38)
-            );
+            assert_eq!((vertices[1].st_edge.cap, vertices[1].st_edge.flow), (12, 22));
+            assert_eq!((vertices[2].st_edge.cap, vertices[2].st_edge.flow), (28, 38));
         }
 
         let mut no_change_heap = SourceHeap::default();
@@ -22789,31 +21685,20 @@ mod tests {
             EliminatePlusMinusChargeAmbiguity(&mut no_change_heap, &mut no_change_bns, 1),
             Ok(0)
         );
-        assert_eq!(
-            no_change_heap.slice(no_change_bns.edge.as_const()).unwrap()[0].flow,
-            3
-        );
-        assert_eq!(
-            no_change_heap.slice(no_change_bns.edge.as_const()).unwrap()[1].flow,
-            1
-        );
+        assert_eq!(no_change_heap.slice(no_change_bns.edge.as_const()).unwrap()[0].flow, 3);
+        assert_eq!(no_change_heap.slice(no_change_bns.edge.as_const()).unwrap()[1].flow, 1);
 
         let mut error_heap = SourceHeap::default();
         let mut error_bns = charge_group_graph(&mut error_heap, 0, 2);
-        error_heap.slice_mut(error_bns.altp[0]).unwrap()[tagAltPathConst_iALTP_END_ATOM as usize]
-            .set_number(99);
+        error_heap.slice_mut(error_bns.altp[0]).unwrap()[tagAltPathConst_iALTP_END_ATOM as usize].set_number(99);
         assert_eq!(
             EliminatePlusMinusChargeAmbiguity(&mut error_heap, &mut error_bns, 1),
             Ok(BNS_PROGRAM_ERR)
         );
-        assert_eq!(
-            error_heap.slice(error_bns.edge.as_const()).unwrap()[0].flow,
-            2
-        );
+        assert_eq!(error_heap.slice(error_bns.edge.as_const()).unwrap()[0].flow, 2);
 
         let mut duplicate_heap = SourceHeap::default();
-        let mut duplicate_bns =
-            make_graph(&mut duplicate_heap, 4, &[(0, 2, 0), (0, 1, 0), (0, 3, 0)]);
+        let mut duplicate_bns = make_graph(&mut duplicate_heap, 4, &[(0, 2, 0), (0, 1, 0), (0, 3, 0)]);
         {
             let vertices = duplicate_heap.slice_mut(duplicate_bns.vert).unwrap();
             vertices[1].type_ = BNS_VERT_TYPE_C_GROUP as AT_NUMB;
@@ -22885,10 +21770,7 @@ mod tests {
             &[EL_N, EL_C, EL_C],
             &[(0, 1, BOND_TRIPLE as u8), (0, 2, BOND_DOUBLE as u8)],
         );
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 3, MASK),
-            Ok(1)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 3, MASK), Ok(1));
         assert_eq!(bns.edge_forbidden_mask, MASK as S_CHAR);
         assert_eq!(
             heap.slice(bns.edge.as_const())
@@ -22908,10 +21790,7 @@ mod tests {
             ],
         );
         heap.slice_mut(atoms).unwrap()[0].chem_bonds_valence = 5;
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 4, MASK),
-            Ok(1)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 4, MASK), Ok(1));
         assert_eq!(
             heap.slice(bns.edge.as_const())
                 .unwrap()
@@ -22930,10 +21809,7 @@ mod tests {
             ],
         );
         heap.slice_mut(atoms).unwrap()[2].num_H = 1;
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 5, MASK),
-            Ok(1)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 5, MASK), Ok(1));
         assert_eq!(
             heap.slice(bns.edge.as_const())
                 .unwrap()
@@ -22953,10 +21829,7 @@ mod tests {
                 (3, 5, BOND_SINGLE as u8),
             ],
         );
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 6, MASK),
-            Ok(1)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 6, MASK), Ok(1));
         assert_eq!(
             heap.slice(bns.edge.as_const())
                 .unwrap()
@@ -22977,10 +21850,7 @@ mod tests {
                 (4, 6, BOND_SINGLE as u8),
             ],
         );
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 7, MASK),
-            Ok(1)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 7, MASK), Ok(1));
         assert_eq!(
             heap.slice(bns.edge.as_const())
                 .unwrap()
@@ -22991,10 +21861,7 @@ mod tests {
         );
 
         let (mut heap, mut bns, atoms) = graph_with_atoms(&[EL_C], &[]);
-        assert_eq!(
-            fix_special_bonds(&mut heap, &mut bns, atoms, 1, MASK),
-            Ok(0)
-        );
+        assert_eq!(fix_special_bonds(&mut heap, &mut bns, atoms, 1, MASK), Ok(0));
         assert_eq!(heap.slice(bns.edge.as_const()).unwrap(), &[]);
     }
 
@@ -23015,15 +21882,7 @@ mod tests {
         );
         bns.edge_forbidden_mask = 1;
         assert_eq!(
-            SetForbiddenEdges(
-                &mut heap,
-                &mut bns,
-                atoms,
-                4,
-                MASK,
-                0,
-                SourceMutPointer::null()
-            ),
+            SetForbiddenEdges(&mut heap, &mut bns, atoms, 4, MASK, 0, SourceMutPointer::null()),
             Ok(1)
         );
         assert_eq!(bns.edge_forbidden_mask, 5);
@@ -23045,15 +21904,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            SetForbiddenEdges(
-                &mut heap,
-                &mut bns,
-                atoms,
-                4,
-                MASK,
-                99,
-                SourceMutPointer::null()
-            ),
+            SetForbiddenEdges(&mut heap, &mut bns, atoms, 4, MASK, 99, SourceMutPointer::null()),
             Ok(1)
         );
         assert_eq!(
@@ -23070,15 +21921,7 @@ mod tests {
             &[(0, 1, BOND_TRIPLE as u8), (0, 2, BOND_DOUBLE as u8)],
         );
         assert_eq!(
-            SetForbiddenEdges(
-                &mut heap,
-                &mut bns,
-                atoms,
-                3,
-                MASK,
-                0,
-                SourceMutPointer::null()
-            ),
+            SetForbiddenEdges(&mut heap, &mut bns, atoms, 3, MASK, 0, SourceMutPointer::null()),
             Ok(1)
         );
         assert_eq!(
@@ -23138,10 +21981,7 @@ mod tests {
         );
         let edges = heap.slice(bns.edge.as_const()).unwrap();
         assert_eq!(
-            edges
-                .iter()
-                .map(|edge| (edge.cap0, edge.flow0))
-                .collect::<Vec<_>>(),
+            edges.iter().map(|edge| (edge.cap0, edge.flow0)).collect::<Vec<_>>(),
             vec![(30, 40), (31, 41)]
         );
 
@@ -23161,11 +22001,7 @@ mod tests {
             assert_eq!(is_z_atom(element), 1, "active Z element {element}");
         }
         for element in [5, 8, 14, 32, 9, 85] {
-            assert_eq!(
-                is_z_atom(element),
-                0,
-                "inactive ALL_NONMETAL_Z element {element}"
-            );
+            assert_eq!(is_z_atom(element), 0, "inactive ALL_NONMETAL_Z element {element}");
         }
         for element in [0, 1, 2, 255] {
             assert_eq!(is_z_atom(element), 0, "default element {element}");
@@ -23212,32 +22048,16 @@ mod tests {
         negative_valence[1].valence = -1;
         assert_eq!(IsZOX(&negative_valence, 0, 0), Ok(0));
 
-        assert_eq!(
-            IsZOX(&atoms, 99, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
-        assert_eq!(
-            IsZOX(&atoms, 0, 20),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(IsZOX(&atoms, 99, 0), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(IsZOX(&atoms, 0, 20), Err(SourceHeapError::PointerOutOfBounds));
         let mut bad_neighbor = atoms;
         bad_neighbor[1].neighbor[1] = 99;
-        assert_eq!(
-            IsZOX(&bad_neighbor, 0, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(IsZOX(&bad_neighbor, 0, 0), Err(SourceHeapError::PointerOutOfBounds));
     }
 
     #[test]
     fn source_port__ichi_bns__getatomchargetype__line_2873() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -23252,9 +22072,7 @@ mod tests {
         fn run(atoms: &[inp_ATOM], b_subtract: i32) -> (i32, i32, [i32; ATTOT_ARRAY_LEN]) {
             let mut mask = -777;
             let mut totals = [0_i32; ATTOT_ARRAY_LEN];
-            let result =
-                GetAtomChargeType(atoms, 0, Some(&mut totals), Some(&mut mask), b_subtract)
-                    .unwrap();
+            let result = GetAtomChargeType(atoms, 0, Some(&mut totals), Some(&mut mask), b_subtract).unwrap();
             (result, mask, totals)
         }
 
@@ -23281,14 +22099,8 @@ mod tests {
         );
         assert_eq!(unchanged_mask, 1234);
         assert_eq!(unchanged_totals, [0_i32; ATTOT_ARRAY_LEN]);
-        assert_eq!(
-            GetAtomChargeType(&[atom(11, 0, 0, 0, 0, 0)], 0, None, None, 0),
-            Ok(0)
-        );
-        assert_eq!(
-            GetAtomChargeType(&[atom(6, 0, 0, 0, 2, 0)], 0, None, None, 0),
-            Ok(0)
-        );
+        assert_eq!(GetAtomChargeType(&[atom(11, 0, 0, 0, 0, 0)], 0, None, None, 0), Ok(0));
+        assert_eq!(GetAtomChargeType(&[atom(6, 0, 0, 0, 2, 0)], 0, None, None, 0), Ok(0));
 
         let (type_, mask, totals) = run(&[atom(1, 0, 0, 0, 1, 0)], 0);
         assert_eq!(type_, ATT_PROTON as i32);
@@ -23309,82 +22121,41 @@ mod tests {
         assert_eq!(mask, att_bit(ATTOT_NUM_HAL_ACID));
         assert_eq!(totals[ATTOT_NUM_HAL_ACID], 1);
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(8, 1, 1, 1, 0, 0), atom(6, 1, 4, 0, 0, 0)),
-            0,
-        );
-        assert_eq!(
-            (type_, mask),
-            (ATT_ACIDIC_CO as i32, att_bit(ATTOT_NUM_COH))
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(8, 1, 1, 1, 0, 0), atom(6, 1, 4, 0, 0, 0)), 0);
+        assert_eq!((type_, mask), (ATT_ACIDIC_CO as i32, att_bit(ATTOT_NUM_COH)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(8, 1, 1, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)),
-            0,
-        );
-        assert_eq!(
-            (type_, mask),
-            (ATT_ACIDIC_CO as i32, att_bit(ATTOT_NUM_CO_MINUS))
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(8, 1, 1, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)), 0);
+        assert_eq!((type_, mask), (ATT_ACIDIC_CO as i32, att_bit(ATTOT_NUM_CO_MINUS)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(8, 1, 1, 0, -1, 0), atom(8, 1, 1, 1, 0, 0)),
-            0,
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(8, 1, 1, 0, -1, 0), atom(8, 1, 1, 1, 0, 0)), 0);
         assert_eq!((type_, mask), (ATT_OO as i32, att_bit(ATTOT_NUM_OO_MINUS)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(16, 1, 1, 1, 0, 0), atom(6, 1, 1, 3, 0, 0)),
-            0,
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(16, 1, 1, 1, 0, 0), atom(6, 1, 1, 3, 0, 0)), 0);
         assert_eq!((type_, mask), (ATT_ACIDIC_S as i32, att_bit(ATTOT_NUM_CSH)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(8, 1, 2, 0, 0, 0), atom(7, 2, 3, 0, 0, 0)),
-            0,
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(8, 1, 2, 0, 0, 0), atom(7, 2, 3, 0, 0, 0)), 0);
         assert_eq!((type_, mask), (ATT_NO as i32, att_bit(ATTOT_NUM_NO)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(8, 1, 2, 0, 0, 0), atom(7, 3, 4, 0, 1, 0)),
-            0,
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(8, 1, 2, 0, 0, 0), atom(7, 3, 4, 0, 1, 0)), 0);
         assert_eq!((type_, mask), (ATT_N_O as i32, att_bit(ATTOT_NUM_N_O)));
 
-        let mut zoo = vec![
-            atom(8, 1, 1, 1, 0, 0),
-            atom(15, 2, 3, 0, 0, 0),
-            atom(8, 1, 2, 0, 0, 0),
-        ];
+        let mut zoo = vec![atom(8, 1, 1, 1, 0, 0), atom(15, 2, 3, 0, 0, 0), atom(8, 1, 2, 0, 0, 0)];
         zoo[0].neighbor[0] = 1;
         zoo[1].neighbor[..2].copy_from_slice(&[0, 2]);
         zoo[2].neighbor[0] = 1;
         let (type_, mask, _) = run(&zoo, 0);
         assert_eq!((type_, mask), (ATT_ZOO as i32, att_bit(ATTOT_NUM_ZOOH)));
 
-        let (type_, mask, _) = run(
-            &single_bonded(atom(16, 1, 1, 0, -1, 0), atom(17, 1, 1, 0, 0, 0)),
-            0,
-        );
-        assert_eq!(
-            (type_, mask),
-            (ATT_OTHER_NEG_O as i32, att_bit(ATTOT_NUM_O_MINUS))
-        );
+        let (type_, mask, _) = run(&single_bonded(atom(16, 1, 1, 0, -1, 0), atom(17, 1, 1, 0, 0, 0)), 0);
+        assert_eq!((type_, mask), (ATT_OTHER_NEG_O as i32, att_bit(ATTOT_NUM_O_MINUS)));
 
         let (type_, mask, _) = run(&[atom(8, 0, 0, 1, -1, 0)], 0);
-        assert_eq!(
-            (type_, mask),
-            (ATT_OH_MINUS as i32, att_bit(ATTOT_NUM_O_MINUS))
-        );
+        assert_eq!((type_, mask), (ATT_OH_MINUS as i32, att_bit(ATTOT_NUM_O_MINUS)));
 
         let (type_, mask, _) = run(&[atom(7, 0, 2, 1, 0, 0)], 0);
         assert_eq!((type_, mask), (ATT_ATOM_N as i32, att_bit(ATTOT_NUM_NP_H)));
 
-        let mut n_on = vec![
-            atom(7, 2, 3, 0, 0, 0),
-            atom(8, 1, 2, 0, 0, 0),
-            atom(6, 1, 4, 0, 0, 0),
-        ];
+        let mut n_on = vec![atom(7, 2, 3, 0, 0, 0), atom(8, 1, 2, 0, 0, 0), atom(6, 1, 4, 0, 0, 0)];
         n_on[0].neighbor[..2].copy_from_slice(&[1, 2]);
         n_on[1].neighbor[0] = 0;
         n_on[2].neighbor[0] = 0;
@@ -23392,10 +22163,7 @@ mod tests {
         assert_eq!((type_, mask), (ATT_ATOM_N as i32, att_bit(ATTOT_NUM_ON)));
 
         let (type_, mask, _) = run(&[atom(7, 0, 0, 4, 1, 0)], 0);
-        assert_eq!(
-            (type_, mask),
-            (ATT_ATOM_N as i32, att_bit(ATTOT_NUM_NP_PROTON))
-        );
+        assert_eq!((type_, mask), (ATT_ATOM_N as i32, att_bit(ATTOT_NUM_NP_PROTON)));
 
         let mut n_marked = vec![atom(7, 1, 2, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)];
         n_marked[0].neighbor[0] = 1;
@@ -23428,14 +22196,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__mark_at_type__line_5040() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -23448,11 +22209,7 @@ mod tests {
             }
         }
 
-        let mut atoms = vec![
-            atom(1, 0, 0, 0, 1, 0),
-            atom(9, 0, 0, 0, -1, 0),
-            atom(6, 0, 0, 0, 0, 0),
-        ];
+        let mut atoms = vec![atom(1, 0, 0, 0, 1, 0), atom(9, 0, 0, 0, -1, 0), atom(6, 0, 0, 0, 0, 0)];
         let mut totals = [123_i32; ATTOT_ARRAY_LEN];
         let result = mark_at_type(&mut atoms, 3, Some(&mut totals)).unwrap();
         assert_eq!(result, 2);
@@ -23470,10 +22227,7 @@ mod tests {
 
         let mut negative_count = vec![atom(1, 0, 0, 0, 1, 0)];
         let mut negative_totals = [7_i32; ATTOT_ARRAY_LEN];
-        assert_eq!(
-            mark_at_type(&mut negative_count, -1, Some(&mut negative_totals)),
-            Ok(0)
-        );
+        assert_eq!(mark_at_type(&mut negative_count, -1, Some(&mut negative_totals)), Ok(0));
         assert_eq!(negative_count[0].at_type, 555);
         assert_eq!(negative_totals, [0_i32; ATTOT_ARRAY_LEN]);
 
@@ -23499,14 +22253,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__addchangedathchargebns__line_775() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -23519,18 +22266,11 @@ mod tests {
             }
         }
 
-        let mut atoms = vec![
-            atom(1, 0, 0, 0, 1, 0),
-            atom(9, 0, 0, 0, -1, 0),
-            atom(6, 0, 0, 0, 0, 0),
-        ];
+        let mut atoms = vec![atom(1, 0, 0, 0, 1, 0), atom(9, 0, 0, 0, -1, 0), atom(6, 0, 0, 0, 0, 0)];
         let mut totals = [0_i32; ATTOT_ARRAY_LEN];
         let mut mark = [1_i8, 0, 3];
 
-        assert_eq!(
-            AddChangedAtHChargeBNS(&mut atoms, 3, &mut totals, &mut mark),
-            Ok(2)
-        );
+        assert_eq!(AddChangedAtHChargeBNS(&mut atoms, 3, &mut totals, &mut mark), Ok(2));
         assert_eq!(mark, [0_i8, 0, 0]);
         assert_eq!(atoms[0].at_type, ATT_PROTON as AT_NUMB);
         assert_eq!(atoms[1].at_type, 555);
@@ -23543,12 +22283,7 @@ mod tests {
         let mut negative_totals = [9_i32; ATTOT_ARRAY_LEN];
         let mut negative_mark = [1_i8];
         assert_eq!(
-            AddChangedAtHChargeBNS(
-                &mut negative_atoms,
-                -1,
-                &mut negative_totals,
-                &mut negative_mark
-            ),
+            AddChangedAtHChargeBNS(&mut negative_atoms, -1, &mut negative_totals, &mut negative_mark),
             Ok(0)
         );
         assert_eq!(negative_atoms[0].at_type, 555);
@@ -23558,14 +22293,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__addorremoveexplorimplh__line_902() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -23580,10 +22308,7 @@ mod tests {
         let mut add_atoms = vec![atom(6, 0, 0, 0, 0, 0)];
         let mut add_groups = T_GROUP_INFO::default();
         add_groups.tni.nNumRemovedProtons = 3;
-        assert_eq!(
-            AddOrRemoveExplOrImplH(2, &mut add_atoms, 1, 0, &mut add_groups),
-            Ok(2)
-        );
+        assert_eq!(AddOrRemoveExplOrImplH(2, &mut add_atoms, 1, 0, &mut add_groups), Ok(2));
         assert_eq!(add_atoms[0].num_H, 2);
         assert_eq!(add_groups.tni.nNumRemovedProtons, 2);
 
@@ -23642,11 +22367,7 @@ mod tests {
         assert_eq!(explicit_atoms[3].orig_at_number, 77);
         assert_eq!(explicit_groups.tni.nNumRemovedExplicitH, 1);
 
-        let mut opposite_atoms = vec![
-            atom(7, 1, 2, 1, 0, 0),
-            atom(6, 2, 2, 0, 0, 0),
-            atom(1, 0, 0, 0, 0, 0),
-        ];
+        let mut opposite_atoms = vec![atom(7, 1, 2, 1, 0, 0), atom(6, 2, 2, 0, 0, 0), atom(1, 0, 0, 0, 0, 0)];
         opposite_atoms[0].neighbor[0] = 1;
         opposite_atoms[0].sb_parity[0] = 1;
         opposite_atoms[0].sb_ord[0] = 0;
@@ -23874,9 +22595,7 @@ mod tests {
         ) -> BN_STRUCT {
             let vertex_count = definitions
                 .iter()
-                .fold(0_usize, |maximum, &(left, right, _)| {
-                    maximum.max(left).max(right)
-                })
+                .fold(0_usize, |maximum, &(left, right, _)| maximum.max(left).max(right))
                 + 1;
             let mut bns = make_graph(heap, vertex_count, definitions);
             {
@@ -23908,14 +22627,7 @@ mod tests {
             Ok(7)
         );
 
-        let definitions = [
-            (4, 0, 0),
-            (0, 1, 0),
-            (1, 5, 0),
-            (5, 2, 0),
-            (2, 3, 0),
-            (3, 6, 0),
-        ];
+        let definitions = [(4, 0, 0), (0, 1, 0), (1, 5, 0), (5, 2, 0), (2, 3, 0), (3, 6, 0)];
         let path = [4, 0, 1, 5, 2, 3, 6];
 
         let mut success_heap = SourceHeap::default();
@@ -23928,21 +22640,12 @@ mod tests {
         );
         let mut success_aatg = make_aatg(&mut success_heap, &[0, 0, 0, 0], 99);
         assert_eq!(
-            MarkAtomsAtTautGroups(
-                &mut success_heap,
-                &mut success_bns,
-                4,
-                &mut success_aatg,
-                -1,
-                -1
-            ),
+            MarkAtomsAtTautGroups(&mut success_heap, &mut success_bns, 4, &mut success_aatg, -1, -1),
             Ok(4)
         );
         assert_eq!(success_aatg.nNumFound, 4);
         assert_eq!(
-            success_heap
-                .slice(success_aatg.nMarkedAtom.as_const())
-                .unwrap(),
+            success_heap.slice(success_aatg.nMarkedAtom.as_const()).unwrap(),
             &[AATG_MARK_IN_PATH as S_CHAR; 4]
         );
         assert_eq!(success_bns.alt_path, success_bns.altp[0]);
@@ -23976,13 +22679,7 @@ mod tests {
         );
 
         let mut temp_heap = SourceHeap::default();
-        let mut temp_bns = make_markable_path(
-            &mut temp_heap,
-            BNS_VERT_TYPE_TEMP as AT_NUMB,
-            &path,
-            &definitions,
-            4,
-        );
+        let mut temp_bns = make_markable_path(&mut temp_heap, BNS_VERT_TYPE_TEMP as AT_NUMB, &path, &definitions, 4);
         let mut temp_aatg = make_aatg(&mut temp_heap, &[0, 0, 0, 0], 0);
         assert_eq!(
             MarkAtomsAtTautGroups(&mut temp_heap, &mut temp_bns, 4, &mut temp_aatg, -1, -1),
@@ -24007,10 +22704,7 @@ mod tests {
             MarkAtomsAtTautGroups(&mut three_heap, &mut three_bns, 3, &mut three_aatg, -1, -1),
             Ok(0)
         );
-        assert_eq!(
-            three_heap.slice(three_aatg.nMarkedAtom.as_const()).unwrap(),
-            &[0, 0, 0]
-        );
+        assert_eq!(three_heap.slice(three_aatg.nMarkedAtom.as_const()).unwrap(), &[0, 0, 0]);
 
         let mut wrong_end_heap = SourceHeap::default();
         let mut wrong_end_bns = make_markable_path(
@@ -24020,19 +22714,11 @@ mod tests {
             &definitions,
             4,
         );
-        wrong_end_heap.slice_mut(wrong_end_bns.altp[0]).unwrap()
-            [tagAltPathConst_iALTP_END_ATOM as usize]
+        wrong_end_heap.slice_mut(wrong_end_bns.altp[0]).unwrap()[tagAltPathConst_iALTP_END_ATOM as usize]
             .set_number(99);
         let mut wrong_end_aatg = make_aatg(&mut wrong_end_heap, &[0, 0, 0, 0], 33);
         assert_eq!(
-            MarkAtomsAtTautGroups(
-                &mut wrong_end_heap,
-                &mut wrong_end_bns,
-                4,
-                &mut wrong_end_aatg,
-                -1,
-                -1
-            ),
+            MarkAtomsAtTautGroups(&mut wrong_end_heap, &mut wrong_end_bns, 4, &mut wrong_end_aatg, -1, -1),
             Ok(BNS_PROGRAM_ERR)
         );
         assert_eq!(wrong_end_aatg.nNumFound, 0);
@@ -24049,14 +22735,7 @@ mod tests {
         );
         let mut endpoint_aatg = make_aatg(&mut endpoint_heap, &[0, 0], 44);
         assert_eq!(
-            MarkAtomsAtTautGroups(
-                &mut endpoint_heap,
-                &mut endpoint_bns,
-                2,
-                &mut endpoint_aatg,
-                0,
-                -1
-            ),
+            MarkAtomsAtTautGroups(&mut endpoint_heap, &mut endpoint_bns, 2, &mut endpoint_aatg, 0, -1),
             Ok(0)
         );
         assert_eq!(endpoint_aatg.nNumFound, 0);
@@ -24071,14 +22750,7 @@ mod tests {
         );
         let mut endpoint2_aatg = make_aatg(&mut endpoint2_heap, &[0, 0], 55);
         assert_eq!(
-            MarkAtomsAtTautGroups(
-                &mut endpoint2_heap,
-                &mut endpoint2_bns,
-                2,
-                &mut endpoint2_aatg,
-                1,
-                -1
-            ),
+            MarkAtomsAtTautGroups(&mut endpoint2_heap, &mut endpoint2_bns, 2, &mut endpoint2_aatg, 1, -1),
             Ok(0)
         );
         assert_eq!(endpoint2_aatg.nNumFound, 0);
@@ -24086,14 +22758,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__simpleremovehplusnpo__line_3432() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24165,14 +22830,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__simpleremoveacidicprotons__line_4129() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24212,10 +22870,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (no_candidate_atoms[0].charge, no_candidate_atoms[0].num_H),
-            (0, 0)
-        );
+        assert_eq!((no_candidate_atoms[0].charge, no_candidate_atoms[0].num_H), (0, 0));
 
         let mut zero_heap = SourceHeap::default();
         let mut zero_atoms = acidic_co_atoms();
@@ -24232,15 +22887,9 @@ mod tests {
             let totals = heap.slice_mut(aatg.nAtTypeTotals).unwrap();
             assert_eq!(mark_at_type(&mut atoms, 2, Some(totals)), Ok(0));
         }
-        assert_eq!(
-            heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_COH],
-            1
-        );
+        assert_eq!(heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_COH], 1);
 
-        assert_eq!(
-            SimpleRemoveAcidicProtons(&mut heap, &mut atoms, 2, &aatg, 1),
-            Ok(1)
-        );
+        assert_eq!(SimpleRemoveAcidicProtons(&mut heap, &mut atoms, 2, &aatg, 1), Ok(1));
         assert_eq!((atoms[0].charge, atoms[0].num_H), (-1, 0));
         assert_eq!((atoms[1].charge, atoms[1].num_H), (0, 0));
         let totals = heap.slice(aatg.nAtTypeTotals.as_const()).unwrap();
@@ -24254,13 +22903,7 @@ mod tests {
         let mut missing_heap = SourceHeap::default();
         let mut missing_atoms = acidic_co_atoms();
         assert_eq!(
-            SimpleRemoveAcidicProtons(
-                &mut missing_heap,
-                &mut missing_atoms,
-                2,
-                &BN_AATG::default(),
-                1,
-            ),
+            SimpleRemoveAcidicProtons(&mut missing_heap, &mut missing_atoms, 2, &BN_AATG::default(), 1,),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!((missing_atoms[0].charge, missing_atoms[0].num_H), (0, 1));
@@ -24288,11 +22931,7 @@ mod tests {
         {
             let mut heavy_atoms = heap.slice(atoms_pointer.as_const()).unwrap()[..2].to_vec();
             assert_eq!(
-                mark_at_type(
-                    &mut heavy_atoms,
-                    2,
-                    Some(heap.slice_mut(totals_pointer).unwrap()),
-                ),
+                mark_at_type(&mut heavy_atoms, 2, Some(heap.slice_mut(totals_pointer).unwrap()),),
                 Ok(0)
             );
         }
@@ -24333,13 +22972,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__bhasacidichydrogen__line_4200() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24468,14 +23101,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__simpleaddacidicprotons__line_4253() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24523,10 +23149,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            (no_candidate_atoms[0].charge, no_candidate_atoms[0].num_H),
-            (0, 0)
-        );
+        assert_eq!((no_candidate_atoms[0].charge, no_candidate_atoms[0].num_H), (0, 0));
 
         let mut zero_heap = SourceHeap::default();
         let mut zero_atoms = acidic_minus_atoms();
@@ -24543,10 +23166,7 @@ mod tests {
             let totals = heap.slice_mut(aatg.nAtTypeTotals).unwrap();
             assert_eq!(mark_at_type(&mut atoms, 2, Some(totals)), Ok(1));
         }
-        assert_eq!(
-            SimpleAddAcidicProtons(&mut heap, &mut atoms, 2, &aatg, 1),
-            Ok(1)
-        );
+        assert_eq!(SimpleAddAcidicProtons(&mut heap, &mut atoms, 2, &aatg, 1), Ok(1));
         assert_eq!((atoms[0].charge, atoms[0].num_H), (0, 1));
         assert_eq!((atoms[1].charge, atoms[1].num_H), (0, 0));
         let totals = heap.slice(aatg.nAtTypeTotals.as_const()).unwrap();
@@ -24564,10 +23184,7 @@ mod tests {
             let totals = n_heap.slice_mut(n_aatg.nAtTypeTotals).unwrap();
             assert_eq!(mark_at_type(&mut n_atoms, 2, Some(totals)), Ok(1));
         }
-        assert_eq!(
-            SimpleAddAcidicProtons(&mut n_heap, &mut n_atoms, 2, &n_aatg, 1),
-            Ok(1)
-        );
+        assert_eq!(SimpleAddAcidicProtons(&mut n_heap, &mut n_atoms, 2, &n_aatg, 1), Ok(1));
         assert_eq!((n_atoms[0].charge, n_atoms[0].num_H), (0, 1));
         let n_totals = n_heap.slice(n_aatg.nAtTypeTotals.as_const()).unwrap();
         assert_eq!(n_totals[ATTOT_NUM_N_MINUS], 0);
@@ -24576,13 +23193,7 @@ mod tests {
         let mut missing_heap = SourceHeap::default();
         let mut missing_atoms = acidic_minus_atoms();
         assert_eq!(
-            SimpleAddAcidicProtons(
-                &mut missing_heap,
-                &mut missing_atoms,
-                2,
-                &BN_AATG::default(),
-                1,
-            ),
+            SimpleAddAcidicProtons(&mut missing_heap, &mut missing_atoms, 2, &BN_AATG::default(), 1,),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!((missing_atoms[0].charge, missing_atoms[0].num_H), (-1, 0));
@@ -24590,14 +23201,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__bisatomtypehard__line_3480() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24621,13 +23225,7 @@ mod tests {
         acidic_minus[0].num_H = 0;
         acidic_minus[0].charge = -1;
         assert_eq!(
-            bIsAtomTypeHard(
-                &acidic_minus,
-                0,
-                PR_HARD_TYP_NEG as i32,
-                PR_HARD_MSK_NEG,
-                -1
-            ),
+            bIsAtomTypeHard(&acidic_minus, 0, PR_HARD_TYP_NEG as i32, PR_HARD_MSK_NEG, -1),
             Ok(1)
         );
         assert_eq!(
@@ -24643,23 +23241,11 @@ mod tests {
         );
 
         assert_eq!(
-            bIsAtomTypeHard(
-                &acidic_co,
-                0,
-                PR_HARD_TYP_H as i32,
-                att_bit(ATTOT_NUM_PROTON),
-                0
-            ),
+            bIsAtomTypeHard(&acidic_co, 0, PR_HARD_TYP_H as i32, att_bit(ATTOT_NUM_PROTON), 0),
             Ok(0)
         );
         assert_eq!(
-            bIsAtomTypeHard(
-                &[atom(6, 0, 0, 0, 0, 0)],
-                0,
-                PR_HARD_TYP_H as i32,
-                PR_HARD_MSK_H,
-                0
-            ),
+            bIsAtomTypeHard(&[atom(6, 0, 0, 0, 0, 0)], 0, PR_HARD_TYP_H as i32, PR_HARD_MSK_H, 0),
             Ok(0)
         );
         assert_eq!(
@@ -24670,14 +23256,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__bishdonoraccatomtype__line_3501() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24700,20 +23279,14 @@ mod tests {
         donor_only_atoms[0].neighbor[0] = 1;
         donor_only_atoms[1].neighbor[0] = 0;
         let mut donor_only = 0_i32;
-        assert_eq!(
-            bIsHDonorAccAtomType(&donor_only_atoms, 0, &mut donor_only),
-            Ok(4)
-        );
+        assert_eq!(bIsHDonorAccAtomType(&donor_only_atoms, 0, &mut donor_only), Ok(4));
         assert_eq!(donor_only, SALT_DONOR_H as i32);
 
         let mut acceptor_only_atoms = donor_only_atoms.clone();
         acceptor_only_atoms[0].chem_bonds_valence = 2;
         acceptor_only_atoms[0].num_H = 0;
         let mut acceptor_only = 0x20_i32;
-        assert_eq!(
-            bIsHDonorAccAtomType(&acceptor_only_atoms, 0, &mut acceptor_only),
-            Ok(4)
-        );
+        assert_eq!(bIsHDonorAccAtomType(&acceptor_only_atoms, 0, &mut acceptor_only), Ok(4));
         assert_eq!(acceptor_only, 0x20 | SALT_ACCEPTOR as i32);
 
         let mut donor_acceptor_atoms = vec![atom(7, 1, 2, 1, 0, 0), atom(6, 1, 4, 0, 0, 0)];
@@ -24752,14 +23325,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__bisnegatomtype__line_3539() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24772,10 +23338,7 @@ mod tests {
         }
 
         let mut false_subtype = 0x40_i32;
-        assert_eq!(
-            bIsNegAtomType(&[atom(6, 0, 0, 0, 0, 0)], 0, &mut false_subtype),
-            Ok(-1)
-        );
+        assert_eq!(bIsNegAtomType(&[atom(6, 0, 0, 0, 0, 0)], 0, &mut false_subtype), Ok(-1));
         assert_eq!(false_subtype, 0x40);
 
         let mut donor_neg_atoms = vec![atom(8, 1, 1, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)];
@@ -24789,10 +23352,7 @@ mod tests {
         acceptor_only_atoms[0].charge = 0;
         acceptor_only_atoms[0].chem_bonds_valence = 2;
         let mut acceptor_only = 0x20_i32;
-        assert_eq!(
-            bIsNegAtomType(&acceptor_only_atoms, 0, &mut acceptor_only),
-            Ok(4)
-        );
+        assert_eq!(bIsNegAtomType(&acceptor_only_atoms, 0, &mut acceptor_only), Ok(4));
         assert_eq!(acceptor_only, 0x20 | SALT_ACCEPTOR as i32);
 
         let mut donor_acceptor_atoms = vec![atom(7, 1, 2, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)];
@@ -24800,10 +23360,7 @@ mod tests {
         donor_acceptor_atoms[0].bond_type[0] = BOND_MARK_ALL as u8;
         donor_acceptor_atoms[1].neighbor[0] = 0;
         let mut donor_acceptor = 0_i32;
-        assert_eq!(
-            bIsNegAtomType(&donor_acceptor_atoms, 0, &mut donor_acceptor),
-            Ok(4)
-        );
+        assert_eq!(bIsNegAtomType(&donor_acceptor_atoms, 0, &mut donor_acceptor), Ok(4));
         assert_eq!(donor_acceptor, (SALT_DONOR_Neg | SALT_ACCEPTOR) as i32);
 
         let mut edge_cap_zero_atoms = vec![
@@ -24817,10 +23374,7 @@ mod tests {
         edge_cap_zero_atoms[2].neighbor[0] = 0;
         edge_cap_zero_atoms[3].neighbor[0] = 0;
         let mut edge_cap_zero = 0x10_i32;
-        assert_eq!(
-            bIsNegAtomType(&edge_cap_zero_atoms, 0, &mut edge_cap_zero),
-            Ok(-1)
-        );
+        assert_eq!(bIsNegAtomType(&edge_cap_zero_atoms, 0, &mut edge_cap_zero), Ok(-1));
         assert_eq!(edge_cap_zero, 0x10);
 
         let mut invalid = 0_i32;
@@ -24832,14 +23386,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__bishardremhcandidate__line_3582() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-            radical: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, radical: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -24852,34 +23399,22 @@ mod tests {
         }
 
         let mut none = 0x40_i32;
-        assert_eq!(
-            bIsHardRemHCandidate(&[atom(6, 0, 0, 0, 0, 0)], 0, &mut none),
-            Ok(-1)
-        );
+        assert_eq!(bIsHardRemHCandidate(&[atom(6, 0, 0, 0, 0, 0)], 0, &mut none), Ok(-1));
         assert_eq!(none, 0x40);
 
         let mut donor_atoms = vec![atom(8, 1, 1, 1, 0, 0), atom(6, 1, 4, 0, 0, 0)];
         donor_atoms[0].neighbor[0] = 1;
         donor_atoms[1].neighbor[0] = 0;
         let mut donor_subtype = 0_i32;
-        assert_eq!(
-            bIsHardRemHCandidate(&donor_atoms, 0, &mut donor_subtype),
-            Ok(4)
-        );
+        assert_eq!(bIsHardRemHCandidate(&donor_atoms, 0, &mut donor_subtype), Ok(4));
         assert_eq!(donor_subtype, SALT_DONOR_H as i32);
 
         let mut negative_atoms = vec![atom(8, 1, 1, 0, -1, 0), atom(6, 1, 4, 0, 0, 0)];
         negative_atoms[0].neighbor[0] = 1;
         negative_atoms[1].neighbor[0] = 0;
         let mut negative_subtype = 0x20_i32;
-        assert_eq!(
-            bIsHardRemHCandidate(&negative_atoms, 0, &mut negative_subtype),
-            Ok(4)
-        );
-        assert_eq!(
-            negative_subtype,
-            0x20 | SALT_ACCEPTOR as i32 | SALT_DONOR_Neg as i32
-        );
+        assert_eq!(bIsHardRemHCandidate(&negative_atoms, 0, &mut negative_subtype), Ok(4));
+        assert_eq!(negative_subtype, 0x20 | SALT_ACCEPTOR as i32 | SALT_DONOR_Neg as i32);
 
         let mut invalid = 0_i32;
         assert_eq!(
@@ -24891,17 +23426,11 @@ mod tests {
     #[test]
     fn source_port__ichi_bns__hardremoveacidicprotons__line_4351() {
         let mut heap = SourceHeap::default();
-        let atoms = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
-        let totals = heap
-            .allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let totals = heap.allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN]).unwrap();
         let mut aatg = BN_AATG {
             nAtTypeTotals: totals,
-            t_group_info: heap
-                .allocate_model_storage(vec![T_GROUP_INFO::default()])
-                .unwrap(),
+            t_group_info: heap.allocate_model_storage(vec![T_GROUP_INFO::default()]).unwrap(),
             nMarkedAtom: heap.allocate_model_storage(vec![0_i8; 1]).unwrap(),
             ..BN_AATG::default()
         };
@@ -24910,9 +23439,7 @@ mod tests {
         bns.max_edges = 8;
         bns.max_iedges = 8;
         bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-        bns.altp[0] = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
-            .unwrap();
+        bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
         bns.max_altp = 1;
         let mut bd = BN_DATA::default();
         let mut cg = CANON_GLOBALS::default();
@@ -24935,26 +23462,17 @@ mod tests {
         );
         assert_eq!(canceled, 0);
         assert_eq!((bns.type_CN, bns.type_T, bns.type_TACN), (0, 0, 0));
-        assert_eq!(
-            heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES],
-            0
-        );
+        assert_eq!(heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES], 0);
     }
 
     #[test]
     fn source_port__ichi_bns__hardaddacidicprotons__line_4556() {
         let mut heap = SourceHeap::default();
-        let atoms = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
-        let totals = heap
-            .allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let totals = heap.allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN]).unwrap();
         let mut aatg = BN_AATG {
             nAtTypeTotals: totals,
-            t_group_info: heap
-                .allocate_model_storage(vec![T_GROUP_INFO::default()])
-                .unwrap(),
+            t_group_info: heap.allocate_model_storage(vec![T_GROUP_INFO::default()]).unwrap(),
             nMarkedAtom: heap.allocate_model_storage(vec![0_i8; 1]).unwrap(),
             ..BN_AATG::default()
         };
@@ -24963,9 +23481,7 @@ mod tests {
         bns.max_edges = 8;
         bns.max_iedges = 8;
         bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-        bns.altp[0] = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
-            .unwrap();
+        bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
         bns.max_altp = 1;
         let mut bd = BN_DATA::default();
         let mut cg = CANON_GLOBALS::default();
@@ -24988,27 +23504,16 @@ mod tests {
         );
         assert_eq!(canceled, 0);
         assert_eq!((bns.type_CN, bns.type_T, bns.type_TACN), (0, 0, 0));
-        assert_eq!(
-            heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES],
-            0
-        );
+        assert_eq!(heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES], 0);
     }
 
     #[test]
     fn source_port__ichi_bns__hardremovehplusnp__line_4770() {
         let mut heap = SourceHeap::default();
-        let atoms = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
-        let totals = heap
-            .allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN])
-            .unwrap();
-        let t_group_info = heap
-            .allocate_model_storage(vec![T_GROUP_INFO::default()])
-            .unwrap();
-        heap.slice_mut(t_group_info).unwrap()[0]
-            .tni
-            .nNumRemovedProtons = 5;
+        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let totals = heap.allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN]).unwrap();
+        let t_group_info = heap.allocate_model_storage(vec![T_GROUP_INFO::default()]).unwrap();
+        heap.slice_mut(t_group_info).unwrap()[0].tni.nNumRemovedProtons = 5;
         let mut aatg = BN_AATG {
             nAtTypeTotals: totals,
             t_group_info,
@@ -25020,9 +23525,7 @@ mod tests {
         bns.max_edges = 8;
         bns.max_iedges = 8;
         bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-        bns.altp[0] = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
-            .unwrap();
+        bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
         bns.max_altp = 1;
         let mut bd = BN_DATA::default();
         let mut cg = CANON_GLOBALS::default();
@@ -25051,21 +23554,12 @@ mod tests {
                 .nNumRemovedProtons,
             5
         );
-        assert_eq!(
-            heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES],
-            0
-        );
+        assert_eq!(heap.slice(aatg.nAtTypeTotals.as_const()).unwrap()[ATTOT_NUM_CHARGES], 0);
     }
 
     #[test]
     fn source_port__ichi_bns__removenpprotonsandacidcharges__line_5084() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -25084,10 +23578,7 @@ mod tests {
         ];
         source_atoms[1].neighbor[..2].copy_from_slice(&[2, 3]);
         let mut source_totals = vec![0_i32; ATTOT_ARRAY_LEN];
-        assert_eq!(
-            mark_at_type(&mut source_atoms, 4, Some(&mut source_totals)),
-            Ok(2)
-        );
+        assert_eq!(mark_at_type(&mut source_atoms, 4, Some(&mut source_totals)), Ok(2));
         assert_eq!(source_totals[ATTOT_NUM_NP_PROTON], 1);
         assert_eq!(source_totals[ATTOT_NUM_OH_PLUS], 1);
 
@@ -25096,9 +23587,7 @@ mod tests {
         let totals = heap.allocate_model_storage(source_totals).unwrap();
         let mut aatg = BN_AATG {
             nAtTypeTotals: totals,
-            t_group_info: heap
-                .allocate_model_storage(vec![T_GROUP_INFO::default()])
-                .unwrap(),
+            t_group_info: heap.allocate_model_storage(vec![T_GROUP_INFO::default()]).unwrap(),
             ..BN_AATG::default()
         };
         let mut bns = make_graph(&mut heap, 4, &[]);
@@ -25106,9 +23595,7 @@ mod tests {
         let mut cg = CANON_GLOBALS::default();
 
         assert_eq!(
-            RemoveNPProtonsAndAcidCharges(
-                &mut heap, &mut cg, atoms, 4, &mut aatg, &mut bns, &mut bd, 0,
-            ),
+            RemoveNPProtonsAndAcidCharges(&mut heap, &mut cg, atoms, 4, &mut aatg, &mut bns, &mut bd, 0,),
             Ok(2)
         );
 
@@ -25172,9 +23659,7 @@ mod tests {
                 ..inp_ATOM::default()
             };
             let atoms = heap.allocate_model_storage(vec![proton.clone()]).unwrap();
-            let fixed = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
+            let fixed = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
             let stale_group_numbers = heap.allocate_model_storage(vec![77 as AT_NUMB]).unwrap();
             let tgi = heap
                 .allocate_model_storage(vec![T_GROUP_INFO {
@@ -25186,9 +23671,7 @@ mod tests {
                 .unwrap();
             let external_flags = heap.allocate_model_storage(vec![0x100_u64]).unwrap();
             let external_flags_done = heap.allocate_model_storage(vec![0x200_u64]).unwrap();
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
             let baseline = heap.live_allocation_count();
             let mut cg = CANON_GLOBALS::default();
 
@@ -25217,10 +23700,7 @@ mod tests {
             assert_eq!(info.bTautFlags, 0x20);
             assert_eq!(info.bTautFlagsDone, 0x40);
             assert_eq!(info.tni.nNumRemovedProtons, 1);
-            assert_eq!(
-                info.tni.bNormalizationFlags,
-                FLAG_PROTON_SINGLE_REMOVED as u64
-            );
+            assert_eq!(info.tni.bNormalizationFlags, FLAG_PROTON_SINGLE_REMOVED as u64);
             let mut expected_isotopes = [0; NUM_H_ISOTOPES as usize];
             if isotope > 0 && isotope <= NUM_H_ISOTOPES as i8 {
                 expected_isotopes[isotope as usize - 1] = 1;
@@ -25228,10 +23708,7 @@ mod tests {
             assert_eq!(info.tni.nNumRemovedProtonsIsotopic, expected_isotopes);
             assert_eq!(heap.slice(fixed.as_const()).unwrap(), &[proton]);
             assert_eq!(heap.slice(external_flags.as_const()).unwrap(), &[0x100]);
-            assert_eq!(
-                heap.slice(external_flags_done.as_const()).unwrap(),
-                &[0x200]
-            );
+            assert_eq!(heap.slice(external_flags_done.as_const()).unwrap(), &[0x200]);
             assert_eq!(heap.live_allocation_count(), baseline - 1);
         }
 
@@ -25262,14 +23739,8 @@ mod tests {
             ),
             Ok(2)
         );
-        assert_eq!(
-            external_heap.slice(external_flags.as_const()).unwrap(),
-            &[0]
-        );
-        assert_eq!(
-            external_heap.slice(external_flags_done.as_const()).unwrap(),
-            &[0]
-        );
+        assert_eq!(external_heap.slice(external_flags.as_const()).unwrap(), &[0]);
+        assert_eq!(external_heap.slice(external_flags_done.as_const()).unwrap(), &[0]);
         assert_eq!(external_heap.live_allocation_count(), external_baseline);
         let source_allocations = external_heap.source_allocation_calls();
         assert!(source_allocations > 1);
@@ -25279,9 +23750,7 @@ mod tests {
             let atoms = heap.allocate_model_storage(two_carbons()).unwrap();
             let flags = heap.allocate_model_storage(vec![0_u64]).unwrap();
             let flags_done = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
             let baseline = heap.live_allocation_count();
             heap.fail_after_allocations(allocations_before_failure);
             let expected_result = if allocations_before_failure >= 29 {
@@ -25331,9 +23800,7 @@ mod tests {
                 .allocate_model_storage(vec![TG_FLAG_MOVE_POS_CHARGES as u64])
                 .unwrap();
             let flags_done = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
             let baseline = heap.live_allocation_count();
             heap.fail_after_allocations(allocations_before_failure);
             assert_eq!(
@@ -25372,9 +23839,7 @@ mod tests {
         add_bond(&mut taut_atoms_value, 0, 1, BOND_SINGLE as u8);
         add_bond(&mut taut_atoms_value, 1, 2, BOND_DOUBLE as u8);
         let taut_atoms = taut_heap.allocate_model_storage(taut_atoms_value).unwrap();
-        let taut_groups = taut_heap
-            .allocate_model_storage(vec![T_GROUP::default(); 3])
-            .unwrap();
+        let taut_groups = taut_heap.allocate_model_storage(vec![T_GROUP::default(); 3]).unwrap();
         let taut_info = taut_heap
             .allocate_model_storage(vec![T_GROUP_INFO {
                 t_group: taut_groups,
@@ -25383,9 +23848,7 @@ mod tests {
                 ..T_GROUP_INFO::default()
             }])
             .unwrap();
-        let taut_clock = taut_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let taut_clock = taut_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let taut_baseline = taut_heap.live_allocation_count();
         let taut_type_baseline = [
             taut_heap.live_allocations_of::<i8>(),
@@ -25422,19 +23885,13 @@ mod tests {
             Ok(3)
         );
         let taut_info_after = &taut_heap.slice(taut_info.as_const()).unwrap()[0];
-        assert_ne!(
-            taut_info_after.bTautFlagsDone & TG_FLAG_TEST_TAUT__ATOMS_DONE as u64,
-            0
-        );
+        assert_ne!(taut_info_after.bTautFlagsDone & TG_FLAG_TEST_TAUT__ATOMS_DONE as u64, 0);
         assert!(taut_info_after.tGroupNumber.is_null());
         assert_eq!(taut_info_after.t_group, taut_groups);
         assert!(taut_info_after.nEndpointAtomNumber.is_null());
         assert_eq!(taut_info_after.nNumEndpoints, 0);
         assert_eq!(taut_info_after.num_t_groups, 1);
-        assert_ne!(
-            taut_heap.slice(taut_atoms.as_const()).unwrap()[0].endpoint,
-            0
-        );
+        assert_ne!(taut_heap.slice(taut_atoms.as_const()).unwrap()[0].endpoint, 0);
         assert_eq!(
             [
                 taut_heap.live_allocations_of::<i8>(),
@@ -25477,22 +23934,16 @@ mod tests {
         add_bond(&mut salt_atoms_value, 0, 1, BOND_SINGLE as u8);
         add_bond(&mut salt_atoms_value, 1, 2, BOND_DOUBLE as u8);
         let salt_atoms = salt_heap.allocate_model_storage(salt_atoms_value).unwrap();
-        let salt_groups = salt_heap
-            .allocate_model_storage(vec![T_GROUP::default(); 3])
-            .unwrap();
+        let salt_groups = salt_heap.allocate_model_storage(vec![T_GROUP::default(); 3]).unwrap();
         let salt_info = salt_heap
             .allocate_model_storage(vec![T_GROUP_INFO {
                 t_group: salt_groups,
                 max_num_t_groups: 3,
-                bTautFlags: (TG_FLAG_TEST_TAUT__SALTS
-                    | TG_FLAG_TEST_TAUT2_SALTS
-                    | TG_FLAG_ALLOW_NO_NEGTV_O) as u64,
+                bTautFlags: (TG_FLAG_TEST_TAUT__SALTS | TG_FLAG_TEST_TAUT2_SALTS | TG_FLAG_ALLOW_NO_NEGTV_O) as u64,
                 ..T_GROUP_INFO::default()
             }])
             .unwrap();
-        let salt_clock = salt_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let salt_clock = salt_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         assert_eq!(
             mark_alt_bonds_and_taut_groups(
                 &mut salt_heap,
@@ -25512,10 +23963,7 @@ mod tests {
             Ok(3)
         );
         let salt_info_after = &salt_heap.slice(salt_info.as_const()).unwrap()[0];
-        assert_ne!(
-            salt_info_after.bTautFlagsDone & TG_FLAG_ALLOW_NO_NEGTV_O_DONE as u64,
-            0
-        );
+        assert_ne!(salt_info_after.bTautFlagsDone & TG_FLAG_ALLOW_NO_NEGTV_O_DONE as u64, 0);
         assert!(salt_info_after.tGroupNumber.is_null());
 
         let mut isotope_heap = SourceHeap::default();
@@ -25532,9 +23980,7 @@ mod tests {
         isotope_atoms_value[2].nNumAtInRingSystem = 1;
         add_bond(&mut isotope_atoms_value, 0, 1, BOND_SINGLE as u8);
         add_bond(&mut isotope_atoms_value, 1, 2, BOND_DOUBLE as u8);
-        let isotope_atoms = isotope_heap
-            .allocate_model_storage(isotope_atoms_value)
-            .unwrap();
+        let isotope_atoms = isotope_heap.allocate_model_storage(isotope_atoms_value).unwrap();
         let isotope_groups = isotope_heap
             .allocate_model_storage(vec![T_GROUP::default(); 3])
             .unwrap();
@@ -25542,9 +23988,7 @@ mod tests {
             .allocate_model_storage(vec![T_GROUP_INFO {
                 t_group: isotope_groups,
                 max_num_t_groups: 3,
-                bTautFlags: (TG_FLAG_TEST_TAUT__ATOMS
-                    | TG_FLAG_TEST_TAUT__SALTS
-                    | TG_FLAG_VARIABLE_PROTONS) as u64,
+                bTautFlags: (TG_FLAG_TEST_TAUT__ATOMS | TG_FLAG_TEST_TAUT__SALTS | TG_FLAG_VARIABLE_PROTONS) as u64,
                 bTautFlagsDone: TG_FLAG_FOUND_ISOTOPIC_H_DONE as u64,
                 ..T_GROUP_INFO::default()
             }])
@@ -25584,14 +24028,10 @@ mod tests {
                 .unwrap(),
             &[0]
         );
-        assert_ne!(
-            isotope_heap.slice(isotope_atoms.as_const()).unwrap()[0].cFlags & 1,
-            0
-        );
+        assert_ne!(isotope_heap.slice(isotope_atoms.as_const()).unwrap()[0].cFlags & 1, 0);
         let isotope_endpoint_numbers = isotope_info_after.nIsotopicEndpointAtomNumber;
         isotope_heap.free(isotope_endpoint_numbers).unwrap();
-        isotope_heap.slice_mut(isotope_info).unwrap()[0].nIsotopicEndpointAtomNumber =
-            SourceMutPointer::null();
+        isotope_heap.slice_mut(isotope_info).unwrap()[0].nIsotopicEndpointAtomNumber = SourceMutPointer::null();
         assert_eq!(isotope_heap.live_allocation_count(), isotope_baseline);
 
         let mut proton_heap = SourceHeap::default();
@@ -25623,15 +24063,11 @@ mod tests {
         ];
         add_bond(&mut proton_atoms_value, 1, 2, BOND_SINGLE as u8);
         add_bond(&mut proton_atoms_value, 1, 3, BOND_SINGLE as u8);
-        let proton_atoms = proton_heap
-            .allocate_model_storage(proton_atoms_value)
-            .unwrap();
+        let proton_atoms = proton_heap.allocate_model_storage(proton_atoms_value).unwrap();
         let proton_fixed = proton_heap
             .allocate_model_storage(vec![inp_ATOM::default(); 4])
             .unwrap();
-        let proton_groups = proton_heap
-            .allocate_model_storage(vec![T_GROUP::default(); 4])
-            .unwrap();
+        let proton_groups = proton_heap.allocate_model_storage(vec![T_GROUP::default(); 4]).unwrap();
         let proton_info = proton_heap
             .allocate_model_storage(vec![T_GROUP_INFO {
                 t_group: proton_groups,
@@ -25663,23 +24099,11 @@ mod tests {
             Ok(4)
         );
         let proton_atoms_after = proton_heap.slice(proton_atoms.as_const()).unwrap();
-        assert_eq!(
-            (proton_atoms_after[0].charge, proton_atoms_after[0].num_H),
-            (0, 3)
-        );
-        assert_eq!(
-            (proton_atoms_after[1].charge, proton_atoms_after[1].num_H),
-            (1, 1)
-        );
+        assert_eq!((proton_atoms_after[0].charge, proton_atoms_after[0].num_H), (0, 3));
+        assert_eq!((proton_atoms_after[1].charge, proton_atoms_after[1].num_H), (1, 1));
         let proton_fixed_after = proton_heap.slice(proton_fixed.as_const()).unwrap();
-        assert_eq!(
-            (proton_fixed_after[0].charge, proton_fixed_after[0].num_H),
-            (0, 3)
-        );
-        assert_eq!(
-            (proton_fixed_after[1].charge, proton_fixed_after[1].num_H),
-            (1, 1)
-        );
+        assert_eq!((proton_fixed_after[0].charge, proton_fixed_after[0].num_H), (0, 3));
+        assert_eq!((proton_fixed_after[1].charge, proton_fixed_after[1].num_H), (1, 1));
         assert_eq!(&proton_fixed_after[2..], &proton_atoms_after[2..]);
         let proton_info_after = &proton_heap.slice(proton_info.as_const()).unwrap()[0];
         assert_eq!(proton_info_after.tni.nNumRemovedProtons, 1);
@@ -25729,12 +24153,8 @@ mod tests {
         add_bond(&mut merge_atoms_value, 1, 2, BOND_DOUBLE as u8);
         add_bond(&mut merge_atoms_value, 3, 4, BOND_SINGLE as u8);
         add_bond(&mut merge_atoms_value, 4, 5, BOND_DOUBLE as u8);
-        let merge_atoms = merge_heap
-            .allocate_model_storage(merge_atoms_value)
-            .unwrap();
-        let merge_groups = merge_heap
-            .allocate_model_storage(vec![T_GROUP::default(); 6])
-            .unwrap();
+        let merge_atoms = merge_heap.allocate_model_storage(merge_atoms_value).unwrap();
+        let merge_groups = merge_heap.allocate_model_storage(vec![T_GROUP::default(); 6]).unwrap();
         let merge_info = merge_heap
             .allocate_model_storage(vec![T_GROUP_INFO {
                 t_group: merge_groups,
@@ -25743,9 +24163,7 @@ mod tests {
                 ..T_GROUP_INFO::default()
             }])
             .unwrap();
-        let merge_clock = merge_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let merge_clock = merge_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         assert_eq!(
             mark_alt_bonds_and_taut_groups(
                 &mut merge_heap,
@@ -25807,9 +24225,7 @@ mod tests {
         charge_atoms_value[2].elname[0] = b'N' as i8;
         add_bond(&mut charge_atoms_value, 0, 1, BOND_SINGLE as u8);
         add_bond(&mut charge_atoms_value, 1, 2, BOND_DOUBLE as u8);
-        let charge_atoms = charge_heap
-            .allocate_model_storage(charge_atoms_value)
-            .unwrap();
+        let charge_atoms = charge_heap.allocate_model_storage(charge_atoms_value).unwrap();
         let charge_flags = charge_heap
             .allocate_model_storage(vec![TG_FLAG_MOVE_POS_CHARGES as u64])
             .unwrap();
@@ -25837,8 +24253,7 @@ mod tests {
             Ok(3)
         );
         assert_eq!(
-            charge_heap.slice(charge_flags_done.as_const()).unwrap()[0]
-                & TG_FLAG_MOVE_POS_CHARGES_DONE as u64,
+            charge_heap.slice(charge_flags_done.as_const()).unwrap()[0] & TG_FLAG_MOVE_POS_CHARGES_DONE as u64,
             TG_FLAG_MOVE_POS_CHARGES_DONE as u64
         );
         assert_eq!(
@@ -25855,9 +24270,7 @@ mod tests {
         for flags in [0_u64, TG_FLAG_TEST_TAUT__SALTS as u64] {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(two_carbons()).unwrap();
-            let groups = heap
-                .allocate_model_storage(vec![T_GROUP::default(); 2])
-                .unwrap();
+            let groups = heap.allocate_model_storage(vec![T_GROUP::default(); 2]).unwrap();
             let info = heap
                 .allocate_model_storage(vec![T_GROUP_INFO {
                     t_group: groups,
@@ -25866,9 +24279,7 @@ mod tests {
                     ..T_GROUP_INFO::default()
                 }])
                 .unwrap();
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
             let baseline = heap.live_allocation_count();
             heap.fail_after_allocations(0);
             assert_eq!(
@@ -25891,11 +24302,7 @@ mod tests {
                 "first allocation failure for flags {flags:#x}"
             );
             assert_eq!(heap.live_allocation_count(), baseline);
-            assert!(
-                heap.slice(info.as_const()).unwrap()[0]
-                    .tGroupNumber
-                    .is_null()
-            );
+            assert!(heap.slice(info.as_const()).unwrap()[0].tGroupNumber.is_null());
         }
 
         let mut radical_heap = SourceHeap::default();
@@ -26033,14 +24440,8 @@ mod tests {
             bns_value.len_alt_path
         );
         assert_eq!(alt0[tagAltPathConst_iALTP_FLOW as usize].flow(0), 0);
-        assert_eq!(
-            alt0[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-            NO_VERTEX
-        );
-        assert_eq!(
-            alt0[tagAltPathConst_iALTP_END_ATOM as usize].number(),
-            NO_VERTEX
-        );
+        assert_eq!(alt0[tagAltPathConst_iALTP_START_ATOM as usize].number(), NO_VERTEX);
+        assert_eq!(alt0[tagAltPathConst_iALTP_END_ATOM as usize].number(), NO_VERTEX);
         assert_eq!(alt0[tagAltPathConst_iALTP_PATH_LEN as usize].number(), 0);
 
         let atoms_after = heap.slice(atoms.as_const()).unwrap();
@@ -26054,15 +24455,7 @@ mod tests {
         failing_heap.fail_after_allocations(2);
         let mut failing_changed = 0;
         assert_eq!(
-            AllocateAndInitBnStruct(
-                &mut failing_heap,
-                failing_atoms,
-                2,
-                0,
-                0,
-                1,
-                &mut failing_changed
-            ),
+            AllocateAndInitBnStruct(&mut failing_heap, failing_atoms, 2, 0, 0, 1, &mut failing_changed),
             Ok(SourceMutPointer::null())
         );
         assert_eq!(failing_changed, 0);
@@ -26229,14 +24622,7 @@ mod tests {
             ..bns.clone()
         };
         assert_eq!(
-            AddTGroups2BnStruct(
-                &mut heap,
-                &mut cg,
-                &mut overflow_bns,
-                &atoms,
-                2,
-                Some(&mut tgi)
-            ),
+            AddTGroups2BnStruct(&mut heap, &mut cg, &mut overflow_bns, &atoms, 2, Some(&mut tgi)),
             Ok(BNS_VERT_EDGE_OVFL)
         );
     }
@@ -26358,14 +24744,7 @@ mod tests {
         let mut cg = CANON_GLOBALS::default();
 
         assert_eq!(
-            AddCGroups2BnStruct(
-                &mut heap,
-                &mut cg,
-                &mut bns,
-                &atoms,
-                2,
-                Some(&mut c_group_info)
-            ),
+            AddCGroups2BnStruct(&mut heap, &mut cg, &mut bns, &atoms, 2, Some(&mut c_group_info)),
             Ok(0)
         );
         assert_eq!(bns.num_edges, 3);
@@ -26401,16 +24780,10 @@ mod tests {
             (2, 1, 0)
         );
         assert_eq!(vertices[2].type_, BNS_VERT_TYPE_C_GROUP as AT_NUMB);
-        assert_eq!(
-            (vertices[2].max_adj_edges, vertices[2].num_adj_edges),
-            (2, 1)
-        );
+        assert_eq!((vertices[2].max_adj_edges, vertices[2].num_adj_edges), (2, 1));
         assert_eq!((vertices[2].st_edge.cap, vertices[2].st_edge.flow), (1, 1));
         assert_eq!(vertices[3].type_, BNS_VERT_TYPE_C_GROUP as AT_NUMB);
-        assert_eq!(
-            (vertices[3].max_adj_edges, vertices[3].num_adj_edges),
-            (2, 1)
-        );
+        assert_eq!((vertices[3].max_adj_edges, vertices[3].num_adj_edges), (2, 1));
         assert_eq!((vertices[3].st_edge.cap, vertices[3].st_edge.flow), (0, 0));
 
         let edges = heap.slice(bns.edge.as_const()).unwrap();
@@ -26436,14 +24809,7 @@ mod tests {
         );
         let mut empty_info = C_GROUP_INFO::default();
         assert_eq!(
-            AddCGroups2BnStruct(
-                &mut heap,
-                &mut cg,
-                &mut none_bns,
-                &atoms,
-                2,
-                Some(&mut empty_info)
-            ),
+            AddCGroups2BnStruct(&mut heap, &mut cg, &mut none_bns, &atoms, 2, Some(&mut empty_info)),
             Ok(0)
         );
 
@@ -26484,12 +24850,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__reinitbnstructaddgroups__line_9062() {
-        fn atom(
-            endpoint: AT_NUMB,
-            c_point: AT_NUMB,
-            charge: S_CHAR,
-            neighbor: AT_NUMB,
-        ) -> inp_ATOM {
+        fn atom(endpoint: AT_NUMB, c_point: AT_NUMB, charge: S_CHAR, neighbor: AT_NUMB) -> inp_ATOM {
             inp_ATOM {
                 el_number: if endpoint != 0 { 8 } else { 6 },
                 valence: 1,
@@ -26652,9 +25013,7 @@ mod tests {
         }
 
         let mut no_charge_heap = SourceHeap::default();
-        let no_charge_atoms = no_charge_heap
-            .allocate_model_storage(atoms.clone())
-            .unwrap();
+        let no_charge_atoms = no_charge_heap.allocate_model_storage(atoms.clone()).unwrap();
         let mut no_charge_bns = bns_graph(&mut no_charge_heap, 0);
         let (_, mut no_charge_tgi) = tgi(&mut no_charge_heap);
         let (_, mut no_charge_cgi) = cgi(&mut no_charge_heap);
@@ -26722,20 +25081,14 @@ mod tests {
             Ok(SourceMutPointer::null())
         );
 
-        let base_ptr = heap
-            .allocate_model_storage(vec![NO_VERTEX as Vertex; 2])
-            .unwrap();
-        let switch_edge = heap
-            .allocate_model_storage(vec![Edge::default(); 2])
-            .unwrap();
+        let base_ptr = heap.allocate_model_storage(vec![NO_VERTEX as Vertex; 2]).unwrap();
+        let switch_edge = heap.allocate_model_storage(vec![Edge::default(); 2]).unwrap();
         let tree = heap.allocate_model_storage(vec![0 as S_CHAR; 2]).unwrap();
         let scan_q = heap.allocate_model_storage(vec![0 as Vertex; 2]).unwrap();
         let pu = heap.allocate_model_storage(vec![1 as Vertex; 2]).unwrap();
         let pv = heap.allocate_model_storage(vec![2 as Vertex; 2]).unwrap();
         let rad_endpoints = heap.allocate_model_storage(vec![3 as Vertex; 2]).unwrap();
-        let rad_edges = heap
-            .allocate_model_storage(vec![4 as EdgeIndex; 2])
-            .unwrap();
+        let rad_edges = heap.allocate_model_storage(vec![4 as EdgeIndex; 2]).unwrap();
         let survivor = heap.allocate_model_storage(vec![99_i32]).unwrap();
         let data = BN_DATA {
             BasePtr: base_ptr,
@@ -26750,10 +25103,7 @@ mod tests {
         };
         let data_ptr = heap.allocate_model_storage(vec![data]).unwrap();
 
-        assert_eq!(
-            DeAllocateBnData(&mut heap, data_ptr),
-            Ok(SourceMutPointer::null())
-        );
+        assert_eq!(DeAllocateBnData(&mut heap, data_ptr), Ok(SourceMutPointer::null()));
         assert_eq!(
             heap.slice(data_ptr.as_const()).err(),
             Some(SourceHeapError::MissingAllocation)
@@ -26796,9 +25146,7 @@ mod tests {
     #[test]
     fn source_port__ichi_bns__clearallbndatavertices__line_9609() {
         let mut heap = SourceHeap::default();
-        let vertices = heap
-            .allocate_model_storage(vec![1 as Vertex, 2, 3, 4])
-            .unwrap();
+        let vertices = heap.allocate_model_storage(vec![1 as Vertex, 2, 3, 4]).unwrap();
 
         assert_eq!(
             ClearAllBnDataVertices(&mut heap, vertices, NO_VERTEX as Vertex, 3),
@@ -26806,34 +25154,19 @@ mod tests {
         );
         assert_eq!(
             heap.slice(vertices.as_const()).unwrap(),
-            &[
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                4
-            ]
+            &[NO_VERTEX as Vertex, NO_VERTEX as Vertex, NO_VERTEX as Vertex, 4]
         );
 
         assert_eq!(ClearAllBnDataVertices(&mut heap, vertices, 7, 0), Ok(()));
         assert_eq!(
             heap.slice(vertices.as_const()).unwrap(),
-            &[
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                4
-            ]
+            &[NO_VERTEX as Vertex, NO_VERTEX as Vertex, NO_VERTEX as Vertex, 4]
         );
 
         assert_eq!(ClearAllBnDataVertices(&mut heap, vertices, 9, -1), Ok(()));
         assert_eq!(
             heap.slice(vertices.as_const()).unwrap(),
-            &[
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                NO_VERTEX as Vertex,
-                4
-            ]
+            &[NO_VERTEX as Vertex, NO_VERTEX as Vertex, NO_VERTEX as Vertex, 4]
         );
         assert_eq!(
             ClearAllBnDataVertices(&mut heap, SourceMutPointer::null(), 9, 0),
@@ -26848,49 +25181,31 @@ mod tests {
             .allocate_model_storage(vec![[1 as Vertex, 11], [2, 22], [3, 33]])
             .unwrap();
 
-        assert_eq!(
-            ClearAllBnDataEdges(&mut heap, edges, NO_VERTEX as Vertex, 2),
-            Ok(())
-        );
+        assert_eq!(ClearAllBnDataEdges(&mut heap, edges, NO_VERTEX as Vertex, 2), Ok(()));
         assert_eq!(
             heap.slice(edges.as_const()).unwrap(),
-            &[
-                [NO_VERTEX as Vertex, 11],
-                [NO_VERTEX as Vertex, 22],
-                [3, 33]
-            ]
+            &[[NO_VERTEX as Vertex, 11], [NO_VERTEX as Vertex, 22], [3, 33]]
         );
 
         assert_eq!(ClearAllBnDataEdges(&mut heap, edges, 7, 0), Ok(()));
         assert_eq!(
             heap.slice(edges.as_const()).unwrap(),
-            &[
-                [NO_VERTEX as Vertex, 11],
-                [NO_VERTEX as Vertex, 22],
-                [3, 33]
-            ]
+            &[[NO_VERTEX as Vertex, 11], [NO_VERTEX as Vertex, 22], [3, 33]]
         );
 
         assert_eq!(ClearAllBnDataEdges(&mut heap, edges, 9, -1), Ok(()));
         assert_eq!(
             heap.slice(edges.as_const()).unwrap(),
-            &[
-                [NO_VERTEX as Vertex, 11],
-                [NO_VERTEX as Vertex, 22],
-                [3, 33]
-            ]
+            &[[NO_VERTEX as Vertex, 11], [NO_VERTEX as Vertex, 22], [3, 33]]
         );
-        assert_eq!(
-            ClearAllBnDataEdges(&mut heap, SourceMutPointer::null(), 9, 0),
-            Ok(())
-        );
+        assert_eq!(ClearAllBnDataEdges(&mut heap, SourceMutPointer::null(), 9, 0), Ok(()));
     }
 
     #[test]
     fn source_port__ichi_bns__allocateandinitbndata__line_9677() {
         let mut heap = SourceHeap::default();
-        let data_ptr = AllocateAndInitBnData(&mut heap, 3)
-            .expect("AllocateAndInitBnData should not raise heap model errors");
+        let data_ptr =
+            AllocateAndInitBnData(&mut heap, 3).expect("AllocateAndInitBnData should not raise heap model errors");
         let data = heap.slice(data_ptr.as_const()).unwrap()[0].clone();
 
         assert_eq!(data.max_num_vertices, 8);
@@ -26900,37 +25215,22 @@ mod tests {
         assert_eq!(heap.live_allocation_count(), 9);
         assert_eq!(heap.source_allocation_calls(), 9);
 
-        assert_eq!(
-            heap.slice(data.BasePtr.as_const()).unwrap(),
-            &[NO_VERTEX as Vertex; 8]
-        );
+        assert_eq!(heap.slice(data.BasePtr.as_const()).unwrap(), &[NO_VERTEX as Vertex; 8]);
         assert_eq!(
             heap.slice(data.SwitchEdge.as_const()).unwrap(),
             &[[NO_VERTEX as Vertex, 0 as Vertex]; 8]
         );
         assert_eq!(heap.slice(data.Tree.as_const()).unwrap(), &[0 as S_CHAR; 8]);
-        assert_eq!(
-            heap.slice(data.ScanQ.as_const()).unwrap(),
-            &[0 as Vertex; 8]
-        );
+        assert_eq!(heap.slice(data.ScanQ.as_const()).unwrap(), &[0 as Vertex; 8]);
         assert_eq!(heap.slice(data.Pu.as_const()).unwrap(), &[0 as Vertex; 6]);
-        assert_eq!(
-            heap.slice(data.RadEndpoints.as_const()).unwrap(),
-            &[0 as Vertex; 6]
-        );
-        assert_eq!(
-            heap.slice(data.RadEdges.as_const()).unwrap(),
-            &[0 as EdgeIndex; 6]
-        );
+        assert_eq!(heap.slice(data.RadEndpoints.as_const()).unwrap(), &[0 as Vertex; 6]);
+        assert_eq!(heap.slice(data.RadEdges.as_const()).unwrap(), &[0 as EdgeIndex; 6]);
         assert_eq!(heap.slice(data.Pv.as_const()).unwrap(), &[0 as Vertex; 6]);
 
         for fail_after in 0_u64..=8 {
             let mut heap = SourceHeap::default();
             heap.fail_after_allocations(fail_after);
-            assert_eq!(
-                AllocateAndInitBnData(&mut heap, 3),
-                Ok(SourceMutPointer::null())
-            );
+            assert_eq!(AllocateAndInitBnData(&mut heap, 3), Ok(SourceMutPointer::null()));
             assert_eq!(heap.live_allocation_count(), 0);
             assert_eq!(heap.source_allocation_calls(), fail_after + 1);
         }
@@ -26951,18 +25251,10 @@ mod tests {
                 ..BNS_VERTEX::default()
             }])
             .unwrap();
-        let edges = heap
-            .allocate_model_storage(vec![BNS_EDGE::default()])
-            .unwrap();
-        let alt0 = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default()])
-            .unwrap();
-        let alt1 = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default()])
-            .unwrap();
-        let alt_not_reached = heap
-            .allocate_model_storage(vec![BNS_ALT_PATH::default()])
-            .unwrap();
+        let edges = heap.allocate_model_storage(vec![BNS_EDGE::default()]).unwrap();
+        let alt0 = heap.allocate_model_storage(vec![BNS_ALT_PATH::default()]).unwrap();
+        let alt1 = heap.allocate_model_storage(vec![BNS_ALT_PATH::default()]).unwrap();
+        let alt_not_reached = heap.allocate_model_storage(vec![BNS_ALT_PATH::default()]).unwrap();
         let taut_flags = heap.allocate_model_storage(vec![123_u64]).unwrap();
         let mut bns = BN_STRUCT {
             edge: edges,
@@ -26976,10 +25268,7 @@ mod tests {
         bns.altp[2] = alt_not_reached;
         let bns_pointer = heap.allocate_model_storage(vec![bns]).unwrap();
 
-        assert_eq!(
-            DeAllocateBnStruct(&mut heap, bns_pointer),
-            Ok(SourceMutPointer::null())
-        );
+        assert_eq!(DeAllocateBnStruct(&mut heap, bns_pointer), Ok(SourceMutPointer::null()));
         assert_eq!(
             heap.slice(bns_pointer.as_const()).err(),
             Some(SourceHeapError::MissingAllocation)
@@ -27010,13 +25299,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__createcgroupinbnstruct__line_3599() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -27027,17 +25310,11 @@ mod tests {
             }
         }
 
-        fn bns_graph(
-            heap: &mut SourceHeap,
-            atom_count: usize,
-            definitions: &[(usize, usize)],
-        ) -> BN_STRUCT {
+        fn bns_graph(heap: &mut SourceHeap, atom_count: usize, definitions: &[(usize, usize)]) -> BN_STRUCT {
             let max_vertices = atom_count + 2;
             let max_edges = definitions.len() + atom_count + 2;
             let max_adj_edges = 3_usize;
-            let iedge = heap
-                .allocate(vec![0_i32; max_vertices * max_adj_edges])
-                .unwrap();
+            let iedge = heap.allocate(vec![0_i32; max_vertices * max_adj_edges]).unwrap();
             let mut adjacency = vec![Vec::<i32>::new(); atom_count];
             for (edge_index, &(left, right)) in definitions.iter().enumerate() {
                 adjacency[left].push(edge_index as i32);
@@ -27054,8 +25331,7 @@ mod tests {
 
             let mut vertices = vec![BNS_VERTEX::default(); max_vertices];
             for vertex_index in 0..atom_count {
-                vertices[vertex_index].iedge =
-                    iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
+                vertices[vertex_index].iedge = iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
                 vertices[vertex_index].num_adj_edges = adjacency[vertex_index].len() as AT_NUMB;
                 vertices[vertex_index].max_adj_edges = max_adj_edges as AT_NUMB;
             }
@@ -27254,13 +25530,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__createtgroupinbnstruct__line_3813() {
-        fn atom(
-            element: u8,
-            valence: i8,
-            chem_bonds_valence: i8,
-            num_h: i8,
-            charge: i8,
-        ) -> inp_ATOM {
+        fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8) -> inp_ATOM {
             inp_ATOM {
                 el_number: element,
                 valence,
@@ -27278,17 +25548,11 @@ mod tests {
             atoms
         }
 
-        fn bns_graph(
-            heap: &mut SourceHeap,
-            atom_count: usize,
-            definitions: &[(usize, usize)],
-        ) -> BN_STRUCT {
+        fn bns_graph(heap: &mut SourceHeap, atom_count: usize, definitions: &[(usize, usize)]) -> BN_STRUCT {
             let max_vertices = atom_count + 2;
             let max_edges = definitions.len() + atom_count + 2;
             let max_adj_edges = 3_usize;
-            let iedge = heap
-                .allocate(vec![0_i32; max_vertices * max_adj_edges])
-                .unwrap();
+            let iedge = heap.allocate(vec![0_i32; max_vertices * max_adj_edges]).unwrap();
             let mut adjacency = vec![Vec::<i32>::new(); atom_count];
             for (edge_index, &(left, right)) in definitions.iter().enumerate() {
                 adjacency[left].push(edge_index as i32);
@@ -27305,8 +25569,7 @@ mod tests {
 
             let mut vertices = vec![BNS_VERTEX::default(); max_vertices];
             for vertex_index in 0..atom_count {
-                vertices[vertex_index].iedge =
-                    iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
+                vertices[vertex_index].iedge = iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
                 vertices[vertex_index].num_adj_edges = adjacency[vertex_index].len() as AT_NUMB;
                 vertices[vertex_index].max_adj_edges = max_adj_edges as AT_NUMB;
             }
@@ -27512,23 +25775,14 @@ mod tests {
         let mut heap = SourceHeap::default();
         let mut bns = shared_bns(&mut heap);
         let mut dots = 10_i32;
-        assert_eq!(
-            bAddNewVertex(&mut heap, &mut bns, 0, 3, 1, 1, &mut dots),
-            Ok(2)
-        );
+        assert_eq!(bAddNewVertex(&mut heap, &mut bns, 0, 3, 1, 1, &mut dots), Ok(2));
         assert_eq!(dots, 11);
         assert_eq!((bns.num_vertices, bns.num_edges), (3, 2));
         {
             let vertices = heap.slice(bns.vert.as_const()).unwrap();
-            assert_eq!(
-                (vertices[0].num_adj_edges, vertices[0].max_adj_edges),
-                (2, 2)
-            );
+            assert_eq!((vertices[0].num_adj_edges, vertices[0].max_adj_edges), (2, 2));
             assert_eq!((vertices[0].st_edge.cap, vertices[0].st_edge.flow), (2, 2));
-            assert_eq!(
-                (vertices[1].num_adj_edges, vertices[1].max_adj_edges),
-                (1, 2)
-            );
+            assert_eq!((vertices[1].num_adj_edges, vertices[1].max_adj_edges), (1, 2));
             assert_eq!(vertices[2].max_adj_edges, 1);
             assert_eq!(vertices[2].num_adj_edges, 1);
             assert_eq!(
@@ -27581,10 +25835,7 @@ mod tests {
             Ok(BNS_VERT_EDGE_OVFL)
         );
         assert_eq!(edge_overflow_dots, 10);
-        assert_eq!(
-            (edge_overflow_bns.num_vertices, edge_overflow_bns.num_edges),
-            (2, 1)
-        );
+        assert_eq!((edge_overflow_bns.num_vertices, edge_overflow_bns.num_edges), (2, 1));
 
         let mut iedge_overflow_heap = SourceHeap::default();
         let mut iedge_overflow_bns = shared_bns(&mut iedge_overflow_heap);
@@ -27603,20 +25854,11 @@ mod tests {
             Ok(BNS_VERT_EDGE_OVFL)
         );
         assert_eq!(iedge_overflow_dots, 10);
-        assert_eq!(
-            (
-                iedge_overflow_bns.num_vertices,
-                iedge_overflow_bns.num_edges
-            ),
-            (2, 1)
-        );
+        assert_eq!((iedge_overflow_bns.num_vertices, iedge_overflow_bns.num_edges), (2, 1));
 
         let mut neighbor_overflow_heap = SourceHeap::default();
         let mut neighbor_overflow_bns = shared_bns(&mut neighbor_overflow_heap);
-        neighbor_overflow_heap
-            .slice_mut(neighbor_overflow_bns.vert)
-            .unwrap()[0]
-            .num_adj_edges = 2;
+        neighbor_overflow_heap.slice_mut(neighbor_overflow_bns.vert).unwrap()[0].num_adj_edges = 2;
         let mut neighbor_overflow_dots = 10_i32;
         assert_eq!(
             bAddNewVertex(
@@ -27636,15 +25878,7 @@ mod tests {
         let mut zero_adj_bns = shared_bns(&mut zero_adj_heap);
         let mut zero_adj_dots = 10_i32;
         assert_eq!(
-            bAddNewVertex(
-                &mut zero_adj_heap,
-                &mut zero_adj_bns,
-                0,
-                3,
-                1,
-                0,
-                &mut zero_adj_dots
-            ),
+            bAddNewVertex(&mut zero_adj_heap, &mut zero_adj_bns, 0, 3, 1, 0, &mut zero_adj_dots),
             Ok(BNS_VERT_EDGE_OVFL)
         );
         assert_eq!(zero_adj_dots, 10);
@@ -27746,22 +25980,13 @@ mod tests {
             vertices[1].num_adj_edges = 1;
             reverse_heap.slice_mut(reverse_bns.iedge).unwrap()[2] = 0;
         }
-        assert_eq!(
-            AddNewEdge(&mut reverse_heap, &mut reverse_bns, 1, 0, 5, 1),
-            Ok(1)
-        );
+        assert_eq!(AddNewEdge(&mut reverse_heap, &mut reverse_bns, 1, 0, 5, 1), Ok(1));
         assert_eq!(
             reverse_heap.slice(reverse_bns.edge.as_const()).unwrap()[1].neigh_ord,
             [0, 1]
         );
-        assert_eq!(
-            reverse_heap.slice(reverse_bns.iedge.as_const()).unwrap()[0],
-            1
-        );
-        assert_eq!(
-            reverse_heap.slice(reverse_bns.iedge.as_const()).unwrap()[3],
-            1
-        );
+        assert_eq!(reverse_heap.slice(reverse_bns.iedge.as_const()).unwrap()[0], 1);
+        assert_eq!(reverse_heap.slice(reverse_bns.iedge.as_const()).unwrap()[3], 1);
 
         let mut self_heap = SourceHeap::default();
         let self_iedge = self_heap.allocate(vec![0_i32]).unwrap();
@@ -27792,22 +26017,12 @@ mod tests {
             ..BN_STRUCT::default()
         };
         assert_eq!(AddNewEdge(&mut self_heap, &mut self_bns, 0, 0, 1, 1), Ok(0));
-        assert_eq!(
-            self_heap.slice(self_bns.vert.as_const()).unwrap()[0].num_adj_edges,
-            2
-        );
-        assert_eq!(
-            self_heap.slice(self_bns.edge.as_const()).unwrap()[0].neigh_ord,
-            [1, 0]
-        );
+        assert_eq!(self_heap.slice(self_bns.vert.as_const()).unwrap()[0].num_adj_edges, 2);
+        assert_eq!(self_heap.slice(self_bns.edge.as_const()).unwrap()[0].neigh_ord, [1, 0]);
         assert_eq!(
             (
-                self_heap.slice(self_bns.vert.as_const()).unwrap()[0]
-                    .st_edge
-                    .cap,
-                self_heap.slice(self_bns.vert.as_const()).unwrap()[0]
-                    .st_edge
-                    .flow,
+                self_heap.slice(self_bns.vert.as_const()).unwrap()[0].st_edge.cap,
+                self_heap.slice(self_bns.vert.as_const()).unwrap()[0].st_edge.flow,
             ),
             (2, 2)
         );
@@ -27843,9 +26058,7 @@ mod tests {
             max_edges: 1,
             max_iedges: 4,
             vert: iedge_underflow_heap.allocate(under_vertices).unwrap(),
-            edge: iedge_underflow_heap
-                .allocate(vec![BNS_EDGE::default()])
-                .unwrap(),
+            edge: iedge_underflow_heap.allocate(vec![BNS_EDGE::default()]).unwrap(),
             iedge: under_base.offset(1).unwrap(),
             ..BN_STRUCT::default()
         };
@@ -27856,19 +26069,9 @@ mod tests {
 
         let mut neighbor_overflow_heap = SourceHeap::default();
         let mut neighbor_overflow_bns = edge_bns(&mut neighbor_overflow_heap, 0);
-        neighbor_overflow_heap
-            .slice_mut(neighbor_overflow_bns.vert)
-            .unwrap()[0]
-            .num_adj_edges = 2;
+        neighbor_overflow_heap.slice_mut(neighbor_overflow_bns.vert).unwrap()[0].num_adj_edges = 2;
         assert_eq!(
-            AddNewEdge(
-                &mut neighbor_overflow_heap,
-                &mut neighbor_overflow_bns,
-                0,
-                1,
-                1,
-                0,
-            ),
+            AddNewEdge(&mut neighbor_overflow_heap, &mut neighbor_overflow_bns, 0, 1, 1, 0,),
             Ok(BNS_VERT_EDGE_OVFL)
         );
     }
@@ -27932,54 +26135,29 @@ mod tests {
         let forbidden_bns = lookup_bns(&mut forbidden_heap);
         forbidden_heap.slice_mut(forbidden_bns.edge).unwrap()[1].forbidden = 1;
         assert_eq!(
-            GetEdgeToGroupVertex(
-                &forbidden_heap,
-                &forbidden_bns,
-                0,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetEdgeToGroupVertex(&forbidden_heap, &forbidden_bns, 0, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(NO_VERTEX)
         );
 
         let mut not_found_heap = SourceHeap::default();
         let not_found_bns = lookup_bns(&mut not_found_heap);
         assert_eq!(
-            GetEdgeToGroupVertex(
-                &not_found_heap,
-                &not_found_bns,
-                0,
-                BNS_VERT_TYPE_C_POINT as AT_NUMB
-            ),
+            GetEdgeToGroupVertex(&not_found_heap, &not_found_bns, 0, BNS_VERT_TYPE_C_POINT as AT_NUMB),
             Ok(NO_VERTEX)
         );
         assert_eq!(
-            GetEdgeToGroupVertex(
-                &not_found_heap,
-                &not_found_bns,
-                1,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetEdgeToGroupVertex(&not_found_heap, &not_found_bns, 1, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(NO_VERTEX)
         );
         assert_eq!(
-            GetEdgeToGroupVertex(
-                &not_found_heap,
-                &not_found_bns,
-                3,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetEdgeToGroupVertex(&not_found_heap, &not_found_bns, 3, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(BNS_VERT_EDGE_OVFL)
         );
     }
 
     #[test]
     fn source_port__ichi_bns__getgroupvertex__line_6644() {
-        fn group_bns(
-            heap: &mut SourceHeap,
-            vertex_type: AT_NUMB,
-            group_type: AT_NUMB,
-            forbidden: S_CHAR,
-        ) -> BN_STRUCT {
+        fn group_bns(heap: &mut SourceHeap, vertex_type: AT_NUMB, group_type: AT_NUMB, forbidden: S_CHAR) -> BN_STRUCT {
             let iedge = heap.allocate(vec![0_i32, 1, 0, 0]).unwrap();
             let vertices = vec![
                 BNS_VERTEX {
@@ -28035,12 +26213,7 @@ mod tests {
             0,
         );
         assert_eq!(
-            GetGroupVertex(
-                &endpoint_heap,
-                &endpoint_bns,
-                0,
-                BNS_VERT_TYPE_ENDPOINT as AT_NUMB,
-            ),
+            GetGroupVertex(&endpoint_heap, &endpoint_bns, 0, BNS_VERT_TYPE_ENDPOINT as AT_NUMB,),
             Ok(2)
         );
 
@@ -28052,12 +26225,7 @@ mod tests {
             1,
         );
         assert_eq!(
-            GetGroupVertex(
-                &forbidden_heap,
-                &forbidden_bns,
-                0,
-                BNS_VERT_TYPE_ENDPOINT as AT_NUMB,
-            ),
+            GetGroupVertex(&forbidden_heap, &forbidden_bns, 0, BNS_VERT_TYPE_ENDPOINT as AT_NUMB,),
             Ok(NO_VERTEX)
         );
 
@@ -28069,12 +26237,7 @@ mod tests {
             0,
         );
         assert_eq!(
-            GetGroupVertex(
-                &cpoint_heap,
-                &cpoint_bns,
-                0,
-                BNS_VERT_TYPE_C_POINT as AT_NUMB
-            ),
+            GetGroupVertex(&cpoint_heap, &cpoint_bns, 0, BNS_VERT_TYPE_C_POINT as AT_NUMB),
             Ok(2)
         );
 
@@ -28082,30 +26245,15 @@ mod tests {
         let zero_type_bns = group_bns(&mut zero_type_heap, 0, 0, 0);
         assert_eq!(GetGroupVertex(&zero_type_heap, &zero_type_bns, 0, 0), Ok(2));
         assert_eq!(
-            GetGroupVertex(
-                &zero_type_heap,
-                &zero_type_bns,
-                0,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetGroupVertex(&zero_type_heap, &zero_type_bns, 0, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(BNS_BOND_ERR)
         );
         assert_eq!(
-            GetGroupVertex(
-                &zero_type_heap,
-                &zero_type_bns,
-                1,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetGroupVertex(&zero_type_heap, &zero_type_bns, 1, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(NO_VERTEX)
         );
         assert_eq!(
-            GetGroupVertex(
-                &zero_type_heap,
-                &zero_type_bns,
-                3,
-                BNS_VERT_TYPE_TGROUP as AT_NUMB
-            ),
+            GetGroupVertex(&zero_type_heap, &zero_type_bns, 3, BNS_VERT_TYPE_TGROUP as AT_NUMB),
             Ok(BNS_VERT_EDGE_OVFL)
         );
     }
@@ -28230,10 +26378,7 @@ mod tests {
         }
         {
             let edges = heap.slice(bns.edge.as_const()).unwrap();
-            assert_eq!(
-                (edges[0].cap, edges[1].cap, edges[2].cap, edges[3].cap),
-                (2, 4, 2, 6)
-            );
+            assert_eq!((edges[0].cap, edges[1].cap, edges[2].cap, edges[3].cap), (2, 4, 2, 6));
         }
 
         let mut donor_heap = SourceHeap::default();
@@ -28283,10 +26428,7 @@ mod tests {
         );
         assert_eq!(group_dots, 11);
         assert_eq!(group_old_caps[0], 1);
-        assert_eq!(
-            group_heap.slice(group_bns.edge.as_const()).unwrap()[0].cap,
-            7
-        );
+        assert_eq!(group_heap.slice(group_bns.edge.as_const()).unwrap()[0].cap, 7);
     }
 
     #[test]
@@ -28418,18 +26560,13 @@ mod tests {
             Ok(BNS_CHK_ALTP_SAME_VERTEX as i32)
         );
         assert_eq!(salt_apc, ALT_PATH_CHANGES::default());
-        assert_eq!(
-            salt_heap.slice(salt_fcd.as_const()).unwrap()[0].iedge,
-            NO_VERTEX
-        );
+        assert_eq!(salt_heap.slice(salt_fcd.as_const()).unwrap()[0].iedge, NO_VERTEX);
         assert_eq!(salt_dots, 0);
 
         let mut rem2h_heap = SourceHeap::default();
         let iedge = rem2h_heap.allocate(vec![0_i32, 0, 0, 0]).unwrap();
         let flags = rem2h_heap.allocate(vec![0_u64]).unwrap();
-        let fcd = rem2h_heap
-            .allocate(vec![BNS_FLOW_CHANGES::default(); 4])
-            .unwrap();
+        let fcd = rem2h_heap.allocate(vec![BNS_FLOW_CHANGES::default(); 4]).unwrap();
         let vertices = vec![
             BNS_VERTEX {
                 iedge,
@@ -28480,9 +26617,7 @@ mod tests {
             1,
             0,
         );
-        proton_heap.slice_mut(proton_bns.vert).unwrap()[0]
-            .st_edge
-            .flow = 2;
+        proton_heap.slice_mut(proton_bns.vert).unwrap()[0].st_edge.flow = 2;
         proton_heap.slice_mut(proton_bns.vert).unwrap()[0].num_adj_edges = 1;
         let mut proton_apc = ALT_PATH_CHANGES::default();
         let mut proton_dots = 0_i32;
@@ -28533,10 +26668,7 @@ mod tests {
         assert_eq!(success_apc.bSetOldCapsVert[0], 2);
         assert_eq!(success_apc.nOldCapsVert[0][..2], [1, 1]);
         assert_eq!((success_bns.num_vertices, success_bns.num_edges), (3, 2));
-        assert_eq!(
-            success_heap.slice(success_fcd.as_const()).unwrap()[0].iedge,
-            NO_VERTEX
-        );
+        assert_eq!(success_heap.slice(success_fcd.as_const()).unwrap()[0].iedge, NO_VERTEX);
     }
 
     #[test]
@@ -28548,16 +26680,12 @@ mod tests {
             bns.max_iedges = 2;
             bns.max_altp = 1;
             bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            bns.altp[0] = heap
-                .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
-                .unwrap();
+            bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
             bns
         }
 
         let mut early_heap = SourceHeap::default();
-        let atoms = early_heap
-            .allocate_model_storage(vec![inp_ATOM::default(); 2])
-            .unwrap();
+        let atoms = early_heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
         let mut early_bns = base_bns(&mut early_heap);
         let mut early_bd = BN_DATA::default();
         let mut early_cg = CANON_GLOBALS::default();
@@ -28618,16 +26746,12 @@ mod tests {
             bns.max_iedges = 2;
             bns.max_altp = 1;
             bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            bns.altp[0] = heap
-                .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
-                .unwrap();
+            bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
             bns
         }
 
         let mut heap = SourceHeap::default();
-        let atoms = heap
-            .allocate_model_storage(vec![inp_ATOM::default(); 2])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
         let mut bns = base_bns(&mut heap);
         let mut bd = BN_DATA::default();
         let mut cg = CANON_GLOBALS::default();
@@ -28648,9 +26772,7 @@ mod tests {
         );
 
         let mut error_heap = SourceHeap::default();
-        let atoms = error_heap
-            .allocate_model_storage(vec![inp_ATOM::default(); 2])
-            .unwrap();
+        let atoms = error_heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
         let mut error_bns = base_bns(&mut error_heap);
         let mut error_bd = BN_DATA::default();
         let mut error_cg = CANON_GLOBALS::default();
@@ -28696,9 +26818,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__brestorebnsaftercheckaltpath__line_7398() {
-        fn restore_graph(
-            heap: &mut SourceHeap,
-        ) -> (BN_STRUCT, ALT_PATH_CHANGES, SourceMutPointer<i32>) {
+        fn restore_graph(heap: &mut SourceHeap) -> (BN_STRUCT, ALT_PATH_CHANGES, SourceMutPointer<i32>) {
             let old_iedge = heap.allocate(vec![0_i32]).unwrap();
             let new_iedge = heap.allocate(vec![0_i32]).unwrap();
             let vertices = vec![
@@ -28772,20 +26892,14 @@ mod tests {
             assert_eq!(vertices[0].num_adj_edges, 0);
             assert_eq!(vertices[1], BNS_VERTEX::default());
         }
-        assert_eq!(
-            heap.slice(bns.edge.as_const()).unwrap()[0],
-            BNS_EDGE::default()
-        );
+        assert_eq!(heap.slice(bns.edge.as_const()).unwrap()[0], BNS_EDGE::default());
         assert_eq!(heap.slice(old_iedge.as_const()).unwrap()[0], 0);
 
         let mut heap = SourceHeap::default();
         let (mut bns, mut apc, old_iedge) = restore_graph(&mut heap);
         apc.nOldCapsVert[0][0] = 4;
 
-        assert_eq!(
-            bRestoreBnsAfterCheckAltPath(&mut heap, &mut bns, &apc, 0),
-            Ok(0)
-        );
+        assert_eq!(bRestoreBnsAfterCheckAltPath(&mut heap, &mut bns, &apc, 0), Ok(0));
         assert_eq!((bns.num_vertices, bns.num_edges), (1, 0));
         {
             let vertices = heap.slice(bns.vert.as_const()).unwrap();
@@ -28794,10 +26908,7 @@ mod tests {
             assert_eq!(vertices[0].num_adj_edges, 0);
             assert_eq!(vertices[1], BNS_VERTEX::default());
         }
-        assert_eq!(
-            heap.slice(bns.edge.as_const()).unwrap()[0],
-            BNS_EDGE::default()
-        );
+        assert_eq!(heap.slice(bns.edge.as_const()).unwrap()[0], BNS_EDGE::default());
         assert_eq!(heap.slice(old_iedge.as_const()).unwrap()[0], 0);
     }
 
@@ -28881,11 +26992,7 @@ mod tests {
             ]
         }
 
-        fn graph_with_last_group(
-            heap: &mut SourceHeap,
-            group_type: AT_NUMB,
-            edge1_order: AT_NUMB,
-        ) -> BN_STRUCT {
+        fn graph_with_last_group(heap: &mut SourceHeap, group_type: AT_NUMB, edge1_order: AT_NUMB) -> BN_STRUCT {
             let iedge = heap.allocate(vec![0_i32, 0, 1, 0, 0, 1]).unwrap();
             let vertices = vec![
                 BNS_VERTEX {
@@ -28988,21 +27095,12 @@ mod tests {
         overflow_bns.num_t_groups = 1;
         let mut overflow_atoms = atoms();
         assert_eq!(
-            RemoveLastGroupFromBnStruct(
-                &mut overflow_heap,
-                &mut overflow_atoms,
-                2,
-                2,
-                &mut overflow_bns
-            ),
+            RemoveLastGroupFromBnStruct(&mut overflow_heap, &mut overflow_atoms, 2, 2, &mut overflow_bns),
             Ok(BNS_VERT_EDGE_OVFL)
         );
         assert_eq!(overflow_bns.num_vertices, 3);
         assert_eq!(overflow_bns.num_edges, 2);
-        assert_eq!(
-            (overflow_atoms[0].endpoint, overflow_atoms[0].c_point),
-            (7, 8)
-        );
+        assert_eq!((overflow_atoms[0].endpoint, overflow_atoms[0].c_point), (7, 8));
 
         let mut wrong_tg_heap = SourceHeap::default();
         let mut wrong_tg_bns = graph_with_last_group(
@@ -29012,13 +27110,7 @@ mod tests {
         );
         let mut wrong_tg_atoms = atoms();
         assert_eq!(
-            RemoveLastGroupFromBnStruct(
-                &mut wrong_tg_heap,
-                &mut wrong_tg_atoms,
-                2,
-                1,
-                &mut wrong_tg_bns
-            ),
+            RemoveLastGroupFromBnStruct(&mut wrong_tg_heap, &mut wrong_tg_atoms, 2, 1, &mut wrong_tg_bns),
             Ok(BNS_VERT_EDGE_OVFL)
         );
         assert_eq!(wrong_tg_bns.num_vertices, 3);
@@ -29057,14 +27149,8 @@ mod tests {
             assert_eq!(vertices[1].num_adj_edges, 0);
             assert_eq!(vertices[2], BNS_VERTEX::default());
         }
-        assert_eq!(
-            t_heap.slice(t_bns.edge.as_const()).unwrap()[0],
-            BNS_EDGE::default()
-        );
-        assert_eq!(
-            t_heap.slice(t_bns.edge.as_const()).unwrap()[1],
-            BNS_EDGE::default()
-        );
+        assert_eq!(t_heap.slice(t_bns.edge.as_const()).unwrap()[0], BNS_EDGE::default());
+        assert_eq!(t_heap.slice(t_bns.edge.as_const()).unwrap()[1], BNS_EDGE::default());
 
         let mut c_heap = SourceHeap::default();
         let mut c_bns = graph_with_last_group(
@@ -29105,9 +27191,7 @@ mod tests {
             (BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_ENDPOINT) as AT_NUMB,
             0,
         );
-        edge_mismatch_heap
-            .slice_mut(edge_mismatch_bns.iedge)
-            .unwrap()[5] = 2;
+        edge_mismatch_heap.slice_mut(edge_mismatch_bns.iedge).unwrap()[5] = 2;
         let mut edge_mismatch_atoms = atoms();
         assert_eq!(
             RemoveLastGroupFromBnStruct(
@@ -29142,9 +27226,7 @@ mod tests {
         assert_eq!(order_mismatch_bns.num_vertices, 3);
         assert_eq!(order_mismatch_bns.num_edges, 2);
         {
-            let vertices = order_mismatch_heap
-                .slice(order_mismatch_bns.vert.as_const())
-                .unwrap();
+            let vertices = order_mismatch_heap.slice(order_mismatch_bns.vert.as_const()).unwrap();
             assert_eq!(vertices[1].st_edge.cap, 5);
             assert_eq!(vertices[1].st_edge.flow, 2);
             assert_eq!(vertices[1].type_, BNS_VERT_TYPE_C_POINT as AT_NUMB);
@@ -29154,15 +27236,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__setatombondtype__line_480() {
-        fn run(
-            flow0: i32,
-            flow: i32,
-            pass: i8,
-            first: u8,
-            second: u8,
-            delta: i32,
-            flags: u32,
-        ) -> (i32, u8, u8) {
+        fn run(flow0: i32, flow: i32, pass: i8, first: u8, second: u8, delta: i32, flags: u32) -> (i32, u8, u8) {
             let edge = BNS_EDGE {
                 flow0,
                 flow,
@@ -29185,10 +27259,7 @@ mod tests {
             ..BNS_EDGE::default()
         };
         let mut only = BOND_SINGLE as u8;
-        assert_eq!(
-            SetAtomBondType(&edge, &mut only, None, 1, BNS_EF_CHNG_BONDS as i32),
-            0
-        );
+        assert_eq!(SetAtomBondType(&edge, &mut only, None, 1, BNS_EF_CHNG_BONDS as i32), 0);
         assert_eq!(only, BOND_SINGLE as u8);
 
         assert_eq!(
@@ -29196,15 +27267,7 @@ mod tests {
             (1, BOND_TRIPLE as u8, BOND_TRIPLE as u8)
         );
         assert_eq!(
-            run(
-                0,
-                1,
-                1,
-                BOND_SINGLE as u8,
-                77,
-                9,
-                BNS_EF_CHNG_FLOW | BNS_EF_CHNG_BONDS,
-            ),
+            run(0, 1, 1, BOND_SINGLE as u8, 77, 9, BNS_EF_CHNG_FLOW | BNS_EF_CHNG_BONDS,),
             (1, BOND_DOUBLE as u8, BOND_DOUBLE as u8)
         );
         assert_eq!(
@@ -29213,13 +27276,7 @@ mod tests {
         );
 
         let alternating = [
-            (
-                0,
-                1,
-                BOND_SINGLE,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALTERN | BOND_MARK_ALT12,
-            ),
+            (0, 1, BOND_SINGLE, BNS_EF_ALTR_BONDS, BOND_ALTERN | BOND_MARK_ALT12),
             (
                 1,
                 0,
@@ -29227,34 +27284,10 @@ mod tests {
                 BNS_EF_ALTR_BONDS | BNS_EF_SET_NOSTEREO,
                 BOND_ALT12NS | BOND_MARK_ALT12NS,
             ),
-            (
-                0,
-                2,
-                BOND_TRIPLE,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALT_13 | BOND_MARK_ALT13,
-            ),
-            (
-                2,
-                1,
-                BOND_SINGLE,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALT_23 | BOND_MARK_ALT23,
-            ),
-            (
-                0,
-                1,
-                BOND_TAUTOM,
-                BNS_EF_ALTR_BONDS,
-                BOND_TAUTOM | BOND_MARK_ALT12NS,
-            ),
-            (
-                1,
-                2,
-                BOND_TAUTOM,
-                BNS_EF_ALTR_BONDS,
-                BOND_TAUTOM | BOND_MARK_ALT23,
-            ),
+            (0, 2, BOND_TRIPLE, BNS_EF_ALTR_BONDS, BOND_ALT_13 | BOND_MARK_ALT13),
+            (2, 1, BOND_SINGLE, BNS_EF_ALTR_BONDS, BOND_ALT_23 | BOND_MARK_ALT23),
+            (0, 1, BOND_TAUTOM, BNS_EF_ALTR_BONDS, BOND_TAUTOM | BOND_MARK_ALT12NS),
+            (1, 2, BOND_TAUTOM, BNS_EF_ALTR_BONDS, BOND_TAUTOM | BOND_MARK_ALT23),
         ];
         for (flow0, flow, initial, flags, expected) in alternating {
             assert_eq!(
@@ -29315,27 +27348,9 @@ mod tests {
                 BNS_EF_ALTR_BONDS,
                 BOND_ALT_123 | BOND_MARK_ALT123,
             ),
-            (
-                0,
-                1,
-                BOND_ALTERN,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALTERN | BOND_MARK_ALT12,
-            ),
-            (
-                0,
-                2,
-                BOND_ALT_13,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALT_13 | BOND_MARK_ALT13,
-            ),
-            (
-                1,
-                2,
-                BOND_ALT_23,
-                BNS_EF_ALTR_BONDS,
-                BOND_ALT_23 | BOND_MARK_ALT23,
-            ),
+            (0, 1, BOND_ALTERN, BNS_EF_ALTR_BONDS, BOND_ALTERN | BOND_MARK_ALT12),
+            (0, 2, BOND_ALT_13, BNS_EF_ALTR_BONDS, BOND_ALT_13 | BOND_MARK_ALT13),
+            (1, 2, BOND_ALT_23, BNS_EF_ALTR_BONDS, BOND_ALT_23 | BOND_MARK_ALT23),
         ];
         for (flow0, flow, initial, flags, expected) in marked {
             let expected_change = i32::from(initial != expected);
@@ -29344,31 +27359,16 @@ mod tests {
                 (
                     expected_change,
                     expected as u8,
-                    if expected_change != 0 {
-                        expected as u8
-                    } else {
-                        19
-                    }
+                    if expected_change != 0 { expected as u8 } else { 19 }
                 )
             );
         }
 
         assert_eq!(
-            run(
-                0,
-                1,
-                1,
-                (BOND_ALTERN | 0x60) as u8,
-                44,
-                1,
-                BNS_EF_ALTR_BONDS,
-            ),
+            run(0, 1, 1, (BOND_ALTERN | 0x60) as u8, 44, 1, BNS_EF_ALTR_BONDS,),
             (BNS_BOND_ERR, (BOND_ALTERN | 0x60) as u8, 44)
         );
-        assert_eq!(
-            run(0, 1, 1, 15, 44, 1, BNS_EF_ALTR_BONDS),
-            (BNS_BOND_ERR, 15, 44)
-        );
+        assert_eq!(run(0, 1, 1, 15, 44, 1, BNS_EF_ALTR_BONDS), (BNS_BOND_ERR, 15, 44));
         assert_eq!(
             run(0, 0, 1, BOND_ALTERN as u8, 44, 0, BNS_EF_ALTR_BONDS),
             (0, BOND_ALTERN as u8, 44)
@@ -29401,15 +27401,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            bSetBondsAfterCheckOneBond(
-                &mut heap,
-                &mut bns,
-                fcd_ptr,
-                1,
-                atoms,
-                2,
-                BNS_EF_CHNG_BONDS as i32,
-            ),
+            bSetBondsAfterCheckOneBond(&mut heap, &mut bns, fcd_ptr, 1, atoms, 2, BNS_EF_CHNG_BONDS as i32,),
             Ok(1)
         );
         {
@@ -29480,11 +27472,7 @@ mod tests {
     #[test]
     fn source_port__ichi_bns__brestoreflowaftercheckonebond__line_6180() {
         let mut heap = SourceHeap::default();
-        let mut bns = make_graph(
-            &mut heap,
-            3,
-            &[(0, 1, BOND_SINGLE as i8), (1, 2, BOND_SINGLE as i8)],
-        );
+        let mut bns = make_graph(&mut heap, 3, &[(0, 1, BOND_SINGLE as i8), (1, 2, BOND_SINGLE as i8)]);
         {
             let edges = heap.slice_mut(bns.edge).unwrap();
             edges[0].flow = 99;
@@ -29533,10 +27521,7 @@ mod tests {
             ])
             .unwrap();
 
-        assert_eq!(
-            bRestoreFlowAfterCheckOneBond(&mut heap, &mut bns, fcd),
-            Ok(0)
-        );
+        assert_eq!(bRestoreFlowAfterCheckOneBond(&mut heap, &mut bns, fcd), Ok(0));
         let edges = heap.slice(bns.edge.as_const()).unwrap();
         assert_eq!((edges[0].flow, edges[0].cap, edges[0].pass), (1, 2, 0));
         assert_eq!((edges[1].flow, edges[1].cap, edges[1].pass), (5, 6, 0));
@@ -29605,28 +27590,18 @@ mod tests {
         );
         let success_edges = success_heap.slice(success_bns.edge.as_const()).unwrap();
         assert_eq!(
-            (
-                success_edges[0].cap,
-                success_edges[0].flow,
-                success_edges[0].pass
-            ),
+            (success_edges[0].cap, success_edges[0].flow, success_edges[0].pass),
             (0, 0, 65)
         );
         assert_eq!((success_edges[1].flow, success_edges[1].pass), (0, 65));
         assert_eq!((success_edges[2].flow, success_edges[2].pass), (0, 65));
         let success_vertices = success_heap.slice(success_bns.vert.as_const()).unwrap();
         assert_eq!(
-            (
-                success_vertices[0].st_edge.cap,
-                success_vertices[0].st_edge.flow,
-            ),
+            (success_vertices[0].st_edge.cap, success_vertices[0].st_edge.flow,),
             (0, 0)
         );
         assert_eq!(
-            (
-                success_vertices[1].st_edge.cap,
-                success_vertices[1].st_edge.flow,
-            ),
+            (success_vertices[1].st_edge.cap, success_vertices[1].st_edge.flow,),
             (0, 0)
         );
         assert_eq!(success_vertices[2].st_edge.flow, 0);
@@ -29672,11 +27647,7 @@ mod tests {
         );
         let failure_edges = failure_heap.slice(failure_bns.edge.as_const()).unwrap();
         assert_eq!(
-            (
-                failure_edges[0].cap,
-                failure_edges[0].flow,
-                failure_edges[0].pass
-            ),
+            (failure_edges[0].cap, failure_edges[0].flow, failure_edges[0].pass),
             (0, 0, 65)
         );
         assert_eq!((failure_edges[1].flow, failure_edges[1].pass), (0, 65));
@@ -29696,10 +27667,7 @@ mod tests {
             vertices[1].st_edge.flow = 2;
         }
         let cap_error_fcd = cap_error_heap
-            .allocate(vec![
-                BNS_FLOW_CHANGES::default(),
-                BNS_FLOW_CHANGES::default(),
-            ])
+            .allocate(vec![BNS_FLOW_CHANGES::default(), BNS_FLOW_CHANGES::default()])
             .unwrap();
         assert_eq!(
             bSetFlowToCheckOneBond(&mut cap_error_heap, &mut cap_error_bns, 0, 2, cap_error_fcd),
@@ -29721,10 +27689,7 @@ mod tests {
             vertices[1].st_edge.flow = 3;
         }
         let reduce_fcd = reduce_heap
-            .allocate(vec![
-                BNS_FLOW_CHANGES::default(),
-                BNS_FLOW_CHANGES::default(),
-            ])
+            .allocate(vec![BNS_FLOW_CHANGES::default(), BNS_FLOW_CHANGES::default()])
             .unwrap();
         assert_eq!(
             bSetFlowToCheckOneBond(&mut reduce_heap, &mut reduce_bns, 0, 1, reduce_fcd),
@@ -29732,26 +27697,16 @@ mod tests {
         );
         let reduce_edges = reduce_heap.slice(reduce_bns.edge.as_const()).unwrap();
         assert_eq!(
-            (
-                reduce_edges[0].flow,
-                reduce_edges[0].cap,
-                reduce_edges[0].pass
-            ),
+            (reduce_edges[0].flow, reduce_edges[0].cap, reduce_edges[0].pass),
             (0, 0, 66)
         );
         let reduce_vertices = reduce_heap.slice(reduce_bns.vert.as_const()).unwrap();
         assert_eq!(
-            (
-                reduce_vertices[0].st_edge.flow,
-                reduce_vertices[0].st_edge.cap
-            ),
+            (reduce_vertices[0].st_edge.flow, reduce_vertices[0].st_edge.cap),
             (1, 2)
         );
         assert_eq!(
-            (
-                reduce_vertices[1].st_edge.flow,
-                reduce_vertices[1].st_edge.cap
-            ),
+            (reduce_vertices[1].st_edge.flow, reduce_vertices[1].st_edge.cap),
             (1, 2)
         );
         let reduce_fcd_values = reduce_heap.slice(reduce_fcd.as_const()).unwrap();
@@ -29766,14 +27721,7 @@ mod tests {
             (BNS_EF_CHNG_FLOW as i32, 5, 7, 3, 7, 7),
             (BNS_EF_CHNG_RSTR as i32, 5, 7, 2, 5, 5),
             (BNS_EF_RSTR_FLOW as i32, 5, 7, 2, 5, 7),
-            (
-                (BNS_EF_CHNG_FLOW | BNS_EF_CHNG_BONDS) as i32,
-                2,
-                -4,
-                -9,
-                -4,
-                -4,
-            ),
+            ((BNS_EF_CHNG_FLOW | BNS_EF_CHNG_BONDS) as i32, 2, -4, -9, -4, -4),
         ];
         for (flags, flow0, flow, delta, expected_flow0, expected_flow) in cases {
             let mut edge = BNS_EDGE {
@@ -29850,28 +27798,18 @@ mod tests {
             (1, 3, 2, 5)
         );
         let restore_edge = &restore_heap.slice(restore_bns.edge.as_const()).unwrap()[0];
-        assert_eq!(
-            (restore_edge.flow0, restore_edge.flow, restore_edge.pass),
-            (3, 7, 0)
-        );
+        assert_eq!((restore_edge.flow0, restore_edge.flow, restore_edge.pass), (3, 7, 0));
 
         let (mut mismatch_heap, mut mismatch_bns, mismatch_path) = fixture();
         mismatch_heap.slice_mut(mismatch_path).unwrap()[4].set_number(0);
         assert_eq!(
-            RestoreBnStructFlow(
-                &mut mismatch_heap,
-                &mut mismatch_bns,
-                BNS_EF_SAVE_ALL as i32,
-            ),
+            RestoreBnStructFlow(&mut mismatch_heap, &mut mismatch_bns, BNS_EF_SAVE_ALL as i32,),
             Ok(BNS_PROGRAM_ERR)
         );
         let mismatch_vertices = mismatch_heap.slice(mismatch_bns.vert.as_const()).unwrap();
         assert_eq!(mismatch_vertices[0].st_edge.flow0, 5);
         assert_eq!(mismatch_vertices[1].st_edge.flow0, 2);
-        assert_eq!(
-            mismatch_heap.slice(mismatch_bns.edge.as_const()).unwrap()[0].flow0,
-            9
-        );
+        assert_eq!(mismatch_heap.slice(mismatch_bns.edge.as_const()).unwrap()[0].flow0, 9);
     }
 
     #[test]
@@ -29906,24 +27844,15 @@ mod tests {
 
         let (result, atom) = run(3, 7, 9, 0, 2, 2);
         assert_eq!(result, Ok(0));
-        assert_eq!(
-            (atom.valence, atom.chem_bonds_valence, atom.radical),
-            (3, 7, 9)
-        );
+        assert_eq!((atom.valence, atom.chem_bonds_valence, atom.radical), (3, 7, 9));
 
         let (result, atom) = run(3, 4, 9, 1, 3, 2);
         assert_eq!(result, Ok(2));
-        assert_eq!(
-            (atom.chem_bonds_valence, atom.radical),
-            (5, RADICAL_DOUBLET as i8)
-        );
+        assert_eq!((atom.chem_bonds_valence, atom.radical), (5, RADICAL_DOUBLET as i8));
 
         let (result, atom) = run(3, 2, 0, 1, 4, 2);
         assert_eq!(result, Ok(1));
-        assert_eq!(
-            (atom.chem_bonds_valence, atom.radical),
-            (2, RADICAL_TRIPLET as i8)
-        );
+        assert_eq!((atom.chem_bonds_valence, atom.radical), (2, RADICAL_TRIPLET as i8));
 
         let (result, atom) = run(3, 5, 0, 1, 4, 1);
         assert_eq!(result, Ok(BNS_BOND_ERR));
@@ -29944,13 +27873,7 @@ mod tests {
         let mut empty_bns = make_graph(&mut empty_heap, 1, &[]);
         let empty_atoms = empty_heap.allocate(vec![inp_ATOM::default()]).unwrap();
         assert_eq!(
-            SetBondsFromBnStructFlow(
-                &mut empty_heap,
-                &mut empty_bns,
-                empty_atoms,
-                1,
-                BNS_EF_SAVE_ALL as i32,
-            ),
+            SetBondsFromBnStructFlow(&mut empty_heap, &mut empty_bns, empty_atoms, 1, BNS_EF_SAVE_ALL as i32,),
             Ok(0)
         );
 
@@ -29984,14 +27907,8 @@ mod tests {
             SetBondsFromBnStructFlow(&mut heap, &mut bns, atoms, 2, BNS_EF_SAVE_ALL as i32,),
             Ok(1)
         );
-        assert_eq!(
-            heap.slice(atoms.as_const()).unwrap()[0].bond_type[0],
-            BOND_DOUBLE as u8
-        );
-        assert_eq!(
-            heap.slice(atoms.as_const()).unwrap()[1].bond_type[0],
-            BOND_DOUBLE as u8
-        );
+        assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].bond_type[0], BOND_DOUBLE as u8);
+        assert_eq!(heap.slice(atoms.as_const()).unwrap()[1].bond_type[0], BOND_DOUBLE as u8);
         assert_eq!(heap.slice(bns.edge.as_const()).unwrap()[0].pass, 0);
         assert!(
             heap.slice(bns.vert.as_const())
@@ -30117,13 +28034,7 @@ mod tests {
                 ])
                 .unwrap();
             assert_eq!(
-                SetBondsFromBnStructFlow(
-                    &mut chem_heap,
-                    &mut chem_bns,
-                    chem_atoms,
-                    2,
-                    BNS_EF_CHNG_BONDS as i32,
-                ),
+                SetBondsFromBnStructFlow(&mut chem_heap, &mut chem_bns, chem_atoms, 2, BNS_EF_CHNG_BONDS as i32,),
                 Ok(0)
             );
             let changed_index = if path_vertices[0] == 2 { 0 } else { 1 };
@@ -30215,11 +28126,7 @@ mod tests {
         );
         assert_eq!(MarkRingSystemsAltBns(&mut heap, &triangle, 0), Ok(1));
         let triangle_edges = heap.slice(triangle.edge.as_const()).unwrap();
-        assert!(
-            triangle_edges
-                .iter()
-                .all(|edge| edge.flow == 1 && edge.cap == 3)
-        );
+        assert!(triangle_edges.iter().all(|edge| edge.flow == 1 && edge.cap == 3));
 
         let mut chain_heap = SourceHeap::default();
         let chain = make_graph(
@@ -30229,20 +28136,13 @@ mod tests {
         );
         assert_eq!(MarkRingSystemsAltBns(&mut chain_heap, &chain, 1), Ok(2));
         let chain_edges = chain_heap.slice(chain.edge.as_const()).unwrap();
-        assert!(
-            chain_edges
-                .iter()
-                .all(|edge| edge.flow != 0 && edge.cap == 2)
-        );
+        assert!(chain_edges.iter().all(|edge| edge.flow != 0 && edge.cap == 2));
 
         let mut mixed_heap = SourceHeap::default();
         let mixed = make_graph(
             &mut mixed_heap,
             4,
-            &[
-                (0, 1, BT_ALTERN_BOND as i8),
-                (2, 3, BT_OTHER_ALTERN_BOND as i8),
-            ],
+            &[(0, 1, BT_ALTERN_BOND as i8), (2, 3, BT_OTHER_ALTERN_BOND as i8)],
         );
         assert_eq!(MarkRingSystemsAltBns(&mut mixed_heap, &mixed, 0), Ok(1));
         let mixed_edges = mixed_heap.slice(mixed.edge.as_const()).unwrap();
@@ -30254,10 +28154,7 @@ mod tests {
         let before_failure = mixed_edges.to_vec();
         drop(mixed_edges);
         mixed_heap.fail_after_allocations(0);
-        assert_eq!(
-            MarkRingSystemsAltBns(&mut mixed_heap, &mixed, 0),
-            Ok(CT_OUT_OF_RAM)
-        );
+        assert_eq!(MarkRingSystemsAltBns(&mut mixed_heap, &mixed, 0), Ok(CT_OUT_OF_RAM));
         assert_eq!(
             mixed_heap.slice(mixed.edge.as_const()).unwrap(),
             before_failure.as_slice()
@@ -30265,10 +28162,7 @@ mod tests {
 
         let mut zero_edge_heap = SourceHeap::default();
         let zero_edge = make_graph(&mut zero_edge_heap, 2, &[]);
-        assert_eq!(
-            MarkRingSystemsAltBns(&mut zero_edge_heap, &zero_edge, 0),
-            Ok(0)
-        );
+        assert_eq!(MarkRingSystemsAltBns(&mut zero_edge_heap, &zero_edge, 0), Ok(0));
     }
 
     #[test]
@@ -30328,14 +28222,8 @@ mod tests {
                 if pointer == first { 8 } else { 11 }
             );
             assert_eq!(path[tagAltPathConst_iALTP_PATH_LEN as usize].number(), 0);
-            assert_eq!(
-                path[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-                NO_VERTEX
-            );
-            assert_eq!(
-                path[tagAltPathConst_iALTP_END_ATOM as usize].number(),
-                NO_VERTEX
-            );
+            assert_eq!(path[tagAltPathConst_iALTP_START_ATOM as usize].number(), NO_VERTEX);
+            assert_eq!(path[tagAltPathConst_iALTP_END_ATOM as usize].number(), NO_VERTEX);
         }
         assert!(bns.alt_path.is_null());
         assert_eq!(bns.num_altp, 0);
@@ -30354,10 +28242,7 @@ mod tests {
             max_altp: (BN_MAX_ALTP as i32) + 3,
             ..BN_STRUCT::default()
         };
-        assert_eq!(
-            ReInitBnStructAltPaths(&mut heap, &mut capped),
-            Ok(BN_MAX_ALTP as i32)
-        );
+        assert_eq!(ReInitBnStructAltPaths(&mut heap, &mut capped), Ok(BN_MAX_ALTP as i32));
     }
 
     #[test]
@@ -30381,13 +28266,7 @@ mod tests {
             ..BN_STRUCT::default()
         };
         assert_eq!(
-            ReInitBnStruct(
-                &mut missing_heap,
-                Some(&mut missing),
-                SourceMutPointer::null(),
-                0,
-                0,
-            ),
+            ReInitBnStruct(&mut missing_heap, Some(&mut missing), SourceMutPointer::null(), 0, 0,),
             Ok(14)
         );
         assert_eq!(
@@ -30541,10 +28420,7 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-        assert_eq!(
-            ReInitBnStruct(&mut heap, Some(&mut bns), atoms, 2, 1),
-            Ok(200)
-        );
+        assert_eq!(ReInitBnStruct(&mut heap, Some(&mut bns), atoms, 2, 1), Ok(200));
         let atoms_after = heap.slice(atoms.as_const()).unwrap();
         assert_eq!((atoms_after[0].c_point, atoms_after[0].endpoint), (0, 0));
         assert_eq!((atoms_after[1].c_point, atoms_after[1].endpoint), (5, 6));
@@ -30564,27 +28440,9 @@ mod tests {
         assert_eq!(vertices_after[0].num_adj_edges, 3);
         assert_eq!(vertices_after[1].num_adj_edges, 2);
         assert_eq!(vertices_after[0].type_, BNS_VERT_TYPE_ATOM as u16);
-        assert_eq!(
-            (
-                vertices_after[0].st_edge.cap,
-                vertices_after[0].st_edge.flow
-            ),
-            (3, 4)
-        );
-        assert_eq!(
-            (
-                vertices_after[1].st_edge.cap,
-                vertices_after[1].st_edge.flow
-            ),
-            (5, 6)
-        );
-        assert_eq!(
-            (
-                vertices_after[2].st_edge.cap,
-                vertices_after[2].st_edge.flow
-            ),
-            (7, 8)
-        );
+        assert_eq!((vertices_after[0].st_edge.cap, vertices_after[0].st_edge.flow), (3, 4));
+        assert_eq!((vertices_after[1].st_edge.cap, vertices_after[1].st_edge.flow), (5, 6));
+        assert_eq!((vertices_after[2].st_edge.cap, vertices_after[2].st_edge.flow), (7, 8));
 
         assert_eq!(
             (
@@ -30601,18 +28459,12 @@ mod tests {
         assert_eq!(bns.num_altp, 0);
         let path_after = heap.slice(alt_path.as_const()).unwrap();
         assert_eq!(path_after[tagAltPathConst_iALTP_FLOW as usize].flow(0), 0);
-        assert_eq!(
-            path_after[tagAltPathConst_iALTP_PATH_LEN as usize].number(),
-            0
-        );
+        assert_eq!(path_after[tagAltPathConst_iALTP_PATH_LEN as usize].number(), 0);
         assert_eq!(
             path_after[tagAltPathConst_iALTP_START_ATOM as usize].number(),
             NO_VERTEX
         );
-        assert_eq!(
-            path_after[tagAltPathConst_iALTP_END_ATOM as usize].number(),
-            NO_VERTEX
-        );
+        assert_eq!(path_after[tagAltPathConst_iALTP_END_ATOM as usize].number(), NO_VERTEX);
     }
 
     #[test]
@@ -30704,9 +28556,7 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut bns = make_graph(&mut heap, bond_types.len() * 2, &definitions);
-        bns.iedge = heap
-            .allocate((0..definitions.len() as i32).collect())
-            .unwrap();
+        bns.iedge = heap.allocate((0..definitions.len() as i32).collect()).unwrap();
         bns.edge_forbidden_mask = 5;
         for edge in heap.slice_mut(bns.edge).unwrap() {
             edge.forbidden = -1;
@@ -30726,10 +28576,7 @@ mod tests {
         atoms[2].endpoint = 1;
         let atoms = heap.allocate(atoms).unwrap();
 
-        assert_eq!(
-            ReInitBnStructForAltBns(&mut heap, &mut bns, atoms, 18, 1),
-            Ok(1)
-        );
+        assert_eq!(ReInitBnStructForAltBns(&mut heap, &mut bns, atoms, 18, 1), Ok(1));
         let expected = [
             BT_ALTERN_BOND,
             BT_IGNORE_BOND,
@@ -30741,12 +28588,7 @@ mod tests {
             BT_IGNORE_BOND,
             BT_IGNORE_BOND,
         ];
-        for (edge, &mapped) in heap
-            .slice(bns.edge.as_const())
-            .unwrap()
-            .iter()
-            .zip(&expected)
-        {
+        for (edge, &mapped) in heap.slice(bns.edge.as_const()).unwrap().iter().zip(&expected) {
             assert_eq!(edge.pass, mapped as i8);
             assert_eq!((edge.cap, edge.flow), (0, 0));
             assert_eq!(edge.forbidden, 5);
@@ -30832,10 +28674,7 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-        assert_eq!(
-            ReInitBnStructForAltBns(&mut heap, &mut bns, atoms, 2, 0),
-            Ok(1)
-        );
+        assert_eq!(ReInitBnStructForAltBns(&mut heap, &mut bns, atoms, 2, 0), Ok(1));
         let edge = &heap.slice(edges.as_const()).unwrap()[0];
         assert_eq!(edge.pass, BT_ALTERN_BOND as S_CHAR);
         assert_eq!((edge.cap, edge.flow), (0, 0));
@@ -30887,14 +28726,8 @@ mod tests {
         assert_eq!(MarkNonStereoAltBns(&mut heap, &bns, atoms, 10, 1), Ok(2));
         let after_stereo = heap.slice(atoms.as_const()).unwrap();
         for &atom_index in &[0_usize, 1, 4, 5] {
-            assert_eq!(
-                after_stereo[atom_index].bond_stereo[0],
-                STEREO_DBLE_EITHER as i8
-            );
-            assert_eq!(
-                after_stereo[atom_index].bond_type[0],
-                (BOND_ALTERN | 0x80) as u8
-            );
+            assert_eq!(after_stereo[atom_index].bond_stereo[0], STEREO_DBLE_EITHER as i8);
+            assert_eq!(after_stereo[atom_index].bond_type[0], (BOND_ALTERN | 0x80) as u8);
         }
         for &atom_index in &[2_usize, 3] {
             assert_eq!(after_stereo[atom_index].bond_stereo[0], -7);
@@ -30920,9 +28753,7 @@ mod tests {
 
         let mut zero_mode_heap = SourceHeap::default();
         let zero_mode_bns = make_graph(&mut zero_mode_heap, 2, &[(0, 1, BT_ALTERN_BOND as i8)]);
-        let zero_mode_atoms = zero_mode_heap
-            .allocate(vec![inp_ATOM::default(); 2])
-            .unwrap();
+        let zero_mode_atoms = zero_mode_heap.allocate(vec![inp_ATOM::default(); 2]).unwrap();
         assert_eq!(
             MarkNonStereoAltBns(&mut zero_mode_heap, &zero_mode_bns, zero_mode_atoms, 2, 1),
             Ok(0)
@@ -30985,23 +28816,17 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         bns.edge = SourceMutPointer::null();
-        assert_eq!(
-            nMaxFlow2Check(&heap, &bns, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(nMaxFlow2Check(&heap, &bns, 0), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
     fn source_port__ichi_bns__ncurflow2check__line_6024() {
         let mut heap = SourceHeap::default();
         let mut edges = vec![BNS_EDGE::default(); 5];
-        for (edge, flow) in edges.iter_mut().zip([
-            0_i32,
-            1,
-            EDGE_FLOW_MASK as i32,
-            (EDGE_FLOW_MASK as i32) + 1,
-            -1,
-        ]) {
+        for (edge, flow) in edges
+            .iter_mut()
+            .zip([0_i32, 1, EDGE_FLOW_MASK as i32, (EDGE_FLOW_MASK as i32) + 1, -1])
+        {
             edge.flow = flow;
         }
         let mut bns = BN_STRUCT {
@@ -31020,10 +28845,7 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         bns.edge = SourceMutPointer::null();
-        assert_eq!(
-            nCurFlow2Check(&heap, &bns, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(nCurFlow2Check(&heap, &bns, 0), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
@@ -31047,10 +28869,7 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         bns.edge = SourceMutPointer::null();
-        assert_eq!(
-            nMinFlow2Check(&heap, &bns, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(nMinFlow2Check(&heap, &bns, 0), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
@@ -31217,11 +29036,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__augmentedge__line_9934() {
-        fn fresh_alt_path(
-            heap: &mut SourceHeap,
-            max_len: i32,
-            path_len: i32,
-        ) -> SourceMutPointer<BNS_ALT_PATH> {
+        fn fresh_alt_path(heap: &mut SourceHeap, max_len: i32, path_len: i32) -> SourceMutPointer<BNS_ALT_PATH> {
             let mut path = vec![BNS_ALT_PATH::default(); max_len as usize];
             path[tagAltPathConst_iALTP_MAX_LEN as usize].set_number(max_len);
             path[tagAltPathConst_iALTP_PATH_LEN as usize].set_number(path_len);
@@ -31239,16 +29054,7 @@ mod tests {
             edge.neigh_ord = [11, 22];
         }
         assert_eq!(
-            AugmentEdge(
-                &mut atom_heap,
-                &atom_bns,
-                2,
-                5,
-                0,
-                1,
-                0,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            AugmentEdge(&mut atom_heap, &atom_bns, 2, 5, 0, 1, 0, BNS_EF_CHNG_FLOW as i32,),
             Ok(2)
         );
         let edge = atom_heap.slice(atom_bns.edge.as_const()).unwrap()[0].clone();
@@ -31300,17 +29106,9 @@ mod tests {
             ),
             Ok(BNS_ALTPATH_OVFL)
         );
-        let overflow_path = overflow_heap
-            .slice(overflow_bns.alt_path.as_const())
-            .unwrap();
-        assert_eq!(
-            overflow_path[tagAltPathConst_iALTP_FLOW as usize].flow(1),
-            1
-        );
-        assert_eq!(
-            overflow_heap.slice(overflow_bns.edge.as_const()).unwrap()[0].flow,
-            2
-        );
+        let overflow_path = overflow_heap.slice(overflow_bns.alt_path.as_const()).unwrap();
+        assert_eq!(overflow_path[tagAltPathConst_iALTP_FLOW as usize].flow(1), 1);
+        assert_eq!(overflow_heap.slice(overflow_bns.edge.as_const()).unwrap()[0].flow, 2);
 
         let mut clear_heap = SourceHeap::default();
         let mut clear_bns = make_graph(&mut clear_heap, 2, &[(0, 1, 0)]);
@@ -31321,22 +29119,10 @@ mod tests {
             edge.flow = EDGE_FLOW_PATH as i32 | 2;
         }
         assert_eq!(
-            AugmentEdge(
-                &mut clear_heap,
-                &clear_bns,
-                2,
-                5,
-                0,
-                0,
-                0,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            AugmentEdge(&mut clear_heap, &clear_bns, 2, 5, 0, 0, 0, BNS_EF_CHNG_FLOW as i32,),
             Ok(2)
         );
-        assert_eq!(
-            clear_heap.slice(clear_bns.edge.as_const()).unwrap()[0].flow,
-            2
-        );
+        assert_eq!(clear_heap.slice(clear_bns.edge.as_const()).unwrap()[0].flow, 2);
 
         let mut st_heap = SourceHeap::default();
         let mut st_bns = make_graph(&mut st_heap, 1, &[]);
@@ -31348,67 +29134,32 @@ mod tests {
             st_edge.pass = 2;
         }
         assert_eq!(
-            AugmentEdge(
-                &mut st_heap,
-                &st_bns,
-                0,
-                2,
-                0,
-                1,
-                0,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            AugmentEdge(&mut st_heap, &st_bns, 0, 2, 0, 1, 0, BNS_EF_CHNG_FLOW as i32,),
             Ok(2)
         );
         let st_vertex = st_heap.slice(st_bns.vert.as_const()).unwrap()[0].clone();
         assert_eq!((st_vertex.st_edge.flow, st_vertex.st_edge.pass), (2, 3));
         let st_path = st_heap.slice(st_bns.alt_path.as_const()).unwrap();
-        assert_eq!(
-            st_path[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-            0
-        );
+        assert_eq!(st_path[tagAltPathConst_iALTP_START_ATOM as usize].number(), 0);
         assert_eq!(st_path[tagAltPathConst_iALTP_FLOW as usize].flow(0), 1);
 
         let mut reverse_heap = SourceHeap::default();
         let mut reverse_bns = make_graph(&mut reverse_heap, 1, &[]);
         reverse_bns.alt_path = fresh_alt_path(&mut reverse_heap, 8, 0);
-        reverse_heap.slice_mut(reverse_bns.vert).unwrap()[0]
-            .st_edge
-            .cap = 3;
+        reverse_heap.slice_mut(reverse_bns.vert).unwrap()[0].st_edge.cap = 3;
         assert_eq!(
-            AugmentEdge(
-                &mut reverse_heap,
-                &reverse_bns,
-                3,
-                1,
-                0,
-                1,
-                1,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            AugmentEdge(&mut reverse_heap, &reverse_bns, 3, 1, 0, 1, 1, BNS_EF_CHNG_FLOW as i32,),
             Ok(1)
         );
         let reverse_path = reverse_heap.slice(reverse_bns.alt_path.as_const()).unwrap();
-        assert_eq!(
-            reverse_path[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-            0
-        );
+        assert_eq!(reverse_path[tagAltPathConst_iALTP_START_ATOM as usize].number(), 0);
         assert_eq!(reverse_path[tagAltPathConst_iALTP_FLOW as usize].flow(0), 1);
 
         let mut wrong_heap = SourceHeap::default();
         let mut wrong_bns = make_graph(&mut wrong_heap, 2, &[(0, 1, 0)]);
         wrong_bns.alt_path = fresh_alt_path(&mut wrong_heap, 8, 0);
         assert_eq!(
-            AugmentEdge(
-                &mut wrong_heap,
-                &wrong_bns,
-                2,
-                2,
-                0,
-                1,
-                0,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            AugmentEdge(&mut wrong_heap, &wrong_bns, 2, 2, 0, 1, 0, BNS_EF_CHNG_FLOW as i32,),
             Ok(BNS_WRONG_PARMS)
         );
     }
@@ -31450,10 +29201,7 @@ mod tests {
             edge: SourceMutPointer::null(),
             ..bns
         };
-        assert_eq!(
-            rescap(&heap, &missing_edge, 2, 3, 0),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(rescap(&heap, &missing_edge, 2, 3, 0), Err(SourceHeapError::NullPointer));
     }
 
     #[test]
@@ -31488,9 +29236,7 @@ mod tests {
         }
         assert_eq!(rescap_mark(&mut st_heap, &mut st_bns, 0, 2, 0), Ok(4));
         assert_eq!(
-            st_heap.slice(st_bns.vert.as_const()).unwrap()[0]
-                .st_edge
-                .flow,
+            st_heap.slice(st_bns.vert.as_const()).unwrap()[0].st_edge.flow,
             EDGE_FLOW_ST_PATH as i32 | 2
         );
         assert_eq!(rescap_mark(&mut st_heap, &mut st_bns, 0, 2, 0), Ok(2));
@@ -31591,17 +29337,11 @@ mod tests {
 
         heap.slice_mut(chain).unwrap()[8] = [8, -2];
         iuv = 91;
-        assert_eq!(
-            GetPrevVertex(&heap, &bns, 2, chain, &mut iuv),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPrevVertex(&heap, &bns, 2, chain, &mut iuv), Ok(NO_VERTEX));
         assert_eq!(iuv, 91);
 
         heap.slice_mut(chain).unwrap()[8] = [NO_VERTEX, -2];
-        assert_eq!(
-            GetPrevVertex(&heap, &bns, 2, chain, &mut iuv),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetPrevVertex(&heap, &bns, 2, chain, &mut iuv), Ok(NO_VERTEX));
         assert_eq!(iuv, 91);
 
         assert_eq!(
@@ -31627,23 +29367,11 @@ mod tests {
             ..BN_STRUCT::default()
         };
         assert_eq!(
-            bIgnoreVertexNonTACN_group(
-                &SourceHeap::default(),
-                &no_vertices,
-                1,
-                7,
-                SourceMutPointer::null(),
-            ),
+            bIgnoreVertexNonTACN_group(&SourceHeap::default(), &no_vertices, 1, 7, SourceMutPointer::null(),),
             Ok(0)
         );
         assert_eq!(
-            bIgnoreVertexNonTACN_group(
-                &SourceHeap::default(),
-                &no_vertices,
-                2,
-                1,
-                SourceMutPointer::null(),
-            ),
+            bIgnoreVertexNonTACN_group(&SourceHeap::default(), &no_vertices, 2, 1, SourceMutPointer::null(),),
             Ok(0)
         );
         assert_eq!(
@@ -31671,65 +29399,38 @@ mod tests {
         switch_values[2] = [5, 0];
         let switch_edges = heap.allocate(switch_values).unwrap();
 
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(1)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(1));
         {
             let vertices = heap.slice_mut(bns.vert).unwrap();
             vertices[1].type_ = TYPE_CN;
             vertices[2].type_ = TYPE_T;
         }
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(1)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(1));
 
         heap.slice_mut(bns.vert).unwrap()[2].type_ = TYPE_CN;
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         heap.slice_mut(bns.vert).unwrap()[1].type_ = 0;
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         heap.slice_mut(bns.vert).unwrap()[1].type_ = TYPE_T;
 
         heap.slice_mut(bns.vert).unwrap()[0].type_ = TYPE_TACN;
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         heap.slice_mut(bns.vert).unwrap()[0].type_ = 0;
         bns.type_T = 0;
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         bns.type_T = TYPE_T;
 
         heap.slice_mut(switch_edges).unwrap()[2] = [NO_VERTEX, -3];
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         heap.slice_mut(switch_edges).unwrap()[2] = [0, -3];
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         heap.slice_mut(switch_edges).unwrap()[2] = [5, 0];
 
         {
             let edge = &mut heap.slice_mut(bns.edge).unwrap()[0];
             edge.neighbor1 = 2;
         }
-        assert_eq!(
-            bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_group(&heap, &bns, 2, 7, switch_edges), Ok(0));
         {
             let edge = &mut heap.slice_mut(bns.edge).unwrap()[0];
             edge.neighbor1 = 0;
@@ -31744,9 +29445,7 @@ mod tests {
     #[test]
     fn source_port__ichi_bns__findbase__line_11068() {
         let mut heap = SourceHeap::default();
-        let base_ptr = heap
-            .allocate(vec![NO_VERTEX, BLOSSOM_BASE, 1, 2, 3])
-            .unwrap();
+        let base_ptr = heap.allocate(vec![NO_VERTEX, BLOSSOM_BASE, 1, 2, 3]).unwrap();
 
         assert_eq!(FindBase(&mut heap, 0, base_ptr), Ok(NO_VERTEX));
         assert_eq!(FindBase(&mut heap, 1, base_ptr), Ok(1));
@@ -31758,10 +29457,7 @@ mod tests {
 
         let to_missing = heap.allocate(vec![NO_VERTEX, 0]).unwrap();
         assert_eq!(FindBase(&mut heap, 1, to_missing), Ok(NO_VERTEX));
-        assert_eq!(
-            heap.slice(to_missing.as_const()).unwrap(),
-            &[NO_VERTEX, NO_VERTEX]
-        );
+        assert_eq!(heap.slice(to_missing.as_const()).unwrap(), &[NO_VERTEX, NO_VERTEX]);
 
         assert_eq!(
             FindBase(&mut heap, 0, SourceMutPointer::null()),
@@ -31780,16 +29476,11 @@ mod tests {
     #[test]
     fn source_port__ichi_bns__findpathtovertex_s__line_11092() {
         let mut heap = SourceHeap::default();
-        let switch_edges = heap
-            .allocate(vec![[0, 0], [0, 0], [0, 0], [0, 0], [2, 0]])
-            .unwrap();
+        let switch_edges = heap.allocate(vec![[0, 0], [0, 0], [0, 0], [0, 0], [2, 0]]).unwrap();
         let base_ptr = heap.allocate(vec![BLOSSOM_BASE, BLOSSOM_BASE, 1]).unwrap();
 
         let path = heap.allocate(vec![99, 99, 99]).unwrap();
-        assert_eq!(
-            FindPathToVertex_s(&mut heap, 4, switch_edges, base_ptr, path, 3),
-            Ok(2)
-        );
+        assert_eq!(FindPathToVertex_s(&mut heap, 4, switch_edges, base_ptr, path, 3), Ok(2));
         assert_eq!(heap.slice(path.as_const()).unwrap(), &[4, 1, 0]);
 
         let source_path = heap.allocate(vec![99, 99]).unwrap();
@@ -31808,61 +29499,27 @@ mod tests {
 
         let negative_capacity_path = heap.allocate(vec![99, 99, 99]).unwrap();
         assert_eq!(
-            FindPathToVertex_s(
-                &mut heap,
-                4,
-                switch_edges,
-                base_ptr,
-                negative_capacity_path,
-                -1,
-            ),
+            FindPathToVertex_s(&mut heap, 4, switch_edges, base_ptr, negative_capacity_path, -1,),
             Ok(BNS_WRONG_PARMS)
         );
-        assert_eq!(
-            heap.slice(negative_capacity_path.as_const()).unwrap(),
-            &[4, 99, 99]
-        );
+        assert_eq!(heap.slice(negative_capacity_path.as_const()).unwrap(), &[4, 99, 99]);
 
         let null_switch_path = heap.allocate(vec![99, 99, 99]).unwrap();
         assert_eq!(
-            FindPathToVertex_s(
-                &mut heap,
-                4,
-                SourceMutPointer::null(),
-                base_ptr,
-                null_switch_path,
-                3,
-            ),
+            FindPathToVertex_s(&mut heap, 4, SourceMutPointer::null(), base_ptr, null_switch_path, 3,),
             Err(SourceHeapError::NullPointer)
         );
-        assert_eq!(
-            heap.slice(null_switch_path.as_const()).unwrap(),
-            &[4, 99, 99]
-        );
+        assert_eq!(heap.slice(null_switch_path.as_const()).unwrap(), &[4, 99, 99]);
 
         let null_base_path = heap.allocate(vec![99, 99, 99]).unwrap();
         assert_eq!(
-            FindPathToVertex_s(
-                &mut heap,
-                4,
-                switch_edges,
-                SourceMutPointer::null(),
-                null_base_path,
-                3,
-            ),
+            FindPathToVertex_s(&mut heap, 4, switch_edges, SourceMutPointer::null(), null_base_path, 3,),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(heap.slice(null_base_path.as_const()).unwrap(), &[4, 99, 99]);
 
         assert_eq!(
-            FindPathToVertex_s(
-                &mut heap,
-                4,
-                switch_edges,
-                base_ptr,
-                SourceMutPointer::null(),
-                3,
-            ),
+            FindPathToVertex_s(&mut heap, 4, switch_edges, base_ptr, SourceMutPointer::null(), 3,),
             Err(SourceHeapError::NullPointer)
         );
     }
@@ -31918,16 +29575,7 @@ mod tests {
         assert_eq!(heap.slice(base_ptr.as_const()).unwrap(), &[0; 8]);
         assert_eq!(
             heap.slice(switch_edges.as_const()).unwrap(),
-            &[
-                [0, 0],
-                [4, 17],
-                [4, 17],
-                [0, 0],
-                [1, 0],
-                [7, 17],
-                [3, 0],
-                [4, 17],
-            ]
+            &[[0, 0], [4, 17], [4, 17], [0, 0], [1, 0], [7, 17], [3, 0], [4, 17],]
         );
         assert_eq!(
             heap.slice(tree.as_const()).unwrap(),
@@ -31945,9 +29593,7 @@ mod tests {
 
         let mut extend_heap = SourceHeap::default();
         let extend_bns = make_graph(&mut extend_heap, 1, &[]);
-        extend_heap.slice_mut(extend_bns.vert).unwrap()[0]
-            .st_edge
-            .cap = 2;
+        extend_heap.slice_mut(extend_bns.vert).unwrap()[0].st_edge.cap = 2;
         let extend_switch_edges = extend_heap
             .allocate(vec![
                 [0, 0],
@@ -32001,16 +29647,7 @@ mod tests {
         );
         assert_eq!(
             extend_heap.slice(extend_switch_edges.as_const()).unwrap(),
-            &[
-                [0, 0],
-                [4, 23],
-                [0, 0],
-                [7, 23],
-                [2, 0],
-                [7, 23],
-                [2, 0],
-                [4, 23],
-            ]
+            &[[0, 0], [4, 23], [0, 0], [7, 23], [2, 0], [7, 23], [2, 0], [4, 23],]
         );
 
         let mut error_heap = SourceHeap::default();
@@ -32055,11 +29692,7 @@ mod tests {
 
     #[test]
     fn source_port__ichi_bns__pullflow__line_11290() {
-        fn fresh_alt_path(
-            heap: &mut SourceHeap,
-            max_len: i32,
-            path_len: i32,
-        ) -> SourceMutPointer<BNS_ALT_PATH> {
+        fn fresh_alt_path(heap: &mut SourceHeap, max_len: i32, path_len: i32) -> SourceMutPointer<BNS_ALT_PATH> {
             let mut path = vec![BNS_ALT_PATH::default(); max_len as usize];
             path[tagAltPathConst_iALTP_MAX_LEN as usize].set_number(max_len);
             path[tagAltPathConst_iALTP_PATH_LEN as usize].set_number(path_len);
@@ -32079,16 +29712,7 @@ mod tests {
             .allocate(vec![[0, 0], [0, 0], [0, -3], [0, 0], [0, 0], [2, 0]])
             .unwrap();
         assert_eq!(
-            PullFlow(
-                &mut heap,
-                &bns,
-                switch_edges,
-                0,
-                5,
-                1,
-                0,
-                BNS_EF_CHNG_FLOW as i32,
-            ),
+            PullFlow(&mut heap, &bns, switch_edges, 0, 5, 1, 0, BNS_EF_CHNG_FLOW as i32,),
             Ok(1)
         );
         let vertices = heap.slice(bns.vert.as_const()).unwrap();
@@ -32110,12 +29734,8 @@ mod tests {
         let mut reverse_heap = SourceHeap::default();
         let mut reverse_bns = make_graph(&mut reverse_heap, 1, &[]);
         reverse_bns.alt_path = fresh_alt_path(&mut reverse_heap, 8, 0);
-        reverse_heap.slice_mut(reverse_bns.vert).unwrap()[0]
-            .st_edge
-            .cap = 3;
-        let reverse_switch_edges = reverse_heap
-            .allocate(vec![[0, 0], [3, -2], [0, 0], [0, 0]])
-            .unwrap();
+        reverse_heap.slice_mut(reverse_bns.vert).unwrap()[0].st_edge.cap = 3;
+        let reverse_switch_edges = reverse_heap.allocate(vec![[0, 0], [3, -2], [0, 0], [0, 0]]).unwrap();
         assert_eq!(
             PullFlow(
                 &mut reverse_heap,
@@ -32130,10 +29750,7 @@ mod tests {
             Ok(1)
         );
         let reverse_path = reverse_heap.slice(reverse_bns.alt_path.as_const()).unwrap();
-        assert_eq!(
-            reverse_path[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-            0
-        );
+        assert_eq!(reverse_path[tagAltPathConst_iALTP_START_ATOM as usize].number(), 0);
         assert_eq!(reverse_path[tagAltPathConst_iALTP_FLOW as usize].flow(0), 1);
 
         let mut overflow_heap = SourceHeap::default();
@@ -32171,10 +29788,7 @@ mod tests {
         let switch_edges = heap
             .allocate(vec![[0, 0], [0, 0], [0, -3], [0, 0], [0, 0], [2, 0]])
             .unwrap();
-        assert_eq!(
-            FindPathCap(&mut heap, &mut bns, switch_edges, 0, 5, 10000),
-            Ok(2)
-        );
+        assert_eq!(FindPathCap(&mut heap, &mut bns, switch_edges, 0, 5, 10000), Ok(2));
         assert_eq!(
             heap.slice(bns.vert.as_const()).unwrap()[0].st_edge.flow,
             EDGE_FLOW_ST_PATH as i32
@@ -32185,10 +29799,7 @@ mod tests {
         );
         assert_eq!(bns.bNotASimplePath, 0);
 
-        assert_eq!(
-            FindPathCap(&mut heap, &mut bns, switch_edges, 0, 5, 10000),
-            Ok(1)
-        );
+        assert_eq!(FindPathCap(&mut heap, &mut bns, switch_edges, 0, 5, 10000), Ok(1));
         assert_eq!(bns.bNotASimplePath, 2);
 
         let mut direct_heap = SourceHeap::default();
@@ -32202,14 +29813,7 @@ mod tests {
             .allocate(vec![[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [2, 0]])
             .unwrap();
         assert_eq!(
-            FindPathCap(
-                &mut direct_heap,
-                &mut direct_bns,
-                direct_switch_edges,
-                2,
-                5,
-                4,
-            ),
+            FindPathCap(&mut direct_heap, &mut direct_bns, direct_switch_edges, 2, 5, 4,),
             Ok(4)
         );
         assert_eq!(
@@ -32269,19 +29873,9 @@ mod tests {
 
         let mut terminal_fail_heap = SourceHeap::default();
         let (terminal_fail_bns, terminal_fail_bd) = rad_fixture(&mut terminal_fail_heap);
-        terminal_fail_heap
-            .slice_mut(terminal_fail_bns.vert)
-            .unwrap()[2]
-            .type_ = BNS_VERT_TYPE_ATOM as u16;
+        terminal_fail_heap.slice_mut(terminal_fail_bns.vert).unwrap()[2].type_ = BNS_VERT_TYPE_ATOM as u16;
         assert_eq!(
-            bRadChangesAtomType(
-                &terminal_fail_heap,
-                &terminal_fail_bns,
-                &terminal_fail_bd,
-                4,
-                2,
-                6,
-            ),
+            bRadChangesAtomType(&terminal_fail_heap, &terminal_fail_bns, &terminal_fail_bd, 4, 2, 6,),
             Ok(0)
         );
 
@@ -32291,29 +29885,13 @@ mod tests {
         let (absent_group_bns, absent_group_bd) = rad_fixture(&mut absent_group_heap);
         absent_group_heap.slice_mut(absent_group_bns.vert).unwrap()[2].type_ = 0;
         assert_eq!(
-            bRadChangesAtomType(
-                &absent_group_heap,
-                &absent_group_bns,
-                &absent_group_bd,
-                4,
-                2,
-                6,
-            ),
+            bRadChangesAtomType(&absent_group_heap, &absent_group_bns, &absent_group_bd, 4, 2, 6,),
             Ok(0)
         );
 
-        assert_eq!(
-            bRadChangesAtomType(&heap, &bns, &bd, 4, NO_VERTEX, 6),
-            Ok(1)
-        );
-        assert_eq!(
-            bRadChangesAtomType(&heap, &bns, &bd, 4, 2, NO_VERTEX),
-            Ok(1)
-        );
-        assert_eq!(
-            bRadChangesAtomType(&heap, &bns, &bd, 4, NO_VERTEX, NO_VERTEX),
-            Ok(1)
-        );
+        assert_eq!(bRadChangesAtomType(&heap, &bns, &bd, 4, NO_VERTEX, 6), Ok(1));
+        assert_eq!(bRadChangesAtomType(&heap, &bns, &bd, 4, 2, NO_VERTEX), Ok(1));
+        assert_eq!(bRadChangesAtomType(&heap, &bns, &bd, 4, NO_VERTEX, NO_VERTEX), Ok(1));
     }
 
     #[test]
@@ -32332,13 +29910,7 @@ mod tests {
             vertices[1].st_edge.flow = 1;
         }
         let norm_switch = norm_heap
-            .allocate(vec![
-                [NO_VERTEX, -1],
-                [NO_VERTEX, -1],
-                [0, -3],
-                [2, 1],
-                [3, 0],
-            ])
+            .allocate(vec![[NO_VERTEX, -1], [NO_VERTEX, -1], [0, -3], [2, 1], [3, 0]])
             .unwrap();
         let norm_rad_endpoints = endpoints(&mut norm_heap, 4);
         let mut norm_bd = BN_DATA {
@@ -32348,19 +29920,13 @@ mod tests {
             bRadSrchMode: tagBnsRadSrchMode_RAD_SRCH_NORM,
             ..BN_DATA::default()
         };
-        assert_eq!(
-            RegisterRadEndpoint(&mut norm_heap, &norm_bns, &mut norm_bd, 4),
-            Ok(1)
-        );
+        assert_eq!(RegisterRadEndpoint(&mut norm_heap, &norm_bns, &mut norm_bd, 4), Ok(1));
         assert_eq!(norm_bd.nNumRadEndpoints, 2);
         assert_eq!(
             &norm_heap.slice(norm_bd.RadEndpoints.as_const()).unwrap()[0..2],
             &[0, 1]
         );
-        assert_eq!(
-            RegisterRadEndpoint(&mut norm_heap, &norm_bns, &mut norm_bd, 4),
-            Ok(0)
-        );
+        assert_eq!(RegisterRadEndpoint(&mut norm_heap, &norm_bns, &mut norm_bd, 4), Ok(0));
         assert_eq!(norm_bd.nNumRadEndpoints, 2);
 
         let overflow_rad_endpoints = endpoints(&mut norm_heap, 2);
@@ -32378,8 +29944,7 @@ mod tests {
         assert_eq!(overflow_bd.nNumRadEndpoints, 0);
 
         let mut exception_heap = SourceHeap::default();
-        let mut exception_bns =
-            make_graph(&mut exception_heap, 4, &[(0, 1, 0), (0, 3, 0), (0, 0, 0)]);
+        let mut exception_bns = make_graph(&mut exception_heap, 4, &[(0, 1, 0), (0, 3, 0), (0, 0, 0)]);
         exception_bns.num_atoms = 3;
         exception_bns.type_TACN = 1;
         {
@@ -32430,13 +29995,7 @@ mod tests {
             vertices[1].st_edge.flow = 0;
         }
         let fict_switch = fict_heap
-            .allocate(vec![
-                [NO_VERTEX, -1],
-                [NO_VERTEX, -1],
-                [3, 0],
-                [4, 1],
-                [0, -5],
-            ])
+            .allocate(vec![[NO_VERTEX, -1], [NO_VERTEX, -1], [3, 0], [4, 1], [0, -5]])
             .unwrap();
         let fict_rad_endpoints = endpoints(&mut fict_heap, 4);
         let mut fict_bd = BN_DATA {
@@ -32446,27 +30005,18 @@ mod tests {
             bRadSrchMode: tagBnsRadSrchMode_RAD_SRCH_FROM_FICT,
             ..BN_DATA::default()
         };
-        assert_eq!(
-            RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut fict_bd, 2),
-            Ok(1)
-        );
+        assert_eq!(RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut fict_bd, 2), Ok(1));
         assert_eq!(fict_bd.nNumRadEndpoints, 2);
         assert_eq!(
             &fict_heap.slice(fict_bd.RadEndpoints.as_const()).unwrap()[0..2],
             &[1, 0]
         );
-        assert_eq!(
-            RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut fict_bd, 2),
-            Ok(0)
-        );
+        assert_eq!(RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut fict_bd, 2), Ok(0));
 
         let mut reject_bd = fict_bd.clone();
         reject_bd.bRadSrchMode = 77;
         reject_bd.nNumRadEndpoints = 0;
-        assert_eq!(
-            RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut reject_bd, 2),
-            Ok(0)
-        );
+        assert_eq!(RegisterRadEndpoint(&mut fict_heap, &fict_bns, &mut reject_bd, 2), Ok(0));
 
         let fict_overflow_rad_endpoints = endpoints(&mut fict_heap, 2);
         let mut fict_overflow_bd = BN_DATA {
@@ -32558,10 +30108,7 @@ mod tests {
             assert_eq!(vertices[0].st_edge.flow, 1);
             assert_eq!(vertices[1], BNS_VERTEX::default());
         }
-        assert_eq!(
-            heap.slice(bns.edge.as_const()).unwrap()[0],
-            BNS_EDGE::default()
-        );
+        assert_eq!(heap.slice(bns.edge.as_const()).unwrap()[0], BNS_EDGE::default());
 
         let mut none_heap = SourceHeap::default();
         let (mut none_bns, mut none_bd) = rad_edge_graph(&mut none_heap, 0);
@@ -32677,14 +30224,8 @@ mod tests {
         assert_eq!(set_atoms[0].radical, RADICAL_DOUBLET as i8);
         assert_eq!(set_bd.nNumRadEdges, 1);
         assert_eq!(set_bd.nNumRadicals, 7);
-        assert_eq!(
-            set_heap.slice(set_bns.vert.as_const()).unwrap(),
-            before_vertices
-        );
-        assert_eq!(
-            set_heap.slice(set_bns.edge.as_const()).unwrap(),
-            before_edges
-        );
+        assert_eq!(set_heap.slice(set_bns.vert.as_const()).unwrap(), before_vertices);
+        assert_eq!(set_heap.slice(set_bns.edge.as_const()).unwrap(), before_edges);
 
         let mut clear_heap = SourceHeap::default();
         let (clear_bns, clear_bd) = restore_graph(&mut clear_heap, 0, 0, 0, 2, 3, 1, 1, 1, 2, 1);
@@ -32699,54 +30240,37 @@ mod tests {
         assert_eq!(clear_atoms[0].radical, 0);
 
         let mut preserve_heap = SourceHeap::default();
-        let (preserve_bns, preserve_bd) =
-            restore_graph(&mut preserve_heap, 0, 0, 0, 4, 1, 0, 1, 1, 2, 1);
+        let (preserve_bns, preserve_bd) = restore_graph(&mut preserve_heap, 0, 0, 0, 4, 1, 0, 1, 1, 2, 1);
         let mut preserve_atoms = vec![inp_ATOM {
             radical: RADICAL_SINGLET as i8,
             ..inp_ATOM::default()
         }];
         assert_eq!(
-            RestoreRadicalsOnly(
-                &preserve_heap,
-                &preserve_bns,
-                &preserve_bd,
-                Some(&mut preserve_atoms),
-            ),
+            RestoreRadicalsOnly(&preserve_heap, &preserve_bns, &preserve_bd, Some(&mut preserve_atoms),),
             Ok(0)
         );
         assert_eq!(preserve_atoms[0].radical, RADICAL_SINGLET as i8);
 
         let mut none_heap = SourceHeap::default();
         let (none_bns, none_bd) = restore_graph(&mut none_heap, 0, 0, 0, 2, 2, 1, 1, 1, 2, 1);
-        assert_eq!(
-            RestoreRadicalsOnly(&none_heap, &none_bns, &none_bd, None),
-            Ok(0)
-        );
+        assert_eq!(RestoreRadicalsOnly(&none_heap, &none_bns, &none_bd, None), Ok(0));
 
         let mut edge_error_heap = SourceHeap::default();
-        let (edge_error_bns, edge_error_bd) =
-            restore_graph(&mut edge_error_heap, 1, 0, 0, 2, 2, 1, 1, 1, 2, 1);
+        let (edge_error_bns, edge_error_bd) = restore_graph(&mut edge_error_heap, 1, 0, 0, 2, 2, 1, 1, 1, 2, 1);
         assert_eq!(
             RestoreRadicalsOnly(&edge_error_heap, &edge_error_bns, &edge_error_bd, None),
             Ok(BNS_PROGRAM_ERR)
         );
 
         let mut vertex_error_heap = SourceHeap::default();
-        let (vertex_error_bns, vertex_error_bd) =
-            restore_graph(&mut vertex_error_heap, 0, 0, 0, 2, 2, 1, 1, 0, 2, 1);
+        let (vertex_error_bns, vertex_error_bd) = restore_graph(&mut vertex_error_heap, 0, 0, 0, 2, 2, 1, 1, 0, 2, 1);
         assert_eq!(
-            RestoreRadicalsOnly(
-                &vertex_error_heap,
-                &vertex_error_bns,
-                &vertex_error_bd,
-                None,
-            ),
+            RestoreRadicalsOnly(&vertex_error_heap, &vertex_error_bns, &vertex_error_bd, None,),
             Ok(BNS_PROGRAM_ERR)
         );
 
         let mut iedge_error_heap = SourceHeap::default();
-        let (iedge_error_bns, iedge_error_bd) =
-            restore_graph(&mut iedge_error_heap, 0, 0, 99, 2, 2, 1, 1, 1, 2, 1);
+        let (iedge_error_bns, iedge_error_bd) = restore_graph(&mut iedge_error_heap, 0, 0, 99, 2, 2, 1, 1, 1, 2, 1);
         assert_eq!(
             RestoreRadicalsOnly(&iedge_error_heap, &iedge_error_bns, &iedge_error_bd, None),
             Ok(BNS_PROGRAM_ERR)
@@ -32779,9 +30303,7 @@ mod tests {
         ) -> BN_STRUCT {
             let atom_count = endpoint_count * 2 + 1;
             let max_adj_edges = endpoint_count + 2;
-            let iedge = heap
-                .allocate(vec![0_i32; max_vertices * max_adj_edges])
-                .unwrap();
+            let iedge = heap.allocate(vec![0_i32; max_vertices * max_adj_edges]).unwrap();
             let mut vertices = vec![BNS_VERTEX::default(); max_vertices];
             for (index, vertex) in vertices.iter_mut().enumerate() {
                 vertex.iedge = iedge.offset((index * max_adj_edges) as i64).unwrap();
@@ -32869,9 +30391,7 @@ mod tests {
         let mut early_bns = radical_graph(&mut early_heap, 1, 5, 5);
         early_bns.tot_st_flow = early_bns.tot_st_cap;
         early_bns.bChangeFlow = 77;
-        let sentinel_alt_path = early_heap
-            .allocate(vec![BNS_ALT_PATH::default(); 1])
-            .unwrap();
+        let sentinel_alt_path = early_heap.allocate(vec![BNS_ALT_PATH::default(); 1]).unwrap();
         early_bns.alt_path = sentinel_alt_path;
         let mut early_bd = bns_data(&mut early_heap, 12, 12);
         early_bd.nNumRadEndpoints = 6;
@@ -32921,9 +30441,7 @@ mod tests {
             (4, 4, 2, 2, 1, tagBnsRadSrchMode_RAD_SRCH_NORM)
         );
         assert_eq!(
-            &single_heap
-                .slice(single_bd.RadEndpoints.as_const())
-                .unwrap()[0..2],
+            &single_heap.slice(single_bd.RadEndpoints.as_const()).unwrap()[0..2],
             &[3, 2]
         );
         assert_eq!(
@@ -32962,9 +30480,7 @@ mod tests {
             (6, 7, 4, 3, 1)
         );
         assert_eq!(
-            &grouped_heap
-                .slice(grouped_bd.RadEndpoints.as_const())
-                .unwrap()[0..4],
+            &grouped_heap.slice(grouped_bd.RadEndpoints.as_const()).unwrap()[0..4],
             &[5, 2, 5, 4]
         );
         assert_eq!(
@@ -33034,9 +30550,7 @@ mod tests {
             (3, 2, 0, 0, tagBnsRadSrchMode_RAD_SRCH_NORM)
         );
         assert_eq!(
-            edge_error_heap
-                .slice(edge_error_bns.vert.as_const())
-                .unwrap()[0]
+            edge_error_heap.slice(edge_error_bns.vert.as_const()).unwrap()[0]
                 .st_edge
                 .flow,
             1
@@ -33068,13 +30582,10 @@ mod tests {
             max_edges: usize,
             max_adj_edges: usize,
         ) -> BN_STRUCT {
-            let iedge = heap
-                .allocate(vec![0_i32; max_vertices * max_adj_edges])
-                .unwrap();
+            let iedge = heap.allocate(vec![0_i32; max_vertices * max_adj_edges]).unwrap();
             let mut vertices = vec![BNS_VERTEX::default(); max_vertices];
             for vertex_index in 0..max_vertices {
-                vertices[vertex_index].iedge =
-                    iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
+                vertices[vertex_index].iedge = iedge.offset((vertex_index * max_adj_edges) as i64).unwrap();
                 vertices[vertex_index].max_adj_edges = max_adj_edges as AT_NUMB;
                 if vertex_index < atom_count {
                     vertices[vertex_index].type_ = BNS_VERT_TYPE_ATOM as AT_NUMB;
@@ -33138,12 +30649,7 @@ mod tests {
             ),
             Ok(BNS_CAP_FLOW_ERR)
         );
-        assert_eq!(
-            cap_heap.slice(cap_bns.vert.as_const()).unwrap()[0]
-                .st_edge
-                .cap,
-            0
-        );
+        assert_eq!(cap_heap.slice(cap_bns.vert.as_const()).unwrap()[0].st_edge.cap, 0);
         assert_eq!(cap_bns.tot_st_cap, 4);
 
         let mut single_heap = SourceHeap::default();
@@ -33179,15 +30685,10 @@ mod tests {
             (2, 1, 1)
         );
         assert_eq!(
-            &single_heap
-                .slice(single_bd.RadEndpoints.as_const())
-                .unwrap()[0..2],
+            &single_heap.slice(single_bd.RadEndpoints.as_const()).unwrap()[0..2],
             &[1, -1]
         );
-        assert_eq!(
-            single_heap.slice(single_bd.RadEdges.as_const()).unwrap()[0],
-            0
-        );
+        assert_eq!(single_heap.slice(single_bd.RadEdges.as_const()).unwrap()[0], 0);
         {
             let vertices = single_heap.slice(single_bns.vert.as_const()).unwrap();
             assert_eq!((vertices[0].st_edge.cap, vertices[0].st_edge.flow), (1, 1));
@@ -33233,15 +30734,11 @@ mod tests {
             (4, 2, 2)
         );
         assert_eq!(
-            &multiple_heap
-                .slice(multiple_bd.RadEndpoints.as_const())
-                .unwrap()[0..4],
+            &multiple_heap.slice(multiple_bd.RadEndpoints.as_const()).unwrap()[0..4],
             &[2, -1, 3, -1]
         );
         assert_eq!(
-            &multiple_heap
-                .slice(multiple_bd.RadEdges.as_const())
-                .unwrap()[0..2],
+            &multiple_heap.slice(multiple_bd.RadEdges.as_const()).unwrap()[0..2],
             &[0, 1]
         );
     }
@@ -33289,19 +30786,14 @@ mod tests {
 
         let mut expand_heap = SourceHeap::default();
         let mut expand_bns = make_graph(&mut expand_heap, 1, &[]);
-        expand_heap.slice_mut(expand_bns.vert).unwrap()[0]
-            .st_edge
-            .cap = 1;
+        expand_heap.slice_mut(expand_bns.vert).unwrap()[0].st_edge.cap = 1;
         let mut expand_bd = bns_data(&mut expand_heap, 6);
         assert_eq!(
             BalancedNetworkSearch(&mut expand_heap, &mut expand_bns, &mut expand_bd, 0),
             Ok(0)
         );
         assert_eq!(expand_bd.QSize, 1);
-        assert_eq!(
-            &expand_heap.slice(expand_bd.ScanQ.as_const()).unwrap()[0..2],
-            &[0, 2]
-        );
+        assert_eq!(&expand_heap.slice(expand_bd.ScanQ.as_const()).unwrap()[0..2], &[0, 2]);
         assert_eq!(
             expand_heap.slice(expand_bd.Tree.as_const()).unwrap()[2],
             TREE_IN_1 as S_CHAR
@@ -33310,18 +30802,12 @@ mod tests {
             expand_heap.slice(expand_bd.Tree.as_const()).unwrap()[3],
             TREE_IN_2 as S_CHAR
         );
-        assert_eq!(
-            expand_heap.slice(expand_bd.SwitchEdge.as_const()).unwrap()[2],
-            [0, -3]
-        );
+        assert_eq!(expand_heap.slice(expand_bd.SwitchEdge.as_const()).unwrap()[2], [0, -3]);
         assert_eq!(
             expand_heap.slice(expand_bd.BasePtr.as_const()).unwrap()[2],
             BLOSSOM_BASE
         );
-        assert_eq!(
-            expand_heap.slice(expand_bd.BasePtr.as_const()).unwrap()[3],
-            2
-        );
+        assert_eq!(expand_heap.slice(expand_bd.BasePtr.as_const()).unwrap()[3], 2);
 
         let mut rad_heap = SourceHeap::default();
         let mut rad_bns = make_graph(&mut rad_heap, 1, &[]);
@@ -33329,12 +30815,7 @@ mod tests {
         rad_bd.RadEndpoints = rad_heap.allocate(vec![99; 4]).unwrap();
         rad_bd.nNumRadEndpoints = 2;
         assert_eq!(
-            BalancedNetworkSearch(
-                &mut rad_heap,
-                &mut rad_bns,
-                &mut rad_bd,
-                BNS_EF_RAD_SRCH as i32,
-            ),
+            BalancedNetworkSearch(&mut rad_heap, &mut rad_bns, &mut rad_bd, BNS_EF_RAD_SRCH as i32,),
             Ok(0)
         );
         assert_eq!(rad_bd.nNumRadEndpoints, 0);
@@ -33354,8 +30835,7 @@ mod tests {
         let mut heap = SourceHeap::default();
         let atoms = heap.allocate(vec![inp_ATOM::default()]).unwrap();
         let mut changed_bonds = 0;
-        let bns_pointer =
-            AllocateAndInitBnStruct(&mut heap, atoms, 1, 0, 0, 0, &mut changed_bonds).unwrap();
+        let bns_pointer = AllocateAndInitBnStruct(&mut heap, atoms, 1, 0, 0, 0, &mut changed_bonds).unwrap();
         let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
         let data_pointer = AllocateAndInitBnData(&mut heap, bns.max_vertices).unwrap();
         let mut data = heap.slice(data_pointer.as_const()).unwrap()[0].clone();
@@ -33367,10 +30847,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(data.QSize, 0);
-        assert_eq!(
-            heap.slice(data.ScanQ.as_const()).unwrap()[0],
-            Vertex_s as Vertex
-        );
+        assert_eq!(heap.slice(data.ScanQ.as_const()).unwrap()[0], Vertex_s as Vertex);
         assert_eq!(
             heap.slice(data.BasePtr.as_const()).unwrap()[Vertex_s as usize],
             BLOSSOM_BASE
@@ -33409,37 +30886,21 @@ mod tests {
         bns.ulTimeOutTime = heap.allocate(vec![inchiTime { clockTime: 0 }]).unwrap();
         let mut bd = bns_data(&mut heap, 6);
 
-        assert_eq!(
-            RunBalancedNetworkSearch(&mut heap, &mut bns, &mut bd, 0, 0),
-            Ok(0)
-        );
+        assert_eq!(RunBalancedNetworkSearch(&mut heap, &mut bns, &mut bd, 0, 0), Ok(0));
         assert_eq!(bd.QSize, -1);
         assert_eq!(bns.alt_path, bns.altp[0]);
         assert_eq!(bns.num_altp, 0);
         assert_eq!(bns.bChangeFlow, 0);
-        assert_eq!(
-            heap.slice(bd.BasePtr.as_const()).unwrap()[0..2],
-            [NO_VERTEX, NO_VERTEX]
-        );
-        assert_eq!(
-            heap.slice(bd.SwitchEdge.as_const()).unwrap()[0][0],
-            NO_VERTEX
-        );
-        assert_eq!(
-            heap.slice(bd.SwitchEdge.as_const()).unwrap()[1][0],
-            NO_VERTEX
-        );
+        assert_eq!(heap.slice(bd.BasePtr.as_const()).unwrap()[0..2], [NO_VERTEX, NO_VERTEX]);
+        assert_eq!(heap.slice(bd.SwitchEdge.as_const()).unwrap()[0][0], NO_VERTEX);
+        assert_eq!(heap.slice(bd.SwitchEdge.as_const()).unwrap()[1][0], NO_VERTEX);
 
         let mut timeout_heap = SourceHeap::default();
         let mut timeout_bns = make_graph(&mut timeout_heap, 1, &[]);
         timeout_bns.max_altp = 1;
-        timeout_bns.altp[0] = timeout_heap
-            .allocate(vec![BNS_ALT_PATH::default(); 2])
-            .unwrap();
+        timeout_bns.altp[0] = timeout_heap.allocate(vec![BNS_ALT_PATH::default(); 2]).unwrap();
         timeout_bns.ic = timeout_heap.allocate(vec![INCHI_CLOCK::default()]).unwrap();
-        timeout_bns.ulTimeOutTime = timeout_heap
-            .allocate(vec![inchiTime { clockTime: -1 }])
-            .unwrap();
+        timeout_bns.ulTimeOutTime = timeout_heap.allocate(vec![inchiTime { clockTime: -1 }]).unwrap();
         let mut timeout_bd = bns_data(&mut timeout_heap, 6);
 
         assert_eq!(
@@ -33454,9 +30915,7 @@ mod tests {
         let mut no_pass_bns = make_graph(&mut no_pass_heap, 1, &[]);
         no_pass_bns.max_altp = 0;
         no_pass_bns.ic = no_pass_heap.allocate(vec![INCHI_CLOCK::default()]).unwrap();
-        no_pass_bns.ulTimeOutTime = no_pass_heap
-            .allocate(vec![inchiTime { clockTime: -1 }])
-            .unwrap();
+        no_pass_bns.ulTimeOutTime = no_pass_heap.allocate(vec![inchiTime { clockTime: -1 }]).unwrap();
         let mut no_pass_bd = bns_data(&mut no_pass_heap, 6);
         assert_eq!(
             RunBalancedNetworkSearch(&mut no_pass_heap, &mut no_pass_bns, &mut no_pass_bd, 0, 0),
@@ -33522,9 +30981,7 @@ mod tests {
         let mut mismatch_bns = configured_bns(&mut mismatch_heap);
         let mismatch_atoms = atoms(&mut mismatch_heap, BOND_SINGLE as u8);
         let mut mismatch_bd = bns_data(&mut mismatch_heap, 6);
-        let mismatch_fcd = mismatch_heap
-            .allocate(vec![BNS_FLOW_CHANGES::default(); 4])
-            .unwrap();
+        let mismatch_fcd = mismatch_heap.allocate(vec![BNS_FLOW_CHANGES::default(); 4]).unwrap();
         assert_eq!(
             BnsTestAndMarkAltBonds(
                 &mut mismatch_heap,
@@ -33539,19 +30996,14 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            mismatch_heap.slice(mismatch_fcd.as_const()).unwrap()[0].iedge,
-            0
-        );
+        assert_eq!(mismatch_heap.slice(mismatch_fcd.as_const()).unwrap()[0].iedge, 0);
 
         let mut forbidden_heap = SourceHeap::default();
         let mut forbidden_bns = configured_bns(&mut forbidden_heap);
         forbidden_heap.slice_mut(forbidden_bns.edge).unwrap()[0].forbidden = 1;
         let forbidden_atoms = atoms(&mut forbidden_heap, BOND_SINGLE as u8);
         let mut forbidden_bd = bns_data(&mut forbidden_heap, 6);
-        let forbidden_fcd = forbidden_heap
-            .allocate(vec![BNS_FLOW_CHANGES::default(); 4])
-            .unwrap();
+        let forbidden_fcd = forbidden_heap.allocate(vec![BNS_FLOW_CHANGES::default(); 4]).unwrap();
         assert_eq!(
             BnsTestAndMarkAltBonds(
                 &mut forbidden_heap,
@@ -33566,18 +31018,13 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            forbidden_heap.slice(forbidden_fcd.as_const()).unwrap()[0].iedge,
-            0
-        );
+        assert_eq!(forbidden_heap.slice(forbidden_fcd.as_const()).unwrap()[0].iedge, 0);
 
         let mut fixed_heap = SourceHeap::default();
         let mut fixed_bns = configured_bns(&mut fixed_heap);
         let fixed_atoms = atoms(&mut fixed_heap, BOND_SINGLE as u8);
         let mut fixed_bd = bns_data(&mut fixed_heap, 6);
-        let fixed_fcd = fixed_heap
-            .allocate(vec![BNS_FLOW_CHANGES::default(); 4])
-            .unwrap();
+        let fixed_fcd = fixed_heap.allocate(vec![BNS_FLOW_CHANGES::default(); 4]).unwrap();
         assert_eq!(
             BnsTestAndMarkAltBonds(
                 &mut fixed_heap,
@@ -33642,10 +31089,7 @@ mod tests {
         };
         negative_valence.bond_type[0] = 0xfc;
         let negative_atoms = negative_heap.allocate(vec![negative_valence]).unwrap();
-        assert_eq!(
-            remove_alt_bond_marks(&mut negative_heap, negative_atoms, 1),
-            Ok(())
-        );
+        assert_eq!(remove_alt_bond_marks(&mut negative_heap, negative_atoms, 1), Ok(()));
         assert_eq!(
             negative_heap.slice(negative_atoms.as_const()).unwrap()[0].bond_type[0],
             0xfc
@@ -33696,24 +31140,15 @@ mod tests {
         let mut bns = configured_bns(&mut heap, 0);
         let mut bd = bns_data(&mut heap, 6);
         let atoms = heap.allocate(vec![inp_ATOM::default()]).unwrap();
-        assert_eq!(
-            BnsAdjustFlowBondsRad(&mut heap, &mut bns, &mut bd, atoms, 1, 0),
-            Ok(0)
-        );
+        assert_eq!(BnsAdjustFlowBondsRad(&mut heap, &mut bns, &mut bd, atoms, 1, 0), Ok(0));
         assert_eq!(bd.QSize, -1);
         assert!(bns.alt_path.is_null());
         assert_eq!(bns.num_altp, 0);
         let path = heap.slice(bns.altp[0].as_const()).unwrap();
         assert_eq!(path[tagAltPathConst_iALTP_FLOW as usize].flow(0), 0);
         assert_eq!(path[tagAltPathConst_iALTP_PATH_LEN as usize].number(), 0);
-        assert_eq!(
-            path[tagAltPathConst_iALTP_START_ATOM as usize].number(),
-            NO_VERTEX
-        );
-        assert_eq!(
-            path[tagAltPathConst_iALTP_END_ATOM as usize].number(),
-            NO_VERTEX
-        );
+        assert_eq!(path[tagAltPathConst_iALTP_START_ATOM as usize].number(), NO_VERTEX);
+        assert_eq!(path[tagAltPathConst_iALTP_END_ATOM as usize].number(), NO_VERTEX);
 
         let mut timeout_heap = SourceHeap::default();
         let mut timeout_bns = configured_bns(&mut timeout_heap, -1);
@@ -33767,14 +31202,7 @@ mod tests {
         let scan_q = heap.allocate(vec![2, 4, 99]).unwrap();
         let base_ptr = heap.allocate(vec![11, 12, 13, 14, 15, 16]).unwrap();
         let switch_edge = heap
-            .allocate(vec![
-                [20, 120],
-                [21, 121],
-                [22, 122],
-                [23, 123],
-                [24, 124],
-                [25, 125],
-            ])
+            .allocate(vec![[20, 120], [21, 121], [22, 122], [23, 123], [24, 124], [25, 125]])
             .unwrap();
         let tree = heap.allocate(vec![1, 2, 3, 4, 5, 6]).unwrap();
         let pu = heap.allocate(vec![0; 2]).unwrap();
@@ -33807,20 +31235,14 @@ mod tests {
                 [NO_VERTEX, 125],
             ]
         );
-        assert_eq!(
-            &heap.slice(tree.as_const()).unwrap()[0..6],
-            &[1, 2, 0, 0, 0, 0]
-        );
+        assert_eq!(&heap.slice(tree.as_const()).unwrap()[0..6], &[1, 2, 0, 0, 0, 0]);
         assert_eq!(&heap.slice(scan_q.as_const()).unwrap()[0..3], &[2, 4, 99]);
 
         let mut after_reset_missing = bd.clone();
         after_reset_missing.Pu = SourceMutPointer::null();
         after_reset_missing.Pv = SourceMutPointer::null();
         after_reset_missing.QSize = -1;
-        assert_eq!(
-            ReInitBnData(&mut heap, Some(&mut after_reset_missing)),
-            Ok(96)
-        );
+        assert_eq!(ReInitBnData(&mut heap, Some(&mut after_reset_missing)), Ok(96));
         assert_eq!(after_reset_missing.QSize, -1);
     }
 
@@ -33853,10 +31275,7 @@ mod tests {
 
         heap.slice_mut(bns.edge).unwrap()[0].cap = 0x4000;
         edge_index = 91;
-        assert_eq!(
-            GetVertexNeighbor(&heap, &bns, 2, 1, &mut edge_index),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetVertexNeighbor(&heap, &bns, 2, 1, &mut edge_index), Ok(NO_VERTEX));
         assert_eq!(edge_index, 0);
 
         {
@@ -33866,10 +31285,7 @@ mod tests {
         }
         bns.edge_forbidden_mask = 0;
         edge_index = 91;
-        assert_eq!(
-            GetVertexNeighbor(&heap, &bns, 2, 1, &mut edge_index),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetVertexNeighbor(&heap, &bns, 2, 1, &mut edge_index), Ok(NO_VERTEX));
         assert_eq!(edge_index, 0);
 
         edge_index = 91;
@@ -33879,10 +31295,7 @@ mod tests {
         assert_eq!(edge_index, -8);
 
         edge_index = 91;
-        assert_eq!(
-            GetVertexNeighbor(&heap, &bns, 0, 1, &mut edge_index),
-            Ok(NO_VERTEX)
-        );
+        assert_eq!(GetVertexNeighbor(&heap, &bns, 0, 1, &mut edge_index), Ok(NO_VERTEX));
         assert_eq!(edge_index, 91);
 
         let missing_edges = BN_STRUCT {
@@ -33989,10 +31402,7 @@ mod tests {
         for edge in multiple_heap.slice_mut(multiple.edge).unwrap() {
             edge.cap = 1;
         }
-        assert_eq!(
-            bIgnoreVertexNonTACN_atom(&multiple_heap, &multiple, 9, 2),
-            Ok(0)
-        );
+        assert_eq!(bIgnoreVertexNonTACN_atom(&multiple_heap, &multiple, 9, 2), Ok(0));
 
         let missing_vertices = BN_STRUCT {
             vert: SourceMutPointer::null(),

@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>COSMolKit CDN example</title>
+<output id="molecule">Loading...</output>
+<script type="module">
+  import init, { Molecule } from
+    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm.js";
+
+  await init(
+    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm_bg.wasm",
+  );
+  const molecule = Molecule.fromSmiles("CCO");
+  document.querySelector("#molecule").textContent = molecule.toSmiles();
+  molecule.free();
+</script>

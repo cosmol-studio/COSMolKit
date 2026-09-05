@@ -52,26 +52,15 @@ struct FocusedCase {
 
 fn read_jsonl() -> Vec<CorpusRecord> {
     let path = parity_data::golden_path("avalon_fingerprint.jsonl");
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line, content)| {
-            let content = content.unwrap_or_else(|error| {
-                panic!(
-                    "failed to read {} line {}: {error}",
-                    path.display(),
-                    line + 1
-                )
-            });
-            serde_json::from_str(&content).unwrap_or_else(|error| {
-                panic!(
-                    "failed to parse {} line {}: {error}",
-                    path.display(),
-                    line + 1
-                )
-            })
+            let content =
+                content.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line + 1));
+            serde_json::from_str(&content)
+                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line + 1))
         })
         .collect()
 }
@@ -90,8 +79,7 @@ fn corpus_smiles() -> Vec<String> {
 fn flags(value: &str) -> AvalonFingerprintFlags {
     let bits = u32::from_str_radix(value.trim_start_matches("0x"), 16)
         .unwrap_or_else(|error| panic!("invalid Avalon flags {value}: {error}"));
-    AvalonFingerprintFlags::from_bits(bits)
-        .unwrap_or_else(|| panic!("undefined Avalon flags {value}"))
+    AvalonFingerprintFlags::from_bits(bits).unwrap_or_else(|| panic!("undefined Avalon flags {value}"))
 }
 
 fn assert_branch(smiles: &str, branch_name: &str, branch: &BranchRecord, molecule: &Molecule) {
@@ -114,8 +102,7 @@ fn assert_branch(smiles: &str, branch_name: &str, branch: &BranchRecord, molecul
         return;
     }
     let actual = avalon_fingerprint(molecule, &params);
-    let actual =
-        actual.unwrap_or_else(|error| panic!("row {smiles} branch {branch_name} failed: {error}"));
+    let actual = actual.unwrap_or_else(|error| panic!("row {smiles} branch {branch_name} failed: {error}"));
     assert_eq!(
         actual.n_bits(),
         branch.n_bits.unwrap() as usize,
@@ -151,9 +138,9 @@ fn avalon_fingerprint_matches_every_active_corpus_profile_exactly() {
                 let molecule = Molecule::from_smiles(&record.smiles);
                 for (branch_name, branch) in &record.branches {
                     if branch.ok {
-                        let molecule = molecule.as_ref().unwrap_or_else(|error| {
-                            panic!("row {row} ({}) failed to parse: {error}", record.smiles)
-                        });
+                        let molecule = molecule
+                            .as_ref()
+                            .unwrap_or_else(|error| panic!("row {row} ({}) failed to parse: {error}", record.smiles));
                         assert_branch(&record.smiles, branch_name, branch, molecule);
                     } else if let Ok(molecule) = &molecule {
                         assert_branch(&record.smiles, branch_name, branch, molecule);
@@ -164,28 +151,20 @@ fn avalon_fingerprint_matches_every_active_corpus_profile_exactly() {
                 let message = payload
                     .downcast_ref::<String>()
                     .cloned()
-                    .or_else(|| {
-                        payload
-                            .downcast_ref::<&str>()
-                            .map(|value| (*value).to_owned())
-                    })
+                    .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
                     .unwrap_or_else(|| "non-string panic".to_owned());
                 (row, message)
             })
         })
         .collect();
     failures.sort_by_key(|(row, _)| *row);
-    assert!(
-        failures.is_empty(),
-        "Avalon exact parity failures: {failures:?}"
-    );
+    assert!(failures.is_empty(), "Avalon exact parity failures: {failures:?}");
 }
 
 #[test]
 fn avalon_fingerprint_matches_focused_profiles_and_size_boundaries() {
     let path = parity_data::repo_root().join(FOCUSED_PATH);
-    let file = File::open(&path)
-        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     let focused: FocusedFile = serde_json::from_reader(file).expect("focused Avalon JSON is valid");
     assert_eq!(focused.cases.len(), 8);
     for case in focused.cases {
@@ -195,9 +174,8 @@ fn avalon_fingerprint_matches_focused_profiles_and_size_boundaries() {
             &result.smiles,
             &case.case.name,
             &result,
-            &Molecule::from_smiles(&result.smiles).unwrap_or_else(|error| {
-                panic!("focused {} failed to parse: {error}", case.case.name)
-            }),
+            &Molecule::from_smiles(&result.smiles)
+                .unwrap_or_else(|error| panic!("focused {} failed to parse: {error}", case.case.name)),
         );
     }
 }

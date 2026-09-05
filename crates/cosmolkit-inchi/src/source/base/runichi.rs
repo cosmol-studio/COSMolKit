@@ -10,14 +10,13 @@ use crate::source::base::mol2atom::{CreateInpAtomData, FreeCompAtomData};
 use crate::source::base::runichi2::{
     DoOneStructureEarlyPreprocessing, GetOneComponent, OAD_Polymer_PrepareFoldCRUEdits,
     OAD_Polymer_PrepareFrameShiftEdits, OAD_StructureEdits_Clear, OAD_StructureEdits_DebugPrint,
-    OAD_StructureEdits_Init, POSEContext_Free, POSEContext_Init, TreatErrorsInReadTheStructure,
-    bIsSameBond, eprint_bytes, sdf_label_value,
+    OAD_StructureEdits_Init, POSEContext_Free, POSEContext_Init, TreatErrorsInReadTheStructure, bIsSameBond,
+    eprint_bytes, sdf_label_value,
 };
 use crate::source::base::runichi3::{
     OAD_Polymer_CyclizeCloseableUnits, OAD_Polymer_DebugTrace, OAD_Polymer_FindBackbones,
-    OAD_Polymer_GetRepresentation, OAD_Polymer_SmartReopenCyclizedUnits,
-    OAD_ValidatePolymerAndPseudoElementData, OrigAtData_AddBond, OrigAtData_DebugTrace,
-    OrigAtData_RemoveBond, PreprocessOneStructure,
+    OAD_Polymer_GetRepresentation, OAD_Polymer_SmartReopenCyclizedUnits, OAD_ValidatePolymerAndPseudoElementData,
+    OrigAtData_AddBond, OrigAtData_DebugTrace, OrigAtData_RemoveBond, PreprocessOneStructure,
 };
 use crate::source::base::runichi4::{
     GetProcessingWarningsOneComponentInChI, SortAndPrintINChI, TreatCreateINChIWarning,
@@ -28,38 +27,31 @@ use crate::source::base::strutil::{
     subgraf_pathfinder_collect_all, subgraf_pathfinder_free, subgraf_pathfinder_new,
 };
 use crate::source::base::util::{
-    extract_auxinfo_substring, extract_inchi_substring, inchi_calloc, inchi_free, is_in_the_ilist,
-    remove_one_lf,
+    extract_auxinfo_substring, extract_inchi_substring, inchi_calloc, inchi_free, is_in_the_ilist, remove_one_lf,
 };
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, CANON_GLOBALS, CMP_COMPONENTS, COMP_ATOM_DATA,
-    CT_OUT_OF_RAM, CT_USER_QUIT_ERR, FLAG_INP_AT_CHIRAL, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING,
-    INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_INCHI_GEN_ERROR,
-    INCHI_OUT_NO_AUX_INFO, INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY,
-    INCHI_OUT_SHORT_AUX_INFO, INCHI_OUT_STDINCHI, INCHI_REC, INP_ATOM_DATA, INP_ATOM_DATA2,
-    INPUT_PARMS, LOG_MASK_ALL, NORM_CANON_FLAGS, OAD_StructureEdits, ORIG_ATOM_DATA, ORIG_STRUCT,
-    PINChI_Aux2, PINChI2, POLYMER_REPRESENTATION_MIXED, POLYMER_REPRESENTATION_STRUCTURE_BASED,
-    POLYMERS_LEGACY, POLYMERS_LEGACY_PLUS, POLYMERS_MODERN, POLYMERS_NO, REQ_MODE_BASIC,
-    REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO,
-    REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, REQ_MODE_TAUT, SAVE_OPT_15T,
-    SAVE_OPT_FIXEDH, SAVE_OPT_KET, SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00,
-    SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00, SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD,
-    SAVE_OPT_SUU, STRUCT_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
-    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE,
-    TG_FLAG_DISCONNECT_SALTS_DONE, TG_FLAG_FIX_ODD_THINGS_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_CHARGE_COORD_DONE,
-    TG_FLAG_MOVE_HPLUS2NEUTR_DONE, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00,
-    TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00,
-    TG_FLAG_RECONNECT_COORD, clock_t, inchiTime, inp_ATOM, tagFrameShifScheme_FSS_NONE,
-    tagFrameShifScheme_FSS_STARS_CYCLED, tagFrameShifScheme_FSS_STARS_CYCLED_SORTED,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE, tagINCHIBondType_INCHI_BOND_TYPE_NONE,
-    tagInputType_INPUT_INCHI, tagInputType_INPUT_MOLFILE, tagInputType_INPUT_SDFILE,
+    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, CANON_GLOBALS, CMP_COMPONENTS, COMP_ATOM_DATA, CT_OUT_OF_RAM,
+    CT_USER_QUIT_ERR, FLAG_INP_AT_CHIRAL, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING,
+    INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_INCHI_GEN_ERROR, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_SAVEOPT,
+    INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY, INCHI_OUT_SHORT_AUX_INFO, INCHI_OUT_STDINCHI, INCHI_REC,
+    INP_ATOM_DATA, INP_ATOM_DATA2, INPUT_PARMS, LOG_MASK_ALL, NORM_CANON_FLAGS, OAD_StructureEdits, ORIG_ATOM_DATA,
+    ORIG_STRUCT, PINChI_Aux2, PINChI2, POLYMER_REPRESENTATION_MIXED, POLYMER_REPRESENTATION_STRUCTURE_BASED,
+    POLYMERS_LEGACY, POLYMERS_LEGACY_PLUS, POLYMERS_MODERN, POLYMERS_NO, REQ_MODE_BASIC, REQ_MODE_DIFF_UU_STEREO,
+    REQ_MODE_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU,
+    REQ_MODE_STEREO, REQ_MODE_TAUT, SAVE_OPT_15T, SAVE_OPT_FIXEDH, SAVE_OPT_KET, SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00,
+    SAVE_OPT_PT_16_00, SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00, SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD,
+    SAVE_OPT_SUU, STRUCT_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, TAUT_NON, TAUT_NUM,
+    TAUT_YES, TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_DISCONNECT_SALTS_DONE,
+    TG_FLAG_FIX_ODD_THINGS_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_CHARGE_COORD_DONE, TG_FLAG_MOVE_HPLUS2NEUTR_DONE,
+    TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00,
+    TG_FLAG_PT_22_00, TG_FLAG_PT_39_00, TG_FLAG_RECONNECT_COORD, clock_t, inchiTime, inp_ATOM,
+    tagFrameShifScheme_FSS_NONE, tagFrameShifScheme_FSS_STARS_CYCLED, tagFrameShifScheme_FSS_STARS_CYCLED_SORTED,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE, tagINCHIBondType_INCHI_BOND_TYPE_NONE, tagInputType_INPUT_INCHI,
+    tagInputType_INPUT_MOLFILE, tagInputType_INPUT_SDFILE,
 };
 
-fn runichi_c_text(
-    heap: &SourceHeap,
-    pointer: SourceConstPointer<i8>,
-) -> Result<Vec<u8>, SourceHeapError> {
+fn runichi_c_text(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<Vec<u8>, SourceHeapError> {
     if pointer.is_null() {
         return Ok(Vec::new());
     }
@@ -75,10 +67,7 @@ fn runichi_c_text(
 const INP_ATOM_DATA2_GCC_LP64_SIZE: u64 = 192;
 const PINCHI2_GCC_LP64_SIZE: u64 = 16;
 
-fn overwrite_source_c_buffer(
-    destination: Option<&mut [i8]>,
-    bytes: &[u8],
-) -> Result<(), SourceHeapError> {
+fn overwrite_source_c_buffer(destination: Option<&mut [i8]>, bytes: &[u8]) -> Result<(), SourceHeapError> {
     let destination = destination.ok_or(SourceHeapError::PointerOutOfBounds)?;
     if destination.len() <= bytes.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -1064,22 +1053,17 @@ fn set_renumbered_or_delete_from_copy(
     renumbering: &[i32],
     base: i32,
 ) -> Result<i32, SourceHeapError> {
-    let deletion = base
-        .checked_sub(1)
-        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let deletion = base.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
     let mut new_number_of_elements = 0_usize;
     for old_number in copied.iter().copied() {
         let renumbering_index = old_number
             .checked_sub(base)
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        let renumbering_index =
-            usize::try_from(renumbering_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let renumbering_index = usize::try_from(renumbering_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mapped = *renumbering
             .get(renumbering_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let new_number = mapped
-            .checked_add(base)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        let new_number = mapped.checked_add(base).ok_or(SourceHeapError::SourceIntegerOverflow)?;
         if new_number == deletion {
             continue;
         }
@@ -3522,8 +3506,7 @@ pub(crate) fn ProcessOneStructure(
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut result = 0_i32;
         let mut max_inchi = 0_i32;
-        let mut composite_normalized_data: [[COMP_ATOM_DATA; TAUT_NUM as usize + 1];
-            INCHI_NUM as usize] =
+        let mut composite_normalized_data: [[COMP_ATOM_DATA; TAUT_NUM as usize + 1]; INCHI_NUM as usize] =
             std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         let mut normalization_flags = NORM_CANON_FLAGS::default();
         let mut original_structure = ORIG_STRUCT::default();
@@ -3555,9 +3538,7 @@ pub(crate) fn ProcessOneStructure(
             output_file.as_deref_mut(),
             problem_file.as_deref_mut(),
             &mut original_input,
-            prepared_input
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            prepared_input.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
             clock_result,
         )?;
         if preprocessing_result == crate::source_types::_IS_SKIP as i32
@@ -3645,9 +3626,7 @@ pub(crate) fn ProcessOneStructure(
                 if representation == POLYMER_REPRESENTATION_STRUCTURE_BASED as i32
                     || representation == POLYMER_REPRESENTATION_MIXED as i32
                 {
-                    let prepared = prepared_input
-                        .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let prepared = prepared_input.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let saved_polymer = prepared.polymer;
                     prepared.polymer = original_input.polymer;
                     let mut error = 0_i32;
@@ -3671,9 +3650,7 @@ pub(crate) fn ProcessOneStructure(
 
         if result != _IS_FATAL as i32
             && result != _IS_ERROR as i32
-            && structure_data.bTautFlagsDone[INCHI_BAS as usize]
-                & u64::from(TG_FLAG_DISCONNECT_COORD_DONE)
-                != 0
+            && structure_data.bTautFlagsDone[INCHI_BAS as usize] & u64::from(TG_FLAG_DISCONNECT_COORD_DONE) != 0
             && input_parameters.bTautFlags & u64::from(TG_FLAG_RECONNECT_COORD) != 0
         {
             let created = CreateOneStructureINChI(
@@ -3700,9 +3677,7 @@ pub(crate) fn ProcessOneStructure(
             )?;
             result = result.max(created);
             if is_polymer_to_inchi {
-                let prepared = prepared_input
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let prepared = prepared_input.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
                 prepared.polymer = original_input.polymer;
                 let mut error = 0_i32;
                 OAD_Polymer_FindBackbones(
@@ -3725,9 +3700,7 @@ pub(crate) fn ProcessOneStructure(
         if result != _IS_FATAL as i32 && result != _IS_ERROR as i32 {
             if structure_data.bChiralFlag & FLAG_INP_AT_CHIRAL as i32 != 0
                 && input_parameters.nMode & u64::from(REQ_MODE_STEREO) != 0
-                && input_parameters.nMode
-                    & u64::from(REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO)
-                    == 0
+                && input_parameters.nMode & u64::from(REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO) == 0
                 && bIsStructChiral(heap, *inchi_components, structure_data.num_components)? == 0
                 && input_parameters.bNoWarnings == 0
             {
@@ -3739,9 +3712,7 @@ pub(crate) fn ProcessOneStructure(
                     heap,
                     structure_data,
                     input_parameters,
-                    prepared_input
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    prepared_input.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
                     input_number,
                     input_file.as_deref_mut(),
                     log_file.as_deref_mut(),
@@ -3756,10 +3727,8 @@ pub(crate) fn ProcessOneStructure(
         if result != _IS_FATAL as i32 && result != _IS_ERROR as i32 {
             heap.slice_mut(canonical_globals)?[0] = canonical.clone();
             heap.slice_mut(original_input_pointer)?[0] = original_input.clone();
-            heap.slice_mut(prepared_input_pointer)?[..prepared_input.len()]
-                .clone_from_slice(&prepared_input);
-            let original_structure_slot =
-                heap.allocate_model_storage(vec![original_structure.clone()])?;
+            heap.slice_mut(prepared_input_pointer)?[..prepared_input.len()].clone_from_slice(&prepared_input);
+            let original_structure_slot = heap.allocate_model_storage(vec![original_structure.clone()])?;
             let sort_flags = heap.allocate_model_storage(vec![0_i32])?;
             let mut fallback_output = INCHI_IOSTREAM::default();
             let mut fallback_log = INCHI_IOSTREAM::default();
@@ -3973,10 +3942,7 @@ pub(crate) fn OrigAtData_StoreNativeInput<'a>(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn PrepareSaveOptBitsForStructure(
-    save_option_bits: &mut u8,
-    input_parameters: &INPUT_PARMS,
-) {
+pub(crate) fn PrepareSaveOptBitsForStructure(save_option_bits: &mut u8, input_parameters: &INPUT_PARMS) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi.c:621 PrepareSaveOptBits
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: PrepareSaveOptBits
     // INCHI✔️✔️: void PrepareSaveOptBits( unsigned char *save_opt_bits, INPUT_PARMS *ip )
@@ -4051,9 +4017,7 @@ pub(crate) fn PrepareSaveOptBitsForStructure(
             if input_parameters.nMode & u64::from(REQ_MODE_DIFF_UU_STEREO) != 0 {
                 *save_option_bits |= SAVE_OPT_SLUUD as u8;
             }
-            if input_parameters.nMode & u64::from(REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU)
-                == 0
-            {
+            if input_parameters.nMode & u64::from(REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) == 0 {
                 *save_option_bits |= SAVE_OPT_SUU as u8;
             }
             if input_parameters.bTautFlags & u64::from(TG_FLAG_KETO_ENOL_TAUT) != 0 {
@@ -5281,15 +5245,11 @@ pub(crate) fn CreateOneStructureINChI(
             return Ok(_IS_FATAL as i32);
         }
     };
-    prepared_input
-        .get(kind)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    prepared_input.get(kind).ok_or(SourceHeapError::PointerOutOfBounds)?;
     composite_normalized_data[kind] = std::array::from_fn(|_| COMP_ATOM_DATA::default());
 
     let mut result = 0_i32;
-    if (prepared_input[0].at.is_null() || prepared_input[0].num_inp_atoms == 0)
-        && original_input.num_inp_atoms > 0
-    {
+    if (prepared_input[0].at.is_null() || prepared_input[0].num_inp_atoms == 0) && original_input.num_inp_atoms > 0 {
         let mut start = inchiTime::default();
         if input_parameters.msec_MaxTime != 0 {
             InchiTimeGet(&mut start, clock_result);
@@ -5316,18 +5276,15 @@ pub(crate) fn CreateOneStructureINChI(
                     | TG_FLAG_FIX_ODD_THINGS_DONE,
             )
             != 0;
-        let base_flags =
-            structure_data.bTautFlags[INCHI_BAS as usize] | input_parameters.bTautFlags;
+        let base_flags = structure_data.bTautFlags[INCHI_BAS as usize] | input_parameters.bTautFlags;
         normalization_flags.bTautFlags[kind] = [base_flags; TAUT_NUM as usize];
-        let base_flags_done =
-            structure_data.bTautFlagsDone[INCHI_BAS as usize] | input_parameters.bTautFlagsDone;
+        let base_flags_done = structure_data.bTautFlagsDone[INCHI_BAS as usize] | input_parameters.bTautFlagsDone;
         normalization_flags.bTautFlagsDone[kind] = [base_flags_done; TAUT_NUM as usize];
         if input_parameters.msec_MaxTime != 0 {
             let elapsed = component_elapsed(heap, clock, &start, clock_result)?;
             input_parameters.msec_LeftTime = input_parameters.msec_LeftTime.wrapping_sub(elapsed);
         }
-        if matches!(structure_data.nErrorType, value if value == _IS_ERROR as i32 || value == _IS_FATAL as i32)
-        {
+        if matches!(structure_data.nErrorType, value if value == _IS_ERROR as i32 || value == _IS_FATAL as i32) {
             let mut number = input_number;
             result = TreatErrorsInReadTheStructure(
                 heap,
@@ -5350,19 +5307,16 @@ pub(crate) fn CreateOneStructureINChI(
     }
 
     let component_count_i32 = prepared_input[kind].num_components;
-    let component_count = usize::try_from(component_count_i32.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let component_count =
+        usize::try_from(component_count_i32.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let mut all_normalized = SourceMutPointer::<INP_ATOM_DATA2>::null();
     if component_count_i32 > 1 {
-        all_normalized = match inchi_calloc::<INP_ATOM_DATA2>(
-            heap,
-            component_count as u64,
-            INP_ATOM_DATA2_GCC_LP64_SIZE,
-        ) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
+        all_normalized =
+            match inchi_calloc::<INP_ATOM_DATA2>(heap, component_count as u64, INP_ATOM_DATA2_GCC_LP64_SIZE) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
     }
 
     if structure_data.num_components[kind] <= component_count_i32 {
@@ -5421,10 +5375,9 @@ pub(crate) fn CreateOneStructureINChI(
                 != 0;
         }
         value if value == INCHI_REC as usize => {
-            let also_output_reconnected = structure_data.bTautFlagsDone[INCHI_BAS as usize]
-                & u64::from(TG_FLAG_DISCONNECT_COORD_DONE)
-                != 0
-                && input_parameters.bTautFlags & u64::from(TG_FLAG_RECONNECT_COORD) != 0;
+            let also_output_reconnected =
+                structure_data.bTautFlagsDone[INCHI_BAS as usize] & u64::from(TG_FLAG_DISCONNECT_COORD_DONE) != 0
+                    && input_parameters.bTautFlags & u64::from(TG_FLAG_RECONNECT_COORD) != 0;
             if also_output_reconnected {
                 structure_preprocessed = structure_data.bTautFlagsDone[kind]
                     & u64::from(
@@ -5445,32 +5398,24 @@ pub(crate) fn CreateOneStructureINChI(
             break;
         }
 
-        if (kind == INCHI_REC as usize
-            && (input_parameters.bCompareComponents & CMP_COMPONENTS as i32) == 0)
+        if (kind == INCHI_REC as usize && (input_parameters.bCompareComponents & CMP_COMPONENTS as i32) == 0)
             || structure_data.bUserQuitComponentDisplay != 0
         {
             let mut matches = 0_i32;
-            let base_count =
-                usize::try_from(prepared_input[INCHI_BAS as usize].num_components.max(0))
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let base_count = usize::try_from(prepared_input[INCHI_BAS as usize].num_components.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             if !prepared_input[INCHI_BAS as usize].nOldCompNumber.is_null()
                 && !inchi_components[INCHI_BAS as usize].is_null()
             {
                 for base_component in 0..base_count {
-                    let old_number = heap
-                        .slice(prepared_input[INCHI_BAS as usize].nOldCompNumber.as_const())?
-                        [base_component];
-                    let base_row = heap.slice(inchi_components[INCHI_BAS as usize].as_const())?
-                        [base_component];
-                    if usize::from(old_number) == component + 1
-                        && base_row.iter().any(|pointer| !pointer.is_null())
-                    {
+                    let old_number =
+                        heap.slice(prepared_input[INCHI_BAS as usize].nOldCompNumber.as_const())?[base_component];
+                    let base_row = heap.slice(inchi_components[INCHI_BAS as usize].as_const())?[base_component];
+                    if usize::from(old_number) == component + 1 && base_row.iter().any(|pointer| !pointer.is_null()) {
                         matches = matches.wrapping_add(1);
                         if matches == 1 {
                             heap.slice_mut(inchi_components[kind])?[component] = base_row;
-                            let base_aux = heap
-                                .slice(aux_components[INCHI_BAS as usize].as_const())?
-                                [base_component];
+                            let base_aux = heap.slice(aux_components[INCHI_BAS as usize].as_const())?[base_component];
                             heap.slice_mut(aux_components[kind])?[component] = base_aux;
                             for representation in 0..TAUT_NUM as usize {
                                 let inchi_pointer = base_row[representation];
@@ -5485,9 +5430,7 @@ pub(crate) fn CreateOneStructureINChI(
                                             structure_data.num_taut[kind] =
                                                 structure_data.num_taut[kind].wrapping_add(1);
                                         } else if base_row[TAUT_NON as usize].is_null()
-                                            || heap.slice(base_row[TAUT_NON as usize].as_const())?
-                                                [0]
-                                            .nNumberOfAtoms
+                                            || heap.slice(base_row[TAUT_NON as usize].as_const())?[0].nNumberOfAtoms
                                                 == 0
                                         {
                                             structure_data.num_non_taut[kind] =
@@ -5556,11 +5499,7 @@ pub(crate) fn CreateOneStructureINChI(
         {
             let suffix = sdf_label_value(heap, input_parameters)?;
             let mut bytes = if component_count_i32 == 1 {
-                let prefix = if structure_preprocessed {
-                    "Preprocessed "
-                } else {
-                    ""
-                };
+                let prefix = if structure_preprocessed { "Preprocessed " } else { "" };
                 format!("{prefix}Input Structure #{input_number}.").into_bytes()
             } else {
                 format!(
@@ -5605,33 +5544,24 @@ pub(crate) fn CreateOneStructureINChI(
         if result == 0 && input_parameters.bDisplay != 0 {
             let suffix = sdf_label_value(heap, input_parameters)?;
             for representation in 0..TAUT_NUM as usize {
-                if normalized_data[representation].bExists == 0
-                    || normalized_data[representation].bDeleted != 0
-                {
+                if normalized_data[representation].bExists == 0 || normalized_data[representation].bDeleted != 0 {
                     continue;
                 }
                 let inchi_pointer = inchi_rows[component][representation];
-                let tautomeric =
-                    i32::from(heap.slice(inchi_pointer.as_const())?[0].lenTautomer > 0);
-                let display_taut =
-                    if input_parameters.nMode & u64::from(REQ_MODE_BASIC) == 0 && tautomeric == 0 {
-                        -1
-                    } else {
-                        tautomeric
-                    };
-                let has_isotopic_layer =
-                    i32::from(normalized_data[representation].bHasIsotopicLayer > 0);
+                let tautomeric = i32::from(heap.slice(inchi_pointer.as_const())?[0].lenTautomer > 0);
+                let display_taut = if input_parameters.nMode & u64::from(REQ_MODE_BASIC) == 0 && tautomeric == 0 {
+                    -1
+                } else {
+                    tautomeric
+                };
+                let has_isotopic_layer = i32::from(normalized_data[representation].bHasIsotopicLayer > 0);
                 for isotopic in 0..=has_isotopic_layer {
                     let fixed_max = i32::from(
                         !normalized_data[representation].at_fixed_bonds.is_null()
                             && normalized_data[representation].bTautPreprocessed != 0,
                     );
                     for fixed_bonds in (0..=fixed_max).rev() {
-                        let prefix = if fixed_bonds != 0 {
-                            "Preprocessed"
-                        } else {
-                            "Result for"
-                        };
+                        let prefix = if fixed_bonds != 0 { "Preprocessed" } else { "Result for" };
                         let mut bytes = if component_count_i32 > 1 {
                             format!(
                                 "{prefix} Component #{} of {}, Structure #{input_number}",
@@ -5688,12 +5618,7 @@ pub(crate) fn CreateOneStructureINChI(
 
     if result != _IS_FATAL as i32 && result != _IS_ERROR as i32 && !all_normalized.is_null() {
         let all = heap.slice(all_normalized.as_const())?.to_vec();
-        let _ = CreateCompositeNormAtom(
-            heap,
-            &mut composite_normalized_data[kind],
-            &all,
-            component_count_i32,
-        )?;
+        let _ = CreateCompositeNormAtom(heap, &mut composite_normalized_data[kind], &all, component_count_i32)?;
     }
     free_structure_normalized_data(heap, all_normalized, component_count)?;
     FreeInpAtomData(heap, &mut current_input)?;
@@ -6009,21 +5934,18 @@ pub(crate) fn CreateOneComponentINChI(
     let mut start = inchiTime::default();
     InchiTimeGet(&mut start, clock_result);
     let original_coordinates = i32::from(
-        input_parameters.bINChIOutputOptions
-            & (INCHI_OUT_NO_AUX_INFO | INCHI_OUT_SHORT_AUX_INFO) as i32
-            == 0,
+        input_parameters.bINChIOutputOptions & (INCHI_OUT_NO_AUX_INFO | INCHI_OUT_SHORT_AUX_INFO) as i32 == 0,
     );
     let mut taut_flags: INCHI_MODE = input_parameters.bTautFlags;
     let kind = usize::try_from(inchi_kind)
         .ok()
         .filter(|index| *index < INCHI_NUM as usize)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut taut_flags_done =
-        input_parameters.bTautFlagsDone | structure_data.bTautFlagsDone[INCHI_BAS as usize];
+    let mut taut_flags_done = input_parameters.bTautFlagsDone | structure_data.bTautFlagsDone[INCHI_BAS as usize];
     let mut current_inchi = [SourceMutPointer::null(); TAUT_NUM as usize];
     let mut current_aux = [SourceMutPointer::null(); TAUT_NUM as usize];
-    let atom_count = usize::try_from(current_input.num_at.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count =
+        usize::try_from(current_input.num_at.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let atoms = if current_input.at.is_null() {
         Vec::new()
     } else {
@@ -6039,19 +5961,15 @@ pub(crate) fn CreateOneComponentINChI(
         } else {
             0
         };
-        let isotope_mode = if taut_flags_done
-            & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE)
-            != 0
-        {
-            input_parameters.nMode as i32 & REQ_MODE_ISO as i32
-        } else {
-            0
-        };
+        let isotope_mode =
+            if taut_flags_done & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE) != 0 {
+                input_parameters.nMode as i32 & REQ_MODE_ISO as i32
+            } else {
+                0
+            };
         let allocation_mode = taut_mode | isotope_mode;
-        let enabled = (representation == TAUT_NON as usize
-            && input_parameters.nMode & u64::from(REQ_MODE_BASIC) != 0)
-            || (representation == TAUT_YES as usize
-                && input_parameters.nMode & u64::from(REQ_MODE_TAUT) != 0);
+        let enabled = (representation == TAUT_NON as usize && input_parameters.nMode & u64::from(REQ_MODE_BASIC) != 0)
+            || (representation == TAUT_YES as usize && input_parameters.nMode & u64::from(REQ_MODE_TAUT) != 0);
         if enabled {
             current_inchi[representation] = Alloc_INChI(
                 heap,
@@ -6069,8 +5987,7 @@ pub(crate) fn CreateOneComponentINChI(
                 original_coordinates,
             )?;
             if !current_aux[representation].is_null() {
-                heap.slice_mut(current_aux[representation])?[0].bIsIsotopic =
-                    current_input.num_isotopic;
+                heap.slice_mut(current_aux[representation])?[0].bIsIsotopic = current_input.num_isotopic;
             }
             let _ = CreateInpAtomData(
                 heap,
@@ -6139,8 +6056,7 @@ pub(crate) fn CreateOneComponentINChI(
         if !current_aux[representation].is_null() {
             let aux = &heap.slice(current_aux[representation].as_const())?[0];
             if aux.nNumberOfAtoms > 0 {
-                normalization_flags.bNormalizationFlags[kind][representation] |=
-                    aux.bNormalizationFlags;
+                normalization_flags.bNormalizationFlags[kind][representation] |= aux.bNormalizationFlags;
                 normalization_flags.bTautFlags[kind][representation] |= aux.bTautFlags;
                 normalization_flags.bTautFlagsDone[kind][representation] |= aux.bTautFlagsDone;
                 normalization_flags.nCanonFlags[kind][representation] |= aux.nCanonFlags;
@@ -6154,13 +6070,11 @@ pub(crate) fn CreateOneComponentINChI(
     } else if !current_inchi[TAUT_NON as usize].is_null()
         && heap.slice(current_inchi[TAUT_NON as usize].as_const())?[0].nErrorCode != 0
     {
-        structure_data.nErrorCode =
-            heap.slice(current_inchi[TAUT_NON as usize].as_const())?[0].nErrorCode;
+        structure_data.nErrorCode = heap.slice(current_inchi[TAUT_NON as usize].as_const())?[0].nErrorCode;
     } else if !current_inchi[TAUT_YES as usize].is_null()
         && heap.slice(current_inchi[TAUT_YES as usize].as_const())?[0].nErrorCode != 0
     {
-        structure_data.nErrorCode =
-            heap.slice(current_inchi[TAUT_YES as usize].as_const())?[0].nErrorCode;
+        structure_data.nErrorCode = heap.slice(current_inchi[TAUT_YES as usize].as_const())?[0].nErrorCode;
     }
     if structure_data.nErrorCode == 0 {
         let _ = GetProcessingWarningsOneComponentInChI(
@@ -6190,26 +6104,20 @@ pub(crate) fn CreateOneComponentINChI(
             && heap.slice(inchi_rows[row][TAUT_NON as usize].as_const())?[0].nNumberOfAtoms > 0;
         let taut_in = !inchi_rows[row][TAUT_YES as usize].is_null()
             && heap.slice(inchi_rows[row][TAUT_YES as usize].as_const())?[0].nNumberOfAtoms > 0;
-        let non_taut = (non_taut_in
-            && heap.slice(inchi_rows[row][TAUT_NON as usize].as_const())?[0].lenTautomer == 0)
-            || (taut_in
-                && heap.slice(inchi_rows[row][TAUT_YES as usize].as_const())?[0].lenTautomer == 0);
-        let taut = taut_in
-            && heap.slice(inchi_rows[row][TAUT_YES as usize].as_const())?[0].lenTautomer > 0;
+        let non_taut = (non_taut_in && heap.slice(inchi_rows[row][TAUT_NON as usize].as_const())?[0].lenTautomer == 0)
+            || (taut_in && heap.slice(inchi_rows[row][TAUT_YES as usize].as_const())?[0].lenTautomer == 0);
+        let taut = taut_in && heap.slice(inchi_rows[row][TAUT_YES as usize].as_const())?[0].lenTautomer > 0;
         if non_taut || taut {
-            structure_data.num_non_taut[kind] =
-                structure_data.num_non_taut[kind].wrapping_add(i32::from(non_taut));
-            structure_data.num_taut[kind] =
-                structure_data.num_taut[kind].wrapping_add(i32::from(taut));
+            structure_data.num_non_taut[kind] = structure_data.num_non_taut[kind].wrapping_add(i32::from(non_taut));
+            structure_data.num_taut[kind] = structure_data.num_taut[kind].wrapping_add(i32::from(taut));
             let first = if non_taut_in { TAUT_NON } else { TAUT_YES } as usize;
             let last = if taut_in { TAUT_YES } else { TAUT_NON } as usize;
             for representation in first..=last {
                 let inchi = &heap.slice(inchi_rows[row][representation].as_const())?[0];
                 let possible_isotope_h = !inchi.nPossibleLocationsOfIsotopicH.is_null()
                     && heap.slice(inchi.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1;
-                let mut isotopic = inchi.nNumberOfIsotopicAtoms != 0
-                    || inchi.nNumberOfIsotopicTGroups != 0
-                    || possible_isotope_h;
+                let mut isotopic =
+                    inchi.nNumberOfIsotopicAtoms != 0 || inchi.nNumberOfIsotopicTGroups != 0 || possible_isotope_h;
                 if representation == TAUT_YES as usize && !aux_rows[row][representation].is_null() {
                     let aux = &heap.slice(aux_rows[row][representation].as_const())?[0];
                     isotopic |= aux
@@ -6223,9 +6131,7 @@ pub(crate) fn CreateOneComponentINChI(
             }
         }
     }
-    let result = if structure_data.nErrorCode == CT_OUT_OF_RAM
-        || structure_data.nErrorCode == CT_USER_QUIT_ERR
-    {
+    let result = if structure_data.nErrorCode == CT_OUT_OF_RAM || structure_data.nErrorCode == CT_USER_QUIT_ERR {
         _IS_FATAL as i32
     } else if structure_data.nErrorCode != 0 {
         _IS_ERROR as i32
@@ -6248,8 +6154,8 @@ mod tests {
     use crate::source::base::mol2atom::FreeOrigAtData;
     use crate::source::base::runichi4::FreeAllINChIArrays;
     use crate::source_types::{
-        INCHI_IOS_TYPE_FILE, INChI, INT_ARRAY, OAD_Polymer, OAD_PolymerUnit, POLYMER_CONN_HT,
-        POLYMER_SST_NON, POLYMER_STY_SRU, POLYMERS_LEGACY, STR_ERR_LEN, SourceFile, inp_ATOM,
+        INCHI_IOS_TYPE_FILE, INChI, INT_ARRAY, OAD_Polymer, OAD_PolymerUnit, POLYMER_CONN_HT, POLYMER_SST_NON,
+        POLYMER_STY_SRU, POLYMERS_LEGACY, STR_ERR_LEN, SourceFile, inp_ATOM,
     };
 
     fn string_stream() -> INCHI_IOSTREAM {
@@ -6310,12 +6216,8 @@ mod tests {
             parameters: &mut INPUT_PARMS,
             original: ORIG_ATOM_DATA,
         ) -> (Result<i32, SourceHeapError>, Vec<u8>, usize, usize) {
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
-            let canonical = heap
-                .allocate_model_storage(vec![CANON_GLOBALS::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            let canonical = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
             let stdout = heap
                 .allocate_model_storage(vec![SourceFile {
                     is_standard_stream: true,
@@ -6361,26 +6263,12 @@ mod tests {
             let output_bytes = stream_bytes(heap, &output_record);
             let output_length = output_record.s.nUsedLength as usize;
             let mut counts = structure.num_components;
-            FreeAllINChIArrays(
-                heap,
-                &mut inchi_components,
-                &mut aux_components,
-                &mut counts,
-            )
-            .unwrap();
+            FreeAllINChIArrays(heap, &mut inchi_components, &mut aux_components, &mut counts).unwrap();
             assert_eq!(counts, [0; INCHI_NUM as usize]);
-            assert_eq!(
-                inchi_components,
-                [SourceMutPointer::null(); INCHI_NUM as usize]
-            );
-            assert_eq!(
-                aux_components,
-                [SourceMutPointer::null(); INCHI_NUM as usize]
-            );
-            heap.with_slice_mut_and_heap_mut(original, |records, heap| {
-                FreeOrigAtData(heap, records.first_mut())
-            })
-            .unwrap();
+            assert_eq!(inchi_components, [SourceMutPointer::null(); INCHI_NUM as usize]);
+            assert_eq!(aux_components, [SourceMutPointer::null(); INCHI_NUM as usize]);
+            heap.with_slice_mut_and_heap_mut(original, |records, heap| FreeOrigAtData(heap, records.first_mut()))
+                .unwrap();
             heap.with_slice_mut_and_heap_mut(prepared, |records, heap| {
                 for record in records.iter_mut().take(INCHI_NUM as usize) {
                     FreeOrigAtData(heap, Some(record))?;
@@ -6390,19 +6278,12 @@ mod tests {
             .unwrap();
             inchi_strbuf_close(heap, Some(&mut string_buffer)).unwrap();
             heap.with_slice_mut_and_heap_mut(canonical, |records, heap| {
-                SetBitFree(
-                    heap,
-                    records
-                        .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )?;
+                SetBitFree(heap, records.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?)?;
                 Ok(())
             })
             .unwrap();
-            heap.with_slice_mut_and_heap_mut(output, |records, heap| {
-                inchi_ios_close(heap, records.first_mut())
-            })
-            .unwrap();
+            heap.with_slice_mut_and_heap_mut(output, |records, heap| inchi_ios_close(heap, records.first_mut()))
+                .unwrap();
             heap.free(clock).unwrap();
             heap.free(canonical).unwrap();
             heap.free(stdout).unwrap();
@@ -6410,10 +6291,7 @@ mod tests {
             heap.free(original).unwrap();
             heap.free(prepared).unwrap();
             assert_eq!(heap.live_allocations_of::<INChI>(), 0);
-            assert_eq!(
-                heap.live_allocations_of::<crate::source_types::INChI_Aux>(),
-                0
-            );
+            assert_eq!(heap.live_allocations_of::<crate::source_types::INChI_Aux>(), 0);
             assert_eq!(heap.live_allocations_of::<inp_ATOM>(), 0);
             assert_eq!(heap.live_allocations_of::<INP_ATOM_DATA>(), 0);
             assert_eq!(heap.live_allocations_of::<COMP_ATOM_DATA>(), 0);
@@ -6421,12 +6299,7 @@ mod tests {
                 heap.live_source_allocation_count(),
                 heap.live_source_allocations_of::<SourceMutPointer<OAD_PolymerUnit>>()
             );
-            (
-                result,
-                output_bytes,
-                output_length,
-                heap.live_source_allocation_count(),
-            )
+            (result, output_bytes, output_length, heap.live_source_allocation_count())
         }
 
         let base_parameters = INPUT_PARMS {
@@ -6442,9 +6315,7 @@ mod tests {
         let mut structure = STRUCT_DATA::default();
         let mut parameters = base_parameters.clone();
         parameters.bPolymers = POLYMERS_LEGACY as i32;
-        let atoms = heap
-            .allocate_model_storage(vec![structure_carbon(0, 1)])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![structure_carbon(0, 1)]).unwrap();
         let (result, output, output_length, live_allocations) = invoke(
             &mut heap,
             &mut structure,
@@ -6479,8 +6350,7 @@ mod tests {
                 nInputType: tagInputType_INPUT_SDFILE,
                 bINChIOutputOptions2: INCHI_OUT_INCHI_GEN_ERROR as i32,
                 bINChIOutputOptions: (crate::source_types::INCHI_OUT_PLAIN_TEXT
-                    | if standard { INCHI_OUT_STDINCHI } else { 0 })
-                    as i32,
+                    | if standard { INCHI_OUT_STDINCHI } else { 0 }) as i32,
                 ..INPUT_PARMS::default()
             };
             let (result, output, output_length, live_allocations) =
@@ -6506,9 +6376,7 @@ mod tests {
                 ..OAD_Polymer::default()
             }])
             .unwrap();
-        let atoms = heap
-            .allocate_model_storage(vec![structure_carbon(0, 1)])
-            .unwrap();
+        let atoms = heap.allocate_model_storage(vec![structure_carbon(0, 1)]).unwrap();
         let coordinates = heap.allocate_model_storage(vec![[b' ' as i8; 32]]).unwrap();
         let original = ORIG_ATOM_DATA {
             at: atoms,
@@ -6552,20 +6420,15 @@ mod tests {
             aux_noedits: &mut SourceMutPointer<i8>,
             fail_after: Option<u64>,
         ) -> (Result<i32, SourceHeapError>, usize, u64) {
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
-            let canonical = heap
-                .allocate_model_storage(vec![CANON_GLOBALS::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            let canonical = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
             let stdout = heap
                 .allocate_model_storage(vec![SourceFile {
                     is_standard_stream: true,
                     ..SourceFile::default()
                 }])
                 .unwrap();
-            let prepared: [ORIG_ATOM_DATA; INCHI_NUM as usize] =
-                std::array::from_fn(|_| ORIG_ATOM_DATA::default());
+            let prepared: [ORIG_ATOM_DATA; INCHI_NUM as usize] = std::array::from_fn(|_| ORIG_ATOM_DATA::default());
             let baseline = heap.live_allocation_count();
             if let Some(successful_allocations) = fail_after {
                 heap.fail_after_allocations(successful_allocations);
@@ -6643,9 +6506,7 @@ mod tests {
             right.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
             right.neighbor[0] = 1;
             right.bond_type[0] = 1;
-            let atoms = heap
-                .allocate_model_storage(vec![left, center, right])
-                .unwrap();
+            let atoms = heap.allocate_model_storage(vec![left, center, right]).unwrap();
             let atom_list = heap.allocate_model_storage(vec![2_i32]).unwrap();
             let crossing_bonds = heap.allocate_model_storage(vec![1, 2, 3, 2]).unwrap();
             let unit = heap
@@ -6854,8 +6715,7 @@ mod tests {
             bAllowEmptyStructure: 1,
             bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
                 | INCHI_OUT_SHORT_AUX_INFO
-                | crate::source_types::INCHI_OUT_PLAIN_TEXT)
-                as i32,
+                | crate::source_types::INCHI_OUT_PLAIN_TEXT) as i32,
             ..INPUT_PARMS::default()
         };
         let mut modern_inchi = SourceMutPointer::null();
@@ -6909,8 +6769,7 @@ mod tests {
                 bAllowEmptyStructure: 1,
                 bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
                     | INCHI_OUT_SHORT_AUX_INFO
-                    | crate::source_types::INCHI_OUT_PLAIN_TEXT)
-                    as i32,
+                    | crate::source_types::INCHI_OUT_PLAIN_TEXT) as i32,
                 ..INPUT_PARMS::default()
             };
             let mut validation_error = [0_i8; STR_ERR_LEN as usize];
@@ -6977,10 +6836,7 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         assert_eq!(swap_atoms_xyz(&mut heap, None, i32::MIN, i32::MIN), Ok(()));
-        assert_eq!(
-            swap_atoms_xyz(&mut heap, None, 0, 1),
-            Err(SourceHeapError::NullPointer)
-        );
+        assert_eq!(swap_atoms_xyz(&mut heap, None, 0, 1), Err(SourceHeapError::NullPointer));
 
         let null_atoms = ORIG_ATOM_DATA::default();
         assert_eq!(swap_atoms_xyz(&mut heap, Some(&null_atoms), 7, 7), Ok(()));
@@ -7034,10 +6890,7 @@ mod tests {
 
         assert_eq!(swap_atoms_xyz(&mut heap, Some(&data), 0, 1), Ok(()));
         let swapped = heap.slice(atoms.as_const()).unwrap();
-        assert_eq!(
-            coordinate_bits(&swapped[0]),
-            coordinate_bits(&second_before)
-        );
+        assert_eq!(coordinate_bits(&swapped[0]), coordinate_bits(&second_before));
         assert_eq!(coordinate_bits(&swapped[1]), coordinate_bits(&first_before));
         assert_eq!(
             without_coordinates(swapped[0].clone()),
@@ -7054,14 +6907,8 @@ mod tests {
 
         assert_eq!(swap_atoms_xyz(&mut heap, Some(&data), 1, 0), Ok(()));
         let restored = heap.slice(atoms.as_const()).unwrap();
-        assert_eq!(
-            coordinate_bits(&restored[0]),
-            coordinate_bits(&first_before)
-        );
-        assert_eq!(
-            coordinate_bits(&restored[1]),
-            coordinate_bits(&second_before)
-        );
+        assert_eq!(coordinate_bits(&restored[0]), coordinate_bits(&first_before));
+        assert_eq!(coordinate_bits(&restored[1]), coordinate_bits(&second_before));
 
         for (first_index, second_index) in [(-1, 0), (0, -1), (0, 2), (2, 0)] {
             let before = heap.slice(atoms.as_const()).unwrap().to_vec();
@@ -7274,9 +7121,7 @@ mod tests {
             atom
         }
 
-        fn polymer_case(
-            heap: &mut SourceHeap,
-        ) -> (ORIG_ATOM_DATA, SourceMutPointer<OAD_PolymerUnit>) {
+        fn polymer_case(heap: &mut SourceHeap) -> (ORIG_ATOM_DATA, SourceMutPointer<OAD_PolymerUnit>) {
             let atoms = heap
                 .allocate_model_storage(vec![
                     named_atom(b"Zz\0", 0),
@@ -7365,9 +7210,7 @@ mod tests {
         assert_eq!(mind_polymers, 0);
         assert_eq!(ordinary.valid_polymer, 0);
 
-        let pseudo_atoms = heap
-            .allocate_model_storage(vec![named_atom(b"Zz\0", 0)])
-            .unwrap();
+        let pseudo_atoms = heap.allocate_model_storage(vec![named_atom(b"Zz\0", 0)]).unwrap();
         let mut invalid_pseudo = ORIG_ATOM_DATA {
             at: pseudo_atoms,
             num_inp_atoms: 1,
@@ -7407,9 +7250,7 @@ mod tests {
             b"Error 75 (Invalid element(s): Zz; Polymer-unrelated pseudoatoms are not allowed) structure #-17. ID=sample-7\n"
         );
 
-        let allowed_atoms = heap
-            .allocate_model_storage(vec![named_atom(b"Zz\0", 0)])
-            .unwrap();
+        let allowed_atoms = heap.allocate_model_storage(vec![named_atom(b"Zz\0", 0)]).unwrap();
         let mut allowed_pseudo = ORIG_ATOM_DATA {
             at: allowed_atoms,
             num_inp_atoms: 1,
@@ -7548,9 +7389,7 @@ mod tests {
         }
 
         fn source_polymer(heap: &mut SourceHeap) -> ORIG_ATOM_DATA {
-            let atoms = heap
-                .allocate_model_storage(vec![structure_carbon(0, 1)])
-                .unwrap();
+            let atoms = heap.allocate_model_storage(vec![structure_carbon(0, 1)]).unwrap();
             let atom_list = heap.allocate_model_storage(vec![1_i32]).unwrap();
             let unit = heap
                 .allocate_model_storage(vec![OAD_PolymerUnit {
@@ -7605,9 +7444,7 @@ mod tests {
         let mut error_heap = SourceHeap::default();
         let mut invalid_atom = inp_ATOM::default();
         invalid_atom.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
-        let invalid_atoms = error_heap
-            .allocate_model_storage(vec![invalid_atom])
-            .unwrap();
+        let invalid_atoms = error_heap.allocate_model_storage(vec![invalid_atom]).unwrap();
         let invalid_original = error_heap
             .allocate_model_storage(vec![ORIG_ATOM_DATA {
                 at: invalid_atoms,
@@ -7655,9 +7492,7 @@ mod tests {
             .allocate_model_storage(vec![CANON_GLOBALS::default()])
             .unwrap();
         let skip_original_value = source_polymer(&mut skip_heap);
-        let skip_original = skip_heap
-            .allocate_model_storage(vec![skip_original_value])
-            .unwrap();
+        let skip_original = skip_heap.allocate_model_storage(vec![skip_original_value]).unwrap();
         let skip_prepared = skip_heap
             .allocate_model_storage(vec![ORIG_ATOM_DATA::default(); INCHI_NUM as usize])
             .unwrap();
@@ -7728,10 +7563,7 @@ mod tests {
             Ok(crate::source_types::_IS_WARNING as i32)
         );
         assert_eq!(ordinary_structure.bUserQuitComponent, 0);
-        assert_eq!(
-            array_c_bytes(&ordinary_structure.pStrErrStruct),
-            b"Not chiral"
-        );
+        assert_eq!(array_c_bytes(&ordinary_structure.pStrErrStruct), b"Not chiral");
 
         for (mode, expects_post_edit) in [
             (POLYMERS_MODERN as i32, false),
@@ -7739,20 +7571,14 @@ mod tests {
             (POLYMERS_LEGACY_PLUS as i32, true),
         ] {
             let mut heap = SourceHeap::default();
-            let clock = heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
-            let canonical = heap
-                .allocate_model_storage(vec![CANON_GLOBALS::default()])
-                .unwrap();
+            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            let canonical = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
             let original_value = source_polymer(&mut heap);
             let original = heap.allocate_model_storage(vec![original_value]).unwrap();
             let prepared = heap
                 .allocate_model_storage(vec![ORIG_ATOM_DATA::default(); INCHI_NUM as usize])
                 .unwrap();
-            let stdout = heap
-                .allocate_model_storage(vec![SourceFile::default()])
-                .unwrap();
+            let stdout = heap.allocate_model_storage(vec![SourceFile::default()]).unwrap();
             let mut structure = STRUCT_DATA::default();
             let mut parameters = INPUT_PARMS {
                 nInputType: tagInputType_INPUT_MOLFILE,
@@ -7902,8 +7728,7 @@ mod tests {
             nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
             bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
                 | INCHI_OUT_SHORT_AUX_INFO
-                | crate::source_types::INCHI_OUT_PLAIN_TEXT)
-                as i32,
+                | crate::source_types::INCHI_OUT_PLAIN_TEXT) as i32,
             ..INPUT_PARMS::default()
         };
         let old_inchi = c_text(&mut heap, b"old-inchi");
@@ -8008,9 +7833,7 @@ mod tests {
         let mut invalid_heap = SourceHeap::default();
         let mut invalid_atom = inp_ATOM::default();
         invalid_atom.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
-        let invalid_atoms = invalid_heap
-            .allocate_model_storage(vec![invalid_atom.clone()])
-            .unwrap();
+        let invalid_atoms = invalid_heap.allocate_model_storage(vec![invalid_atom.clone()]).unwrap();
         let invalid_polymer = complete_polymer(&mut invalid_heap, 0);
         let invalid_original = ORIG_ATOM_DATA {
             at: invalid_atoms,
@@ -8040,10 +7863,7 @@ mod tests {
         assert_eq!(n_pzz, 0);
         assert!(inchi.is_null());
         assert!(aux.is_null());
-        assert_eq!(
-            invalid_heap.slice(invalid_atoms.as_const()).unwrap()[0],
-            invalid_atom
-        );
+        assert_eq!(invalid_heap.slice(invalid_atoms.as_const()).unwrap()[0], invalid_atom);
 
         let mut null_polymer_heap = SourceHeap::default();
         n_pzz = 94;
@@ -8143,22 +7963,14 @@ mod tests {
             nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
             bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
                 | INCHI_OUT_SHORT_AUX_INFO
-                | crate::source_types::INCHI_OUT_PLAIN_TEXT)
-                as i32,
+                | crate::source_types::INCHI_OUT_PLAIN_TEXT) as i32,
             ..INPUT_PARMS::default()
         };
         let old_inchi = c_text(&mut heap, b"old-inchi");
         let old_aux = c_text(&mut heap, b"old-aux");
         let mut inchi = old_inchi;
         let mut aux = old_aux;
-        let result = invoke(
-            &mut heap,
-            &original,
-            &parameters,
-            None,
-            &mut inchi,
-            &mut aux,
-        );
+        let result = invoke(&mut heap, &original, &parameters, None, &mut inchi, &mut aux);
         assert!(
             matches!(result, Ok(value) if value == _IS_OKAY as i32 || value == crate::source_types::_IS_WARNING as i32),
             "result={result:?} inchi_null={} aux_null={} inchi={:?} aux={:?}",
@@ -8176,10 +7988,7 @@ mod tests {
             POLYMERS_MODERN as i32
         );
         assert_eq!(parameters.bPolymers, POLYMERS_MODERN as i32);
-        assert_eq!(
-            parameters.bFrameShiftScheme,
-            tagFrameShifScheme_FSS_STARS_CYCLED as i32
-        );
+        assert_eq!(parameters.bFrameShiftScheme, tagFrameShifScheme_FSS_STARS_CYCLED as i32);
         assert_eq!(parameters.bFoldPolymerSRU, 9);
         assert_eq!(parameters.bDisplay, 8);
         assert_eq!(parameters.bDisplayCompositeResults, 7);
@@ -8244,9 +8053,7 @@ mod tests {
         let mut invalid_heap = SourceHeap::default();
         let mut invalid_atom = inp_ATOM::default();
         invalid_atom.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
-        let invalid_atoms = invalid_heap
-            .allocate_model_storage(vec![invalid_atom.clone()])
-            .unwrap();
+        let invalid_atoms = invalid_heap.allocate_model_storage(vec![invalid_atom.clone()]).unwrap();
         let invalid_polymer = empty_polymer(&mut invalid_heap);
         let invalid_original = ORIG_ATOM_DATA {
             at: invalid_atoms,
@@ -8273,10 +8080,7 @@ mod tests {
         );
         assert!(inchi.is_null());
         assert!(aux.is_null());
-        assert_eq!(
-            invalid_heap.slice(invalid_atoms.as_const()).unwrap()[0],
-            invalid_atom
-        );
+        assert_eq!(invalid_heap.slice(invalid_atoms.as_const()).unwrap()[0], invalid_atom);
 
         let mut null_polymer_heap = SourceHeap::default();
         inchi = old_inchi;
@@ -8337,10 +8141,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            heap.slice(renumbering.as_const()).unwrap(),
-            &[0, -1, 1, -1, 2, 77]
-        );
+        assert_eq!(heap.slice(renumbering.as_const()).unwrap(), &[0, -1, 1, -1, 2, 77]);
 
         let ignored_edits = edits(&mut heap, vec![0, 6, 3], 3, 1, 0);
         let ignored_renumbering = heap.allocate_model_storage(vec![-8_i32; 5]).unwrap();
@@ -8356,10 +8157,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            heap.slice(ignored_renumbering.as_const()).unwrap(),
-            &[0, 1, -1, 2, -8]
-        );
+        assert_eq!(heap.slice(ignored_renumbering.as_const()).unwrap(), &[0, 1, -1, 2, -8]);
 
         let empty_edits = edits(&mut heap, Vec::new(), 0, 0, 0);
         assert_eq!(
@@ -8442,9 +8240,7 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let allocation_failure_renumbering = allocation_failure_heap
-            .allocate_model_storage(vec![99_i32])
-            .unwrap();
+        let allocation_failure_renumbering = allocation_failure_heap.allocate_model_storage(vec![99_i32]).unwrap();
         let baseline = allocation_failure_heap.live_allocation_count();
         allocation_failure_heap.fail_after_allocations(0);
         assert_eq!(
@@ -8476,9 +8272,7 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let graph_failure_renumbering = graph_failure_heap
-            .allocate_model_storage(vec![99_i32])
-            .unwrap();
+        let graph_failure_renumbering = graph_failure_heap.allocate_model_storage(vec![99_i32]).unwrap();
         let baseline = graph_failure_heap.live_allocation_count();
         graph_failure_heap.fail_after_allocations(1);
         assert_eq!(
@@ -8512,10 +8306,7 @@ mod tests {
             Err(SourceHeapError::UnsupportedSourceBehavior)
         );
         assert_eq!(heap.live_allocation_count(), baseline);
-        assert_eq!(
-            heap.slice(unsupported_renumbering.as_const()).unwrap(),
-            &[0, 1]
-        );
+        assert_eq!(heap.slice(unsupported_renumbering.as_const()).unwrap(), &[0, 1]);
 
         let negative_used_edits = edits(&mut heap, vec![1], -1, 1, 0);
         let negative_used_renumbering = heap.allocate_model_storage(vec![90_i32]).unwrap();
@@ -8531,19 +8322,12 @@ mod tests {
             ),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
-        assert_eq!(
-            heap.slice(negative_used_renumbering.as_const()).unwrap(),
-            &[0]
-        );
+        assert_eq!(heap.slice(negative_used_renumbering.as_const()).unwrap(), &[0]);
     }
 
     #[test]
     fn source_port__runichi__oad_structureedits_apply__line_2427() {
-        fn int_array(
-            heap: &mut SourceHeap,
-            values: Vec<i32>,
-            used: i32,
-        ) -> SourceMutPointer<INT_ARRAY> {
+        fn int_array(heap: &mut SourceHeap, values: Vec<i32>, used: i32) -> SourceMutPointer<INT_ARRAY> {
             let allocated = values.len() as i32;
             let item = heap.allocate_model_storage(values).unwrap();
             heap.allocate_model_storage(vec![INT_ARRAY {
@@ -8578,11 +8362,7 @@ mod tests {
             }
         }
 
-        fn original(
-            heap: &mut SourceHeap,
-            atom_count: usize,
-            bonds: &[(i32, i32, i32, i32)],
-        ) -> ORIG_ATOM_DATA {
+        fn original(heap: &mut SourceHeap, atom_count: usize, bonds: &[(i32, i32, i32, i32)]) -> ORIG_ATOM_DATA {
             let atoms = (0..atom_count)
                 .map(|index| inp_ATOM {
                     orig_at_number: (index + 1) as u16,
@@ -8596,15 +8376,7 @@ mod tests {
             let mut number_of_bonds = 0;
             for &(atom1, atom2, bond_type, bond_stereo) in bonds {
                 assert_eq!(
-                    OrigAtData_AddBond(
-                        heap,
-                        atom1,
-                        atom2,
-                        atoms,
-                        bond_type,
-                        bond_stereo,
-                        &mut number_of_bonds,
-                    ),
+                    OrigAtData_AddBond(heap, atom1, atom2, atoms, bond_type, bond_stereo, &mut number_of_bonds,),
                     Ok(1)
                 );
             }
@@ -8686,10 +8458,7 @@ mod tests {
         assert_eq!((atoms[1].bond_type[0], atoms[1].bond_stereo[0]), (1, 0));
         assert_eq!((atoms[2].valence, atoms[2].neighbor[0]), (1, 0));
         assert_eq!((atoms[3].valence, atoms[3].neighbor[0]), (1, 1));
-        assert_eq!(
-            heap.slice(crossing_bonds.as_const()).unwrap(),
-            &[2, 4, 9, 10]
-        );
+        assert_eq!(heap.slice(crossing_bonds.as_const()).unwrap(), &[2, 4, 9, 10]);
 
         let mut stride_original = original(&mut heap, 4, &[]);
         let stride_edits = edits(
@@ -8845,10 +8614,7 @@ mod tests {
             Err(SourceHeapError::MissingAllocation)
         );
         assert_eq!(
-            (
-                deletion_original.num_inp_atoms,
-                deletion_original.num_inp_bonds
-            ),
+            (deletion_original.num_inp_atoms, deletion_original.num_inp_bonds),
             (2, 1)
         );
         let atoms = heap.slice(deletion_original.at.as_const()).unwrap();
@@ -8911,10 +8677,7 @@ mod tests {
         assert_eq!(polymer_original.num_inp_atoms, 3);
         assert_eq!(polymer_original.v3000, v3000);
         let unit_state = &heap.slice(polymer_unit.as_const()).unwrap()[0];
-        assert_eq!(
-            (unit_state.na, unit_state.nb, unit_state.nbkbonds),
-            (3, 2, 1)
-        );
+        assert_eq!((unit_state.na, unit_state.nb, unit_state.nbkbonds), (3, 2, 1));
         assert_eq!(heap.slice(alist.as_const()).unwrap(), &[1, 2, 3]);
         assert_eq!(heap.slice(blist.as_const()).unwrap(), &[1, 2, 2, 3]);
         assert_eq!(heap.slice(first_backbone.as_const()).unwrap(), &[1, 2]);
@@ -8949,9 +8712,7 @@ mod tests {
             ),
             Ok(0)
         );
-        let atoms = heap
-            .slice(renumbered_neighbor_original.at.as_const())
-            .unwrap();
+        let atoms = heap.slice(renumbered_neighbor_original.at.as_const()).unwrap();
         assert_eq!(renumbered_neighbor_original.num_inp_atoms, 2);
         assert_eq!((atoms[0].neighbor[0], atoms[1].neighbor[0]), (1, 0));
 
@@ -9058,9 +8819,7 @@ mod tests {
         );
 
         let mut skip_heap = SourceHeap::default();
-        let skip_clock = skip_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let skip_clock = skip_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let skip_canonical = skip_heap
             .allocate_model_storage(vec![CANON_GLOBALS::default()])
             .unwrap();
@@ -9106,9 +8865,7 @@ mod tests {
         assert_eq!(skip_structure.bUserQuitComponentDisplay, 0);
 
         let mut full_heap = SourceHeap::default();
-        let full_clock = full_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let full_clock = full_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let full_canonical = full_heap
             .allocate_model_storage(vec![CANON_GLOBALS::default()])
             .unwrap();
@@ -9118,9 +8875,7 @@ mod tests {
         let full_prepared = full_heap
             .allocate_model_storage(vec![ORIG_ATOM_DATA::default(); INCHI_NUM as usize])
             .unwrap();
-        let stdout = full_heap
-            .allocate_model_storage(vec![SourceFile::default()])
-            .unwrap();
+        let stdout = full_heap.allocate_model_storage(vec![SourceFile::default()]).unwrap();
         let mut output = string_stream();
         let mut log = string_stream();
         let mut title = [0_i8; 256];
@@ -9165,10 +8920,7 @@ mod tests {
         assert_eq!(structure.bUserQuitComponent, 0);
         assert_eq!(structure.bUserQuitComponentDisplay, 0);
         assert_eq!(array_c_bytes(&structure.pStrErrStruct), b"Not chiral");
-        assert_eq!(
-            stream_bytes(&full_heap, &log),
-            b"Warning (Not chiral) structure #5.\n"
-        );
+        assert_eq!(stream_bytes(&full_heap, &log), b"Warning (Not chiral) structure #5.\n");
         let full_output = String::from_utf8(stream_bytes(&full_heap, &output)).unwrap();
         assert_eq!(full_output, "");
         assert!(!inchi[INCHI_BAS as usize].is_null());
@@ -9205,9 +8957,7 @@ mod tests {
                 None,
                 &mut ORIG_ATOM_DATA::default(),
                 &mut [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()],
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 1,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9219,9 +8969,7 @@ mod tests {
         assert_eq!(disabled_parameters.msec_LeftTime, 17);
 
         let mut empty_heap = SourceHeap::default();
-        let empty_clock = empty_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let empty_clock = empty_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let mut empty_outputs = [SourceMutPointer::null(); INCHI_NUM as usize];
         let mut empty_aux = [SourceMutPointer::null(); INCHI_NUM as usize];
         let mut empty_structure = STRUCT_DATA::default();
@@ -9246,9 +8994,7 @@ mod tests {
                 None,
                 &mut ORIG_ATOM_DATA::default(),
                 &mut [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()],
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 2,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9290,9 +9036,7 @@ mod tests {
                 None,
                 &mut invalid_original,
                 &mut [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()],
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 3,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9331,9 +9075,7 @@ mod tests {
                     None,
                     &mut ORIG_ATOM_DATA::default(),
                     &mut [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()],
-                    &mut std::array::from_fn(|_| {
-                        std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                    }),
+                    &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                     4,
                     None,
                     &mut NORM_CANON_FLAGS::default(),
@@ -9365,8 +9107,7 @@ mod tests {
         let mut single_aux = [SourceMutPointer::null(); 2];
         let mut single_structure = STRUCT_DATA::default();
         let mut single_flags = NORM_CANON_FLAGS::default();
-        let mut single_composite =
-            std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+        let mut single_composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         assert_eq!(
             CreateOneStructureINChI(
                 &mut single_heap,
@@ -9405,30 +9146,16 @@ mod tests {
         assert_eq!(single_structure.num_non_taut[0], 1);
 
         let mut reuse_heap = SourceHeap::default();
-        let reuse_clock = reuse_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let reuse_clock = reuse_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let mut reuse_original = ORIG_ATOM_DATA {
-            at: reuse_heap
-                .allocate_model_storage(vec![structure_carbon(1, 1)])
-                .unwrap(),
+            at: reuse_heap.allocate_model_storage(vec![structure_carbon(1, 1)]).unwrap(),
             num_inp_atoms: 1,
             bDisconnectCoord: 1,
             ..ORIG_ATOM_DATA::default()
         };
         let mut reuse_prepared = [
-            prepared_structure(
-                &mut reuse_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
-            prepared_structure(
-                &mut reuse_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
+            prepared_structure(&mut reuse_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
+            prepared_structure(&mut reuse_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
         ];
         let mut reuse_outputs = [SourceMutPointer::null(); 2];
         let mut reuse_aux = [SourceMutPointer::null(); 2];
@@ -9439,8 +9166,7 @@ mod tests {
             bTautFlags: TG_FLAG_RECONNECT_COORD as INCHI_MODE,
             ..INPUT_PARMS::default()
         };
-        let mut reuse_composite =
-            std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+        let mut reuse_composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         let mut reuse_flags = NORM_CANON_FLAGS::default();
         for kind in [INCHI_BAS as i32, INCHI_REC as i32] {
             assert_eq!(
@@ -9487,8 +9213,7 @@ mod tests {
             num_inp_atoms: 1,
             ..ORIG_ATOM_DATA::default()
         };
-        let mut preprocess_failure_prepared =
-            [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()];
+        let mut preprocess_failure_prepared = [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()];
         let mut preprocess_failure_structure = STRUCT_DATA::default();
         preprocess_failure_heap.fail_after_allocations(0);
         assert_eq!(
@@ -9508,9 +9233,7 @@ mod tests {
                 None,
                 &mut preprocess_failure_original,
                 &mut preprocess_failure_prepared,
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 7,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9526,9 +9249,7 @@ mod tests {
 
         for fail_composite_storage in [false, true] {
             let mut multi_heap = SourceHeap::default();
-            let multi_clock = multi_heap
-                .allocate_model_storage(vec![INCHI_CLOCK::default()])
-                .unwrap();
+            let multi_clock = multi_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
             let mut multi_original = ORIG_ATOM_DATA {
                 at: multi_heap
                     .allocate_model_storage(vec![structure_carbon(1, 1), structure_carbon(2, 2)])
@@ -9548,8 +9269,7 @@ mod tests {
             let mut multi_outputs = [SourceMutPointer::null(); 2];
             let mut multi_aux = [SourceMutPointer::null(); 2];
             let mut multi_structure = STRUCT_DATA::default();
-            let mut multi_composite =
-                std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+            let mut multi_composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
             if fail_composite_storage {
                 multi_heap.fail_after_allocations(0);
             }
@@ -9597,24 +9317,15 @@ mod tests {
         }
 
         let mut title_heap = SourceHeap::default();
-        let title_clock = title_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
-        let title_atom = title_heap
-            .allocate_model_storage(vec![structure_carbon(1, 1)])
-            .unwrap();
+        let title_clock = title_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+        let title_atom = title_heap.allocate_model_storage(vec![structure_carbon(1, 1)]).unwrap();
         let mut title_original = ORIG_ATOM_DATA {
             at: title_atom,
             num_inp_atoms: 1,
             ..ORIG_ATOM_DATA::default()
         };
         let mut title_prepared = [
-            prepared_structure(
-                &mut title_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
+            prepared_structure(&mut title_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
             ORIG_ATOM_DATA::default(),
         ];
         let title_label = c_text(&mut title_heap, b"ID");
@@ -9644,9 +9355,7 @@ mod tests {
                 None,
                 &mut title_original,
                 &mut title_prepared,
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 9,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9660,23 +9369,14 @@ mod tests {
         assert_eq!(title[expected_title.len() + 1], 0x5a);
 
         let mut quit_heap = SourceHeap::default();
-        let quit_clock = quit_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let quit_clock = quit_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let mut quit_original = ORIG_ATOM_DATA {
-            at: quit_heap
-                .allocate_model_storage(vec![structure_carbon(1, 1)])
-                .unwrap(),
+            at: quit_heap.allocate_model_storage(vec![structure_carbon(1, 1)]).unwrap(),
             num_inp_atoms: 1,
             ..ORIG_ATOM_DATA::default()
         };
         let mut quit_prepared = [
-            prepared_structure(
-                &mut quit_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
+            prepared_structure(&mut quit_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
             ORIG_ATOM_DATA::default(),
         ];
         let mut quit_outputs = [SourceMutPointer::null(); 2];
@@ -9702,9 +9402,7 @@ mod tests {
                 None,
                 &mut quit_original,
                 &mut quit_prepared,
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 10,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9722,9 +9420,7 @@ mod tests {
         let capacity_clock = capacity_heap
             .allocate_model_storage(vec![INCHI_CLOCK::default()])
             .unwrap();
-        let retained = capacity_heap
-            .allocate_model_storage(vec![INChI::default()])
-            .unwrap();
+        let retained = capacity_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
         let capacity_rows = capacity_heap
             .allocate_model_storage(vec![
                 [SourceMutPointer::null(); 2],
@@ -9745,12 +9441,7 @@ mod tests {
             ..ORIG_ATOM_DATA::default()
         };
         let mut capacity_prepared = [
-            prepared_structure(
-                &mut capacity_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
+            prepared_structure(&mut capacity_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
             ORIG_ATOM_DATA::default(),
         ];
         let mut capacity_structure = STRUCT_DATA::default();
@@ -9776,9 +9467,7 @@ mod tests {
                 None,
                 &mut capacity_original,
                 &mut capacity_prepared,
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 12,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9789,10 +9478,7 @@ mod tests {
         assert_eq!(capacity_outputs[0], capacity_rows);
         assert_eq!(capacity_aux[0], capacity_aux_rows);
         assert_eq!(capacity_structure.num_components[0], 2);
-        assert_eq!(
-            capacity_heap.slice(capacity_rows.as_const()).unwrap()[2][0],
-            retained
-        );
+        assert_eq!(capacity_heap.slice(capacity_rows.as_const()).unwrap()[2][0], retained);
 
         let mut duplicate_heap = SourceHeap::default();
         let duplicate_clock = duplicate_heap
@@ -9836,12 +9522,7 @@ mod tests {
                 vec![1, 1],
                 vec![1, 1],
             ),
-            prepared_structure(
-                &mut duplicate_heap,
-                vec![structure_carbon(1, 1)],
-                vec![1],
-                vec![1],
-            ),
+            prepared_structure(&mut duplicate_heap, vec![structure_carbon(1, 1)], vec![1], vec![1]),
         ];
         let mut duplicate_structure = STRUCT_DATA::default();
         duplicate_structure.num_components[0] = 2;
@@ -9862,9 +9543,7 @@ mod tests {
                 None,
                 &mut duplicate_original,
                 &mut duplicate_prepared,
-                &mut std::array::from_fn(|_| {
-                    std::array::from_fn(|_| COMP_ATOM_DATA::default())
-                }),
+                &mut std::array::from_fn(|_| { std::array::from_fn(|_| COMP_ATOM_DATA::default()) }),
                 11,
                 None,
                 &mut NORM_CANON_FLAGS::default(),
@@ -9878,18 +9557,13 @@ mod tests {
             array_c_bytes(&duplicate_structure.pStrErrStruct),
             b"Cannot distinguish components"
         );
-        assert_eq!(
-            duplicate_heap.slice(first_inchi.as_const()).unwrap()[0].nRefCount,
-            1
-        );
+        assert_eq!(duplicate_heap.slice(first_inchi.as_const()).unwrap()[0].nRefCount, 1);
     }
 
     #[test]
     fn source_port__runichi__createonecomponentinchi__line_1747() {
         let mut empty_heap = SourceHeap::default();
-        let empty_clock = empty_heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let empty_clock = empty_heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let mut empty_structure = STRUCT_DATA::default();
         let mut empty_parameters = INPUT_PARMS::default();
         let mut empty_input = INP_ATOM_DATA::default();
@@ -9918,15 +9592,10 @@ mod tests {
             Ok(_IS_ERROR as i32)
         );
         assert_eq!(empty_structure.nErrorCode, -1);
-        assert_eq!(
-            empty_inchi[0],
-            [SourceMutPointer::null(); TAUT_NUM as usize]
-        );
+        assert_eq!(empty_inchi[0], [SourceMutPointer::null(); TAUT_NUM as usize]);
 
         let mut heap = SourceHeap::default();
-        let clock = heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let mut carbon = inp_ATOM {
             el_number: 6,
             num_H: 4,
@@ -10015,11 +9684,7 @@ mod tests {
         for (label_text, value_text, expected_title) in [
             (b"".as_slice(), b"".as_slice(), "Structure #-7. "),
             (b"".as_slice(), b"V".as_slice(), "Structure #-7. V"),
-            (
-                b"L".as_slice(),
-                b"".as_slice(),
-                "Structure #-7.  L is missing",
-            ),
+            (b"L".as_slice(), b"".as_slice(), "Structure #-7.  L is missing"),
             (b"L".as_slice(), b"V".as_slice(), "Structure #-7.  L=V"),
         ] {
             let mut heap = SourceHeap::default();
@@ -10094,11 +9759,7 @@ mod tests {
     #[test]
     fn source_port__runichi__origatdata_storenativeinput__line_593() {
         fn error_text(structure_data: &STRUCT_DATA) -> String {
-            let end = structure_data
-                .pStrErrStruct
-                .iter()
-                .position(|byte| *byte == 0)
-                .unwrap();
+            let end = structure_data.pStrErrStruct.iter().position(|byte| *byte == 0).unwrap();
             String::from_utf8(
                 structure_data.pStrErrStruct[..end]
                     .iter()
@@ -10144,19 +9805,14 @@ mod tests {
         assert_eq!(success_output.n_zy, 12);
         assert!(!success_output.szAtoms.is_null());
         assert!(!success_output.szBonds.is_null());
-        crate::source::base::ichiprt1::OrigStruct_Free(
-            &mut success_heap,
-            Some(&mut success_output),
-        )
-        .unwrap();
+        crate::source::base::ichiprt1::OrigStruct_Free(&mut success_heap, Some(&mut success_output)).unwrap();
 
         let mut failure_heap = SourceHeap::default();
         failure_heap.fail_after_allocations(0);
         let mut failure_return = 73;
         let mut failure_data = STRUCT_DATA::default();
-        failure_data.pStrErrStruct[..6].copy_from_slice(&[
-            b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0,
-        ]);
+        failure_data.pStrErrStruct[..6]
+            .copy_from_slice(&[b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0]);
         let mut failure_input = ORIG_ATOM_DATA {
             n_zy: -7,
             ..ORIG_ATOM_DATA::default()
@@ -10269,8 +9925,7 @@ mod tests {
         );
         assert_eq!(
             tautomer_options,
-            (SAVE_OPT_RECMET | SAVE_OPT_KET | SAVE_OPT_15T | SAVE_OPT_PT_22_00 | SAVE_OPT_PT_16_00)
-                as u8
+            (SAVE_OPT_RECMET | SAVE_OPT_KET | SAVE_OPT_15T | SAVE_OPT_PT_22_00 | SAVE_OPT_PT_16_00) as u8
         );
 
         let mut stereo_disabled = 0xff;
@@ -10287,9 +9942,7 @@ mod tests {
 
     #[test]
     fn source_port__runichi__displayorigandresultstructuresandcomponents__line_679() {
-        for (display, initial_composite, expected_composite) in
-            [(0, 17, 17), (1, -9, 1), (-1, 23, 1)]
-        {
+        for (display, initial_composite, expected_composite) in [(0, 17, 17), (1, -9, 1), (-1, 23, 1)] {
             let mut parameters = INPUT_PARMS {
                 bDisplay: display,
                 bDisplayCompositeResults: initial_composite,
@@ -10319,8 +9972,7 @@ mod tests {
                 }])
                 .unwrap();
             let output = if output_present {
-                heap.allocate_model_storage(vec![SourceFile::default()])
-                    .unwrap()
+                heap.allocate_model_storage(vec![SourceFile::default()]).unwrap()
             } else {
                 SourceMutPointer::null()
             };

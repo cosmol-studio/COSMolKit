@@ -5,14 +5,10 @@ mod direction;
 mod stereo;
 
 pub(crate) use self::cx::get_cx_extensions;
-pub(crate) use self::stereo::{
-    assign_stereochemistry_on_working_copy, update_property_cache_for_smiles,
-};
+pub(crate) use self::stereo::{assign_stereochemistry_on_working_copy, update_property_cache_for_smiles};
 use self::{cx::*, direction::*, stereo::*};
 
-use crate::{
-    AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Molecule, ValenceError,
-};
+use crate::{AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Molecule, ValenceError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -198,32 +194,22 @@ pub enum SmilesWriteError {
     RootedAtomOutOfRange { atom: usize },
     #[error("rooted atom index {atom} is not present in atoms_to_use")]
     RootedAtomNotInFragment { atom: usize },
-    #[error(
-        "rooted atom index {atom} requires a single-fragment molecule when bonds_to_use is omitted"
-    )]
+    #[error("rooted atom index {atom} requires a single-fragment molecule when bonds_to_use is omitted")]
     RootedAtomRequiresSingleFragment { atom: usize },
     #[error("atom symbol override vector has length {len}, expected at least {expected}")]
     AtomSymbolsTooShort { len: usize, expected: usize },
     #[error("bond symbol override vector has length {len}, expected at least {expected}")]
     BondSymbolsTooShort { len: usize, expected: usize },
-    #[error(
-        "invalid non-tetrahedral chiral permutation {permutation} for {chiral_tag:?}; max allowed is {limit}"
-    )]
+    #[error("invalid non-tetrahedral chiral permutation {permutation} for {chiral_tag:?}; max allowed is {limit}")]
     InvalidChiralPermutation {
         chiral_tag: ChiralTag,
         permutation: u32,
         limit: u32,
     },
     #[error("invalid ring stereochemistry state on atom {atom}: {requirement}")]
-    InvalidRingStereoState {
-        atom: usize,
-        requirement: &'static str,
-    },
+    InvalidRingStereoState { atom: usize, requirement: &'static str },
     #[error("internal SMILES writer invariant violated in {stage}: {message}")]
-    InvariantViolation {
-        stage: &'static str,
-        message: &'static str,
-    },
+    InvariantViolation { stage: &'static str, message: &'static str },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -293,10 +279,7 @@ struct CanonicalTraversalResult {
     broken_chiral_atoms: BTreeSet<AtomId>,
 }
 
-pub fn mol_to_smiles(
-    molecule: &Molecule,
-    params: &SmilesWriteParams,
-) -> Result<String, SmilesWriteError> {
+pub fn mol_to_smiles(molecule: &Molecule, params: &SmilesWriteParams) -> Result<String, SmilesWriteError> {
     mol_to_smiles_with_mode(molecule, params, SmilesOutputMode::PlainSmiles)
 }
 
@@ -305,12 +288,7 @@ pub(crate) fn mol_to_smiles_with_atom_output_order(
     params: &SmilesWriteParams,
 ) -> Result<(String, Vec<AtomId>), SmilesWriteError> {
     let mut context = SmilesWriteContext::default();
-    let smiles = mol_to_smiles_with_mode_and_context(
-        molecule,
-        params,
-        SmilesOutputMode::PlainSmiles,
-        &mut context,
-    )?;
+    let smiles = mol_to_smiles_with_mode_and_context(molecule, params, SmilesOutputMode::PlainSmiles, &mut context)?;
     Ok((smiles, context.atom_output_order))
 }
 
@@ -510,9 +488,7 @@ fn mol_to_smiles_with_mode_and_context(
     let mut working_params = params.clone();
 
     let saved_atom_maps = match mode {
-        SmilesOutputMode::PlainSmiles => {
-            prepare_plain_smiles_molecule(&mut molecule, &working_params)?
-        }
+        SmilesOutputMode::PlainSmiles => prepare_plain_smiles_molecule(&mut molecule, &working_params)?,
         SmilesOutputMode::CxSmiles {
             fields,
             restore_bond_dirs,
@@ -708,30 +684,19 @@ fn stash_and_clear_atom_maps_for_smiles(
         return None;
     }
     let topology = molecule.topology_block_mut();
-    let saved = topology
-        .atoms
-        .iter()
-        .map(|atom| atom.atom_map())
-        .collect::<Vec<_>>();
+    let saved = topology.atoms.iter().map(|atom| atom.atom_map()).collect::<Vec<_>>();
     for atom in &mut topology.atoms {
         atom.set_atom_map(None);
     }
     Some(saved)
 }
 
-fn restore_atom_maps_after_canonical_smiles(
-    molecule: &mut Molecule,
-    saved_atom_maps: Option<&[Option<u32>]>,
-) {
+fn restore_atom_maps_after_canonical_smiles(molecule: &mut Molecule, saved_atom_maps: Option<&[Option<u32>]>) {
     let Some(saved_atom_maps) = saved_atom_maps else {
         return;
     };
     let topology = molecule.topology_block_mut();
-    for (atom, atom_map) in topology
-        .atoms
-        .iter_mut()
-        .zip(saved_atom_maps.iter().copied())
-    {
+    for (atom, atom_map) in topology.atoms.iter_mut().zip(saved_atom_maps.iter().copied()) {
         atom.set_atom_map(atom_map);
     }
 }
@@ -827,9 +792,7 @@ fn write_fragment_smiles_with_ranks(
     context: &mut SmilesWriteContext,
 ) -> Result<FragmentWriteResult, SmilesWriteError> {
     let start_atom = choose_fragment_start_atom(plan, &ranks, params)?;
-    fragment_smiles_construct(
-        molecule, plan, start_atom, &ranks, params, overrides, context,
-    )
+    fragment_smiles_construct(molecule, plan, start_atom, &ranks, params, overrides, context)
 }
 
 fn fragment_smiles_construct(
@@ -846,19 +809,15 @@ fn fragment_smiles_construct(
     if params.canonical && params.do_isomeric_smiles {
         canonicalize_enhanced_stereo_for_smiles(molecule)?;
     }
-    let traversal =
-        canonicalize_fragment_stack(molecule, plan, start_atom, ranks, params, overrides)?;
+    let traversal = canonicalize_fragment_stack(molecule, plan, start_atom, ranks, params, overrides)?;
     canonicalize_double_bond_directions_for_writer(
         molecule,
         &traversal.stack,
         &traversal.traversal_ring_closure_bonds,
     )?;
-    context.chiral_tag_overrides.extend(
-        traversal
-            .chiral_tag_overrides
-            .iter()
-            .map(|(atom, tag)| (*atom, *tag)),
-    );
+    context
+        .chiral_tag_overrides
+        .extend(traversal.chiral_tag_overrides.iter().map(|(atom, tag)| (*atom, *tag)));
     context
         .chiral_inversions
         .extend(traversal.chiral_inversions.iter().copied());
@@ -909,13 +868,8 @@ fn rank_mol_atoms_for_smiles(
     // RDKit✔️✔️:       MolOps::getMolFrags(mol, false, nullptr, &fragsMolAtomMapping, false);
     // RDKit✔️✔️:   for (unsigned fragIdx = 0; fragIdx < mols.size(); fragIdx++) {
     // RDKit✔️✔️:     ROMol *tmol = mols[fragIdx].get();
-    let fragment_atom_indices = plan
-        .atoms
-        .iter()
-        .map(|atom| atom.index())
-        .collect::<Vec<_>>();
-    let fragment =
-        crate::fragment::build_fragment_molecule(molecule, &fragment_atom_indices, false)?;
+    let fragment_atom_indices = plan.atoms.iter().map(|atom| atom.index()).collect::<Vec<_>>();
+    let fragment = crate::fragment::build_fragment_molecule(molecule, &fragment_atom_indices, false)?;
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles canonical rank options
     // RDKit✔️✔️:       const bool includeChiralPresence = false;
     // RDKit✔️✔️:       const bool includeIsotopes = params.doIsomericSmiles;
@@ -1109,12 +1063,9 @@ fn write_mol_stack(
                 if let Some(bond_symbols) = overrides.bond_symbols {
                     result.smiles.push_str(&bond_symbols[bond.index()]);
                 } else {
-                    result.smiles.push_str(&build_bond_smiles(
-                        molecule,
-                        bond,
-                        atom_to_left,
-                        params,
-                    )?);
+                    result
+                        .smiles
+                        .push_str(&build_bond_smiles(molecule, bond, atom_to_left, params)?);
                 }
                 result.bond_ordering.push(bond);
             }
@@ -1157,14 +1108,7 @@ pub fn mol_fragment_to_smiles(
     atom_symbols: Option<&[String]>,
     bond_symbols: Option<&[String]>,
 ) -> Result<String, SmilesWriteError> {
-    validate_fragment_api_inputs(
-        molecule,
-        params,
-        atoms_to_use,
-        bonds_to_use,
-        atom_symbols,
-        bond_symbols,
-    )?;
+    validate_fragment_api_inputs(molecule, params, atoms_to_use, bonds_to_use, atom_symbols, bond_symbols)?;
     if molecule.num_atoms() == 0 || atoms_to_use.is_empty() {
         return Ok(String::new());
     }
@@ -1194,17 +1138,10 @@ pub fn mol_fragment_to_smiles(
     working_params.do_kekule = false;
     let saved_atom_maps = prepare_plain_smiles_molecule(&mut molecule, &working_params)?;
 
-    let mut plans =
-        collect_fragment_api_write_plans(&molecule, &working_params, atoms_to_use, bonds_to_use)?;
+    let mut plans = collect_fragment_api_write_plans(&molecule, &working_params, atoms_to_use, bonds_to_use)?;
     if working_params.canonical {
         restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
-        plans.sort_by_key(|plan| {
-            plan.atoms
-                .iter()
-                .map(|atom| atom.index())
-                .min()
-                .unwrap_or(usize::MAX)
-        });
+        plans.sort_by_key(|plan| plan.atoms.iter().map(|atom| atom.index()).min().unwrap_or(usize::MAX));
     }
 
     let overrides = SmilesWriteOverrides {
@@ -1235,14 +1172,7 @@ pub fn mol_fragment_to_cx_smiles(
     bond_symbols: Option<&[String]>,
     fields: CxSmilesFields,
 ) -> Result<String, SmilesWriteError> {
-    validate_fragment_api_inputs(
-        molecule,
-        params,
-        atoms_to_use,
-        bonds_to_use,
-        atom_symbols,
-        bond_symbols,
-    )?;
+    validate_fragment_api_inputs(molecule, params, atoms_to_use, bonds_to_use, atom_symbols, bond_symbols)?;
     let mut context = SmilesWriteContext::default();
     let smiles = mol_fragment_to_smiles_with_context(
         molecule,
@@ -1287,17 +1217,10 @@ fn mol_fragment_to_smiles_with_context(
     working_params.do_kekule = false;
     let saved_atom_maps = prepare_plain_smiles_molecule(&mut molecule, &working_params)?;
 
-    let mut plans =
-        collect_fragment_api_write_plans(&molecule, &working_params, atoms_to_use, bonds_to_use)?;
+    let mut plans = collect_fragment_api_write_plans(&molecule, &working_params, atoms_to_use, bonds_to_use)?;
     if working_params.canonical {
         restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
-        plans.sort_by_key(|plan| {
-            plan.atoms
-                .iter()
-                .map(|atom| atom.index())
-                .min()
-                .unwrap_or(usize::MAX)
-        });
+        plans.sort_by_key(|plan| plan.atoms.iter().map(|atom| atom.index()).min().unwrap_or(usize::MAX));
     }
 
     let overrides = SmilesWriteOverrides {
@@ -1331,9 +1254,7 @@ fn collect_fragment_api_write_plans(
         molecule
             .bonds()
             .iter()
-            .filter(|bond| {
-                atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index())
-            })
+            .filter(|bond| atom_set.contains(&bond.begin().index()) && atom_set.contains(&bond.end().index()))
             .map(|bond| bond.id().index())
             .collect::<BTreeSet<_>>()
     };
@@ -1389,15 +1310,7 @@ pub fn get_atom_smiles(
     params: &SmilesWriteParams,
 ) -> Result<String, SmilesWriteError> {
     validate_atom_index(molecule, atom)?;
-    get_atom_smiles_impl(
-        molecule,
-        AtomId::new(atom),
-        params,
-        None,
-        false,
-        None,
-        false,
-    )
+    get_atom_smiles_impl(molecule, AtomId::new(atom), params, None, false, None, false)
 }
 
 fn get_atom_smiles_with_context(
@@ -1522,32 +1435,25 @@ fn get_atom_smiles_impl(
     };
     let raw_symbol = custom_symbol.unwrap_or(element_symbol(atom.atomic_number())?);
     let lowered_symbol;
-    let symbol: &str = if !params.do_kekule
-        && atom.is_aromatic()
-        && raw_symbol
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_uppercase)
-    {
-        let should_lower = matches!(
-            atom.atomic_number(),
-            5 | 6 | 7 | 8 | 14 | 15 | 16 | 33 | 34 | 52
-        );
-        if should_lower {
-            let mut owned = String::with_capacity(raw_symbol.len());
-            let mut chars = raw_symbol.chars();
-            if let Some(first) = chars.next() {
-                owned.extend(first.to_lowercase());
+    let symbol: &str =
+        if !params.do_kekule && atom.is_aromatic() && raw_symbol.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        {
+            let should_lower = matches!(atom.atomic_number(), 5 | 6 | 7 | 8 | 14 | 15 | 16 | 33 | 34 | 52);
+            if should_lower {
+                let mut owned = String::with_capacity(raw_symbol.len());
+                let mut chars = raw_symbol.chars();
+                if let Some(first) = chars.next() {
+                    owned.extend(first.to_lowercase());
+                }
+                owned.push_str(chars.as_str());
+                lowered_symbol = owned;
+                &lowered_symbol
+            } else {
+                raw_symbol
             }
-            owned.push_str(chars.as_str());
-            lowered_symbol = owned;
-            &lowered_symbol
         } else {
             raw_symbol
-        }
-    } else {
-        raw_symbol
-    };
+        };
     let mut result = String::new();
     if needs_bracket {
         result.push('[');
@@ -1687,15 +1593,11 @@ pub fn get_molecule_bond_smiles(
             BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
         ) {
         let left = &molecule.atoms()[atom_to_left];
-        let other_id = bond_other_atom(bond, AtomId::new(atom_to_left)).ok_or(
-            SmilesWriteError::BondOutOfRange {
-                bond: bond.id().index(),
-            },
-        )?;
+        let other_id = bond_other_atom(bond, AtomId::new(atom_to_left)).ok_or(SmilesWriteError::BondOutOfRange {
+            bond: bond.id().index(),
+        })?;
         let other = &molecule.atoms()[other_id.index()];
-        left.is_aromatic()
-            && other.is_aromatic()
-            && (left.atomic_number() != 0 || other.atomic_number() != 0)
+        left.is_aromatic() && other.is_aromatic() && (left.atomic_number() != 0 || other.atomic_number() != 0)
     } else {
         false
     };
@@ -1708,10 +1610,7 @@ pub fn get_molecule_bond_smiles(
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   } else if (params.allBondsExplicit) { res = "-"; }
         BondOrder::Single => {
-            if !matches!(
-                bond.direction(),
-                BondDirection::None | BondDirection::Unknown
-            ) {
+            if !matches!(bond.direction(), BondDirection::None | BondDirection::Unknown) {
                 match bond.direction() {
                     BondDirection::EndDownRight => {
                         if params.all_bonds_explicit || params.do_isomeric_smiles {
@@ -1760,10 +1659,7 @@ pub fn get_molecule_bond_smiles(
         // RDKit✔️✔️:   if (params.allBondsExplicit) { res = ":"; }
         // RDKit✔️✔️:   break;
         BondOrder::Aromatic => {
-            if !matches!(
-                bond.direction(),
-                BondDirection::None | BondDirection::Unknown
-            ) {
+            if !matches!(bond.direction(), BondDirection::None | BondDirection::Unknown) {
                 match bond.direction() {
                     BondDirection::EndDownRight => {
                         if params.all_bonds_explicit || params.do_isomeric_smiles {
@@ -1829,9 +1725,11 @@ fn total_num_hydrogens_for_writer(molecule: &Molecule, atom_id: AtomId) -> u32 {
 }
 
 fn total_valence_for_writer(molecule: &Molecule, atom_id: AtomId) -> Option<i32> {
-    molecule.derived_cache().valence.as_ref().map(|valence| {
-        valence.explicit_valence[atom_id.index()] + valence.implicit_hydrogens[atom_id.index()]
-    })
+    molecule
+        .derived_cache()
+        .valence
+        .as_ref()
+        .map(|valence| valence.explicit_valence[atom_id.index()] + valence.implicit_hydrogens[atom_id.index()])
 }
 
 #[must_use]
@@ -1846,10 +1744,7 @@ pub fn in_organic_subset(_atomic_number: u8) -> Result<bool, SmilesWriteError> {
     // RDKit✔️✔️:   return atomicSmiles[idx] == atomicNumber;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION inOrganicSubset
-    Ok(matches!(
-        _atomic_number,
-        0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53
-    ))
+    Ok(matches!(_atomic_number, 0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53))
 }
 
 fn write_ring_closure(
@@ -1863,12 +1758,7 @@ fn write_ring_closure(
         return Ok(());
     }
 
-    let digit = match (1..).find(|candidate| {
-        !context
-            .ring_closure_digits
-            .values()
-            .any(|digit| digit == candidate)
-    }) {
+    let digit = match (1..).find(|candidate| !context.ring_closure_digits.values().any(|digit| digit == candidate)) {
         Some(d) => d,
         // [deferred] Ring closure digit exhaustion. The candidate search
         // (1..) finds the first unused digit; None only occurs if every
@@ -1958,12 +1848,8 @@ fn assemble_fragment_smiles(
         context.atom_output_order.clear();
         context.bond_output_order.clear();
         for fragment in &sorted {
-            context
-                .atom_output_order
-                .extend(fragment.atom_ordering.iter().copied());
-            context
-                .bond_output_order
-                .extend(fragment.bond_ordering.iter().copied());
+            context.atom_output_order.extend(fragment.atom_ordering.iter().copied());
+            context.bond_output_order.extend(fragment.bond_ordering.iter().copied());
         }
         return Ok(sorted
             .into_iter()
@@ -1974,12 +1860,8 @@ fn assemble_fragment_smiles(
     context.atom_output_order.clear();
     context.bond_output_order.clear();
     for fragment in &fragment_results {
-        context
-            .atom_output_order
-            .extend(fragment.atom_ordering.iter().copied());
-        context
-            .bond_output_order
-            .extend(fragment.bond_ordering.iter().copied());
+        context.atom_output_order.extend(fragment.atom_ordering.iter().copied());
+        context.bond_output_order.extend(fragment.bond_ordering.iter().copied());
     }
     Ok(fragment_results
         .into_iter()
@@ -1988,10 +1870,7 @@ fn assemble_fragment_smiles(
         .join("."))
 }
 
-fn validate_rooted_atom(
-    molecule: &Molecule,
-    params: &SmilesWriteParams,
-) -> Result<(), SmilesWriteError> {
+fn validate_rooted_atom(molecule: &Molecule, params: &SmilesWriteParams) -> Result<(), SmilesWriteError> {
     if let Some(atom) = params.rooted_at_atom
         && atom >= molecule.num_atoms()
     {
@@ -2067,10 +1946,7 @@ fn validate_bond_index(molecule: &Molecule, bond: usize) -> Result<(), SmilesWri
     }
 }
 
-fn invariant_stage_error<T>(
-    stage: SmilesPlanStage,
-    message: &'static str,
-) -> Result<T, SmilesWriteError> {
+fn invariant_stage_error<T>(stage: SmilesPlanStage, message: &'static str) -> Result<T, SmilesWriteError> {
     Err(SmilesWriteError::InvariantViolation {
         stage: stage.as_str(),
         message,

@@ -3,29 +3,26 @@ use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
 use crate::source::base::ichirvr1::{
     AddToEdgeList, AllocEdgeList, CN_LIST, GetChargeFlowerUpperEdge, GetTgroupInfoFromInChI,
-    RemoveForbiddenBondFlowBits, RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue,
-    RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask, bond_flow_maxcap_minorder_source,
-    comp_cc_cand, get_pVA_atom_type,
+    RemoveForbiddenBondFlowBits, RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue, RunBnsRestoreOnce, RunBnsTestOnce,
+    SetForbiddenEdgeMask, bond_flow_maxcap_minorder_source, comp_cc_cand, get_pVA_atom_type,
 };
 use crate::source::base::ichirvr4::ForbidCarbonChargeEdges;
 use crate::source::base::ichister::{bCanAtomBeMiddleAllene, bCanAtomBeTerminalAllene};
 use crate::source::base::ichitaut::is_centerpoint_elem;
 use crate::source::base::util::{
-    get_el_valence, get_element_chemical_symbol, get_endpoint_valence, inchi_calloc, inchi_free,
-    is_el_a_metal, is_in_the_list, n_no_metal_bonds_valence, n_no_metal_num_bonds,
+    get_el_valence, get_element_chemical_symbol, get_endpoint_valence, inchi_calloc, inchi_free, is_el_a_metal,
+    is_in_the_list, n_no_metal_bonds_valence, n_no_metal_num_bonds,
 };
 use crate::source_types::{
-    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_EVEN, AB_PARITY_ODD,
-    ALL_TC_GROUPS, AT_NUMB, BN_DATA, BN_STRUCT, BNS_EDGE, BNS_VERT_TYPE__AUX,
-    BNS_VERT_TYPE_C_GROUP, BNS_VERT_TYPE_ENDPOINT, BNS_VERTEX, BNS_VT_C_POS, BNS_VT_C_POS_ALL,
-    BNS_VT_CHRG_STRUCT, BOND_TYPE_ALTERN, BOND_TYPE_DOUBLE, BOND_TYPE_MASK, BOND_TYPE_SINGLE,
-    BOND_TYPE_STEREO, BOND_TYPE_TRIPLE, CC_CAND, EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE,
-    EL_TYPE_C, EL_TYPE_MASK, EL_TYPE_N, EL_TYPE_O, EL_TYPE_OSt, EL_TYPE_P, EL_TYPE_PT, EL_TYPE_S,
-    INChI, INChI_Stereo, MAX_CUMULENE_LEN, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH,
-    MAX_NUM_STEREO_BONDS, MIN_NUM_STEREO_BOND_NEIGH, NO_VERTEX, NUM_H_ISOTOPES, RI_ERR_ALLOC,
-    RI_ERR_PROGR, RI_ERR_SYNTAX, S_SHORT, SourceHeap, SourceHeapError, SourceMutPointer,
-    StrFromINChI, TAUT_NON, VAL_AT, clock_t, cn_bits_M, cn_bits_N, cn_bits_P, cn_bits_shift,
-    inp_ATOM, inp_ATOM_STEREO, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT,
+    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_EVEN, AB_PARITY_ODD, ALL_TC_GROUPS, AT_NUMB,
+    BN_DATA, BN_STRUCT, BNS_EDGE, BNS_VERT_TYPE__AUX, BNS_VERT_TYPE_C_GROUP, BNS_VERT_TYPE_ENDPOINT, BNS_VERTEX,
+    BNS_VT_C_POS, BNS_VT_C_POS_ALL, BNS_VT_CHRG_STRUCT, BOND_TYPE_ALTERN, BOND_TYPE_DOUBLE, BOND_TYPE_MASK,
+    BOND_TYPE_SINGLE, BOND_TYPE_STEREO, BOND_TYPE_TRIPLE, CC_CAND, EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE,
+    EL_TYPE_C, EL_TYPE_MASK, EL_TYPE_N, EL_TYPE_O, EL_TYPE_OSt, EL_TYPE_P, EL_TYPE_PT, EL_TYPE_S, INChI, INChI_Stereo,
+    MAX_CUMULENE_LEN, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS,
+    MIN_NUM_STEREO_BOND_NEIGH, NO_VERTEX, NUM_H_ISOTOPES, RI_ERR_ALLOC, RI_ERR_PROGR, RI_ERR_SYNTAX, S_SHORT,
+    SourceHeap, SourceHeapError, SourceMutPointer, StrFromINChI, TAUT_NON, VAL_AT, clock_t, cn_bits_M, cn_bits_N,
+    cn_bits_P, cn_bits_shift, inp_ATOM, inp_ATOM_STEREO, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT,
     tagTCGroupTypes_TCG_MeFlower0 as TCG_MeFlower0, tagTCGroupTypes_TCG_Plus as TCG_Plus,
 };
 
@@ -78,10 +75,10 @@ fn mobile_h_endpoint_center_is_better(
     let Some(found) = found else {
         return true;
     };
-    let candidate_non_carbon = valence_atoms[candidate].cNumValenceElectrons != 4
-        || valence_atoms[candidate].cPeriodicRowNumber != 1;
-    let found_is_carbon = valence_atoms[found].cNumValenceElectrons == 4
-        && valence_atoms[found].cPeriodicRowNumber == 1;
+    let candidate_non_carbon =
+        valence_atoms[candidate].cNumValenceElectrons != 4 || valence_atoms[candidate].cPeriodicRowNumber != 1;
+    let found_is_carbon =
+        valence_atoms[found].cNumValenceElectrons == 4 && valence_atoms[found].cPeriodicRowNumber == 1;
     candidate_non_carbon
         && (found_is_carbon
             || original_atoms[candidate].valence > original_atoms[found].valence
@@ -92,8 +89,7 @@ fn mobile_h_endpoint_center_is_better(
 #[inline]
 fn valence_atom_is_carbon(valence_atoms: &[VAL_AT], vertex: Option<usize>) -> bool {
     vertex.is_some_and(|vertex| {
-        valence_atoms[vertex].cNumValenceElectrons == 4
-            && valence_atoms[vertex].cPeriodicRowNumber == 1
+        valence_atoms[vertex].cNumValenceElectrons == 4 && valence_atoms[vertex].cPeriodicRowNumber == 1
     })
 }
 
@@ -119,10 +115,7 @@ fn copy_bns_to_atom_source_layout_is_valid(
     let Some(required_vertices) = atom_count.checked_add(tgroup_count) else {
         return false;
     };
-    if bns.num_atoms != structure.num_atoms
-        || required_vertices > vertex_count
-        || valence_atoms.len() < atom_count
-    {
+    if bns.num_atoms != structure.num_atoms || required_vertices > vertex_count || valence_atoms.len() < atom_count {
         return false;
     }
 
@@ -131,11 +124,8 @@ fn copy_bns_to_atom_source_layout_is_valid(
             .slice(structure.at.as_const())
             .ok()
             .is_some_and(|values| values.len() >= atom_count);
-    let restore_mode_is_valid = atom_count == 0
-        || heap
-            .slice(structure.pSrm)
-            .ok()
-            .is_some_and(|values| !values.is_empty());
+    let restore_mode_is_valid =
+        atom_count == 0 || heap.slice(structure.pSrm).ok().is_some_and(|values| !values.is_empty());
     let vertices = if vertex_count == 0 {
         Some(&[][..])
     } else {
@@ -153,12 +143,7 @@ fn copy_bns_to_atom_source_layout_is_valid(
             .slice(groups.pTCG.as_const())
             .ok()
             .is_some_and(|values| values.len() >= tgroup_count);
-    if !atoms_are_valid
-        || !restore_mode_is_valid
-        || vertices.is_none()
-        || !edges_are_valid
-        || !tgroups_are_valid
-    {
+    if !atoms_are_valid || !restore_mode_is_valid || vertices.is_none() || !edges_are_valid || !tgroups_are_valid {
         return false;
     }
 
@@ -178,9 +163,7 @@ fn copy_bns_to_atom_source_layout_is_valid(
     let vertices = vertices.expect("vertex allocation was checked above");
     vertex_count == 0
         || (!bns.iedge.is_null()
-            && vertices
-                .first()
-                .is_some_and(|vertex| vertex.iedge == bns.iedge)
+            && vertices.first().is_some_and(|vertex| vertex.iedge == bns.iedge)
             && heap.slice(bns.iedge.as_const()).is_ok())
 }
 
@@ -198,10 +181,7 @@ fn copy_bns_to_atom_source_indices_are_valid(
     let Some(required_vertices) = atom_count.checked_add(tgroup_count) else {
         return false;
     };
-    if atoms.len() < atom_count
-        || vertices.len() < required_vertices
-        || valence_atoms.len() < atom_count
-    {
+    if atoms.len() < atom_count || vertices.len() < required_vertices || valence_atoms.len() < atom_count {
         return false;
     }
 
@@ -265,10 +245,7 @@ fn copy_bns_to_atom_source_indices_are_valid(
             return false;
         };
         for &edge_index in row {
-            let Some(edge) = usize::try_from(edge_index)
-                .ok()
-                .and_then(|index| edges.get(index))
-            else {
+            let Some(edge) = usize::try_from(edge_index).ok().and_then(|index| edges.get(index)) else {
                 return false;
             };
             if usize::from(edge.neighbor1) >= atom_count {
@@ -311,8 +288,7 @@ unsafe fn copy_bns_to_atom_source_layout(
             let edge_index = unsafe { *adjacency.get_unchecked(offset + neighbor_order) as usize };
             let edge = unsafe { edges.get_unchecked(edge_index) };
             let atom = unsafe { atoms.get_unchecked(atom_index) };
-            let bonded_atom_index =
-                usize::from(unsafe { *atom.neighbor.get_unchecked(neighbor_order) });
+            let bonded_atom_index = usize::from(unsafe { *atom.neighbor.get_unchecked(neighbor_order) });
             let bonded_atom = unsafe { atoms.get_unchecked(bonded_atom_index) };
             let atom_va = unsafe { valence_atoms.get_unchecked(atom_index) };
             let bonded_atom_va = unsafe { valence_atoms.get_unchecked(bonded_atom_index) };
@@ -365,8 +341,7 @@ unsafe fn copy_bns_to_atom_source_layout(
         }
         if vertex.st_edge.cap > vertex.st_edge.flow {
             atom.radical = (crate::source_types::RADICAL_SINGLET as i32)
-                .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow))
-                as i8;
+                .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow)) as i8;
         }
         atom_index += 1;
     }
@@ -376,9 +351,8 @@ unsafe fn copy_bns_to_atom_source_layout(
         let group = unsafe { tgroups.get_unchecked(group_index) };
         let mut number_h = i32::from(group.tg_num_H);
         let mut number_minus = i32::from(group.tg_num_Minus);
-        let minus_first = (i32::from(group.tg_RestoreFlags)
-            & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32)
-            != 0;
+        let minus_first =
+            (i32::from(group.tg_RestoreFlags) & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32) != 0;
         let mut minus_vertex = NO_VERTEX;
         let vertex = unsafe { vertices.get_unchecked(atom_count + group_index) };
         if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
@@ -393,8 +367,7 @@ unsafe fn copy_bns_to_atom_source_layout(
 
         macro_rules! apply_tautomer_edge {
             ($adjacency_index:expr) => {{
-                let edge_index =
-                    unsafe { *adjacency.get_unchecked(offset + $adjacency_index) as usize };
+                let edge_index = unsafe { *adjacency.get_unchecked(offset + $adjacency_index) as usize };
                 let edge = unsafe { edges.get_unchecked(edge_index) };
                 let attached_atom_index = usize::from(edge.neighbor1);
                 let atom = unsafe { atoms.get_unchecked_mut(attached_atom_index) };
@@ -409,10 +382,7 @@ unsafe fn copy_bns_to_atom_source_layout(
                     minus_vertex = NO_VERTEX;
                 }
                 if number_to_add > 0 {
-                    if number_minus != 0
-                        && atom.charge == 0
-                        && atom.valence == atom.chem_bonds_valence
-                    {
+                    if number_minus != 0 && atom.charge == 0 && atom.valence == atom.chem_bonds_valence {
                         atom.charge = atom.charge.wrapping_sub(1);
                         number_to_add = number_to_add.wrapping_sub(1);
                         number_minus = number_minus.wrapping_sub(1);
@@ -642,8 +612,7 @@ pub(crate) fn CopyBnsToAtom(
     // INCHI✔️✔️: Compatibility layouts retain checked access and rollback only on Rust pointer errors.
     // END INCHI ACTIVE MACRO CONFIGURATION: CopyBnsToAtom
 
-    let atom_count =
-        usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count = usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let restore_mode = if atom_count == 0 {
         None
     } else {
@@ -654,8 +623,7 @@ pub(crate) fn CopyBnsToAtom(
                 .clone(),
         )
     };
-    let vertex_count =
-        usize::try_from(bns.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let vertex_count = usize::try_from(bns.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let vertices_view = if vertex_count == 0 {
         None
     } else {
@@ -666,8 +634,7 @@ pub(crate) fn CopyBnsToAtom(
         Some(view) => view.prefix(vertex_count)?,
         None => &[],
     };
-    let edge_count =
-        usize::try_from(bns.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let edge_count = usize::try_from(bns.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let edges_view = if edge_count == 0 {
         None
     } else {
@@ -678,8 +645,7 @@ pub(crate) fn CopyBnsToAtom(
         Some(view) => view.prefix(edge_count)?,
         None => &[],
     };
-    let tgroup_count =
-        usize::try_from(bns.num_t_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let tgroup_count = usize::try_from(bns.num_t_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let tgroups_view = if tgroup_count == 0 {
         None
     } else {
@@ -690,8 +656,7 @@ pub(crate) fn CopyBnsToAtom(
         Some(view) => view.prefix(tgroup_count)?,
         None => &[],
     };
-    let source_layout_is_valid =
-        copy_bns_to_atom_source_layout_is_valid(heap, structure, bns, valence_atoms, groups);
+    let source_layout_is_valid = copy_bns_to_atom_source_layout_is_valid(heap, structure, bns, valence_atoms, groups);
     if !source_layout_is_valid {
         // Compatibility layouts keep the previous Rust error ordering: every
         // adjacency row is checked before the first atom is modified.
@@ -717,9 +682,7 @@ pub(crate) fn CopyBnsToAtom(
         // INCHI✔️✔️:         for (i = 0; i < num_at; i++)
         let mut atom_index = 0_usize;
         while atom_index < atom_count {
-            let vertex = vertices
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let vertex = vertices.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let adjacency_count = usize::from(vertex.num_adj_edges);
             let adjacency = if adjacency_count == 0 {
                 &[][..]
@@ -739,21 +702,13 @@ pub(crate) fn CopyBnsToAtom(
             let mut chemical_bond_valence = 0_i32;
             let mut neighbor_order = 0_i32;
             while neighbor_order < atom_valence {
-                let order_index = usize::try_from(neighbor_order)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let edge_index = usize::try_from(
-                    *adjacency
-                        .get(order_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let edge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let order_index = usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge_index =
+                    usize::try_from(*adjacency.get(order_index).ok_or(SourceHeapError::PointerOutOfBounds)?)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge = edges.get(edge_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut minimum_order = 0_i32;
-                let atom = atoms
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if order_index >= atom.neighbor.len() || order_index >= atom.bond_type.len() {
                     return Err(SourceHeapError::PointerOutOfBounds);
                 }
@@ -802,28 +757,21 @@ pub(crate) fn CopyBnsToAtom(
 
             let minus_edge = valence_atoms[atom_index].nCMinusGroupEdge;
             if minus_edge != 0 {
-                let edge_index = usize::try_from(minus_edge.wrapping_sub(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let charge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .flow;
+                let edge_index =
+                    usize::try_from(minus_edge.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let charge = edges.get(edge_index).ok_or(SourceHeapError::PointerOutOfBounds)?.flow;
                 if charge != 0 {
-                    atoms[atom_index].charge =
-                        i32::from(atoms[atom_index].charge).wrapping_sub(charge) as i8;
+                    atoms[atom_index].charge = i32::from(atoms[atom_index].charge).wrapping_sub(charge) as i8;
                 }
             }
             let plus_edge = valence_atoms[atom_index].nCPlusGroupEdge;
             if plus_edge != 0 {
-                let edge_index = usize::try_from(plus_edge.wrapping_sub(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let edge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let edge_index =
+                    usize::try_from(plus_edge.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge = edges.get(edge_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let charge = edge.cap.wrapping_sub(edge.flow);
                 if charge != 0 {
-                    atoms[atom_index].charge =
-                        i32::from(atoms[atom_index].charge).wrapping_add(charge) as i8;
+                    atoms[atom_index].charge = i32::from(atoms[atom_index].charge).wrapping_add(charge) as i8;
                 }
             }
             if vertex.st_edge.cap > vertex.st_edge.flow {
@@ -837,11 +785,8 @@ pub(crate) fn CopyBnsToAtom(
 
         let mut group_index = 0_i32;
         while group_index < bns.num_t_groups {
-            let group_usize =
-                usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let group = tgroups
-                .get(group_usize)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let group_usize = usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let group = tgroups.get(group_usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             int num_H = pTCGroups->pTCG[i].tg_num_H;
             let mut number_h = i32::from(group.tg_num_H);
             // INCHI✔️✔️:             int num_Minus = pTCGroups->pTCG[i].tg_num_Minus;
@@ -856,9 +801,7 @@ pub(crate) fn CopyBnsToAtom(
             let vertex_index = atom_count
                 .checked_add(group_usize)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            let vertex = vertices
-                .get(vertex_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let vertex = vertices.get(vertex_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             if (!( pv->type & BNS_VERT_TYPE_TGROUP ))
             if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
                 // INCHI✔️✔️:                 return RI_ERR_PROGR;
@@ -899,14 +842,10 @@ pub(crate) fn CopyBnsToAtom(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let edge = edges
-                        .get(edge_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let edge = edges.get(edge_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     // INCHI✔️✔️:                     v1 = pe->neighbor1;
                     let atom_index = usize::from(edge.neighbor1);
-                    let atom = atoms
-                        .get_mut(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let atom = atoms.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     // INCHI✔️✔️:                     num_at_add = pe->flow;
                     let mut number_to_add = edge.flow;
                     // INCHI✔️✔️:                     if (v1 == vMinus)
@@ -928,10 +867,7 @@ pub(crate) fn CopyBnsToAtom(
                     if number_to_add > 0 {
                         // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
                         // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
-                        if number_minus != 0
-                            && atom.charge == 0
-                            && atom.valence == atom.chem_bonds_valence
-                        {
+                        if number_minus != 0 && atom.charge == 0 && atom.valence == atom.chem_bonds_valence {
                             // INCHI✔️✔️:                             at[v1].charge--;
                             atom.charge = atom.charge.wrapping_sub(1);
                             // INCHI✔️✔️:                             num_at_add--;
@@ -955,9 +891,7 @@ pub(crate) fn CopyBnsToAtom(
                 // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
                 let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
                 if number_h.wrapping_add(number_minus) != remaining
-                    && (number_h != 0
-                        || number_minus != 0
-                        || minus_vertex != crate::source_types::NO_VERTEX)
+                    && (number_h != 0 || number_minus != 0 || minus_vertex != crate::source_types::NO_VERTEX)
                 {
                     // INCHI✔️✔️:                     return RI_ERR_PROGR;
                     return Ok(RI_ERR_PROGR);
@@ -973,14 +907,10 @@ pub(crate) fn CopyBnsToAtom(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let edge = edges
-                        .get(edge_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let edge = edges.get(edge_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     // INCHI✔️✔️:                     v1 = pe->neighbor1;
                     let atom_index = usize::from(edge.neighbor1);
-                    let atom = atoms
-                        .get_mut(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let atom = atoms.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     // INCHI✔️✔️:                     num_at_add = pe->flow;
                     let mut number_to_add = edge.flow;
                     // INCHI✔️✔️:                     if (v1 == vMinus)
@@ -1002,10 +932,7 @@ pub(crate) fn CopyBnsToAtom(
                     if number_to_add > 0 {
                         // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
                         // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
-                        if number_minus != 0
-                            && atom.charge == 0
-                            && atom.valence == atom.chem_bonds_valence
-                        {
+                        if number_minus != 0 && atom.charge == 0 && atom.valence == atom.chem_bonds_valence {
                             // INCHI✔️✔️:                             at[v1].charge--;
                             atom.charge = atom.charge.wrapping_sub(1);
                             // INCHI✔️✔️:                             num_at_add--;
@@ -1029,9 +956,7 @@ pub(crate) fn CopyBnsToAtom(
                 // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
                 let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
                 if number_h.wrapping_add(number_minus) != remaining
-                    && (number_h != 0
-                        || number_minus != 0
-                        || minus_vertex != crate::source_types::NO_VERTEX)
+                    && (number_h != 0 || number_minus != 0 || minus_vertex != crate::source_types::NO_VERTEX)
                 {
                     // INCHI✔️✔️:                     return RI_ERR_PROGR;
                     return Ok(RI_ERR_PROGR);
@@ -1404,8 +1329,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             .slice(pBNS.vert.as_const())?
             .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        num_rad_not_atom =
-            num_rad_not_atom.wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow));
+        num_rad_not_atom = num_rad_not_atom.wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow));
         i = i.wrapping_add(1);
     }
     if num_rad_not_atom == 0 {
@@ -1431,8 +1355,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
         while i < local_num_vertices {
             let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let vertex = &heap.slice(pBNS.vert.as_const())?[index];
-            heap.slice_mut(pn_rad)?[index] =
-                vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow) as S_SHORT;
+            heap.slice_mut(pn_rad)?[index] = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow) as S_SHORT;
             i = i.wrapping_add(1);
         }
 
@@ -1465,8 +1388,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             while i < n_num_rad {
                 let rad_edge_index = heap.slice(pBD.RadEdges.as_const())?
                     [usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                let edge_index = usize::try_from(rad_edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge_index = usize::try_from(rad_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                 let v1 = usize::from(edge.neighbor1);
                 let v2 = usize::from(edge.neighbor12 ^ edge.neighbor1);
@@ -1479,8 +1401,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                 let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                 edge.flow = 0;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_mask) as i8;
-                pBNS.edge_forbidden_mask =
-                    (i32::from(pBNS.edge_forbidden_mask) | forbidden_mask) as i8;
+                pBNS.edge_forbidden_mask = (i32::from(pBNS.edge_forbidden_mask) | forbidden_mask) as i8;
                 i = i.wrapping_add(1);
             }
 
@@ -1496,8 +1417,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             if b_atom_rad_removed != 0 {
                 i = 0;
                 while i < pBNS.num_atoms {
-                    let index =
-                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let delta = i32::from(heap.slice(pn_delta.as_const())?[index]);
                     let vertex = &mut heap.slice_mut(pBNS.vert)?[index];
                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(delta);
@@ -1575,10 +1495,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             i = 0;
             while i < local_num_vertices {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if heap.slice(pn_rad.as_const())?[index] > 0
-                    && i < pBNS.num_atoms
-                    && pVA[index].nTautGroupEdge == 0
-                {
+                if heap.slice(pn_rad.as_const())?[index] > 0 && i < pBNS.num_atoms && pVA[index].nTautGroupEdge == 0 {
                     let atom = heap.slice(at2.as_const())?[index].clone();
                     let va = pVA[index].clone();
                     let candidate = &mut heap.slice_mut(p_cand)?
@@ -1608,8 +1525,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             }
             if j > 1 {
                 let count = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                heap.slice_mut(p_cand)?[..count]
-                    .sort_unstable_by(|left, right| comp_cc_cand(left, right).cmp(&0));
+                heap.slice_mut(p_cand)?[..count].sort_unstable_by(|left, right| comp_cc_cand(left, right).cmp(&0));
             }
 
             let mut added_charge = 0_i32;
@@ -1617,11 +1533,8 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             while k < j {
                 let rest_of_charge = extra_charge.wrapping_sub(added_charge);
                 let remaining = j.wrapping_sub(k);
-                let charge_per_left_atom = rest_of_charge
-                    .wrapping_abs()
-                    .wrapping_add(remaining)
-                    .wrapping_sub(1)
-                    / remaining;
+                let charge_per_left_atom =
+                    rest_of_charge.wrapping_abs().wrapping_add(remaining).wrapping_sub(1) / remaining;
                 let mut this_atom_add_charge = if rest_of_charge > 0 {
                     charge_per_left_atom
                 } else {
@@ -1639,8 +1552,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
 
                 i = local_num_vertices.wrapping_sub(1);
                 while this_atom_add_charge != 0 && pBNS.num_atoms <= i {
-                    let index =
-                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let vertex = &heap.slice(pBNS.vert.as_const())?[index];
                     let mut delta = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
                     let type_ = u32::from(vertex.type_);
@@ -1648,17 +1560,14 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                         if delta.wrapping_add(this_atom_add_charge) > 0 {
                             delta = this_atom_add_charge.wrapping_neg();
                         }
-                        heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
-                            vertex.st_edge.cap.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.vert)?[index].st_edge.cap = vertex.st_edge.cap.wrapping_sub(delta);
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
                         this_atom_add_charge = this_atom_add_charge.wrapping_add(delta);
-                    } else if delta != 0 && this_atom_add_charge > 0 && type_ == BNS_VERT_TYPE__AUX
-                    {
+                    } else if delta != 0 && this_atom_add_charge > 0 && type_ == BNS_VERT_TYPE__AUX {
                         if delta > this_atom_add_charge {
                             delta = this_atom_add_charge;
                         }
-                        heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
-                            vertex.st_edge.cap.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.vert)?[index].st_edge.cap = vertex.st_edge.cap.wrapping_sub(delta);
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
                         this_atom_add_charge = this_atom_add_charge.wrapping_sub(delta);
                     }
@@ -1834,8 +1743,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
         let mut number_total = 0_i32;
         let mut atom_index = 0_i32;
         while atom_index < pBNS.num_atoms {
-            let index =
-                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let valence_atom = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let minus_edge = valence_atom.nCMinusGroupEdge.wrapping_sub(1);
             let plus_edge = valence_atom.nCPlusGroupEdge.wrapping_sub(1);
@@ -1845,16 +1753,10 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
             if minus_edge >= 0 && plus_edge >= 0 {
                 let edges = heap.slice(pBNS.edge.as_const())?;
                 let minus = edges
-                    .get(
-                        usize::try_from(minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let plus = edges
-                    .get(
-                        usize::try_from(plus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if minus.flow > 0 && plus.cap.wrapping_sub(plus.flow) > 0 {
                     number_found = number_found.wrapping_add(1);
@@ -1866,11 +1768,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
             return Ok(0);
         }
 
-        let mut ret = AllocEdgeList(
-            heap,
-            &mut newly_fixed_edges,
-            number_total.wrapping_add(pBNS.num_bonds),
-        )?;
+        let mut ret = AllocEdgeList(heap, &mut newly_fixed_edges, number_total.wrapping_add(pBNS.num_bonds))?;
         if ret != 0 {
             return Ok(ret);
         }
@@ -1878,8 +1776,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
         atom_index = 0;
         number_total = 0;
         while atom_index < pBNS.num_atoms {
-            let index =
-                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let valence_atom = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let minus_edge = valence_atom.nCMinusGroupEdge.wrapping_sub(1);
             let plus_edge = valence_atom.nCPlusGroupEdge.wrapping_sub(1);
@@ -1888,10 +1785,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                 .wrapping_add(i32::from(plus_edge >= 0));
 
             if minus_edge >= 0 && plus_edge >= 0 {
-                let minus_index =
-                    usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let plus_index =
-                    usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let minus_index = usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let plus_index = usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let minus = heap
                     .slice(pBNS.edge.as_const())?
                     .get(minus_index)
@@ -1924,8 +1819,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                 }
                 {
                     let edges = heap.slice_mut(pBNS.edge)?;
-                    edges[plus_index].forbidden =
-                        (i32::from(edges[plus_index].forbidden) | forbidden_edge_mask) as i8;
+                    edges[plus_index].forbidden = (i32::from(edges[plus_index].forbidden) | forbidden_edge_mask) as i8;
                     edges[minus_index].forbidden =
                         (i32::from(edges[minus_index].forbidden) | forbidden_edge_mask) as i8;
                 }
@@ -1938,8 +1832,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                     return Ok(ret);
                 }
             } else if minus_edge >= 0 {
-                let minus_index =
-                    usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let minus_index = usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(minus_index)
@@ -1950,8 +1843,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                     return Ok(ret);
                 }
             } else if plus_edge >= 0 {
-                let plus_index =
-                    usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let plus_index = usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(plus_index)
@@ -1967,8 +1859,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
 
         let mut bond_index = 0_i32;
         while bond_index < pBNS.num_bonds {
-            let index =
-                usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edge = heap
                 .slice_mut(pBNS.edge)?
                 .get_mut(index)
@@ -2351,10 +2242,10 @@ fn snapshot_inchi_stereo(
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .clone();
-    let center_count = usize::try_from(header.nNumberOfStereoCenters.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let bond_count = usize::try_from(header.nNumberOfStereoBonds.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let center_count =
+        usize::try_from(header.nNumberOfStereoCenters.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let bond_count =
+        usize::try_from(header.nNumberOfStereoBonds.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if center_count + bond_count == 0 {
         return Ok(None);
     }
@@ -2409,11 +2300,7 @@ fn snapshot_inchi_stereo(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn SetStereoBondTypeFor0DParity(
-    atoms: &mut [inp_ATOM],
-    i1: i32,
-    m1: i32,
-) -> Result<i32, SourceHeapError> {
+pub(crate) fn SetStereoBondTypeFor0DParity(atoms: &mut [inp_ATOM], i1: i32, m1: i32) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:790 SetStereoBondTypeFor0DParity
     // INCHI✔️✔️: int SetStereoBondTypeFor0DParity( inp_ATOM *at, int i1, int m1 )
     // INCHI✔️✔️: {
@@ -2492,17 +2379,13 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
                 .get(order)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        *cumulene
-            .get_mut(length)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = next as AT_NUMB;
+        *cumulene.get_mut(length).ok_or(SourceHeapError::PointerOutOfBounds)? = next as AT_NUMB;
         length += 1;
 
         let next_atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut opposite_slot = 0_usize;
         let mut found = false;
-        while opposite_slot < MAX_NUM_STEREO_BONDS as usize
-            && next_atom.sb_parity[opposite_slot] != 0
-        {
+        while opposite_slot < MAX_NUM_STEREO_BONDS as usize && next_atom.sb_parity[opposite_slot] != 0 {
             let opposite_order = usize::try_from(i32::from(next_atom.sb_ord[opposite_slot]))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if usize::from(
@@ -2529,11 +2412,7 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
         if current_atom.valence != 2
             || current_atom.num_H != 0
             || length >= MAX_CUMULENE_LEN as usize + 2
-            || bCanAtomBeMiddleAllene(
-                &current_atom.elname,
-                current_atom.charge,
-                current_atom.radical,
-            )? == 0
+            || bCanAtomBeMiddleAllene(&current_atom.elname, current_atom.charge, current_atom.radical)? == 0
         {
             return Ok(RI_ERR_SYNTAX);
         }
@@ -2694,9 +2573,7 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: SetStereoBondTypesFrom0DStereo
 
-    let stereo_active = |pointer: SourceMutPointer<INChI_Stereo>,
-                         heap: &SourceHeap|
-     -> Result<bool, SourceHeapError> {
+    let stereo_active = |pointer: SourceMutPointer<INChI_Stereo>, heap: &SourceHeap| -> Result<bool, SourceHeapError> {
         if pointer.is_null() {
             return Ok(false);
         }
@@ -2704,10 +2581,7 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
             .slice(pointer.as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        Ok(stereo
-            .nNumberOfStereoBonds
-            .wrapping_add(stereo.nNumberOfStereoCenters)
-            != 0)
+        Ok(stereo.nNumberOfStereoBonds.wrapping_add(stereo.nNumberOfStereoCenters) != 0)
     };
     let has_stereo = if stereo_active(inchi.StereoIsotopic, heap)? {
         true
@@ -2717,8 +2591,7 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     if !has_stereo || structure.num_atoms <= 0 {
         return Ok(0);
     }
-    let atom_count =
-        usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count = usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let atoms = heap
         .slice_mut(structure.at)?
         .get_mut(..atom_count)
@@ -2740,25 +2613,18 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     }
 
     for atom_index in 0..atom_count {
-        let valence = usize::try_from(atoms[atom_index].valence)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let valence = usize::try_from(atoms[atom_index].valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let mut stereo_count = 0_i32;
         let mut alternating_count = 0_i32;
         for order in 0..valence {
             stereo_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8);
-            alternating_count +=
-                i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
+            alternating_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
         }
         if stereo_count + alternating_count > 1 && stereo_count != 0 {
             for order in 0..valence {
                 if atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8 {
                     let neighbor = atoms[atom_index].neighbor[order];
-                    let result = set_bond_type(
-                        atoms,
-                        atom_index as AT_NUMB,
-                        neighbor,
-                        BOND_TYPE_ALTERN as i32,
-                    )?;
+                    let result = set_bond_type(atoms, atom_index as AT_NUMB, neighbor, BOND_TYPE_ALTERN as i32)?;
                     if result < 0 {
                         return Ok(result);
                     }
@@ -2768,36 +2634,26 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     }
 
     for atom_index in 0..atom_count {
-        let valence = usize::try_from(atoms[atom_index].valence)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let valence = usize::try_from(atoms[atom_index].valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let mut stereo_count = 0_i32;
         let mut alternating_count = 0_i32;
         for order in 0..valence {
             stereo_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8);
-            alternating_count +=
-                i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
+            alternating_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
         }
         if stereo_count == 0 && alternating_count != 0 {
-            atoms[atom_index].chem_bonds_valence =
-                atoms[atom_index].chem_bonds_valence.wrapping_add(1);
+            atoms[atom_index].chem_bonds_valence = atoms[atom_index].chem_bonds_valence.wrapping_add(1);
         } else if stereo_count == 1 {
             for order in 0..valence {
                 if atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8 {
                     let neighbor = atoms[atom_index].neighbor[order];
-                    let result = set_bond_type(
-                        atoms,
-                        atom_index as AT_NUMB,
-                        neighbor,
-                        BOND_TYPE_DOUBLE as i32,
-                    )?;
+                    let result = set_bond_type(atoms, atom_index as AT_NUMB, neighbor, BOND_TYPE_DOUBLE as i32)?;
                     if result < 0 {
                         return Ok(result);
                     }
-                    atoms[atom_index].chem_bonds_valence =
-                        atoms[atom_index].chem_bonds_valence.wrapping_add(1);
+                    atoms[atom_index].chem_bonds_valence = atoms[atom_index].chem_bonds_valence.wrapping_add(1);
                     let neighbor_index = usize::from(neighbor);
-                    atoms[neighbor_index].chem_bonds_valence =
-                        atoms[neighbor_index].chem_bonds_valence.wrapping_add(1);
+                    atoms[neighbor_index].chem_bonds_valence = atoms[neighbor_index].chem_bonds_valence.wrapping_add(1);
                 }
             }
         } else if stereo_count + alternating_count != 0 {
@@ -2916,14 +2772,8 @@ pub(crate) fn AddExplicitDeletedH(
     // END INCHI HEADER MACRO: NUM_ISO_H
 
     let center_index = usize::try_from(jv).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let center = atoms
-        .get(center_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut total_isotope_h = center
-        .num_iso_H
-        .iter()
-        .map(|&value| i32::from(value))
-        .sum::<i32>();
+    let center = atoms.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let mut total_isotope_h = center.num_iso_H.iter().map(|&value| i32::from(value)).sum::<i32>();
     let mut num_h = i32::from(center.num_H);
     let mut isotope_h = 0_usize;
     let mut isotope_counts = center.num_iso_H;
@@ -2935,8 +2785,7 @@ pub(crate) fn AddExplicitDeletedH(
     if atom_type > 1 {
         let mut i = 0_i32;
         while i < *i_deleted_h {
-            let index = usize::try_from(num_at.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(num_at.wrapping_add(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if i32::from(
                 *atoms
                     .get(index)
@@ -2954,13 +2803,12 @@ pub(crate) fn AddExplicitDeletedH(
 
     *i_h = i_deleted_h.wrapping_add(num_at);
     while num_h != 0 && *i_deleted_h < num_deleted_h {
-        let hydrogen_index = usize::try_from(num_at.wrapping_add(*i_deleted_h))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let hydrogen_index =
+            usize::try_from(num_at.wrapping_add(*i_deleted_h)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let hydrogen = atoms
             .get_mut(hydrogen_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let valence =
-            usize::try_from(hydrogen.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = usize::try_from(hydrogen.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *hydrogen
             .neighbor
             .get_mut(valence)
@@ -3058,24 +2906,16 @@ pub(crate) fn bFindCumuleneChain(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: bFindCumuleneChain
 
-    *cumulene
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = i1;
+    *cumulene.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)? = i1;
     let first_index = usize::from(i1);
-    let first = atoms
-        .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = atoms.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let valence = i32::from(first.valence);
     let mut neighbor_order = 0_i32;
     while neighbor_order < valence {
         let mut len = 0_i32;
         let mut current = i1;
-        let order =
-            usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let mut next = *first
-            .neighbor
-            .get(order)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let order = usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let mut next = *first.neighbor.get(order).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if len + 1 == max_len {
             if next == i2 {
                 len += 1;
@@ -3091,10 +2931,7 @@ pub(crate) fn bFindCumuleneChain(
             let next_atom = atoms
                 .get(usize::from(next))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if next_atom.valence != 2
-                || next_atom.num_H != 0
-                || bCanAtomBeMiddleAllene(&next_atom.elname, 0, 0)? == 0
-            {
+            if next_atom.valence != 2 || next_atom.num_H != 0 || bCanAtomBeMiddleAllene(&next_atom.elname, 0, 0)? == 0 {
                 break;
             }
             len += 1;
@@ -3107,17 +2944,13 @@ pub(crate) fn bFindCumuleneChain(
                 if next == i2 {
                     len += 1;
                     *cumulene
-                        .get_mut(
-                            usize::try_from(len)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = next;
                     return Ok(1);
                 }
                 break;
             }
-            current =
-                cumulene[usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+            current = cumulene[usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
         }
         neighbor_order += 1;
     }
@@ -3158,13 +2991,9 @@ pub(crate) fn set_bond_type(
 
     let first_index = usize::from(i1);
     let second_index = usize::from(i2);
-    let first = atoms
-        .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = atoms.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let first_order = is_in_the_list(Some(&first.neighbor), i2, i32::from(first.valence))?;
-    let second = atoms
-        .get(second_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let second_order = is_in_the_list(Some(&second.neighbor), i1, i32::from(second.valence))?;
     let (Some(first_order), Some(second_order)) = (first_order, second_order) else {
         return Ok(RI_ERR_SYNTAX);
@@ -3178,12 +3007,8 @@ pub(crate) fn set_bond_type(
         && bond_type <= BOND_TYPE_TRIPLE as i32
     {
         let difference = bond_type.wrapping_sub(i32::from(previous)) as i8;
-        atoms[first_index].chem_bonds_valence = atoms[first_index]
-            .chem_bonds_valence
-            .wrapping_add(difference);
-        atoms[second_index].chem_bonds_valence = atoms[second_index]
-            .chem_bonds_valence
-            .wrapping_add(difference);
+        atoms[first_index].chem_bonds_valence = atoms[first_index].chem_bonds_valence.wrapping_add(difference);
+        atoms[second_index].chem_bonds_valence = atoms[second_index].chem_bonds_valence.wrapping_add(difference);
     }
     Ok(0)
 }
@@ -3343,24 +3168,13 @@ pub(crate) fn set_cumulene_0D_parity(
     if bFindCumuleneChain(atoms, i1 as AT_NUMB, i2 as AT_NUMB, &mut cumulene, len)? == 0 {
         return Ok(RI_ERR_SYNTAX);
     }
-    let before_second =
-        usize::try_from(len.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let first_atom = atoms
-        .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second_atom = atoms
-        .get(second_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let sb_ord_m1 = is_in_the_list(
-        Some(&first_atom.neighbor),
-        cumulene[1],
-        i32::from(first_atom.valence),
-    )?;
+    let before_second = usize::try_from(len.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first_atom = atoms.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second_atom = atoms.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let sb_ord_m1 = is_in_the_list(Some(&first_atom.neighbor), cumulene[1], i32::from(first_atom.valence))?;
     let sb_ord_m2 = is_in_the_list(
         Some(&second_atom.neighbor),
-        *cumulene
-            .get(before_second)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        *cumulene.get(before_second).ok_or(SourceHeapError::PointerOutOfBounds)?,
         i32::from(second_atom.valence),
     )?;
     let (Some(sb_ord_m1), Some(sb_ord_m2)) = (sb_ord_m1, sb_ord_m2) else {
@@ -3376,18 +3190,9 @@ pub(crate) fn set_cumulene_0D_parity(
         return Ok(RI_ERR_SYNTAX);
     }
     let (sb_ord1, sb_parity1, sb_ord2, sb_parity2) = if let Some(stereo) = stereo.as_deref() {
-        let first = stereo
-            .get(first_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let second = stereo
-            .get(second_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        (
-            first.sb_ord,
-            first.sb_parity,
-            second.sb_ord,
-            second.sb_parity,
-        )
+        let first = stereo.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let second = stereo.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        (first.sb_ord, first.sb_parity, second.sb_ord, second.sb_parity)
     } else {
         (
             first_atom.sb_ord,
@@ -3427,8 +3232,7 @@ pub(crate) fn set_cumulene_0D_parity(
         atoms[first_index].sb_ord[m1] = sb_ord_m1 as i8;
         atoms[second_index].sb_ord[m2] = sb_ord_m2 as i8;
     }
-    let deleted1_index =
-        usize::try_from(deleted_h1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let deleted1_index = usize::try_from(deleted_h1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let original1 = atoms
         .get(deleted1_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3457,8 +3261,7 @@ pub(crate) fn set_cumulene_0D_parity(
         atoms[first_index].sn_ord[m1] = sn_order1;
     }
 
-    let deleted2_index =
-        usize::try_from(deleted_h2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let deleted2_index = usize::try_from(deleted_h2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let original2 = atoms
         .get(deleted2_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3487,29 +3290,28 @@ pub(crate) fn set_cumulene_0D_parity(
         atoms[second_index].sn_ord[m2] = sn_order2;
     }
 
-    let (parity1, parity2) = if parity >= AB_MIN_WELL_DEFINED_PARITY as i32
-        && parity <= AB_MAX_WELL_DEFINED_PARITY as i32
-    {
-        let inversions = i32::from(num_neigh1 == MIN_NUM_STEREO_BOND_NEIGH as i32)
-            + i32::from(num_neigh2 == MIN_NUM_STEREO_BOND_NEIGH as i32);
-        if inversions % 2 != 0 {
-            parity = if parity == AB_PARITY_EVEN as i32 {
-                AB_PARITY_ODD as i32
-            } else {
-                AB_PARITY_EVEN as i32
-            };
-        }
-        (
-            AB_PARITY_EVEN as i8,
-            if parity == AB_PARITY_EVEN as i32 {
-                AB_PARITY_EVEN as i8
-            } else {
-                AB_PARITY_ODD as i8
-            },
-        )
-    } else {
-        (parity as i8, parity as i8)
-    };
+    let (parity1, parity2) =
+        if parity >= AB_MIN_WELL_DEFINED_PARITY as i32 && parity <= AB_MAX_WELL_DEFINED_PARITY as i32 {
+            let inversions = i32::from(num_neigh1 == MIN_NUM_STEREO_BOND_NEIGH as i32)
+                + i32::from(num_neigh2 == MIN_NUM_STEREO_BOND_NEIGH as i32);
+            if inversions % 2 != 0 {
+                parity = if parity == AB_PARITY_EVEN as i32 {
+                    AB_PARITY_ODD as i32
+                } else {
+                    AB_PARITY_EVEN as i32
+                };
+            }
+            (
+                AB_PARITY_EVEN as i8,
+                if parity == AB_PARITY_EVEN as i32 {
+                    AB_PARITY_EVEN as i8
+                } else {
+                    AB_PARITY_ODD as i8
+                },
+            )
+        } else {
+            (parity as i8, parity as i8)
+        };
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[first_index].sb_parity[m1] = parity1;
         stereo[second_index].sb_parity[m2] = parity2;
@@ -3595,9 +3397,7 @@ pub(crate) fn set_atom_0D_parity(
     // END INCHI C FUNCTION: set_atom_0D_parity
 
     let center_index = usize::try_from(i1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let center = atoms
-        .get(center_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let center = atoms.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if stereo.is_some() && center.p_parity != 0 {
         return Ok(0);
     }
@@ -3625,14 +3425,11 @@ pub(crate) fn set_atom_0D_parity(
     if num_h != 0 {
         let mut j = 0_i32;
         while m1 < m2 && j < num_deleted_h {
-            let hydrogen_index = usize::try_from(num_at.wrapping_add(j))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let hydrogen = atoms
-                .get(hydrogen_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let hydrogen_index =
+                usize::try_from(num_at.wrapping_add(j)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let hydrogen = atoms.get(hydrogen_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if i32::from(hydrogen.neighbor[0]) == i1 {
-                original_numbers
-                    [usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
+                original_numbers[usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
                     hydrogen.orig_at_number;
                 m1 += 1;
             }
@@ -3654,11 +3451,10 @@ pub(crate) fn set_atom_0D_parity(
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        original_numbers[usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
-            atoms
-                .get(neighbor)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .orig_at_number;
+        original_numbers[usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = atoms
+            .get(neighbor)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .orig_at_number;
         m1 += 1;
         i += 1;
     }
@@ -3700,15 +3496,10 @@ pub(crate) fn CopyAt2St(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CopyAt2St
 
-    let count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     for index in 0..count {
-        let source = atoms
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let target = stereo
-            .get_mut(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let source = atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let target = stereo.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if source.p_parity != 0 {
             target.p_orig_at_num = source.p_orig_at_num;
             target.p_parity = source.p_parity;
@@ -3759,15 +3550,10 @@ pub(crate) fn CopySt2At(
     let Some(stereo) = stereo else {
         return Ok(());
     };
-    let count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     for index in 0..count {
-        let source = stereo
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let target = atoms
-            .get_mut(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let source = stereo.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let target = atoms.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if source.p_parity != 0 {
             target.p_orig_at_num = source.p_orig_at_num;
             target.p_parity = source.p_parity;
@@ -4480,8 +4266,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     if num_atoms <= 0 {
         return Ok(0);
     }
-    let atom_count = usize::try_from(num_atoms)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let mut atom_pointer = match inchi_calloc::<inp_ATOM>(heap, atom_count as u64, 176) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
@@ -4522,23 +4307,18 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         .to_vec();
     for index in 0..atom_count {
         atoms[index].el_number = atom_numbers[index];
-        if get_element_chemical_symbol(i32::from(atom_numbers[index]), &mut atoms[index].elname)?
-            == -1
-        {
+        if get_element_chemical_symbol(i32::from(atom_numbers[index]), &mut atoms[index].elname)? == -1 {
             return_with_state!(RI_ERR_PROGR);
         }
-        let source_index =
-            i32::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        atoms[index].orig_at_number = atom_number_offset
-            .wrapping_add(source_index)
-            .wrapping_add(1) as AT_NUMB;
+        let source_index = i32::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        atoms[index].orig_at_number = atom_number_offset.wrapping_add(source_index).wrapping_add(1) as AT_NUMB;
         atoms[index].orig_compt_at_numb = source_index.wrapping_add(1) as AT_NUMB;
         atoms[index].component = component.wrapping_add(1) as AT_NUMB;
         atoms[index].num_H = hydrogen_counts[index];
     }
 
-    let connection_count = usize::try_from(inchi.lenConnTable.max(1))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let connection_count =
+        usize::try_from(inchi.lenConnTable.max(1)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let connection_table = heap
         .slice(inchi.nConnTable.as_const())?
         .get(..connection_count)
@@ -4553,20 +4333,18 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ) - 1;
         if neighbor < vertex {
-            let vertex_index =
-                usize::try_from(vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let neighbor_index =
-                usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let vertex_order = usize::try_from(atoms[vertex_index].valence)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let vertex_index = usize::try_from(vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index = usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let vertex_order =
+                usize::try_from(atoms[vertex_index].valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             atoms[vertex_index].valence = atoms[vertex_index].valence.wrapping_add(1);
             atoms[vertex_index].neighbor[vertex_order] = neighbor as AT_NUMB;
             atoms[vertex_index].bond_type[vertex_order] = BOND_TYPE_SINGLE as u8;
             atoms[vertex_index].chem_bonds_valence = atoms[vertex_index]
                 .chem_bonds_valence
                 .wrapping_add(BOND_TYPE_SINGLE as i8);
-            let neighbor_order = usize::try_from(atoms[neighbor_index].valence)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_order =
+                usize::try_from(atoms[neighbor_index].valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             atoms[neighbor_index].valence = atoms[neighbor_index].valence.wrapping_add(1);
             atoms[neighbor_index].neighbor[neighbor_order] = vertex as AT_NUMB;
             atoms[neighbor_index].bond_type[neighbor_order] = BOND_TYPE_SINGLE as u8;
@@ -4583,8 +4361,8 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     }
 
     if !inchi.IsotopicAtom.is_null() && inchi.nNumberOfIsotopicAtoms != 0 {
-        let isotope_count = usize::try_from(inchi.nNumberOfIsotopicAtoms)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let isotope_count =
+            usize::try_from(inchi.nNumberOfIsotopicAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let isotopes = heap
             .slice(inchi.IsotopicAtom.as_const())?
             .get(..isotope_count)
@@ -4593,14 +4371,9 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         for isotope in isotopes {
             let isotope_vertex = i32::from(isotope.nAtomNumber) - 1;
             if isotope_vertex < num_atoms {
-                let index = usize::try_from(isotope_vertex)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(isotope_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 atoms[index].iso_atw_diff = isotope.nIsoDifference as i8;
-                atoms[index].num_iso_H = [
-                    isotope.nNum_H as i8,
-                    isotope.nNum_D as i8,
-                    isotope.nNum_T as i8,
-                ];
+                atoms[index].num_iso_H = [isotope.nNum_H as i8, isotope.nNum_D as i8, isotope.nNum_T as i8];
             }
         }
         structure.bIsotopic |= 1;
@@ -4628,32 +4401,24 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         Some(value) => Some(value),
         None => snapshot_inchi_stereo(heap, inchi.Stereo)?,
     };
-    let mobile_stereo =
-        if let Some(mobile) = mobile_h_inchi.filter(|value| value.nNumberOfAtoms != 0) {
-            match snapshot_inchi_stereo(heap, mobile.StereoIsotopic)? {
-                Some(value) => Some(value),
-                None => snapshot_inchi_stereo(heap, mobile.Stereo)?,
-            }
-        } else {
-            None
-        };
+    let mobile_stereo = if let Some(mobile) = mobile_h_inchi.filter(|value| value.nNumberOfAtoms != 0) {
+        match snapshot_inchi_stereo(heap, mobile.StereoIsotopic)? {
+            Some(value) => Some(value),
+            None => snapshot_inchi_stereo(heap, mobile.Stereo)?,
+        }
+    } else {
+        None
+    };
 
-    let allene_terminals = |atoms: &[inp_ATOM],
-                            center: usize|
-     -> Result<Option<(usize, usize)>, SourceHeapError> {
-        let atom = atoms
-            .get(center)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if atom.valence != 2 || atom.num_H != 0 || bCanAtomBeMiddleAllene(&atom.elname, 0, 0)? == 0
-        {
+    let allene_terminals = |atoms: &[inp_ATOM], center: usize| -> Result<Option<(usize, usize)>, SourceHeapError> {
+        let atom = atoms.get(center).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if atom.valence != 2 || atom.num_H != 0 || bCanAtomBeMiddleAllene(&atom.elname, 0, 0)? == 0 {
             return Ok(None);
         }
         let left = usize::from(atom.neighbor[0]);
         let right = usize::from(atom.neighbor[1]);
         let left_atom = atoms.get(left).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let right_atom = atoms
-            .get(right)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let right_atom = atoms.get(right).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if i32::from(left_atom.valence) + i32::from(left_atom.num_H) == 3
             && bCanAtomBeTerminalAllene(&left_atom.elname, 0, 0)? != 0
             && i32::from(right_atom.valence) + i32::from(right_atom.num_H) == 3
@@ -4680,38 +4445,35 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         let mut fixed_index = 0_usize;
         let mut mobile_index = 0_usize;
         while fixed_index < fixed_centers.len() || mobile_index < mobile_centers.len() {
-            let center_number =
-                if fixed_index < fixed_centers.len() && mobile_index < mobile_centers.len() {
-                    let difference = i32::from(fixed_centers[fixed_index])
-                        - i32::from(mobile_centers[mobile_index]);
-                    if difference <= 0 {
-                        let value = fixed_centers[fixed_index];
-                        fixed_index += 1;
-                        mobile_index += usize::from(difference == 0);
-                        value
-                    } else {
-                        let value = mobile_centers[mobile_index];
-                        additional_centers += 1;
-                        mobile_index += 1;
-                        value
-                    }
-                } else if fixed_index < fixed_centers.len() {
+            let center_number = if fixed_index < fixed_centers.len() && mobile_index < mobile_centers.len() {
+                let difference = i32::from(fixed_centers[fixed_index]) - i32::from(mobile_centers[mobile_index]);
+                if difference <= 0 {
                     let value = fixed_centers[fixed_index];
                     fixed_index += 1;
+                    mobile_index += usize::from(difference == 0);
                     value
                 } else {
                     let value = mobile_centers[mobile_index];
                     additional_centers += 1;
                     mobile_index += 1;
                     value
-                };
-            let center = usize::try_from(i32::from(center_number) - 1)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                }
+            } else if fixed_index < fixed_centers.len() {
+                let value = fixed_centers[fixed_index];
+                fixed_index += 1;
+                value
+            } else {
+                let value = mobile_centers[mobile_index];
+                additional_centers += 1;
+                mobile_index += 1;
+                value
+            };
+            let center =
+                usize::try_from(i32::from(center_number) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if let Some((left, right)) = allene_terminals(&atoms, center)? {
                 for terminal in [left, right] {
                     if atoms[terminal].at_type == 0 && atoms[terminal].num_H != 0 {
-                        num_deleted_h =
-                            num_deleted_h.wrapping_add(i32::from(atoms[terminal].num_H));
+                        num_deleted_h = num_deleted_h.wrapping_add(i32::from(atoms[terminal].num_H));
                         atoms[terminal].at_type = atoms[terminal].at_type.wrapping_add(1);
                     }
                 }
@@ -4770,10 +4532,8 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 additional_bonds += 1;
                 value
             };
-            let first = usize::try_from(i32::from(bond.0) - 1)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let second = usize::try_from(i32::from(bond.1) - 1)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let first = usize::try_from(i32::from(bond.0) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let second = usize::try_from(i32::from(bond.1) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if first < atom_count
                 && is_in_the_list(
                     Some(&atoms[first].neighbor),
@@ -4795,9 +4555,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 }
             }
             for terminal in [first, second] {
-                let atom = atoms
-                    .get_mut(terminal)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom = atoms.get_mut(terminal).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if atom.at_type == 0 && atom.num_H != 0 {
                     num_deleted_h = num_deleted_h.wrapping_add(i32::from(atom.num_H));
                     atom.at_type = atom.at_type.wrapping_add(1);
@@ -4811,8 +4569,8 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
             } else {
                 num_atoms
             };
-            let allocation_count = usize::try_from(allocation_count)
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+            let allocation_count =
+                usize::try_from(allocation_count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
             let replacement = match inchi_calloc::<inp_ATOM>(heap, allocation_count as u64, 176) {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => return_with_state!(RI_ERR_ALLOC),
@@ -4826,8 +4584,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
             atoms.resize(allocation_count, inp_ATOM::default());
             let mut index = num_atoms;
             while index < num_atoms.wrapping_add(num_deleted_h) {
-                let atom = &mut atoms
-                    [usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let atom = &mut atoms[usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 atom.elname = [b'H' as i8, 0, 0, 0, 0, 0];
                 atom.el_number = EL_NUMBER_H;
                 atom.orig_at_number = atom_number_offset.wrapping_add(index).wrapping_add(1) as u16;
@@ -4863,11 +4620,9 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         ($view:expr, $target_stereo:expr, $skip_existing:expr) => {{
             let view = $view;
             let inverted = view.header.nCompInv2Abs == -1;
-            for (&center_number, &source_parity) in
-                view.centers.iter().zip(view.center_parities.iter())
-            {
-                let center = usize::try_from(i32::from(center_number) - 1)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            for (&center_number, &source_parity) in view.centers.iter().zip(view.center_parities.iter()) {
+                let center =
+                    usize::try_from(i32::from(center_number) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if $skip_existing && atoms[center].p_parity != 0 {
                     continue;
                 }
@@ -4973,14 +4728,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                             parity,
                         )?
                     } else {
-                        set_atom_0D_parity(
-                            &mut atoms,
-                            None,
-                            num_atoms,
-                            num_deleted_h,
-                            center as i32,
-                            parity,
-                        )?
+                        set_atom_0D_parity(&mut atoms, None, num_atoms, num_deleted_h, center as i32, parity)?
                     };
                     if result < 0 {
                         return_with_state!(result);
@@ -4994,10 +4742,10 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 .zip(view.bond_atoms2.iter())
                 .zip(view.bond_parities.iter())
             {
-                let first = usize::try_from(i32::from(first_number) - 1)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let second = usize::try_from(i32::from(second_number) - 1)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let first =
+                    usize::try_from(i32::from(first_number) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let second =
+                    usize::try_from(i32::from(second_number) - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let mut cumulene = [0_u16; MAX_CUMULENE_LEN as usize + 2];
                 let len = if is_in_the_list(
                     Some(&atoms[first].neighbor),
@@ -5041,8 +4789,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     let order = usize::from(atoms[first].neighbor[0] == cumulene[1]);
                     i32::from(atoms[first].neighbor[order])
                 };
-                let before_second =
-                    usize::try_from(len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let before_second = usize::try_from(len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let deleted2 = if atoms[second].num_H != 0 {
                     let mut output = 0;
                     let result = AddExplicitDeletedH(
@@ -5393,10 +5140,9 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                 continue;
             }
             let metal_edge_index = pVA[atom_index].nMetalGroupEdge.wrapping_sub(1);
-            let metal_edge =
-                heap.slice(pBNS.edge.as_const())?[usize::try_from(metal_edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                .clone();
+            let metal_edge = heap.slice(pBNS.edge.as_const())?
+                [usize::try_from(metal_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+            .clone();
             if flower_vertex != i32::from(metal_edge.neighbor12) ^ i {
                 ret = RI_ERR_PROGR;
                 return Ok(());
@@ -5404,27 +5150,20 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
             let valence = i32::from(heap.slice(at2.as_const())?[atom_index].valence);
             let mut j = 0_i32;
             while j < valence {
-                if heap.slice(pBNS.edge.as_const())?[usize::try_from(metal_edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                if heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(metal_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .flow
                     == 0
                 {
                     break;
                 }
                 let atom2 = heap.slice(at2.as_const())?[atom_index].clone();
-                if atom2.bond_type
-                    [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                if atom2.bond_type[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     & BOND_TYPE_MASK as u8
                     == 0
                 {
                     if !fixed_carbon {
-                        ret = ForbidCarbonChargeEdges(
-                            heap,
-                            pBNS,
-                            pTCGroups,
-                            &mut carbon_edges,
-                            forbidden_edge_mask,
-                        )?;
+                        ret = ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_edges, forbidden_edge_mask)?;
                         if ret < 0 {
                             return Ok(());
                         }
@@ -5433,8 +5172,8 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     let vertex = heap.slice(pBNS.vert.as_const())?[atom_index].clone();
                     let zero_edge_index = heap.slice(vertex.iedge.as_const())?
                         [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                    if heap.slice(pBNS.edge.as_const())?[usize::try_from(zero_edge_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    if heap.slice(pBNS.edge.as_const())?
+                        [usize::try_from(zero_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .flow
                         != 0
                     {
@@ -5443,34 +5182,26 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     }
                     let mut k = 0_i32;
                     while k < valence {
-                        let edge_index =
-                            heap.slice(vertex.iedge.as_const())?[usize::try_from(k)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let edge_index = heap.slice(vertex.iedge.as_const())?
+                            [usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         let (edge_flow, edge_forbidden) = {
-                            let edge =
-                                &heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                            let edge = &heap.slice(pBNS.edge.as_const())?
+                                [usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                             (edge.flow, edge.forbidden)
                         };
                         if edge_flow == 1 && edge_forbidden as i32 & forbidden_edge_mask == 0 {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut fixed_edges,
-                                edge_index,
-                                FIX_BOND_ADD_ALLOC,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut fixed_edges, edge_index, FIX_BOND_ADD_ALLOC)?;
                             if ret != 0 {
                                 return Ok(());
                             }
-                            heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()]
-                                .forbidden = (edge_forbidden as i32 | forbidden_edge_mask) as i8;
+                            heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()].forbidden =
+                                (edge_forbidden as i32 | forbidden_edge_mask) as i8;
                         }
                         k = k.wrapping_add(1);
                     }
                     k = 0;
                     while k < num_at {
-                        let ki =
-                            usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let ki = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let candidate = &pVA[ki];
                         let candidate_atom = &heap.slice(at2.as_const())?[ki];
                         if candidate.cMetal == 0
@@ -5482,40 +5213,30 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         {
                             let edge_index = candidate.nCPlusGroupEdge.wrapping_sub(1);
                             let (edge_flow, edge_forbidden) = {
-                                let edge = &heap.slice(pBNS.edge.as_const())?
-                                    [usize::try_from(edge_index).unwrap()];
+                                let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index).unwrap()];
                                 (edge.flow, edge.forbidden)
                             };
                             if edge_flow == 1 && edge_forbidden as i32 & forbidden_edge_mask == 0 {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut fixed_edges,
-                                    edge_index,
-                                    FIX_BOND_ADD_ALLOC,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut fixed_edges, edge_index, FIX_BOND_ADD_ALLOC)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
-                                heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()]
-                                    .forbidden =
+                                heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()].forbidden =
                                     (edge_forbidden as i32 | forbidden_edge_mask) as i8;
                             }
                         }
                         k = k.wrapping_add(1);
                     }
                     let neighbor = i32::from(atom2.neighbor[usize::try_from(j).unwrap()]);
-                    let neighbor_vertex =
-                        heap.slice(pBNS.vert.as_const())?[usize::try_from(neighbor)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                        .clone();
+                    let neighbor_vertex = heap.slice(pBNS.vert.as_const())?
+                        [usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    .clone();
                     let mut neighbor_neighbor = NO_VERTEX;
                     let mut neighbor_edge_index = NO_VERTEX;
                     k = i32::from(neighbor_vertex.num_adj_edges).wrapping_sub(1);
                     while k >= 0 {
-                        let edge_index = heap.slice(neighbor_vertex.iedge.as_const())?
-                            [usize::try_from(k).unwrap()];
-                        let edge = &heap.slice(pBNS.edge.as_const())?
-                            [usize::try_from(edge_index).unwrap()];
+                        let edge_index = heap.slice(neighbor_vertex.iedge.as_const())?[usize::try_from(k).unwrap()];
+                        let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index).unwrap()];
                         if edge.flow != 0 {
                             let candidate = i32::from(edge.neighbor12) ^ neighbor;
                             if candidate != i && candidate != flower_vertex {
@@ -5534,8 +5255,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         let edges = heap.slice_mut(pBNS.edge)?;
                         let zero = usize::try_from(zero_edge_index).unwrap();
                         edges[zero].flow = edges[zero].flow.wrapping_add(1);
-                        edges[zero].forbidden =
-                            (edges[zero].forbidden as i32 | forbidden_edge_mask) as i8;
+                        edges[zero].forbidden = (edges[zero].forbidden as i32 | forbidden_edge_mask) as i8;
                         let metal = usize::try_from(metal_edge_index).unwrap();
                         edges[metal].flow = edges[metal].flow.wrapping_sub(1);
                         let neighbor_edge = usize::try_from(neighbor_edge_index).unwrap();
@@ -5543,18 +5263,16 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     }
                     {
                         let vertices = heap.slice_mut(pBNS.vert)?;
-                        vertices[usize::try_from(flower_vertex).unwrap()]
-                            .st_edge
-                            .flow = vertices[usize::try_from(flower_vertex).unwrap()]
-                            .st_edge
-                            .flow
-                            .wrapping_sub(1);
-                        vertices[usize::try_from(neighbor_neighbor).unwrap()]
-                            .st_edge
-                            .flow = vertices[usize::try_from(neighbor_neighbor).unwrap()]
-                            .st_edge
-                            .flow
-                            .wrapping_sub(1);
+                        vertices[usize::try_from(flower_vertex).unwrap()].st_edge.flow = vertices
+                            [usize::try_from(flower_vertex).unwrap()]
+                        .st_edge
+                        .flow
+                        .wrapping_sub(1);
+                        vertices[usize::try_from(neighbor_neighbor).unwrap()].st_edge.flow = vertices
+                            [usize::try_from(neighbor_neighbor).unwrap()]
+                        .st_edge
+                        .flow
+                        .wrapping_sub(1);
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
@@ -5584,12 +5302,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                             num_changes = num_changes.wrapping_add(1);
                             success = ret;
                         }
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut fixed_edges,
-                            zero_edge_index,
-                            FIX_BOND_ADD_ALLOC,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut fixed_edges, zero_edge_index, FIX_BOND_ADD_ALLOC)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -5603,18 +5316,16 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         let neighbor_edge = usize::try_from(neighbor_edge_index).unwrap();
                         edges[neighbor_edge].flow = edges[neighbor_edge].flow.wrapping_add(1);
                         let vertices = heap.slice_mut(pBNS.vert)?;
-                        vertices[usize::try_from(flower_vertex).unwrap()]
-                            .st_edge
-                            .flow = vertices[usize::try_from(flower_vertex).unwrap()]
-                            .st_edge
-                            .flow
-                            .wrapping_add(1);
-                        vertices[usize::try_from(neighbor_neighbor).unwrap()]
-                            .st_edge
-                            .flow = vertices[usize::try_from(neighbor_neighbor).unwrap()]
-                            .st_edge
-                            .flow
-                            .wrapping_add(1);
+                        vertices[usize::try_from(flower_vertex).unwrap()].st_edge.flow = vertices
+                            [usize::try_from(flower_vertex).unwrap()]
+                        .st_edge
+                        .flow
+                        .wrapping_add(1);
+                        vertices[usize::try_from(neighbor_neighbor).unwrap()].st_edge.flow = vertices
+                            [usize::try_from(neighbor_neighbor).unwrap()]
+                        .st_edge
+                        .flow
+                        .wrapping_add(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                     }
                     RemoveForbiddenEdgeMask(heap, pBNS, &fixed_edges, forbidden_edge_mask)?;
@@ -5843,8 +5554,7 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
 
         let mut sulfur = 0_i32;
         while sulfur < num_atoms {
-            let sulfur_index =
-                usize::try_from(sulfur).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let sulfur_index = usize::try_from(sulfur).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let sulfur_valence = &pVA[sulfur_index];
             let sulfur_atom = heap.slice(at2.as_const())?[sulfur_index].clone();
             let sulfur_vertex = heap.slice(pBNS.vert.as_const())?[sulfur_index].clone();
@@ -5858,26 +5568,21 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                 sulfur = sulfur.wrapping_add(1);
                 continue;
             }
-            let sulfur_plus = heap.slice(pBNS.edge.as_const())?[usize::try_from(sulfur_plus_edge)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+            let sulfur_plus = heap.slice(pBNS.edge.as_const())?
+                [usize::try_from(sulfur_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
             .clone();
             if sulfur_plus.flow != 0 {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
             }
             let sulfur_incident = heap.slice(sulfur_vertex.iedge.as_const())?;
-            let first_edge_index = *sulfur_incident
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let second_edge_index = *sulfur_incident
-                .get(1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let first_edge =
-                heap.slice(pBNS.edge.as_const())?[usize::try_from(first_edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                .clone();
-            let second_edge = heap.slice(pBNS.edge.as_const())?[usize::try_from(second_edge_index)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+            let first_edge_index = *sulfur_incident.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second_edge_index = *sulfur_incident.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first_edge = heap.slice(pBNS.edge.as_const())?
+                [usize::try_from(first_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+            .clone();
+            let second_edge = heap.slice(pBNS.edge.as_const())?
+                [usize::try_from(second_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
             .clone();
             if first_edge.flow.wrapping_add(second_edge.flow) != 1 {
                 sulfur = sulfur.wrapping_add(1);
@@ -5888,14 +5593,9 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             } else {
                 second_edge_index
             };
-            let sulfur_carbon_edge = if first_edge.flow != 0 {
-                first_edge
-            } else {
-                second_edge
-            };
+            let sulfur_carbon_edge = if first_edge.flow != 0 { first_edge } else { second_edge };
             let carbon = i32::from(sulfur_carbon_edge.neighbor12) ^ sulfur;
-            let carbon_index =
-                usize::try_from(carbon).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let carbon_index = usize::try_from(carbon).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let carbon_valence = &pVA[carbon_index];
             let carbon_atom2 = heap.slice(at2.as_const())?[carbon_index].clone();
             let carbon_plus_edge = carbon_valence.nCPlusGroupEdge.wrapping_sub(1);
@@ -5903,13 +5603,13 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             if carbon_valence.cNumValenceElectrons != 4
                 || carbon_atom2.valence != 3
                 || carbon_plus_edge < 0
-                || heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_plus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                || heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(carbon_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .flow
                     == 0
                 || (carbon_minus_edge >= 0
-                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_minus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    && heap.slice(pBNS.edge.as_const())?
+                        [usize::try_from(carbon_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .flow
                         != 0)
             {
@@ -5922,12 +5622,11 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             let mut carbon_nitrogen_edges = Vec::with_capacity(2);
             let mut neighbor_order = 0_i32;
             while neighbor_order < i32::from(original_carbon.valence) {
-                let edge_index =
-                    heap.slice(carbon_vertex.iedge.as_const())?[usize::try_from(neighbor_order)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge_index = heap.slice(carbon_vertex.iedge.as_const())?
+                    [usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if edge_index != sulfur_carbon_edge_index
-                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                    && heap.slice(pBNS.edge.as_const())?
+                        [usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .flow
                         == 0
                 {
@@ -5941,11 +5640,10 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             }
             let mut fits = true;
             for edge_index in &carbon_nitrogen_edges {
-                let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(*edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge = &heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(*edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 let nitrogen = i32::from(edge.neighbor12) ^ carbon;
-                let nitrogen_index =
-                    usize::try_from(nitrogen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let nitrogen_index = usize::try_from(nitrogen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let nitrogen_atom = &heap.slice(at2.as_const())?[nitrogen_index];
                 let endpoint = if pStruct.endpoint.is_null() {
                     0
@@ -5974,24 +5672,19 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             if all_charge_edges.num_edges == 0 {
                 let mut atom_index = 0_i32;
                 while atom_index < num_atoms {
-                    let valence = &pVA[usize::try_from(atom_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let valence = &pVA[usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     for edge_index in [
                         valence.nCPlusGroupEdge.wrapping_sub(1),
                         valence.nCMinusGroupEdge.wrapping_sub(1),
                     ] {
                         if edge_index >= 0
-                            && heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                            && heap.slice(pBNS.edge.as_const())?
+                                [usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                             .forbidden
                                 == 0
                         {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut all_charge_edges,
-                                edge_index,
-                                2_i32.wrapping_mul(num_atoms),
-                            )?;
+                            ret =
+                                AddToEdgeList(heap, &mut all_charge_edges, edge_index, 2_i32.wrapping_mul(num_atoms))?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -6002,12 +5695,12 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             }
             SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
             {
-                let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(sulfur_plus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge = &mut heap.slice_mut(pBNS.edge)?
+                    [usize::try_from(sulfur_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 edge.forbidden = (i32::from(edge.forbidden) & !forbidden_edge_mask) as i8;
             }
-            let carbon_plus = heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_plus_edge)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+            let carbon_plus = heap.slice(pBNS.edge.as_const())?
+                [usize::try_from(carbon_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
             .clone();
             if carbon_plus.flow == 0 {
                 sulfur = sulfur.wrapping_add(1);
@@ -6017,17 +5710,14 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             let second_vertex = i32::from(carbon_plus.neighbor12) ^ first_vertex;
             {
                 let edges = heap.slice_mut(pBNS.edge)?;
-                edges[usize::try_from(carbon_plus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                .flow = edges[usize::try_from(carbon_plus_edge).unwrap()]
-                    .flow
-                    .wrapping_sub(1);
+                edges[usize::try_from(carbon_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?].flow =
+                    edges[usize::try_from(carbon_plus_edge).unwrap()].flow.wrapping_sub(1);
             }
             {
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex in [first_vertex, second_vertex] {
-                    let vertex = &mut vertices[usize::try_from(vertex)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let vertex =
+                        &mut vertices[usize::try_from(vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                 }
             }
@@ -6058,13 +5748,13 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                 }
             } else {
                 let edges = heap.slice_mut(pBNS.edge)?;
-                let edge = &mut edges[usize::try_from(carbon_plus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge =
+                    &mut edges[usize::try_from(carbon_plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 edge.flow = edge.flow.wrapping_add(1);
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex in [first_vertex, second_vertex] {
-                    let vertex = &mut vertices[usize::try_from(vertex)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let vertex =
+                        &mut vertices[usize::try_from(vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
@@ -6374,18 +6064,16 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
         if forbidden_stereo_edge_mask != 0 {
             let mut atom_index = 0_i32;
             while atom_index < num_atoms {
-                let index =
-                    usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let valence = i32::from(heap.slice(at2.as_const())?[index].valence);
                 let vertex = heap.slice(pBNS.vert.as_const())?[index].clone();
                 let mut neighbor_order = 0_i32;
                 while neighbor_order < valence {
-                    let edge_index =
-                        heap.slice(vertex.iedge.as_const())?[usize::try_from(neighbor_order)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let edge_index = heap.slice(vertex.iedge.as_const())?
+                        [usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     if i32::from(
-                        heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                        heap.slice(pBNS.edge.as_const())?
+                            [usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                         .forbidden,
                     ) == forbidden_stereo_edge_mask
                     {
@@ -6434,9 +6122,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
         let mut positive = 0_i32;
         let mut negative = 0_i32;
         let atoms2 = heap.slice(at2.as_const())?;
-        for atom_index in
-            0..usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        {
+        for atom_index in 0..usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
             if pVA[atom_index].cMetal == 0 && atoms2[atom_index].radical == 0 {
                 positive = positive.wrapping_add(i32::from(atoms2[atom_index].charge > 0));
                 negative = negative.wrapping_add(i32::from(atoms2[atom_index].charge < 0));
@@ -6449,10 +6135,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
             if group_index >= 0 {
                 let group = heap
                     .slice(pTCGroups.pTCG.as_const())?
-                    .get(
-                        usize::try_from(group_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let super_edge_index = group.nForwardEdge;
@@ -6460,31 +6143,20 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                 if super_edge_index > 0 && plus_super >= num_atoms {
                     let super_edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(super_edge_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(super_edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if super_edge.forbidden == 0 {
                         let plus_minus = i32::from(super_edge.neighbor12) ^ plus_super;
                         num_min = num_min.min(super_edge.flow);
-                        let plus_vertex =
-                            heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_super)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                            .clone();
-                        let minus_vertex =
-                            heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                            .clone();
-                        let mut plus_delta = plus_vertex
-                            .st_edge
-                            .cap
-                            .wrapping_sub(plus_vertex.st_edge.flow);
-                        let mut minus_delta = minus_vertex
-                            .st_edge
-                            .cap
-                            .wrapping_sub(minus_vertex.st_edge.flow);
+                        let plus_vertex = heap.slice(pBNS.vert.as_const())?
+                            [usize::try_from(plus_super).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                        .clone();
+                        let minus_vertex = heap.slice(pBNS.vert.as_const())?
+                            [usize::try_from(plus_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                        .clone();
+                        let mut plus_delta = plus_vertex.st_edge.cap.wrapping_sub(plus_vertex.st_edge.flow);
+                        let mut minus_delta = minus_vertex.st_edge.cap.wrapping_sub(minus_vertex.st_edge.flow);
 
                         if num_min != 0 && plus_delta == 0 && minus_delta == 0 {
                             ret = ForbidCarbonChargeEdges(
@@ -6499,10 +6171,8 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             }
                             fixed_carbon_charges = true;
                             {
-                                let edge = &mut heap.slice_mut(pBNS.edge)?
-                                    [usize::try_from(super_edge_index).unwrap()];
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             }
                             pBNS.edge_forbidden_mask =
                                 (i32::from(pBNS.edge_forbidden_mask) | forbidden_edge_mask) as i8;
@@ -6510,13 +6180,12 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             let mut processed = 0_i32;
                             while processed < num_min {
                                 {
-                                    let edge = &mut heap.slice_mut(pBNS.edge)?
-                                        [usize::try_from(super_edge_index).unwrap()];
+                                    let edge =
+                                        &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_sub(1);
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
-                                        let vertex =
-                                            &mut vertices[usize::try_from(vertex).unwrap()];
+                                        let vertex = &mut vertices[usize::try_from(vertex).unwrap()];
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                                     }
                                 }
@@ -6543,14 +6212,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                         || (path_end == plus_minus && path_start == plus_super))
                                     && delta_charge < 0
                                 {
-                                    ret = RunBnsRestoreOnce(
-                                        heap,
-                                        pBNS,
-                                        pBD,
-                                        pVA,
-                                        pTCGroups,
-                                        clock_result,
-                                    )?;
+                                    ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                     *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                                     if ret < 0 {
                                         return Ok(());
@@ -6563,13 +6225,12 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     }
                                     processed = processed.wrapping_add(1);
                                 } else {
-                                    let edge = &mut heap.slice_mut(pBNS.edge)?
-                                        [usize::try_from(super_edge_index).unwrap()];
+                                    let edge =
+                                        &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_add(1);
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
-                                        let vertex =
-                                            &mut vertices[usize::try_from(vertex).unwrap()];
+                                        let vertex = &mut vertices[usize::try_from(vertex).unwrap()];
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                     }
                                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
@@ -6577,37 +6238,25 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                 }
                             }
                             num_min = num_min.wrapping_sub(processed);
-                            let edge = &mut heap.slice_mut(pBNS.edge)?
-                                [usize::try_from(super_edge_index).unwrap()];
+                            let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
                             edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                         }
 
-                        let current_plus = &heap.slice(pBNS.vert.as_const())?
-                            [usize::try_from(plus_super).unwrap()];
-                        let current_minus = &heap.slice(pBNS.vert.as_const())?
-                            [usize::try_from(plus_minus).unwrap()];
-                        plus_delta = current_plus
-                            .st_edge
-                            .cap
-                            .wrapping_sub(current_plus.st_edge.flow);
-                        minus_delta = current_minus
-                            .st_edge
-                            .cap
-                            .wrapping_sub(current_minus.st_edge.flow);
+                        let current_plus = &heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_super).unwrap()];
+                        let current_minus = &heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_minus).unwrap()];
+                        plus_delta = current_plus.st_edge.cap.wrapping_sub(current_plus.st_edge.flow);
+                        minus_delta = current_minus.st_edge.cap.wrapping_sub(current_minus.st_edge.flow);
                         if num_min > 1 && plus_delta == 0 && minus_delta == 0 {
                             {
-                                let edge = &mut heap.slice_mut(pBNS.edge)?
-                                    [usize::try_from(super_edge_index).unwrap()];
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             }
                             pBNS.edge_forbidden_mask =
                                 (i32::from(pBNS.edge_forbidden_mask) | forbidden_edge_mask) as i8;
                             let mut processed = 0_i32;
                             while processed < num_min {
                                 {
-                                    let vertex = &mut heap.slice_mut(pBNS.vert)?
-                                        [usize::try_from(plus_super).unwrap()];
+                                    let vertex = &mut heap.slice_mut(pBNS.vert)?[usize::try_from(plus_super).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(2);
                                 }
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(2);
@@ -6629,22 +6278,16 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     return Ok(());
                                 }
                                 {
-                                    let vertex = &mut heap.slice_mut(pBNS.vert)?
-                                        [usize::try_from(plus_super).unwrap()];
+                                    let vertex = &mut heap.slice_mut(pBNS.vert)?[usize::try_from(plus_super).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(2);
                                 }
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(2);
-                                if ret != 1
-                                    || path_end != plus_super
-                                    || path_start != plus_super
-                                    || delta_charge >= 0
-                                {
+                                if ret != 1 || path_end != plus_super || path_start != plus_super || delta_charge >= 0 {
                                     break;
                                 }
 
                                 {
-                                    let vertex = &mut heap.slice_mut(pBNS.vert)?
-                                        [usize::try_from(plus_minus).unwrap()];
+                                    let vertex = &mut heap.slice_mut(pBNS.vert)?[usize::try_from(plus_minus).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(2);
                                 }
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(2);
@@ -6664,38 +6307,25 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     return Ok(());
                                 }
                                 {
-                                    let vertex = &mut heap.slice_mut(pBNS.vert)?
-                                        [usize::try_from(plus_minus).unwrap()];
+                                    let vertex = &mut heap.slice_mut(pBNS.vert)?[usize::try_from(plus_minus).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(2);
                                 }
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(2);
-                                if ret != 1
-                                    || path_end != plus_minus
-                                    || path_start != plus_minus
-                                    || delta_charge >= 0
-                                {
+                                if ret != 1 || path_end != plus_minus || path_start != plus_minus || delta_charge >= 0 {
                                     break;
                                 }
                                 {
-                                    let edge = &mut heap.slice_mut(pBNS.edge)?
-                                        [usize::try_from(super_edge_index).unwrap()];
+                                    let edge =
+                                        &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_sub(2);
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
-                                        let vertex =
-                                            &mut vertices[usize::try_from(vertex).unwrap()];
+                                        let vertex = &mut vertices[usize::try_from(vertex).unwrap()];
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(2);
                                     }
                                 }
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(4);
-                                ret = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                                 if ret < 0 {
                                     return Ok(());
@@ -6709,8 +6339,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                 processed = processed.wrapping_add(2);
                             }
                             num_min = num_min.wrapping_sub(processed);
-                            let edge = &mut heap.slice_mut(pBNS.edge)?
-                                [usize::try_from(super_edge_index).unwrap()];
+                            let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(super_edge_index).unwrap()];
                             edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                         }
                     }
@@ -6895,8 +6524,7 @@ pub(crate) fn RestoreCyanoGroup(
 
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            let index =
-                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
@@ -6957,20 +6585,14 @@ pub(crate) fn RestoreCyanoGroup(
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
-                        let vertex = &mut vertices[usize::try_from(vertex_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let vertex = &mut vertices
+                            [usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                     }
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-                ret = ForbidCarbonChargeEdges(
-                    heap,
-                    pBNS,
-                    pTCGroups,
-                    &mut carbon_charge_edges,
-                    forbidden_edge_mask,
-                )?;
+                ret = ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_charge_edges, forbidden_edge_mask)?;
                 if ret < 0 {
                     return Ok(());
                 }
@@ -7003,8 +6625,8 @@ pub(crate) fn RestoreCyanoGroup(
                     edge.flow = edge.flow.wrapping_add(1);
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
-                        let vertex = &mut vertices[usize::try_from(vertex_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let vertex = &mut vertices
+                            [usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
@@ -7356,10 +6978,8 @@ pub(crate) fn RestoreIsoCyanoGroup(
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
-    let is_charge_group =
-        |type_: u16| (type_ & BNS_VT_C_POS_ALL as u16) == BNS_VERT_TYPE_C_GROUP as u16;
-    let is_charge_structure =
-        |type_: u16| type_ & BNS_VT_CHRG_STRUCT as u16 == BNS_VT_CHRG_STRUCT as u16;
+    let is_charge_group = |type_: u16| (type_ & BNS_VT_C_POS_ALL as u16) == BNS_VERT_TYPE_C_GROUP as u16;
+    let is_charge_structure = |type_: u16| type_ & BNS_VT_CHRG_STRUCT as u16 == BNS_VT_CHRG_STRUCT as u16;
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut all_charge_edges = EDGE_LIST::default();
     let mut isocyano_edges = EDGE_LIST::default();
@@ -7382,40 +7002,28 @@ pub(crate) fn RestoreIsoCyanoGroup(
             return Ok(());
         }
 
-        let _ = AllocEdgeList(
-            heap,
-            &mut carbon_charge_edges,
-            2_i32.wrapping_mul(num_atoms),
-        )?;
+        let _ = AllocEdgeList(heap, &mut carbon_charge_edges, 2_i32.wrapping_mul(num_atoms))?;
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            let index =
-                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let is_carbon =
-                pVA[index].cNumValenceElectrons == 4 && pVA[index].cPeriodicRowNumber == 1;
+            let is_carbon = pVA[index].cNumValenceElectrons == 4 && pVA[index].cPeriodicRowNumber == 1;
             let minus_edge = pVA[index].nCMinusGroupEdge.wrapping_sub(1);
             if minus_edge >= 0 {
-                let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge = &heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if edge.forbidden == 0 {
                     if is_carbon {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut carbon_charge_edges,
-                            minus_edge,
-                            INC_EDGE_LIST,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut carbon_charge_edges, minus_edge, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
                     } else if pVA[index].cMetal == 0 && atom.endpoint == 0 && atom.charge != -1 {
-                        ret =
-                            AddToEdgeList(heap, &mut all_charge_edges, minus_edge, INC_EDGE_LIST)?;
+                        ret = AddToEdgeList(heap, &mut all_charge_edges, minus_edge, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -7425,16 +7033,11 @@ pub(crate) fn RestoreIsoCyanoGroup(
 
             let plus_edge = pVA[index].nCPlusGroupEdge.wrapping_sub(1);
             if plus_edge >= 0 {
-                let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge = &heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if edge.forbidden == 0 {
                     if is_carbon {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut carbon_charge_edges,
-                            plus_edge,
-                            INC_EDGE_LIST,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut carbon_charge_edges, plus_edge, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -7446,19 +7049,12 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         if pVA[index].cNumValenceElectrons == 5 {
                             let flower_edge = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
                             if flower_edge != NO_VERTEX
-                                && heap.slice(pBNS.edge.as_const())?[usize::try_from(flower_edge)
-                                    .map_err(|_| {
-                                    SourceHeapError::PointerOutOfBounds
-                                })?]
+                                && heap.slice(pBNS.edge.as_const())?
+                                    [usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                                 .flow
                                     == 0
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut all_charge_edges,
-                                    flower_edge,
-                                    INC_EDGE_LIST,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut all_charge_edges, flower_edge, INC_EDGE_LIST)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -7474,13 +7070,9 @@ pub(crate) fn RestoreIsoCyanoGroup(
                 && atom.valence == 1
                 && atom.num_H == 0
                 && atom.radical == 0
-                && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge).unwrap()]
-                    .forbidden
-                    == 0
-                && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge).unwrap()].flow
-                    == 0
-                && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge).unwrap()].forbidden
-                    == 0
+                && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge).unwrap()].forbidden == 0
+                && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge).unwrap()].flow == 0
+                && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge).unwrap()].forbidden == 0
                 && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge).unwrap()].flow == 0;
             let mut candidate = false;
             if prefix_matches {
@@ -7496,37 +7088,27 @@ pub(crate) fn RestoreIsoCyanoGroup(
                     && neighbor.radical == 0
                     && pVA[neighbor_index].cNumValenceElectrons == 5
                     && neighbor_plus_edge >= 0
-                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge).unwrap()].flow
-                        == 0;
+                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge).unwrap()].flow == 0;
             }
             if candidate {
                 let plus_edge_index = usize::try_from(plus_edge).unwrap();
                 let plus = heap.slice(pBNS.edge.as_const())?[plus_edge_index].clone();
                 let mut first_vertex = i32::from(plus.neighbor1);
                 let second_vertex = i32::from(plus.neighbor12) ^ first_vertex;
-                if is_charge_group(
-                    heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()].type_,
-                ) {
+                if is_charge_group(heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()].type_) {
                     first_vertex = second_vertex;
                 }
-                let charge_structure =
-                    &heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()];
-                if !is_charge_structure(charge_structure.type_)
-                    || charge_structure.num_adj_edges != 2
-                {
+                let charge_structure = &heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()];
+                if !is_charge_structure(charge_structure.type_) || charge_structure.num_adj_edges != 2 {
                     atom_index = atom_index.wrapping_add(1);
                     continue;
                 }
                 let adjacency = heap.slice(charge_structure.iedge.as_const())?;
-                let first_incident = *adjacency
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let first_incident = *adjacency.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let other_order = usize::from(first_incident == plus_edge);
-                let inner_edge = *adjacency
-                    .get(other_order)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let inner = &heap.slice(pBNS.edge.as_const())?[usize::try_from(inner_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let inner_edge = *adjacency.get(other_order).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let inner = &heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if inner.forbidden != 0 || inner.flow == 0 {
                     atom_index = atom_index.wrapping_add(1);
                     continue;
@@ -7549,13 +7131,9 @@ pub(crate) fn RestoreIsoCyanoGroup(
         while triple_index >= 0 {
             let inner_edge = *heap
                 .slice(isocyano_edges.pnEdges.as_const())?
-                .get(
-                    usize::try_from(triple_index.wrapping_add(2))
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get(usize::try_from(triple_index.wrapping_add(2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let inner_index =
-                usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let inner_index = usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             {
                 let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
@@ -7625,8 +7203,7 @@ pub(crate) fn RestoreIsoCyanoGroup(
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let inner_index =
-                    usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let inner_index = usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 {
                     let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
@@ -7900,8 +7477,7 @@ pub(crate) fn FixMetal_Nminus_Ominus(
 
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            let index =
-                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
@@ -7914,9 +7490,8 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 && pVA[index].cNumValenceElectrons == 6
                 && oxygen_minus_edge >= 0;
             if candidate {
-                let edge =
-                    &heap.slice(pBNS.edge.as_const())?[usize::try_from(oxygen_minus_edge)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let edge = &heap.slice(pBNS.edge.as_const())?
+                    [usize::try_from(oxygen_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 candidate = edge.flow == 1 && edge.forbidden == 0;
             }
 
@@ -7937,19 +7512,14 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     && pVA[nitrogen_index].cNumValenceElectrons == 5
                     && nitrogen_minus_edge >= 0;
                 if candidate {
-                    let edge =
-                        &heap.slice(pBNS.edge.as_const())?[usize::try_from(nitrogen_minus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let edge = &heap.slice(pBNS.edge.as_const())?
+                        [usize::try_from(nitrogen_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     candidate = edge.flow == 1 && edge.forbidden == 0;
                 }
                 if candidate {
                     let neighbor_order = usize::from(nitrogen.neighbor[0] == atom_index as u16);
                     let metal_index = usize::from(nitrogen.neighbor[neighbor_order]);
-                    candidate = pVA
-                        .get(metal_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .cMetal
-                        != 0;
+                    candidate = pVA.get(metal_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cMetal != 0;
                     if candidate {
                         metal_minus_edge = pVA[metal_index].nCMinusGroupEdge.wrapping_sub(1);
                         metal_plus_edge = pVA[metal_index].nCPlusGroupEdge.wrapping_sub(1);
@@ -7957,8 +7527,7 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     }
                     if candidate {
                         let edges = heap.slice(pBNS.edge.as_const())?;
-                        candidate = edges[usize::try_from(metal_minus_edge).unwrap()].forbidden
-                            == 0
+                        candidate = edges[usize::try_from(metal_minus_edge).unwrap()].forbidden == 0
                             && edges[usize::try_from(metal_plus_edge).unwrap()].forbidden == 0;
                     }
                 }
@@ -7968,25 +7537,24 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 if all_charge_edges.num_edges == 0 {
                     let mut charge_atom = 0_i32;
                     while charge_atom < num_atoms {
-                        let charge_index = usize::try_from(charge_atom)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let charge_index =
+                            usize::try_from(charge_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let minus_edge = pVA[charge_index].nCMinusGroupEdge.wrapping_sub(1);
                         if minus_edge >= 0
-                            && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                            && heap.slice(pBNS.edge.as_const())?
+                                [usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                             .forbidden
                                 == 0
                         {
-                            ret =
-                                AddToEdgeList(heap, &mut all_charge_edges, minus_edge, num_atoms)?;
+                            ret = AddToEdgeList(heap, &mut all_charge_edges, minus_edge, num_atoms)?;
                             if ret != 0 {
                                 return Ok(());
                             }
                         }
                         let plus_edge = pVA[charge_index].nCPlusGroupEdge.wrapping_sub(1);
                         if plus_edge >= 0
-                            && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                            && heap.slice(pBNS.edge.as_const())?
+                                [usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                             .forbidden
                                 == 0
                         {
@@ -7995,22 +7563,14 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                                 return Ok(());
                             }
                             if pVA[charge_index].cNumValenceElectrons == 6 {
-                                let flower_edge =
-                                    GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
+                                let flower_edge = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
                                 if flower_edge != NO_VERTEX
-                                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(
-                                        flower_edge,
-                                    )
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                                    && heap.slice(pBNS.edge.as_const())?[usize::try_from(flower_edge)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                                     .flow
                                         == 0
                                 {
-                                    ret = AddToEdgeList(
-                                        heap,
-                                        &mut all_charge_edges,
-                                        flower_edge,
-                                        num_atoms,
-                                    )?;
+                                    ret = AddToEdgeList(heap, &mut all_charge_edges, flower_edge, num_atoms)?;
                                     if ret != 0 {
                                         return Ok(());
                                     }
@@ -8025,14 +7585,14 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 {
                     let edges = heap.slice_mut(pBNS.edge)?;
                     for edge_index in [nitrogen_minus_edge, metal_minus_edge, metal_plus_edge] {
-                        let edge = &mut edges[usize::try_from(edge_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let edge =
+                            &mut edges[usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                     }
                 }
 
-                let oxygen_index = usize::try_from(oxygen_minus_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let oxygen_index =
+                    usize::try_from(oxygen_minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let oxygen_edge = heap.slice(pBNS.edge.as_const())?[oxygen_index].clone();
                 let first_vertex = i32::from(oxygen_edge.neighbor1);
                 let second_vertex = i32::from(oxygen_edge.neighbor12) ^ first_vertex;
@@ -8041,8 +7601,8 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     edge.flow = edge.flow.wrapping_sub(1);
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
-                        let vertex = &mut vertices[usize::try_from(vertex_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let vertex = &mut vertices
+                            [usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                     }
                 }
@@ -8075,8 +7635,8 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     edge.flow = edge.flow.wrapping_add(1);
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
-                        let vertex = &mut vertices[usize::try_from(vertex_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let vertex = &mut vertices
+                            [usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
@@ -8853,8 +8413,7 @@ pub(crate) fn RestoreNNNgroup(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms && ret >= 0 {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -8875,10 +8434,7 @@ pub(crate) fn RestoreNNNgroup(
             if candidate {
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(terminal_minus)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(terminal_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 candidate = edge.flow == 0 && edge.forbidden == 0;
             }
@@ -8908,17 +8464,12 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(middle_plus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(middle_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     candidate = edge.flow == 0 && edge.forbidden == 0;
                 }
                 if candidate {
-                    third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
-                    );
+                    third_index = usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
@@ -8937,10 +8488,7 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(third_plus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(third_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     candidate = edge.flow == 1 && edge.forbidden == 0;
                 }
@@ -8948,10 +8496,7 @@ pub(crate) fn RestoreNNNgroup(
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
-                            .get(
-                                usize::try_from(list_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .bits
                             == nnn_bits;
@@ -8969,8 +8514,7 @@ pub(crate) fn RestoreNNNgroup(
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                 };
-                let chemical_index = usize::try_from(chemical_edge)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let chemical_index = usize::try_from(chemical_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(chemical_index)
@@ -8988,20 +8532,14 @@ pub(crate) fn RestoreNNNgroup(
                     let edges = heap.slice_mut(pBNS.edge)?;
                     for edge_number in [middle_plus, third_plus] {
                         let edge = edges
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                     }
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                     }
@@ -9010,13 +8548,8 @@ pub(crate) fn RestoreNNNgroup(
 
                 if carbon_charge_edges.num_edges == 0 {
                     let _ = AllocEdgeList(heap, &mut carbon_charge_edges, INC_EDGE_LIST)?;
-                    ret = ForbidCarbonChargeEdges(
-                        heap,
-                        pBNS,
-                        pTCGroups,
-                        &mut carbon_charge_edges,
-                        forbidden_edge_mask,
-                    )?;
+                    ret =
+                        ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_charge_edges, forbidden_edge_mask)?;
                     if ret < 0 {
                         return Ok(());
                     }
@@ -9048,12 +8581,7 @@ pub(crate) fn RestoreNNNgroup(
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                     number_success = number_success.wrapping_add(1);
                     for edge_number in [terminal_minus, middle_plus] {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut carbon_charge_edges,
-                            edge_number,
-                            INC_EDGE_LIST,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut carbon_charge_edges, edge_number, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -9067,10 +8595,7 @@ pub(crate) fn RestoreNNNgroup(
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
@@ -9081,10 +8606,7 @@ pub(crate) fn RestoreNNNgroup(
                 let edges = heap.slice_mut(pBNS.edge)?;
                 for edge_number in [chemical_edge, middle_plus, third_plus] {
                     let edge = edges
-                        .get_mut(
-                            usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                 }
@@ -9100,8 +8622,7 @@ pub(crate) fn RestoreNNNgroup(
 
         atom_number = 0;
         while atom_number < num_atoms && ret >= 0 {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let mut terminal_minus = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -9110,14 +8631,10 @@ pub(crate) fn RestoreNNNgroup(
             if terminal_minus >= 0 {
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(terminal_minus)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(terminal_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.forbidden == 0 {
-                    ret =
-                        AddToEdgeList(heap, &mut all_charge_edges, terminal_minus, INC_EDGE_LIST)?;
+                    ret = AddToEdgeList(heap, &mut all_charge_edges, terminal_minus, INC_EDGE_LIST)?;
                     if ret != 0 {
                         return Ok(());
                     }
@@ -9129,10 +8646,7 @@ pub(crate) fn RestoreNNNgroup(
             if terminal_plus >= 0 {
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(terminal_plus)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(terminal_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.forbidden == 0 {
                     ret = AddToEdgeList(heap, &mut all_charge_edges, terminal_plus, INC_EDGE_LIST)?;
@@ -9143,40 +8657,22 @@ pub(crate) fn RestoreNNNgroup(
                         .slice(at2.as_const())?
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if pVA[atom_index].cNumValenceElectrons == 5
-                        && atom.valence == 3
-                        && atom.chem_bonds_valence == 3
-                    {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut all_niii_charge_edges,
-                            terminal_plus,
-                            INC_EDGE_LIST,
-                        )?;
+                    if pVA[atom_index].cNumValenceElectrons == 5 && atom.valence == 3 && atom.chem_bonds_valence == 3 {
+                        ret = AddToEdgeList(heap, &mut all_niii_charge_edges, terminal_plus, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
                     }
-                    if pVA[atom_index].cNumValenceElectrons == 5
-                        && pVA[atom_index].cPeriodicRowNumber == 1
-                    {
+                    if pVA[atom_index].cNumValenceElectrons == 5 && pVA[atom_index].cPeriodicRowNumber == 1 {
                         let flower = GetChargeFlowerUpperEdge(heap, pBNS, pVA, terminal_plus)?;
                         if flower != NO_VERTEX {
                             let flow = heap
                                 .slice(pBNS.edge.as_const())?
-                                .get(
-                                    usize::try_from(flower)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
+                                .get(usize::try_from(flower).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .flow;
                             if flow == 0 {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut all_charge_edges,
-                                    flower,
-                                    INC_EDGE_LIST,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut all_charge_edges, flower, INC_EDGE_LIST)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -9219,26 +8715,18 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
-                        .get(
-                            usize::try_from(middle_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(middle_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0
                         && edges
-                            .get(
-                                usize::try_from(middle_plus)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(middle_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
                 }
                 if candidate {
-                    third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
-                    );
+                    third_index = usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
@@ -9255,18 +8743,12 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
-                        .get(
-                            usize::try_from(third_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(third_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0
                         && edges
-                            .get(
-                                usize::try_from(third_plus)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(third_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -9275,10 +8757,7 @@ pub(crate) fn RestoreNNNgroup(
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
-                            .get(
-                                usize::try_from(list_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .bits
                             == nnn_bits;
@@ -9295,12 +8774,7 @@ pub(crate) fn RestoreNNNgroup(
                     edges[usize::try_from(third_plus).unwrap()].flow,
                 ];
                 if flows != [1, 0, 0, 0, 1] {
-                    ret = AddToEdgeList(
-                        heap,
-                        &mut all_nnn_terminal_atoms,
-                        atom_number,
-                        INC_EDGE_LIST,
-                    )?;
+                    ret = AddToEdgeList(heap, &mut all_nnn_terminal_atoms, atom_number, INC_EDGE_LIST)?;
                     if ret != 0 {
                         return Ok(());
                     }
@@ -9316,12 +8790,7 @@ pub(crate) fn RestoreNNNgroup(
                         &[]
                     };
                     for edge_number in additions {
-                        ret = AddToEdgeList(
-                            heap,
-                            &mut nnn_charge_edges,
-                            *edge_number,
-                            INC_EDGE_LIST,
-                        )?;
+                        ret = AddToEdgeList(heap, &mut nnn_charge_edges, *edge_number, INC_EDGE_LIST)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -9336,13 +8805,9 @@ pub(crate) fn RestoreNNNgroup(
         while terminal_position >= 0 {
             let atom_number = *heap
                 .slice(all_nnn_terminal_atoms.pnEdges.as_const())?
-                .get(
-                    usize::try_from(terminal_position)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
+                .get(usize::try_from(terminal_position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -9354,8 +8819,7 @@ pub(crate) fn RestoreNNNgroup(
                 .get(middle_index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let third_index =
-                usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
+            let third_index = usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
             let terminal_minus = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
             let middle_minus = pVA[middle_index].nCMinusGroupEdge.wrapping_sub(1);
             let middle_plus = pVA[middle_index].nCPlusGroupEdge.wrapping_sub(1);
@@ -9370,13 +8834,7 @@ pub(crate) fn RestoreNNNgroup(
                 edges[usize::try_from(third_plus).unwrap()].flow,
             ];
             let edge_to_decrement = if flows == [1, 0, 0, 0, 1] {
-                for edge_number in [
-                    terminal_minus,
-                    middle_minus,
-                    middle_plus,
-                    third_minus,
-                    third_plus,
-                ] {
+                for edge_number in [terminal_minus, middle_minus, middle_plus, third_minus, third_plus] {
                     let _ = RemoveFromEdgeListByValue(heap, &mut nnn_charge_edges, edge_number)?;
                 }
                 None
@@ -9400,8 +8858,7 @@ pub(crate) fn RestoreNNNgroup(
             if let Some(edge_number) = edge_to_decrement {
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &nnn_charge_edges, forbidden_edge_mask)?;
-                let edge_index = usize::try_from(edge_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(edge_index)
@@ -9419,10 +8876,7 @@ pub(crate) fn RestoreNNNgroup(
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                     }
@@ -9450,15 +8904,8 @@ pub(crate) fn RestoreNNNgroup(
                     *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                     number_success = number_success.wrapping_add(1);
-                    for charge_edge in [
-                        terminal_minus,
-                        middle_minus,
-                        middle_plus,
-                        third_minus,
-                        third_plus,
-                    ] {
-                        let _ =
-                            RemoveFromEdgeListByValue(heap, &mut nnn_charge_edges, charge_edge)?;
+                    for charge_edge in [terminal_minus, middle_minus, middle_plus, third_minus, third_plus] {
+                        let _ = RemoveFromEdgeListByValue(heap, &mut nnn_charge_edges, charge_edge)?;
                     }
                 } else {
                     let edge = heap
@@ -9469,10 +8916,7 @@ pub(crate) fn RestoreNNNgroup(
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
@@ -9491,8 +8935,7 @@ pub(crate) fn RestoreNNNgroup(
 
         atom_number = 0;
         while atom_number < num_atoms && ret >= 0 {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -9527,26 +8970,18 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
-                        .get(
-                            usize::try_from(middle_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(middle_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0
                         && edges
-                            .get(
-                                usize::try_from(middle_plus)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(middle_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
                 }
                 if candidate {
-                    third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
-                    );
+                    third_index = usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
@@ -9563,18 +8998,12 @@ pub(crate) fn RestoreNNNgroup(
                 if candidate {
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
-                        .get(
-                            usize::try_from(third_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(third_minus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0
                         && edges
-                            .get(
-                                usize::try_from(third_plus)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(third_plus).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .forbidden
                             == 0;
@@ -9583,10 +9012,7 @@ pub(crate) fn RestoreNNNgroup(
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
-                            .get(
-                                usize::try_from(list_index)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .bits
                             == nnn_bits;
@@ -9609,15 +9035,8 @@ pub(crate) fn RestoreNNNgroup(
                 edges[usize::try_from(third_plus).unwrap()].flow,
             ];
             if flows == [1, 0, 0, 0, 1] {
-                for edge_number in [
-                    terminal_minus,
-                    middle_plus,
-                    middle_minus,
-                    third_plus,
-                    third_minus,
-                ] {
-                    ret =
-                        AddToEdgeList(heap, &mut carbon_charge_edges, edge_number, INC_EDGE_LIST)?;
+                for edge_number in [terminal_minus, middle_plus, middle_minus, third_plus, third_minus] {
+                    ret = AddToEdgeList(heap, &mut carbon_charge_edges, edge_number, INC_EDGE_LIST)?;
                     if ret != 0 {
                         return Ok(());
                     }
@@ -9626,63 +9045,56 @@ pub(crate) fn RestoreNNNgroup(
                 continue;
             }
 
-            let (base_edges, edge_to_decrement, maximum_delta_charge): (&[i32], i32, i32) =
-                if flows == [0, 0, 0, 0, 1] {
-                    let vertex = heap
-                        .slice(pBNS.vert.as_const())?
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    (
-                        &[middle_plus, middle_minus, third_plus, third_minus],
-                        *heap
-                            .slice(vertex.iedge.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        if number_failed != 0
-                            && number_success == 0
-                            && pStruct.nNumRemovedProtonsMobHInChI > 0
-                        {
-                            2
-                        } else {
-                            0
-                        },
-                    )
-                } else if flows == [1, 0, 1, 0, 1] {
-                    (
-                        &[terminal_minus, middle_minus, third_plus, third_minus],
-                        middle_plus,
-                        2,
-                    )
-                } else if flows == [0, 0, 0, 1, 1] {
-                    let vertex = heap
-                        .slice(pBNS.vert.as_const())?
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    (
-                        &[middle_plus, middle_minus, third_plus],
-                        *heap
-                            .slice(vertex.iedge.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        0,
-                    )
-                } else if flows == [0, 0, 0, 0, 0] {
-                    let vertex = heap
-                        .slice(pBNS.vert.as_const())?
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    (
-                        &[middle_plus, middle_minus, third_minus],
-                        *heap
-                            .slice(vertex.iedge.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        0,
-                    )
-                } else {
-                    atom_number = atom_number.wrapping_add(1);
-                    continue;
-                };
+            let (base_edges, edge_to_decrement, maximum_delta_charge): (&[i32], i32, i32) = if flows == [0, 0, 0, 0, 1]
+            {
+                let vertex = heap
+                    .slice(pBNS.vert.as_const())?
+                    .get(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                (
+                    &[middle_plus, middle_minus, third_plus, third_minus],
+                    *heap
+                        .slice(vertex.iedge.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    if number_failed != 0 && number_success == 0 && pStruct.nNumRemovedProtonsMobHInChI > 0 {
+                        2
+                    } else {
+                        0
+                    },
+                )
+            } else if flows == [1, 0, 1, 0, 1] {
+                (&[terminal_minus, middle_minus, third_plus, third_minus], middle_plus, 2)
+            } else if flows == [0, 0, 0, 1, 1] {
+                let vertex = heap
+                    .slice(pBNS.vert.as_const())?
+                    .get(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                (
+                    &[middle_plus, middle_minus, third_plus],
+                    *heap
+                        .slice(vertex.iedge.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    0,
+                )
+            } else if flows == [0, 0, 0, 0, 0] {
+                let vertex = heap
+                    .slice(pBNS.vert.as_const())?
+                    .get(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                (
+                    &[middle_plus, middle_minus, third_minus],
+                    *heap
+                        .slice(vertex.iedge.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    0,
+                )
+            } else {
+                atom_number = atom_number.wrapping_add(1);
+                continue;
+            };
             for edge_number in base_edges {
                 ret = AddToEdgeList(heap, &mut nnn_charge_edges, *edge_number, INC_EDGE_LIST)?;
                 if ret != 0 {
@@ -9699,10 +9111,7 @@ pub(crate) fn RestoreNNNgroup(
                 if flower != NO_VERTEX
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(flower)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(flower).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .flow
                         == 0
@@ -9714,8 +9123,7 @@ pub(crate) fn RestoreNNNgroup(
                 }
             }
 
-            let edge_index = usize::try_from(edge_to_decrement)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge_index = usize::try_from(edge_to_decrement).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index)
@@ -9733,10 +9141,7 @@ pub(crate) fn RestoreNNNgroup(
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
-                        .get_mut(
-                            usize::try_from(vertex_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                 }
@@ -9744,13 +9149,7 @@ pub(crate) fn RestoreNNNgroup(
             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
             if carbon_charge_edges.num_edges == 0 {
                 let _ = AllocEdgeList(heap, &mut carbon_charge_edges, INC_EDGE_LIST)?;
-                ret = ForbidCarbonChargeEdges(
-                    heap,
-                    pBNS,
-                    pTCGroups,
-                    &mut carbon_charge_edges,
-                    forbidden_edge_mask,
-                )?;
+                ret = ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_charge_edges, forbidden_edge_mask)?;
                 if ret < 0 {
                     return Ok(());
                 }
@@ -9782,15 +9181,8 @@ pub(crate) fn RestoreNNNgroup(
                 *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                 *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                 number_success = number_success.wrapping_add(1);
-                for charge_edge in [
-                    terminal_minus,
-                    middle_plus,
-                    middle_minus,
-                    third_plus,
-                    third_minus,
-                ] {
-                    ret =
-                        AddToEdgeList(heap, &mut carbon_charge_edges, charge_edge, INC_EDGE_LIST)?;
+                for charge_edge in [terminal_minus, middle_plus, middle_minus, third_plus, third_minus] {
+                    ret = AddToEdgeList(heap, &mut carbon_charge_edges, charge_edge, INC_EDGE_LIST)?;
                     if ret != 0 {
                         return Ok(());
                     }
@@ -9804,10 +9196,7 @@ pub(crate) fn RestoreNNNgroup(
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
-                        .get_mut(
-                            usize::try_from(vertex_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                 }
@@ -10123,9 +9512,8 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
-    let npn_bits = cn_bits_N as i32
-        | ((cn_bits_P as i32) << cn_bits_shift)
-        | ((cn_bits_N as i32) << (2 * cn_bits_shift));
+    let npn_bits =
+        cn_bits_N as i32 | ((cn_bits_P as i32) << cn_bits_shift) | ((cn_bits_N as i32) << (2 * cn_bits_shift));
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut carbon_charges_forbidden = false;
     let mut ret = 0_i32;
@@ -10142,40 +9530,28 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let flower_edge = if pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .cNumValenceElectrons
                 == 5
             {
-                GetChargeFlowerUpperEdge(
-                    heap,
-                    pBNS,
-                    pVA,
-                    pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1),
-                )?
+                GetChargeFlowerUpperEdge(heap, pBNS, pVA, pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1))?
             } else {
                 NO_VERTEX
             };
             if flower_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(flower_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .flow
                     == 1
             {
                 let edge = heap
                     .slice_mut(pBNS.edge)?
-                    .get_mut(
-                        usize::try_from(flower_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
             } else if pVA[atom_index].cMetal != 0 {
@@ -10191,21 +9567,16 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut neighbor_number = 0_i32;
                 while neighbor_number < i32::from(atom.valence) {
-                    let neighbor_index = usize::try_from(neighbor_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
-                        == BOND_TYPE_SINGLE
-                    {
+                    let neighbor_index =
+                        usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK == BOND_TYPE_SINGLE {
                         let edge_number = *heap
                             .slice(vertex.iedge.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                     }
@@ -10217,8 +9588,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
 
         atom_number = 0;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -10242,10 +9612,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 && endpoint_from_array == 0
                 && pVA[atom_index].cnListIndex > 0
                 && CN_LIST
-                    .get(
-                        usize::try_from(list_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .bits
                     == npn_bits
@@ -10256,8 +9623,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             }
 
             let plus_edge_number = pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1);
-            let plus_edge_index = usize::try_from(plus_edge_number)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let plus_edge_index = usize::try_from(plus_edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let plus_edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(plus_edge_index)
@@ -10269,14 +9635,12 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 .get(first_neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .type_;
-            let vertex_zero =
-                if first_type & BNS_VT_C_POS_ALL as u16 == BNS_VERT_TYPE_C_GROUP as u16 {
-                    i32::from(plus_edge.neighbor1 ^ plus_edge.neighbor12)
-                } else {
-                    i32::from(plus_edge.neighbor1)
-                };
-            let vertex_zero_index =
-                usize::try_from(vertex_zero).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let vertex_zero = if first_type & BNS_VT_C_POS_ALL as u16 == BNS_VERT_TYPE_C_GROUP as u16 {
+                i32::from(plus_edge.neighbor1 ^ plus_edge.neighbor12)
+            } else {
+                i32::from(plus_edge.neighbor1)
+            };
+            let vertex_zero_index = usize::try_from(vertex_zero).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let zero_vertex = heap
                 .slice(pBNS.vert.as_const())?
                 .get(vertex_zero_index)
@@ -10288,8 +9652,8 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             let mut edge_zero_two = NO_VERTEX;
             let mut adjacent_number = 0_i32;
             while adjacent_number < i32::from(zero_vertex.num_adj_edges) {
-                let adjacency_index = usize::try_from(adjacent_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let adjacency_index =
+                    usize::try_from(adjacent_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge_number = *heap
                     .slice(zero_vertex.iedge.as_const())?
                     .get(adjacency_index)
@@ -10300,10 +9664,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 }
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.flow == 1 && vertex_two == NO_VERTEX {
                     vertex_two = i32::from(edge.neighbor12) ^ vertex_zero;
@@ -10322,8 +9683,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 return Ok(());
             }
 
-            let vertex_two_index =
-                usize::try_from(vertex_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let vertex_two_index = usize::try_from(vertex_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let two_vertex = heap
                 .slice(pBNS.vert.as_const())?
                 .get(vertex_two_index)
@@ -10332,18 +9692,15 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             let mut edge_one_two = NO_VERTEX;
             adjacent_number = 0;
             while adjacent_number < i32::from(two_vertex.num_adj_edges) {
-                let adjacency_index = usize::try_from(adjacent_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let adjacency_index =
+                    usize::try_from(adjacent_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge_number = *heap
                     .slice(two_vertex.iedge.as_const())?
                     .get(adjacency_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let neighbor = i32::from(edge.neighbor12) ^ vertex_two;
                 if neighbor != vertex_zero && neighbor != atom_number {
@@ -10365,8 +9722,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 usize::try_from(edge_zero_one).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edge_zero_two_index =
                 usize::try_from(edge_zero_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge_one_two_index =
-                usize::try_from(edge_one_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge_one_two_index = usize::try_from(edge_one_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             {
                 let edges = heap.slice_mut(pBNS.edge)?;
                 edges[edge_zero_one_index].flow = 1;
@@ -10384,13 +9740,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             }
             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
             if !carbon_charges_forbidden {
-                ret = ForbidCarbonChargeEdges(
-                    heap,
-                    pBNS,
-                    pTCGroups,
-                    &mut carbon_charge_edges,
-                    forbidden_edge_mask,
-                )?;
+                ret = ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_charge_edges, forbidden_edge_mask)?;
                 if ret < 0 {
                     return Ok(());
                 }
@@ -10414,12 +9764,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             if ret == 1
                 && path_end == vertex_two
                 && path_start == vertex_two
-                && delta_charge
-                    <= if pVA[atom_index].cNumBondsToMetal != 0 {
-                        2
-                    } else {
-                        0
-                    }
+                && delta_charge <= if pVA[atom_index].cNumBondsToMetal != 0 { 2 } else { 0 }
             {
                 ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
             } else {
@@ -10437,8 +9782,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             {
                 let edges = heap.slice_mut(pBNS.edge)?;
                 for edge_index in [plus_edge_index, edge_zero_one_index] {
-                    edges[edge_index].forbidden =
-                        (i32::from(edges[edge_index].forbidden) & inverse_mask) as i8;
+                    edges[edge_index].forbidden = (i32::from(edges[edge_index].forbidden) & inverse_mask) as i8;
                 }
             }
             if ret < 0 {
@@ -10461,30 +9805,21 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
     let cleanup = (|| -> Result<(), SourceHeapError> {
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let flower_edge = if pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .cNumValenceElectrons
                 == 5
             {
-                GetChargeFlowerUpperEdge(
-                    heap,
-                    pBNS,
-                    pVA,
-                    pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1),
-                )?
+                GetChargeFlowerUpperEdge(heap, pBNS, pVA, pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1))?
             } else {
                 NO_VERTEX
             };
             if flower_edge >= 0 {
                 let edge = heap
                     .slice_mut(pBNS.edge)?
-                    .get_mut(
-                        usize::try_from(flower_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if edge.flow == 1 && i32::from(edge.forbidden) & forbidden_edge_mask != 0 {
                     edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
@@ -10505,21 +9840,16 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut neighbor_number = 0_i32;
                 while neighbor_number < i32::from(atom.valence) {
-                    let neighbor_index = usize::try_from(neighbor_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
-                        == BOND_TYPE_SINGLE
-                    {
+                    let neighbor_index =
+                        usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK == BOND_TYPE_SINGLE {
                         let edge_number = *heap
                             .slice(vertex.iedge.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                     }
@@ -10779,9 +10109,8 @@ pub(crate) fn Convert_SIV_to_SVI(
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
-    let npn_bits = cn_bits_N as i32
-        | ((cn_bits_P as i32) << cn_bits_shift)
-        | ((cn_bits_N as i32) << (2 * cn_bits_shift));
+    let npn_bits =
+        cn_bits_N as i32 | ((cn_bits_P as i32) << cn_bits_shift) | ((cn_bits_N as i32) << (2 * cn_bits_shift));
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut flower_edges = EDGE_LIST::default();
     let mut carbon_charges_forbidden = false;
@@ -10800,39 +10129,27 @@ pub(crate) fn Convert_SIV_to_SVI(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let electrons = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .cNumValenceElectrons;
             let flower_edge = if electrons == 5 || electrons == 6 {
-                GetChargeFlowerUpperEdge(
-                    heap,
-                    pBNS,
-                    pVA,
-                    pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1),
-                )?
+                GetChargeFlowerUpperEdge(heap, pBNS, pVA, pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1))?
             } else {
                 NO_VERTEX
             };
             let fixes_flower = flower_edge >= 0 && {
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
-                    .get(
-                        usize::try_from(flower_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden == 0 && 6 == i32::from(electrons).wrapping_add(edge.flow)
             };
             if fixes_flower {
                 let edge = heap
                     .slice_mut(pBNS.edge)?
-                    .get_mut(
-                        usize::try_from(flower_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get_mut(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                 ret = AddToEdgeList(heap, &mut flower_edges, flower_edge, EDGE_LIST_GROWTH)?;
@@ -10852,25 +10169,19 @@ pub(crate) fn Convert_SIV_to_SVI(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut neighbor_number = 0_i32;
                 while neighbor_number < i32::from(atom.valence) {
-                    let neighbor_index = usize::try_from(neighbor_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
-                        == BOND_TYPE_SINGLE
-                    {
+                    let neighbor_index =
+                        usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK == BOND_TYPE_SINGLE {
                         let edge_number = *heap
                             .slice(vertex.iedge.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let edge = heap
                             .slice_mut(pBNS.edge)?
-                            .get_mut(
-                                usize::try_from(edge_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
-                        ret =
-                            AddToEdgeList(heap, &mut flower_edges, edge_number, EDGE_LIST_GROWTH)?;
+                        ret = AddToEdgeList(heap, &mut flower_edges, edge_number, EDGE_LIST_GROWTH)?;
                         if ret != 0 {
                             return Ok(());
                         }
@@ -10892,20 +10203,14 @@ pub(crate) fn Convert_SIV_to_SVI(
                     && atom.endpoint == 0
                     && pVA[atom_index].cnListIndex > 0
                     && CN_LIST
-                        .get(
-                            usize::try_from(list_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .bits
                         == npn_bits
                     && flower_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(flower_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .flow
                         > 0;
@@ -10917,8 +10222,8 @@ pub(crate) fn Convert_SIV_to_SVI(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut neighbor_number = 0_i32;
                     while neighbor_number < i32::from(atom.valence) {
-                        let neighbor_index = usize::try_from(neighbor_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_index =
+                            usize::try_from(neighbor_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_atom_index = usize::from(atom.neighbor[neighbor_index]);
                         let neighbor = heap
                             .slice(at2.as_const())?
@@ -10935,8 +10240,8 @@ pub(crate) fn Convert_SIV_to_SVI(
                                 .slice(vertex.iedge.as_const())?
                                 .get(neighbor_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let edge_index = usize::try_from(edge_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let edge_index =
+                                usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             if heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(edge_index)
@@ -10944,12 +10249,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                                 .forbidden
                                 == 0
                             {
-                                ret = AddToEdgeList(
-                                    heap,
-                                    &mut flower_edges,
-                                    edge_number,
-                                    EDGE_LIST_GROWTH,
-                                )?;
+                                ret = AddToEdgeList(heap, &mut flower_edges, edge_number, EDGE_LIST_GROWTH)?;
                                 if ret != 0 {
                                     return Ok(());
                                 }
@@ -10957,8 +10257,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(edge_index)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                edge.forbidden =
-                                    (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
+                                edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                             }
                         }
                         neighbor_number = neighbor_number.wrapping_add(1);
@@ -10970,8 +10269,7 @@ pub(crate) fn Convert_SIV_to_SVI(
 
         atom_number = 0;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -10987,27 +10285,17 @@ pub(crate) fn Convert_SIV_to_SVI(
                 && atom.endpoint == 0
                 && pVA[atom_index].cnListIndex > 0
                 && CN_LIST
-                    .get(
-                        usize::try_from(list_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .bits
                     == npn_bits
                 && {
-                    flower_edge = GetChargeFlowerUpperEdge(
-                        heap,
-                        pBNS,
-                        pVA,
-                        pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1),
-                    )?;
+                    flower_edge =
+                        GetChargeFlowerUpperEdge(heap, pBNS, pVA, pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1))?;
                     flower_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
-                            .get(
-                                usize::try_from(flower_edge)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .flow
                             > 0
@@ -11017,21 +10305,14 @@ pub(crate) fn Convert_SIV_to_SVI(
                 continue;
             }
             if !carbon_charges_forbidden {
-                ret = ForbidCarbonChargeEdges(
-                    heap,
-                    pBNS,
-                    pTCGroups,
-                    &mut carbon_charge_edges,
-                    forbidden_edge_mask,
-                )?;
+                ret = ForbidCarbonChargeEdges(heap, pBNS, pTCGroups, &mut carbon_charge_edges, forbidden_edge_mask)?;
                 if ret < 0 {
                     return Ok(());
                 }
                 carbon_charges_forbidden = true;
             }
 
-            let edge_index =
-                usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge_index = usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index)
@@ -11049,10 +10330,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
-                        .get_mut(
-                            usize::try_from(vertex_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                 }
@@ -11075,12 +10353,7 @@ pub(crate) fn Convert_SIV_to_SVI(
             if ret == 1
                 && ((path_end == first_vertex && path_start == second_vertex)
                     || (path_end == second_vertex && path_start == first_vertex))
-                && delta_charge
-                    <= if pVA[atom_index].cNumBondsToMetal != 0 {
-                        2
-                    } else {
-                        0
-                    }
+                && delta_charge <= if pVA[atom_index].cNumBondsToMetal != 0 { 2 } else { 0 }
             {
                 ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
             } else {
@@ -11093,10 +10366,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
-                        .get_mut(
-                            usize::try_from(vertex_number)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                 }
@@ -11123,10 +10393,8 @@ pub(crate) fn Convert_SIV_to_SVI(
         Ok(())
     })();
 
-    let cleanup_carbon =
-        RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask).and_then(
-            |_| AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_FREE).map(|_| ()),
-        );
+    let cleanup_carbon = RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)
+        .and_then(|_| AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_FREE).map(|_| ()));
     let cleanup_flower = RemoveForbiddenEdgeMask(heap, pBNS, &flower_edges, forbidden_edge_mask)
         .and_then(|_| AllocEdgeList(heap, &mut flower_edges, EDGE_LIST_FREE).map(|_| ()));
     match computation {
@@ -11367,21 +10635,15 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
         let mut number_metals = 0_i32;
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            let atom_index =
-                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            if pVA
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .cMetal
-                == 0
-            {
+            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            if pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cMetal == 0 {
                 for edge_number in [
                     pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1),
                     pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1),
                 ] {
                     if edge_number >= 0 {
-                        let edge_index = usize::try_from(edge_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let edge_index =
+                            usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         if heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -11389,12 +10651,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                             .forbidden
                             == 0
                         {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut carbon_charge_edges,
-                                edge_number,
-                                EDGE_LIST_GROWTH,
-                            )?;
+                            ret = AddToEdgeList(heap, &mut carbon_charge_edges, edge_number, EDGE_LIST_GROWTH)?;
                             if ret != 0 {
                                 return Ok(());
                             }
@@ -11441,10 +10698,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                 let oxygen_available = oxygen_charge_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(oxygen_charge_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(oxygen_charge_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
@@ -11456,21 +10710,11 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                         .forbidden
                         == 0;
                 if oxygen_available && source_index_available {
-                    ret = AddToEdgeList(
-                        heap,
-                        &mut no_charge_edges,
-                        oxygen_charge_edge,
-                        EDGE_LIST_GROWTH,
-                    )?;
+                    ret = AddToEdgeList(heap, &mut no_charge_edges, oxygen_charge_edge, EDGE_LIST_GROWTH)?;
                     if ret != 0 {
                         return Ok(());
                     }
-                    ret = AddToEdgeList(
-                        heap,
-                        &mut no_charge_edges,
-                        nitrogen_charge_edge,
-                        EDGE_LIST_GROWTH,
-                    )?;
+                    ret = AddToEdgeList(heap, &mut no_charge_edges, nitrogen_charge_edge, EDGE_LIST_GROWTH)?;
                     if ret != 0 {
                         return Ok(());
                     }
@@ -11484,10 +10728,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if heap
                         .slice(pBNS.edge.as_const())?
-                        .get(
-                            usize::try_from(no_edge)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
+                        .get(usize::try_from(no_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0
@@ -11511,13 +10752,9 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
             while list_index < no_edges.num_edges {
                 let edge_number = *heap
                     .slice(no_edges.pnEdges.as_const())?
-                    .get(
-                        usize::try_from(list_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(list_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let edge_index = usize::try_from(edge_number)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge_index = usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(edge_index)
@@ -11534,10 +10771,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(1);
                     }
@@ -11573,10 +10807,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
-                            .get_mut(
-                                usize::try_from(vertex_number)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get_mut(usize::try_from(vertex_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
@@ -11591,10 +10822,8 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
         Ok(())
     })();
 
-    let cleanup_carbon =
-        RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask).and_then(
-            |_| AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_FREE).map(|_| ()),
-        );
+    let cleanup_carbon = RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)
+        .and_then(|_| AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_FREE).map(|_| ()));
     let cleanup_no_edges = RemoveForbiddenEdgeMask(heap, pBNS, &no_edges, forbidden_edge_mask)
         .and_then(|_| AllocEdgeList(heap, &mut no_edges, EDGE_LIST_FREE).map(|_| ()));
     let cleanup_no_charge = AllocEdgeList(heap, &mut no_charge_edges, EDGE_LIST_FREE).map(|_| ());
@@ -11636,9 +10865,7 @@ fn bns_edge_index(
     vertex: usize,
     neighbor_order: usize,
 ) -> Result<usize, SourceHeapError> {
-    let vertex = vertices
-        .get(vertex)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let vertex = vertices.get(vertex).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let edge = *heap
         .slice(vertex.iedge.as_const())?
         .get(neighbor_order)
@@ -11647,8 +10874,7 @@ fn bns_edge_index(
 }
 
 fn opposite_vertex(edge: &BNS_EDGE, vertex: usize) -> Result<usize, SourceHeapError> {
-    usize::try_from(i32::from(edge.neighbor12) ^ vertex as i32)
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)
+    usize::try_from(i32::from(edge.neighbor12) ^ vertex as i32).map_err(|_| SourceHeapError::PointerOutOfBounds)
 }
 
 fn bns_direct_edge_index(
@@ -12957,10 +12183,8 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
     if num_atoms <= 0 {
         return Ok(0);
     }
-    let vertex_count =
-        usize::try_from(pBNS.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let edge_count =
-        usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let vertex_count = usize::try_from(pBNS.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let edge_count = usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     // SAFETY: BNS vertices and edges are separate typed allocations, and the
     // adjacency reads below target separate i32 allocations. This function
     // neither frees nor resizes any of them, so these views are the direct
@@ -12988,11 +12212,8 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
     let mut atom_number = 0_i32;
 
     'atoms: while atom_number < num_atoms {
-        let center_index =
-            usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let center = at
-            .get(center_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let center_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let center = at.get(center_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let center_type = get_pVA_atom_type(pVA, at, atom_number, 0)?;
         let ordinary_valence = get_el_valence(i32::from(center.el_number), 0, 0)?;
         let bonds_valence_non_metal = n_no_metal_bonds_valence(Some(at), atom_number)?;
@@ -13039,15 +12260,10 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let neighbor_index = usize::from(
                 *center
                     .neighbor
-                    .get(
-                        usize::try_from(neighbor_order)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
-            let neighbor = at
-                .get(neighbor_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor = at.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let endpoint_valence = get_endpoint_valence(neighbor.el_number);
             let edge_index = bns_edge_index(
                 heap,
@@ -13064,10 +12280,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let bond_type = i32::from(
                 *center
                     .bond_type
-                    .get(
-                        usize::try_from(neighbor_order)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             ) & BOND_TYPE_MASK as i32;
             let neighbor_type = get_pVA_atom_type(pVA, at, neighbor_index as i32, bond_type)?;
@@ -13116,18 +12329,15 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 neighbor_type & EL_TYPE_O as i32 != 0 && neighbor.valence == 1,
             ));
             num_n = num_n.wrapping_add(i32::from(
-                neighbor_type & EL_TYPE_N as i32 != 0
-                    && !(neighbor.valence == 3 && neighbor.chem_bonds_valence == 3),
+                neighbor_type & EL_TYPE_N as i32 != 0 && !(neighbor.valence == 3 && neighbor.chem_bonds_valence == 3),
             ));
             num_s = num_s.wrapping_add(i32::from(
                 neighbor_type & EL_TYPE_S as i32 != 0 && neighbor.valence == 1,
             ));
             num_p = num_p.wrapping_add(i32::from(
-                neighbor_type & EL_TYPE_P as i32 != 0
-                    && !(neighbor.valence == 3 && neighbor.chem_bonds_valence == 3),
+                neighbor_type & EL_TYPE_P as i32 != 0 && !(neighbor.valence == 3 && neighbor.chem_bonds_valence == 3),
             ));
-            num_terminal_os =
-                num_terminal_os.wrapping_add(i32::from(neighbor_type & EL_TYPE_OSt as i32 != 0));
+            num_terminal_os = num_terminal_os.wrapping_add(i32::from(neighbor_type & EL_TYPE_OSt as i32 != 0));
             num_acceptors = num_acceptors.wrapping_add(i32::from(
                 bond_type == BOND_TYPE_DOUBLE as i32 && neighbor_type & EL_TYPE_PT as i32 != 0,
             ));
@@ -13137,10 +12347,9 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     && (neighbor.num_H != 0 || neighbor.charge == -1 || neighbor.endpoint != 0),
             ));
             if neighbor.endpoint != 0 {
-                num_acceptor_endpoints = num_acceptor_endpoints
-                    .wrapping_add(i32::from(bond_type == BOND_TYPE_DOUBLE as i32));
-                num_donor_endpoints = num_donor_endpoints
-                    .wrapping_add(i32::from(bond_type == BOND_TYPE_SINGLE as i32));
+                num_acceptor_endpoints =
+                    num_acceptor_endpoints.wrapping_add(i32::from(bond_type == BOND_TYPE_DOUBLE as i32));
+                num_donor_endpoints = num_donor_endpoints.wrapping_add(i32::from(bond_type == BOND_TYPE_SINGLE as i32));
                 if first_group_number == 0 {
                     first_group_number = i32::from(neighbor.endpoint);
                     equal_mobile_groups = 1;
@@ -13159,20 +12368,15 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 let mut group_index = 0_usize;
                 while group_index < num_groups {
                     if group_counts[group_index].group_number == group_number {
-                        group_counts[group_index].count =
-                            group_counts[group_index].count.wrapping_add(1);
+                        group_counts[group_index].count = group_counts[group_index].count.wrapping_add(1);
                         break;
                     }
                     group_index += 1;
                 }
                 if group_index == num_groups {
-                    group_counts[group_index] = MobileGroupCount {
-                        group_number,
-                        count: 1,
-                    };
+                    group_counts[group_index] = MobileGroupCount { group_number, count: 1 };
                     num_groups += 1;
-                    num_different_t_groups =
-                        num_different_t_groups.wrapping_add(i32::from(group_number != 0));
+                    num_different_t_groups = num_different_t_groups.wrapping_add(i32::from(group_number != 0));
                 }
             }
             neighbor_order = neighbor_order.wrapping_add(1);
@@ -13225,37 +12429,19 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             if found == 3 {
                 let xh = xh.ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let o_double = o_double.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let fixed_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[xh].neighbor_order as usize,
-                )?;
-                let oxygen_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[o_double].neighbor_order as usize,
-                )?;
-                let taut_edge = usize::try_from(
-                    pVA[groups[xh].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let fixed_edge = bns_edge_index(heap, &vertices, center_index, groups[xh].neighbor_order as usize)?;
+                let oxygen_edge =
+                    bns_edge_index(heap, &vertices, center_index, groups[o_double].neighbor_order as usize)?;
+                let taut_edge = usize::try_from(pVA[groups[xh].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
-                    let taut_vertex = opposite_vertex(
-                        &edges[taut_edge],
-                        usize::from(edges[taut_edge].neighbor1),
-                    )?;
-                    vertices[oxygen_vertex].st_edge.flow =
-                        vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    vertices[taut_vertex].st_edge.flow =
-                        vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
+                    let taut_vertex = opposite_vertex(&edges[taut_edge], usize::from(edges[taut_edge].neighbor1))?;
+                    vertices[oxygen_vertex].st_edge.flow = vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
+                    vertices[taut_vertex].st_edge.flow = vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     num_changes = num_changes.wrapping_add(1);
                     atom_number = atom_number.wrapping_add(1);
@@ -13300,37 +12486,19 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             if found == 3 {
                 let xh = xh.ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let oxygen = oxygens[0].ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let fixed_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[xh].neighbor_order as usize,
-                )?;
-                let oxygen_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[oxygen].neighbor_order as usize,
-                )?;
-                let taut_edge = usize::try_from(
-                    pVA[groups[xh].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let fixed_edge = bns_edge_index(heap, &vertices, center_index, groups[xh].neighbor_order as usize)?;
+                let oxygen_edge =
+                    bns_edge_index(heap, &vertices, center_index, groups[oxygen].neighbor_order as usize)?;
+                let taut_edge = usize::try_from(pVA[groups[xh].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
-                    let taut_vertex = opposite_vertex(
-                        &edges[taut_edge],
-                        usize::from(edges[taut_edge].neighbor1),
-                    )?;
-                    vertices[oxygen_vertex].st_edge.flow =
-                        vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    vertices[taut_vertex].st_edge.flow =
-                        vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
+                    let taut_vertex = opposite_vertex(&edges[taut_edge], usize::from(edges[taut_edge].neighbor1))?;
+                    vertices[oxygen_vertex].st_edge.flow = vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
+                    vertices[taut_vertex].st_edge.flow = vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     num_changes = num_changes.wrapping_add(1);
                     atom_number = atom_number.wrapping_add(1);
@@ -13361,9 +12529,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 {
                     oxygen = Some(index);
                     found += 1;
-                } else if group.atom_type_pva & (EL_TYPE_N | EL_TYPE_P) as i32 != 0
-                    && group.forbidden == 0
-                {
+                } else if group.atom_type_pva & (EL_TYPE_N | EL_TYPE_P) as i32 != 0 && group.forbidden == 0 {
                     if group.bond_type == BOND_TYPE_SINGLE as i32
                         && group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
                         && nh.is_none()
@@ -13379,27 +12545,15 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             if found == 3 {
                 let oxygen = oxygen.ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let fixed_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[oxygen].neighbor_order as usize,
-                )?;
-                let nh_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[nh].neighbor_order as usize,
-                )?;
+                let fixed_edge = bns_edge_index(heap, &vertices, center_index, groups[oxygen].neighbor_order as usize)?;
+                let nh_edge = bns_edge_index(heap, &vertices, center_index, groups[nh].neighbor_order as usize)?;
                 if edges[fixed_edge].flow != 0 {
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_sub(1);
                     edges[nh_edge].flow = edges[nh_edge].flow.wrapping_add(1);
                     let oxygen_vertex = opposite_vertex(&edges[fixed_edge], center_index)?;
                     let nh_vertex = opposite_vertex(&edges[nh_edge], center_index)?;
-                    vertices[oxygen_vertex].st_edge.flow =
-                        vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    vertices[nh_vertex].st_edge.flow =
-                        vertices[nh_vertex].st_edge.flow.wrapping_sub(1);
+                    vertices[oxygen_vertex].st_edge.flow = vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
+                    vertices[nh_vertex].st_edge.flow = vertices[nh_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     num_changes = num_changes.wrapping_add(1);
                     atom_number = atom_number.wrapping_add(1);
@@ -13441,9 +12595,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     found += 1;
                 } else if group.bond_type == BOND_TYPE_SINGLE as i32 && neighbor.endpoint != 0 {
                     if group.num_bonds > 1 {
-                        *to_fix
-                            .get_mut(num_to_fix)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)? = index;
+                        *to_fix.get_mut(num_to_fix).ok_or(SourceHeapError::PointerOutOfBounds)? = index;
                         num_to_fix += 1;
                     }
                     found += 1;
@@ -13451,19 +12603,13 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
             if let Some(fixed_n) = fixed_n {
                 if found >= 2 && 1 + num_to_fix as i32 != found {
-                    let fixed_edge = bns_edge_index(
-                        heap,
-                        &vertices,
-                        center_index,
-                        groups[fixed_n].neighbor_order as usize,
-                    )?;
+                    let fixed_edge =
+                        bns_edge_index(heap, &vertices, center_index, groups[fixed_n].neighbor_order as usize)?;
                     if edges[fixed_edge].flow != 0 {
                         edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_sub(1);
-                        vertices[center_index].st_edge.flow =
-                            vertices[center_index].st_edge.flow.wrapping_sub(1);
+                        vertices[center_index].st_edge.flow = vertices[center_index].st_edge.flow.wrapping_sub(1);
                         let neighbor_vertex = opposite_vertex(&edges[fixed_edge], center_index)?;
-                        vertices[neighbor_vertex].st_edge.flow =
-                            vertices[neighbor_vertex].st_edge.flow.wrapping_sub(1);
+                        vertices[neighbor_vertex].st_edge.flow = vertices[neighbor_vertex].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                         for group_index in to_fix.into_iter().take(num_to_fix) {
                             let edge_index = bns_edge_index(
@@ -13522,37 +12668,19 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             if found == 3 {
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let oxygen = oxygen.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let fixed_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[nh].neighbor_order as usize,
-                )?;
-                let oxygen_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[oxygen].neighbor_order as usize,
-                )?;
-                let taut_edge = usize::try_from(
-                    pVA[groups[nh].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let fixed_edge = bns_edge_index(heap, &vertices, center_index, groups[nh].neighbor_order as usize)?;
+                let oxygen_edge =
+                    bns_edge_index(heap, &vertices, center_index, groups[oxygen].neighbor_order as usize)?;
+                let taut_edge = usize::try_from(pVA[groups[nh].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
-                    let taut_vertex = opposite_vertex(
-                        &edges[taut_edge],
-                        usize::from(edges[taut_edge].neighbor1),
-                    )?;
-                    vertices[oxygen_vertex].st_edge.flow =
-                        vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    vertices[taut_vertex].st_edge.flow =
-                        vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
+                    let taut_vertex = opposite_vertex(&edges[taut_edge], usize::from(edges[taut_edge].neighbor1))?;
+                    vertices[oxygen_vertex].st_edge.flow = vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
+                    vertices[taut_vertex].st_edge.flow = vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     num_changes = num_changes.wrapping_add(1);
                     atom_number = atom_number.wrapping_add(1);
@@ -13638,10 +12766,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
                     && group.forbidden & forbidden_mask == 0
                 {
-                    if group.bond_type == BOND_TYPE_DOUBLE as i32
-                        && neighbor.endpoint == 0
-                        && n_double.is_none()
-                    {
+                    if group.bond_type == BOND_TYPE_DOUBLE as i32 && neighbor.endpoint == 0 && n_double.is_none() {
                         n_double = Some(index);
                         found += 1;
                     } else if group.bond_type == BOND_TYPE_SINGLE as i32
@@ -13654,8 +12779,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         found += 1;
                     }
                 } else if group.atom_type_pva & (EL_TYPE_N | EL_TYPE_P) as i32 == 0
-                    && !(group.atom_type_pva & (EL_TYPE_O | EL_TYPE_S) as i32 != 0
-                        && group.num_bonds > 1)
+                    && !(group.atom_type_pva & (EL_TYPE_O | EL_TYPE_S) as i32 != 0 && group.num_bonds > 1)
                     && group.forbidden & forbidden_mask != 0
                     && group.bond_type == BOND_TYPE_SINGLE as i32
                     && x.is_none()
@@ -13666,12 +12790,8 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
             if found == 3 {
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let taut_edge = usize::try_from(
-                    pVA[groups[nh].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let taut_edge = usize::try_from(pVA[groups[nh].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if edges[taut_edge].flow != 0 {
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let first = usize::from(edges[taut_edge].neighbor1);
@@ -13679,8 +12799,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
                     vertices[second].st_edge.flow = vertices[second].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                    edges[taut_edge].forbidden =
-                        (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
+                    edges[taut_edge].forbidden = (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                     num_changes = num_changes.wrapping_add(1);
                     atom_number = atom_number.wrapping_add(1);
                     continue 'atoms;
@@ -13712,10 +12831,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
                     && group.forbidden & forbidden_mask == 0
                 {
-                    if group.bond_type == BOND_TYPE_DOUBLE as i32
-                        && neighbor.endpoint != 0
-                        && n_double.is_none()
-                    {
+                    if group.bond_type == BOND_TYPE_DOUBLE as i32 && neighbor.endpoint != 0 && n_double.is_none() {
                         n_double = Some(index);
                         found += 1;
                     } else if group.bond_type == BOND_TYPE_SINGLE as i32
@@ -13740,12 +12856,9 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
             if found == 3 {
                 let n_fixed = n_fixed.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let taut_edge = usize::try_from(
-                    pVA[groups[n_fixed].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let taut_edge =
+                    usize::try_from(pVA[groups[n_fixed].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if edges[taut_edge].flow == 0 {
                     let first_vertex = usize::from(edges[taut_edge].neighbor1);
                     let second_vertex = opposite_vertex(&edges[taut_edge], first_vertex)?;
@@ -13755,8 +12868,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         let edge_index = bns_edge_index(heap, &vertices, first_vertex, order)?;
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             first_path = Some(edge_index);
-                            first_path_vertex =
-                                Some(opposite_vertex(&edges[edge_index], first_vertex)?);
+                            first_path_vertex = Some(opposite_vertex(&edges[edge_index], first_vertex)?);
                             break;
                         }
                     }
@@ -13766,25 +12878,15 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         let edge_index = bns_edge_index(heap, &vertices, second_vertex, order)?;
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             second_path = Some(edge_index);
-                            second_path_vertex =
-                                Some(opposite_vertex(&edges[edge_index], second_vertex)?);
+                            second_path_vertex = Some(opposite_vertex(&edges[edge_index], second_vertex)?);
                             break;
                         }
                     }
-                    if let (
-                        Some(first_path),
-                        Some(second_path),
-                        Some(first_path_vertex),
-                        Some(second_path_vertex),
-                    ) = (
-                        first_path,
-                        second_path,
-                        first_path_vertex,
-                        second_path_vertex,
-                    ) {
+                    if let (Some(first_path), Some(second_path), Some(first_path_vertex), Some(second_path_vertex)) =
+                        (first_path, second_path, first_path_vertex, second_path_vertex)
+                    {
                         edges[taut_edge].flow = edges[taut_edge].flow.wrapping_add(1);
-                        edges[taut_edge].forbidden =
-                            (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
+                        edges[taut_edge].forbidden = (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                         edges[first_path].flow = edges[first_path].flow.wrapping_sub(1);
                         edges[second_path].flow = edges[second_path].flow.wrapping_sub(1);
                         vertices[first_path_vertex].st_edge.flow =
@@ -13837,8 +12939,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         n_single = Some(index);
                     }
                 } else if group.atom_type_pva & (EL_TYPE_N | EL_TYPE_P) as i32 == 0
-                    && !(group.atom_type_pva & (EL_TYPE_O | EL_TYPE_S) as i32 != 0
-                        && group.num_bonds > 1)
+                    && !(group.atom_type_pva & (EL_TYPE_O | EL_TYPE_S) as i32 != 0 && group.num_bonds > 1)
                     && group.forbidden & forbidden_mask == 0
                     && group.bond_type == BOND_TYPE_SINGLE as i32
                     && x.is_none()
@@ -13847,12 +12948,8 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if let (Some(n_fixed), Some(n_single)) = (n_fixed, n_single) {
-                let fixed_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[n_fixed].neighbor_order as usize,
-                )?;
+                let fixed_edge =
+                    bns_edge_index(heap, &vertices, center_index, groups[n_fixed].neighbor_order as usize)?;
                 let taut_edge = usize::try_from(
                     pVA[groups[n_single].atom_number as usize]
                         .nTautGroupEdge
@@ -13870,8 +12967,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         let edge_index = bns_edge_index(heap, &vertices, first_vertex, order)?;
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             first_path = Some(edge_index);
-                            first_path_vertex =
-                                Some(opposite_vertex(&edges[edge_index], first_vertex)?);
+                            first_path_vertex = Some(opposite_vertex(&edges[edge_index], first_vertex)?);
                             break;
                         }
                     }
@@ -13881,25 +12977,15 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         let edge_index = bns_edge_index(heap, &vertices, second_vertex, order)?;
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             second_path = Some(edge_index);
-                            second_path_vertex =
-                                Some(opposite_vertex(&edges[edge_index], second_vertex)?);
+                            second_path_vertex = Some(opposite_vertex(&edges[edge_index], second_vertex)?);
                             break;
                         }
                     }
-                    if let (
-                        Some(first_path),
-                        Some(second_path),
-                        Some(first_path_vertex),
-                        Some(second_path_vertex),
-                    ) = (
-                        first_path,
-                        second_path,
-                        first_path_vertex,
-                        second_path_vertex,
-                    ) {
+                    if let (Some(first_path), Some(second_path), Some(first_path_vertex), Some(second_path_vertex)) =
+                        (first_path, second_path, first_path_vertex, second_path_vertex)
+                    {
                         edges[taut_edge].flow = edges[taut_edge].flow.wrapping_add(1);
-                        edges[taut_edge].forbidden =
-                            (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
+                        edges[taut_edge].forbidden = (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                         edges[first_path].flow = edges[first_path].flow.wrapping_sub(1);
                         edges[second_path].flow = edges[second_path].flow.wrapping_sub(1);
                         vertices[first_path_vertex].st_edge.flow =
@@ -13911,8 +12997,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         atom_number = atom_number.wrapping_add(1);
                         continue 'atoms;
                     }
-                    edges[fixed_edge].forbidden =
-                        (i32::from(edges[fixed_edge].forbidden) | forbidden_mask) as i8;
+                    edges[fixed_edge].forbidden = (i32::from(edges[fixed_edge].forbidden) | forbidden_mask) as i8;
                 }
             }
         }
@@ -13932,10 +13017,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             && num_donors == 2
             && num_acceptors == 1
         {
-            let singleton_group = if num_groups > 0
-                && group_counts[0].count == 1
-                && group_counts[0].group_number != 0
-            {
+            let singleton_group = if num_groups > 0 && group_counts[0].count == 1 && group_counts[0].group_number != 0 {
                 group_counts[0].group_number
             } else {
                 0
@@ -13988,11 +13070,9 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         let first = usize::from(edges[taut_edge].neighbor1);
                         let second = opposite_vertex(&edges[taut_edge], first)?;
                         vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                        vertices[second].st_edge.flow =
-                            vertices[second].st_edge.flow.wrapping_sub(1);
+                        vertices[second].st_edge.flow = vertices[second].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                        edges[taut_edge].forbidden =
-                            (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
+                        edges[taut_edge].forbidden = (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                         num_changes = num_changes.wrapping_add(1);
                         atom_number = atom_number.wrapping_add(1);
                         continue 'atoms;
@@ -14048,40 +13128,24 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 let n_double = n_double.ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let donor1 = donors[0].ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let donor2 = donors[1].ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let double_edge = bns_edge_index(
-                    heap,
-                    &vertices,
-                    center_index,
-                    groups[n_double].neighbor_order as usize,
-                )?;
-                let taut1 = usize::try_from(
-                    pVA[groups[donor1].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let taut2 = usize::try_from(
-                    pVA[groups[donor2].atom_number as usize]
-                        .nTautGroupEdge
-                        .wrapping_sub(1),
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if edges[double_edge].flow != 0 && edges[taut1].flow != 0 && edges[taut2].flow != 0
-                {
+                let double_edge =
+                    bns_edge_index(heap, &vertices, center_index, groups[n_double].neighbor_order as usize)?;
+                let taut1 = usize::try_from(pVA[groups[donor1].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let taut2 = usize::try_from(pVA[groups[donor2].atom_number as usize].nTautGroupEdge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if edges[double_edge].flow != 0 && edges[taut1].flow != 0 && edges[taut2].flow != 0 {
                     for edge_index in [taut1, taut2] {
                         edges[edge_index].flow = edges[edge_index].flow.wrapping_sub(1);
                         let first = usize::from(edges[edge_index].neighbor1);
                         let second = opposite_vertex(&edges[edge_index], first)?;
                         vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                        vertices[second].st_edge.flow =
-                            vertices[second].st_edge.flow.wrapping_sub(1);
+                        vertices[second].st_edge.flow = vertices[second].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                        edges[edge_index].forbidden =
-                            (i32::from(edges[edge_index].forbidden) | forbidden_mask) as i8;
+                        edges[edge_index].forbidden = (i32::from(edges[edge_index].forbidden) | forbidden_mask) as i8;
                         num_changes = num_changes.wrapping_add(1);
                     }
-                    edges[double_edge].forbidden =
-                        (i32::from(edges[double_edge].forbidden) | forbidden_mask) as i8;
+                    edges[double_edge].forbidden = (i32::from(edges[double_edge].forbidden) | forbidden_mask) as i8;
                     atom_number = atom_number.wrapping_add(1);
                     continue 'atoms;
                 }
@@ -14228,8 +13292,7 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
         fixed_edges = -1;
     }
 
-    let adjusted_atom_count =
-        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let adjusted_atom_count = usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     // SAFETY: CopyBnsToAtom and MarkRingSystemsInp have completed their writes
     // to at2. The remaining source calls only read at2 while mutating distinct
     // BNS allocations, and at2 remains live and unresized for this scope.
@@ -14242,18 +13305,11 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
         Some(view) => view.prefix(adjusted_atom_count)?,
         None => &[],
     };
-    let adjusted_edges = AdjustTgroupsToForbiddenEdges2(
-        heap,
-        pBNS,
-        adjusted_atoms,
-        pVA,
-        num_atoms,
-        forbidden_edge_mask,
-    )?;
+    let adjusted_edges =
+        AdjustTgroupsToForbiddenEdges2(heap, pBNS, adjusted_atoms, pVA, num_atoms, forbidden_edge_mask)?;
     let mut ret = adjusted_edges;
     if ret != 0 {
-        pBNS.edge_forbidden_mask =
-            (i32::from(pBNS.edge_forbidden_mask) | forbidden_edge_mask) as i8;
+        pBNS.edge_forbidden_mask = (i32::from(pBNS.edge_forbidden_mask) | forbidden_edge_mask) as i8;
         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
         *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
         if ret < 0 {
@@ -14771,8 +13827,8 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     .get(usize::try_from(itg).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone();
-                let tg_vertex = usize::try_from(group.nVertexNumber)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let tg_vertex =
+                    usize::try_from(group.nVertexNumber).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let num_endpoints = group.num_edges;
 
                 let mut radical_order = 0_i32;
@@ -14782,8 +13838,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         heap,
                         pBNS,
                         tg_vertex,
-                        usize::try_from(radical_order)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        usize::try_from(radical_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )?;
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
@@ -14879,8 +13934,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge2 = heap
                                 .slice(pBNS.edge.as_const())?
@@ -14910,9 +13964,8 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            let tg_edge2_index =
-                                usize::try_from(pVA[endpoint2].nTautGroupEdge.wrapping_sub(1))
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let tg_edge2_index = usize::try_from(pVA[endpoint2].nTautGroupEdge.wrapping_sub(1))
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let tg2 = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(tg_edge2_index)
@@ -14921,12 +13974,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            if mobile_h_endpoint_center_is_better(
-                                pVA,
-                                original_atoms,
-                                center,
-                                center_found,
-                            ) {
+                            if mobile_h_endpoint_center_is_better(pVA, original_atoms, center, center_found) {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
                                 center_edge1_found = Some(center_edge1);
@@ -14942,23 +13990,16 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                 if let (Some(center), Some(tg_edge1), Some(center_edge1)) =
                     (center_found, tg_edge1_found, center_edge1_found)
                 {
-                    heap.slice_mut(pBNS.edge)?[radical_tg_edge].flow = heap
-                        .slice(pBNS.edge.as_const())?[radical_tg_edge]
-                        .flow
-                        .wrapping_add(1);
-                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
-                        .slice(pBNS.vert.as_const())?[endpoint0]
+                    heap.slice_mut(pBNS.edge)?[radical_tg_edge].flow =
+                        heap.slice(pBNS.edge.as_const())?[radical_tg_edge].flow.wrapping_add(1);
+                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap.slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
-                    heap.slice_mut(pBNS.edge)?[tg_edge1].flow = heap.slice(pBNS.edge.as_const())?
-                        [tg_edge1]
-                        .flow
-                        .wrapping_sub(1);
-                    heap.slice_mut(pBNS.edge)?[center_edge1].flow = heap
-                        .slice(pBNS.edge.as_const())?[center_edge1]
-                        .flow
-                        .wrapping_add(1);
+                    heap.slice_mut(pBNS.edge)?[tg_edge1].flow =
+                        heap.slice(pBNS.edge.as_const())?[tg_edge1].flow.wrapping_sub(1);
+                    heap.slice_mut(pBNS.edge)?[center_edge1].flow =
+                        heap.slice(pBNS.edge.as_const())?[center_edge1].flow.wrapping_add(1);
                     {
                         let center_vertex = &mut heap.slice_mut(pBNS.vert)?[center];
                         center_vertex.st_edge.flow = center_vertex.st_edge.flow.wrapping_add(1);
@@ -15030,10 +14071,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             continue;
                         }
                         let center = opposite_vertex(&edge1, endpoint1)?;
-                        if heap.slice(pBNS.vert.as_const())?[center].type_
-                            & BNS_VERT_TYPE_ENDPOINT as AT_NUMB
-                            != 0
-                        {
+                        if heap.slice(pBNS.vert.as_const())?[center].type_ & BNS_VERT_TYPE_ENDPOINT as AT_NUMB != 0 {
                             k = k.wrapping_add(1);
                             continue;
                         }
@@ -15051,8 +14089,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow != 0 {
@@ -15061,14 +14098,10 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                     & BNS_VERT_TYPE_ENDPOINT as AT_NUMB
                                     == 0
                                 {
-                                    let atom = original_atoms
-                                        .get(center)
-                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    let atom = original_atoms.get(center).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     let mut stereogenic = false;
                                     let mut m = 0_usize;
-                                    while m < MAX_NUM_STEREO_BONDS as usize
-                                        && atom.sb_parity[m] != 0
-                                    {
+                                    while m < MAX_NUM_STEREO_BONDS as usize && atom.sb_parity[m] != 0 {
                                         if i32::from(atom.sb_ord[m]) == n {
                                             stereogenic = true;
                                             break;
@@ -15096,18 +14129,12 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge0 = heap.slice(pBNS.edge.as_const())?[center_edge0].clone();
                             if edge0.flow == 0
                                 && opposite_vertex(&edge0, center)? == endpoint0
-                                && mobile_h_endpoint_center_is_better(
-                                    pVA,
-                                    original_atoms,
-                                    center,
-                                    center_found,
-                                )
+                                && mobile_h_endpoint_center_is_better(pVA, original_atoms, center, center_found)
                             {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
@@ -15131,20 +14158,15 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             edge0.cap = edge0.flow;
                         }
                     }
-                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
-                        .slice(pBNS.vert.as_const())?[endpoint0]
+                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap.slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
-                    if let (Some(endpoint2), Some(center_edge2)) =
-                        (endpoint2_found, center_edge2_found)
-                    {
-                        heap.slice_mut(pBNS.edge)?[center_edge2].flow = heap
-                            .slice(pBNS.edge.as_const())?[center_edge2]
-                            .flow
-                            .wrapping_sub(1);
-                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[endpoint2]
+                    if let (Some(endpoint2), Some(center_edge2)) = (endpoint2_found, center_edge2_found) {
+                        heap.slice_mut(pBNS.edge)?[center_edge2].flow =
+                            heap.slice(pBNS.edge.as_const())?[center_edge2].flow.wrapping_sub(1);
+                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap.slice(pBNS.vert.as_const())?
+                            [endpoint2]
                             .st_edge
                             .flow
                             .wrapping_sub(1);
@@ -15165,20 +14187,14 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     let mut jj = 0_i32;
                     while jj < num_atoms {
                         let source_bug_atom = copied_atoms
-                            .get(
-                                usize::try_from(radical_order)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(radical_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if source_bug_atom.endpoint != 0 {
                             jj = jj.wrapping_add(1);
                             continue;
                         }
-                        let jj_index =
-                            usize::try_from(jj).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let jj_atom = copied_atoms
-                            .get(jj_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let jj_index = usize::try_from(jj).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let jj_atom = copied_atoms.get(jj_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let jj_vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(jj_index)
@@ -15214,20 +14230,10 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                     == 0
                             {
                                 let mut k = opposite_vertex(&edge0, jj_index)?;
-                                if copied_atoms
-                                    .get(k)
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                    .endpoint
-                                    != 0
-                                {
+                                if copied_atoms.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?.endpoint != 0 {
                                     carbon_edge = carbon_edge1;
                                     k = opposite_vertex(&edge1, jj_index)?;
-                                    if copied_atoms
-                                        .get(k)
-                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                        .endpoint
-                                        != 0
-                                    {
+                                    if copied_atoms.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?.endpoint != 0 {
                                         jj = jj.wrapping_add(1);
                                         continue;
                                     }
@@ -15236,15 +14242,10 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                     jj_vertex.st_edge.flow.wrapping_sub(1);
                                 heap.slice_mut(pBNS.vert)?[jj_index].st_edge.cap =
                                     jj_vertex.st_edge.cap.wrapping_sub(1);
-                                heap.slice_mut(pBNS.edge)?[carbon_edge].flow = heap
-                                    .slice(pBNS.edge.as_const())?[carbon_edge]
-                                    .flow
-                                    .wrapping_sub(1);
-                                heap.slice_mut(pBNS.vert)?[k].st_edge.flow = heap
-                                    .slice(pBNS.vert.as_const())?[k]
-                                    .st_edge
-                                    .flow
-                                    .wrapping_sub(1);
+                                heap.slice_mut(pBNS.edge)?[carbon_edge].flow =
+                                    heap.slice(pBNS.edge.as_const())?[carbon_edge].flow.wrapping_sub(1);
+                                heap.slice_mut(pBNS.vert)?[k].st_edge.flow =
+                                    heap.slice(pBNS.vert.as_const())?[k].st_edge.flow.wrapping_sub(1);
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(1);
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
@@ -15268,26 +14269,15 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 )?;
                                 let test_succeeded = ret2 == 1
                                     && ((path_end == endpoint0 as i32 && path_start == k as i32)
-                                        || (path_end == k as i32
-                                            && path_start == endpoint0 as i32))
+                                        || (path_end == k as i32 && path_start == endpoint0 as i32))
                                     && delta_charge == 0;
                                 if test_succeeded {
-                                    ret2 = RunBnsRestoreOnce(
-                                        heap,
-                                        pBNS,
-                                        pBD,
-                                        pVA,
-                                        pTCGroups,
-                                        clock_result,
-                                    )?;
+                                    ret2 = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                     if ret2 > 0 {
                                         num_fixes = num_fixes.wrapping_add(1);
                                         total_fixes = total_fixes.wrapping_add(1);
-                                        heap.slice_mut(pBNS.vert)?[jj_index].st_edge.cap = heap
-                                            .slice(pBNS.vert.as_const())?[jj_index]
-                                            .st_edge
-                                            .cap
-                                            .wrapping_add(1);
+                                        heap.slice_mut(pBNS.vert)?[jj_index].st_edge.cap =
+                                            heap.slice(pBNS.vert.as_const())?[jj_index].st_edge.cap.wrapping_add(1);
                                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
                                         break;
                                     }
@@ -15297,15 +14287,10 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                         vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
                                     }
-                                    heap.slice_mut(pBNS.edge)?[carbon_edge].flow = heap
-                                        .slice(pBNS.edge.as_const())?[carbon_edge]
-                                        .flow
-                                        .wrapping_add(1);
-                                    heap.slice_mut(pBNS.vert)?[k].st_edge.flow = heap
-                                        .slice(pBNS.vert.as_const())?[k]
-                                        .st_edge
-                                        .flow
-                                        .wrapping_add(1);
+                                    heap.slice_mut(pBNS.edge)?[carbon_edge].flow =
+                                        heap.slice(pBNS.edge.as_const())?[carbon_edge].flow.wrapping_add(1);
+                                    heap.slice_mut(pBNS.vert)?[k].st_edge.flow =
+                                        heap.slice(pBNS.vert.as_const())?[k].st_edge.flow.wrapping_add(1);
                                     pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
                                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                                 }
@@ -16116,8 +15101,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
         let endpoint_number_count = if pStruct.ti.nNumEndpoints <= 0 {
             0
         } else {
-            usize::try_from(pStruct.ti.nNumEndpoints)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            usize::try_from(pStruct.ti.nNumEndpoints).map_err(|_| SourceHeapError::PointerOutOfBounds)?
         };
         let endpoint_numbers_view = if endpoint_number_count == 0 {
             None
@@ -16131,8 +15115,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
         let taut_group_count = if pStruct.ti.num_t_groups <= 0 {
             0
         } else {
-            usize::try_from(pStruct.ti.num_t_groups)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            usize::try_from(pStruct.ti.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?
         };
         let taut_groups_view = if taut_group_count == 0 {
             None
@@ -16151,10 +15134,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
             let mut group_index = 0_i32;
             'groups: while group_index < pStruct.ti.num_t_groups {
                 let group = taut_groups
-                    .get(
-                        usize::try_from(group_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let num_endpoints = i32::from(group.nNumEndpoints);
                 let mut radical_order = 0_i32;
@@ -16163,10 +15143,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     let endpoint_position = endpoint_offset.wrapping_add(radical_order);
                     let endpoint = usize::from(
                         *endpoint_numbers
-                            .get(
-                                usize::try_from(endpoint_position)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
+                            .get(usize::try_from(endpoint_position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
                     let vertex = heap
@@ -16202,8 +15179,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     );
                     let endpoint1_vertex = heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
                     if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
-                        || (copied_atoms[endpoint1].num_H == 0
-                            && copied_atoms[endpoint1].charge != -1)
+                        || (copied_atoms[endpoint1].num_H == 0 && copied_atoms[endpoint1].charge != -1)
                         || endpoint_flags[endpoint1] == 0
                     {
                         j = j.wrapping_add(1);
@@ -16239,8 +15215,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow != 0 {
@@ -16256,9 +15231,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 }
                                 let mut stereogenic = false;
                                 let mut m = 0_usize;
-                                while m < MAX_NUM_STEREO_BONDS as usize
-                                    && original_atoms[center].sb_parity[m] != 0
-                                {
+                                while m < MAX_NUM_STEREO_BONDS as usize && original_atoms[center].sb_parity[m] != 0 {
                                     if i32::from(original_atoms[center].sb_ord[m]) == n {
                                         stereogenic = true;
                                         break;
@@ -16284,18 +15257,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow == 0
                                 && opposite_vertex(&edge, center)? == endpoint0
-                                && mobile_h_endpoint_center_is_better(
-                                    pVA,
-                                    original_atoms,
-                                    center,
-                                    center_found,
-                                )
+                                && mobile_h_endpoint_center_is_better(pVA, original_atoms, center, center_found)
                             {
                                 center_found = Some(center);
                                 edge0_found = Some(edge_index);
@@ -16318,18 +15285,15 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             edge.cap = edge.flow;
                         }
                     }
-                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
-                        .slice(pBNS.vert.as_const())?[endpoint0]
+                    heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap.slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
                     if let (Some(endpoint2), Some(edge2)) = (endpoint2_found, edge2_found) {
-                        heap.slice_mut(pBNS.edge)?[edge2].flow = heap
-                            .slice(pBNS.edge.as_const())?[edge2]
-                            .flow
-                            .wrapping_sub(1);
-                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[endpoint2]
+                        heap.slice_mut(pBNS.edge)?[edge2].flow =
+                            heap.slice(pBNS.edge.as_const())?[edge2].flow.wrapping_sub(1);
+                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap.slice(pBNS.vert.as_const())?
+                            [endpoint2]
                             .st_edge
                             .flow
                             .wrapping_sub(1);
@@ -16361,8 +15325,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     );
                     let endpoint1_vertex = heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
                     if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
-                        || (copied_atoms[endpoint1].num_H == 0
-                            && copied_atoms[endpoint1].charge != -1)
+                        || (copied_atoms[endpoint1].num_H == 0 && copied_atoms[endpoint1].charge != -1)
                         || endpoint_flags[endpoint1] == 0
                     {
                         j = j.wrapping_add(1);
@@ -16392,8 +15355,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(n)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge2_data = heap.slice(pBNS.edge.as_const())?[edge2].clone();
                             if edge2_data.flow == 0 {
@@ -16404,12 +15366,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 if endpoint_flags[endpoint2] != 0
                                     && copied_atoms[endpoint2].num_H == 0
                                     && copied_atoms[endpoint1].charge != -1
-                                    && mobile_h_endpoint_center_is_better(
-                                        pVA,
-                                        original_atoms,
-                                        center,
-                                        center_found,
-                                    )
+                                    && mobile_h_endpoint_center_is_better(pVA, original_atoms, center, center_found)
                                 {
                                     center_found = Some(center);
                                     center_edge1_found = Some(edge1);
@@ -16424,11 +15381,8 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 }
 
                 if let (Some(center), Some(_center_edge1)) = (center_found, center_edge1_found) {
-                    heap.slice_mut(pBNS.vert)?[center].st_edge.cap = heap
-                        .slice(pBNS.vert.as_const())?[center]
-                        .st_edge
-                        .cap
-                        .wrapping_add(1);
+                    heap.slice_mut(pBNS.vert)?[center].st_edge.cap =
+                        heap.slice(pBNS.vert.as_const())?[center].st_edge.cap.wrapping_add(1);
                     pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
                     let mut path_start = NO_VERTEX;
                     let mut path_end = NO_VERTEX;
@@ -16462,11 +15416,8 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             continue 'groups;
                         }
                     } else {
-                        heap.slice_mut(pBNS.vert)?[center].st_edge.cap = heap
-                            .slice(pBNS.vert.as_const())?[center]
-                            .st_edge
-                            .cap
-                            .wrapping_sub(1);
+                        heap.slice_mut(pBNS.vert)?[center].st_edge.cap =
+                            heap.slice(pBNS.vert.as_const())?[center].st_edge.cap.wrapping_sub(1);
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(1);
                     }
                     if ret3 < 0 {
@@ -16477,8 +15428,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 center_found = None;
                 let minus0 = pVA[endpoint0].nCMinusGroupEdge.wrapping_sub(1);
                 if minus0 >= 0 {
-                    let minus0_index =
-                        usize::try_from(minus0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let minus0_index = usize::try_from(minus0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if heap.slice(pBNS.edge.as_const())?[minus0_index].forbidden == 0 {
                         let mut chosen_center = None;
                         let mut chosen_endpoint2 = None;
@@ -16491,25 +15441,19 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 continue;
                             }
                             let endpoint1 = usize::from(
-                                endpoint_numbers[usize::try_from(j)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
+                                endpoint_numbers
+                                    [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                             );
-                            let endpoint1_vertex =
-                                heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
+                            let endpoint1_vertex = heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
                             let minus1 = pVA[endpoint1].nCMinusGroupEdge.wrapping_sub(1);
-                            if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
-                                || minus1 < 0
-                            {
+                            if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow || minus1 < 0 {
                                 j = j.wrapping_add(1);
                                 continue;
                             }
-                            let minus1_index = usize::try_from(minus1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let minus1_index =
+                                usize::try_from(minus1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let minus1_edge = &heap.slice(pBNS.edge.as_const())?[minus1_index];
-                            if minus1_edge.flow == 0
-                                || minus1_edge.forbidden != 0
-                                || endpoint_flags[endpoint1] == 0
-                            {
+                            if minus1_edge.flow == 0 || minus1_edge.forbidden != 0 || endpoint_flags[endpoint1] == 0 {
                                 j = j.wrapping_add(1);
                                 continue;
                             }
@@ -16520,8 +15464,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     heap,
                                     pBNS,
                                     endpoint1,
-                                    usize::try_from(k)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )?;
                                 let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                                 if edge1_data.flow != 0 || edge1_data.forbidden != 0 {
@@ -16536,19 +15479,16 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     k = k.wrapping_add(1);
                                     continue;
                                 }
-                                let center_vertex =
-                                    heap.slice(pBNS.vert.as_const())?[center].clone();
+                                let center_vertex = heap.slice(pBNS.vert.as_const())?[center].clone();
                                 let mut n = 0_i32;
                                 while n < i32::from(center_vertex.num_adj_edges) {
                                     let edge2 = bns_direct_edge_index(
                                         heap,
                                         pBNS,
                                         center,
-                                        usize::try_from(n)
-                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                     )?;
-                                    let edge2_data =
-                                        heap.slice(pBNS.edge.as_const())?[edge2].clone();
+                                    let edge2_data = heap.slice(pBNS.edge.as_const())?[edge2].clone();
                                     if edge2_data.flow != 0 && edge2_data.forbidden == 0 {
                                         let endpoint2 = opposite_vertex(&edge2_data, center)?;
                                         if endpoint2 >= usize::try_from(pBNS.num_atoms).unwrap_or(0)
@@ -16571,15 +15511,9 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                         if !stereogenic {
                                             let replace = chosen_center.is_none()
                                                 || (!valence_atom_is_carbon(pVA, chosen_endpoint2)
-                                                    && valence_atom_is_carbon(
-                                                        pVA,
-                                                        Some(endpoint2),
-                                                    ))
+                                                    && valence_atom_is_carbon(pVA, Some(endpoint2)))
                                                 || (valence_atom_is_carbon(pVA, chosen_endpoint2)
-                                                    && valence_atom_is_carbon(
-                                                        pVA,
-                                                        Some(endpoint2),
-                                                    )
+                                                    && valence_atom_is_carbon(pVA, Some(endpoint2))
                                                     && !valence_atom_is_carbon(pVA, chosen_center)
                                                     && valence_atom_is_carbon(pVA, Some(center)));
                                             if replace {
@@ -16604,25 +15538,17 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             if charge_edges.num_alloc == 0 {
                                 let mut n = 0_i32;
                                 while n < num_atoms {
-                                    let atom_index = usize::try_from(n)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                    for charge_edge in [
-                                        pVA[atom_index].nCMinusGroupEdge,
-                                        pVA[atom_index].nCPlusGroupEdge,
-                                    ] {
+                                    let atom_index =
+                                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    for charge_edge in
+                                        [pVA[atom_index].nCMinusGroupEdge, pVA[atom_index].nCPlusGroupEdge]
+                                    {
                                         if charge_edge >= 0 {
                                             let edge_index = usize::try_from(charge_edge)
                                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                            if heap.slice(pBNS.edge.as_const())?[edge_index]
-                                                .forbidden
-                                                == 0
-                                            {
-                                                let add = AddToEdgeList(
-                                                    heap,
-                                                    &mut charge_edges,
-                                                    charge_edge,
-                                                    num_atoms,
-                                                )?;
+                                            if heap.slice(pBNS.edge.as_const())?[edge_index].forbidden == 0 {
+                                                let add =
+                                                    AddToEdgeList(heap, &mut charge_edges, charge_edge, num_atoms)?;
                                                 if add != 0 {
                                                     return Ok(add);
                                                 }
@@ -16635,8 +15561,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             if bond_edges.num_alloc == 0 {
                                 let mut n = 0_i32;
                                 while n < pBNS.num_bonds {
-                                    let add =
-                                        AddToEdgeList(heap, &mut bond_edges, n, pBNS.num_bonds)?;
+                                    let add = AddToEdgeList(heap, &mut bond_edges, n, pBNS.num_bonds)?;
                                     if add != 0 {
                                         return Ok(add);
                                     }
@@ -16647,30 +15572,22 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             SetForbiddenEdgeMask(heap, pBNS, &bond_edges, forbidden_edge_mask)?;
                             masks_set = true;
 
-                            heap.slice_mut(pBNS.edge)?[edge2].flow = heap
-                                .slice(pBNS.edge.as_const())?[edge2]
-                                .flow
-                                .wrapping_sub(1);
-                            heap.slice_mut(pBNS.vert)?[center].st_edge.flow = heap
-                                .slice(pBNS.vert.as_const())?[center]
-                                .st_edge
-                                .flow
-                                .wrapping_sub(1);
-                            heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
-                                .slice(pBNS.vert.as_const())?[endpoint2]
+                            heap.slice_mut(pBNS.edge)?[edge2].flow =
+                                heap.slice(pBNS.edge.as_const())?[edge2].flow.wrapping_sub(1);
+                            heap.slice_mut(pBNS.vert)?[center].st_edge.flow =
+                                heap.slice(pBNS.vert.as_const())?[center].st_edge.flow.wrapping_sub(1);
+                            heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap.slice(pBNS.vert.as_const())?
+                                [endpoint2]
                                 .st_edge
                                 .flow
                                 .wrapping_sub(1);
                             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-                            let minus1 = pVA[opposite_vertex(
-                                &heap.slice(pBNS.edge.as_const())?[edge1],
-                                center,
-                            )?]
-                            .nCMinusGroupEdge
-                            .wrapping_sub(1);
-                            let minus1_index = usize::try_from(minus1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let minus1 = pVA[opposite_vertex(&heap.slice(pBNS.edge.as_const())?[edge1], center)?]
+                                .nCMinusGroupEdge
+                                .wrapping_sub(1);
+                            let minus1_index =
+                                usize::try_from(minus1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let inverse_mask = !forbidden_edge_mask;
                             for edge_index in [minus0_index, minus1_index, edge1] {
                                 let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
@@ -16678,9 +15595,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             }
                             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
 
-                            let endp0_path = usize::from(
-                                heap.slice(pBNS.edge.as_const())?[minus0_index].neighbor1,
-                            );
+                            let endp0_path = usize::from(heap.slice(pBNS.edge.as_const())?[minus0_index].neighbor1);
                             let mut path_start = NO_VERTEX;
                             let mut path_end = NO_VERTEX;
                             let mut path_len = 0_i32;
@@ -16701,34 +15616,21 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             )?;
                             let test_succeeded = ret2 == 1
                                 && ((path_end == endp0_path as i32 && path_start == center as i32)
-                                    || (path_end == center as i32
-                                        && path_start == endp0_path as i32))
+                                    || (path_end == center as i32 && path_start == endp0_path as i32))
                                 && delta_charge == 0;
                             let mut fixed = false;
                             if test_succeeded {
-                                ret2 = RunBnsRestoreOnce(
-                                    heap,
-                                    pBNS,
-                                    pBD,
-                                    pVA,
-                                    pTCGroups,
-                                    clock_result,
-                                )?;
+                                ret2 = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                                 if ret2 > 0 {
                                     num_fixes = num_fixes.wrapping_add(1);
                                     total_fixes = total_fixes.wrapping_add(1);
                                     fixed = true;
                                 }
                             } else {
-                                heap.slice_mut(pBNS.edge)?[edge2].flow = heap
-                                    .slice(pBNS.edge.as_const())?[edge2]
-                                    .flow
-                                    .wrapping_add(1);
-                                heap.slice_mut(pBNS.vert)?[center].st_edge.flow = heap
-                                    .slice(pBNS.vert.as_const())?[center]
-                                    .st_edge
-                                    .flow
-                                    .wrapping_add(1);
+                                heap.slice_mut(pBNS.edge)?[edge2].flow =
+                                    heap.slice(pBNS.edge.as_const())?[edge2].flow.wrapping_add(1);
+                                heap.slice_mut(pBNS.vert)?[center].st_edge.flow =
+                                    heap.slice(pBNS.vert.as_const())?[center].st_edge.flow.wrapping_add(1);
                                 heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                                     .slice(pBNS.vert.as_const())?[endpoint2]
                                     .st_edge
@@ -16736,12 +15638,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     .wrapping_add(1);
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                             }
-                            RemoveForbiddenEdgeMask(
-                                heap,
-                                pBNS,
-                                &charge_edges,
-                                forbidden_edge_mask,
-                            )?;
+                            RemoveForbiddenEdgeMask(heap, pBNS, &charge_edges, forbidden_edge_mask)?;
                             RemoveForbiddenEdgeMask(heap, pBNS, &bond_edges, forbidden_edge_mask)?;
                             masks_set = false;
                             if ret2 < 0 {
@@ -16770,20 +15667,15 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
             let mut group_index = 0_i32;
             'again_groups: while group_index < pStruct.ti.num_t_groups {
                 let group = taut_groups
-                    .get(
-                        usize::try_from(group_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get(usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let num_endpoints = i32::from(group.nNumEndpoints);
                 let mut radical_order = 0_i32;
                 let mut endpoint0 = None;
                 while radical_order < num_endpoints {
                     let endpoint = usize::from(
-                        endpoint_numbers[usize::try_from(
-                            endpoint_offset.wrapping_add(radical_order),
-                        )
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
+                        endpoint_numbers[usize::try_from(endpoint_offset.wrapping_add(radical_order))
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                     );
                     let vertex = &heap.slice(pBNS.vert.as_const())?[endpoint];
                     if vertex.st_edge.cap > vertex.st_edge.flow {
@@ -16822,8 +15714,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 heap,
                                 pBNS,
                                 center,
-                                usize::try_from(k)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
                             let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                             let endpoint1 = opposite_vertex(&edge1_data, center)?;
@@ -16835,9 +15726,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 continue;
                             }
                             let endpoint1_vertex = &heap.slice(pBNS.vert.as_const())?[endpoint1];
-                            if endpoint1 != endpoint0
-                                && endpoint1_vertex.st_edge.cap == endpoint1_vertex.st_edge.flow
-                            {
+                            if endpoint1 != endpoint0 && endpoint1_vertex.st_edge.cap == endpoint1_vertex.st_edge.flow {
                                 let replace = best_endpoint.is_none()
                                     || (!valence_atom_is_carbon(pVA, best_endpoint)
                                         && valence_atom_is_carbon(pVA, Some(endpoint1)))
@@ -16856,24 +15745,18 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                         }
                         j = j.wrapping_add(1);
                     }
-                    if let (Some(endpoint2), Some(edge0), Some(edge1)) =
-                        (best_endpoint, best_edge0, best_edge1)
-                    {
-                        heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[endpoint0]
+                    if let (Some(endpoint2), Some(edge0), Some(edge1)) = (best_endpoint, best_edge0, best_edge1) {
+                        heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap.slice(pBNS.vert.as_const())?
+                            [endpoint0]
                             .st_edge
                             .flow
                             .wrapping_add(1);
-                        heap.slice_mut(pBNS.edge)?[edge0].flow = heap
-                            .slice(pBNS.edge.as_const())?[edge0]
-                            .flow
-                            .wrapping_add(1);
-                        heap.slice_mut(pBNS.edge)?[edge1].flow = heap
-                            .slice(pBNS.edge.as_const())?[edge1]
-                            .flow
-                            .wrapping_sub(1);
-                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[endpoint2]
+                        heap.slice_mut(pBNS.edge)?[edge0].flow =
+                            heap.slice(pBNS.edge.as_const())?[edge0].flow.wrapping_add(1);
+                        heap.slice_mut(pBNS.edge)?[edge1].flow =
+                            heap.slice(pBNS.edge.as_const())?[edge1].flow.wrapping_sub(1);
+                        heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap.slice(pBNS.vert.as_const())?
+                            [endpoint2]
                             .st_edge
                             .flow
                             .wrapping_sub(1);
@@ -16909,10 +15792,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     };
     match (operation, free_charge, free_bond, restore_atoms) {
         (Ok(value), Ok(_), Ok(_), Ok(())) => Ok(value),
-        (Err(error), _, _, _)
-        | (_, Err(error), _, _)
-        | (_, _, Err(error), _)
-        | (_, _, _, Err(error)) => Err(error),
+        (Err(error), _, _, _) | (_, Err(error), _, _) | (_, _, Err(error), _) | (_, _, _, Err(error)) => Err(error),
     }
 }
 
@@ -17196,9 +16076,7 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
             Some(view) => view.get(atom_index)?,
             None => return Err(SourceHeapError::PointerOutOfBounds),
         };
-        let valence = pVA
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let valence = pVA.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if valence.cNumValenceElectrons != 4
             && valence.cMetal == 0
             && valence.nTautGroupEdge == 0
@@ -17279,24 +16157,17 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
 
                 if delta != 0 {
                     heap.slice_mut(pBNS.edge)?[plus_index].flow = plus_flow.wrapping_sub(delta);
-                    heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow = heap
-                        .slice(pBNS.vert.as_const())?[v1p]
-                        .st_edge
-                        .flow
-                        .wrapping_sub(delta);
-                    heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow = heap
-                        .slice(pBNS.vert.as_const())?[v2p]
-                        .st_edge
-                        .flow
-                        .wrapping_sub(delta);
+                    heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow =
+                        heap.slice(pBNS.vert.as_const())?[v1p].st_edge.flow.wrapping_sub(delta);
+                    heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow =
+                        heap.slice(pBNS.vert.as_const())?[v2p].st_edge.flow.wrapping_sub(delta);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(delta.wrapping_mul(2));
                     heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
-                        (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
-                            | forbidden_edge_mask) as i8;
+                        (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden) | forbidden_edge_mask)
+                            as i8;
                     if let Some(index) = minus_index {
                         heap.slice_mut(pBNS.edge)?[index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden)
-                                | forbidden_edge_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden) | forbidden_edge_mask) as i8;
                     }
 
                     let mut path_start = NO_VERTEX;
@@ -17336,52 +16207,34 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                         }
                     } else {
                         ret = 0;
-                        heap.slice_mut(pBNS.edge)?[plus_index].flow = heap
-                            .slice(pBNS.edge.as_const())?[plus_index]
-                            .flow
-                            .wrapping_add(delta);
-                        heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[v1p]
-                            .st_edge
-                            .flow
-                            .wrapping_add(delta);
-                        heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[v2p]
-                            .st_edge
-                            .flow
-                            .wrapping_add(delta);
+                        heap.slice_mut(pBNS.edge)?[plus_index].flow =
+                            heap.slice(pBNS.edge.as_const())?[plus_index].flow.wrapping_add(delta);
+                        heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow =
+                            heap.slice(pBNS.vert.as_const())?[v1p].st_edge.flow.wrapping_add(delta);
+                        heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow =
+                            heap.slice(pBNS.vert.as_const())?[v2p].st_edge.flow.wrapping_add(delta);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(delta.wrapping_mul(2));
                     }
                     heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
-                        (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
-                            & inverse_mask) as i8;
+                        (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden) & inverse_mask) as i8;
                     if let Some(index) = minus_index {
                         heap.slice_mut(pBNS.edge)?[index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden)
-                                & inverse_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden) & inverse_mask) as i8;
                     }
-                } else if let (Some(minus_index), Some((v1m, v2m))) = (minus_index, minus_vertices)
-                {
+                } else if let (Some(minus_index), Some((v1m, v2m))) = (minus_index, minus_vertices) {
                     if delta == minus_flow && plus_flow == 0 {
-                        heap.slice_mut(pBNS.edge)?[minus_index].flow =
-                            minus_flow.wrapping_sub(delta);
-                        heap.slice_mut(pBNS.vert)?[v1m].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[v1m]
-                            .st_edge
-                            .flow
-                            .wrapping_sub(delta);
-                        heap.slice_mut(pBNS.vert)?[v2m].st_edge.flow = heap
-                            .slice(pBNS.vert.as_const())?[v2m]
-                            .st_edge
-                            .flow
-                            .wrapping_sub(delta);
+                        heap.slice_mut(pBNS.edge)?[minus_index].flow = minus_flow.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.vert)?[v1m].st_edge.flow =
+                            heap.slice(pBNS.vert.as_const())?[v1m].st_edge.flow.wrapping_sub(delta);
+                        heap.slice_mut(pBNS.vert)?[v2m].st_edge.flow =
+                            heap.slice(pBNS.vert.as_const())?[v2m].st_edge.flow.wrapping_sub(delta);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(delta.wrapping_mul(2));
                         heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
-                                | forbidden_edge_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden) | forbidden_edge_mask)
+                                as i8;
                         heap.slice_mut(pBNS.edge)?[minus_index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[minus_index].forbidden)
-                                | forbidden_edge_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[minus_index].forbidden) | forbidden_edge_mask)
+                                as i8;
 
                         let mut path_start = NO_VERTEX;
                         let mut path_end = NO_VERTEX;
@@ -17420,28 +16273,18 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                             }
                         } else {
                             ret = 0;
-                            heap.slice_mut(pBNS.edge)?[minus_index].flow = heap
-                                .slice(pBNS.edge.as_const())?[minus_index]
-                                .flow
-                                .wrapping_add(delta);
-                            heap.slice_mut(pBNS.vert)?[v1m].st_edge.flow = heap
-                                .slice(pBNS.vert.as_const())?[v1m]
-                                .st_edge
-                                .flow
-                                .wrapping_add(delta);
-                            heap.slice_mut(pBNS.vert)?[v2m].st_edge.flow = heap
-                                .slice(pBNS.vert.as_const())?[v2m]
-                                .st_edge
-                                .flow
-                                .wrapping_add(delta);
+                            heap.slice_mut(pBNS.edge)?[minus_index].flow =
+                                heap.slice(pBNS.edge.as_const())?[minus_index].flow.wrapping_add(delta);
+                            heap.slice_mut(pBNS.vert)?[v1m].st_edge.flow =
+                                heap.slice(pBNS.vert.as_const())?[v1m].st_edge.flow.wrapping_add(delta);
+                            heap.slice_mut(pBNS.vert)?[v2m].st_edge.flow =
+                                heap.slice(pBNS.vert.as_const())?[v2m].st_edge.flow.wrapping_add(delta);
                             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(delta.wrapping_mul(2));
                         }
                         heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
-                                & inverse_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden) & inverse_mask) as i8;
                         heap.slice_mut(pBNS.edge)?[minus_index].forbidden =
-                            (i32::from(heap.slice(pBNS.edge.as_const())?[minus_index].forbidden)
-                                & inverse_mask) as i8;
+                            (i32::from(heap.slice(pBNS.edge.as_const())?[minus_index].forbidden) & inverse_mask) as i8;
                     }
                 }
 
@@ -17565,13 +16408,7 @@ mod tests {
         };
         if let Some(expected) = expected_source_layout {
             assert_eq!(
-                copy_bns_to_atom_source_layout_is_valid(
-                    &heap,
-                    &structure,
-                    &bns,
-                    &valence_atoms,
-                    &groups,
-                ),
+                copy_bns_to_atom_source_layout_is_valid(&heap, &structure, &bns, &valence_atoms, &groups,),
                 expected,
             );
         }
@@ -18125,9 +16962,7 @@ mod tests {
                     ..inp_ATOM::default()
                 }])
                 .unwrap();
-            let at2 = heap
-                .allocate_model_storage(vec![inp_ATOM::default()])
-                .unwrap();
+            let at2 = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
             let structure = StrFromINChI {
                 at,
                 at2,
@@ -18251,9 +17086,7 @@ mod tests {
             atoms[1].neighbor[0] = 0;
             atoms[1].bond_type[0] = BOND_TYPE_SINGLE as u8;
             let at = heap.allocate_model_storage(atoms).unwrap();
-            let at2 = heap
-                .allocate_model_storage(vec![inp_ATOM::default(); 2])
-                .unwrap();
+            let at2 = heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
             let structure = StrFromINChI {
                 at,
                 at2,
@@ -18272,15 +17105,8 @@ mod tests {
         }
 
         let mut early_heap = SourceHeap::default();
-        let (
-            mut early_bns,
-            mut early_bd,
-            mut early_structure,
-            early_at,
-            early_at2,
-            mut early_va,
-            mut early_groups,
-        ) = no_path_fixture(&mut early_heap, 0, 0);
+        let (mut early_bns, mut early_bd, mut early_structure, early_at, early_at2, mut early_va, mut early_groups) =
+            no_path_fixture(&mut early_heap, 0, 0);
         let early_allocations = early_heap.live_allocation_count();
         early_heap.trace_source_allocations();
         assert_eq!(
@@ -18331,20 +17157,14 @@ mod tests {
         assert_eq!(no_path_heap.live_allocation_count(), no_path_allocations);
         assert_eq!(no_path_bns.edge_forbidden_mask, 1);
         assert_eq!(
-            no_path_heap.slice(no_path_bns.vert.as_const()).unwrap()[0]
-                .st_edge
-                .cap,
+            no_path_heap.slice(no_path_bns.vert.as_const()).unwrap()[0].st_edge.cap,
             2
         );
-        assert_eq!(
-            no_path_bd.bRadSrchMode,
-            tagBnsRadSrchMode_RAD_SRCH_FROM_FICT
-        );
+        assert_eq!(no_path_bd.bRadSrchMode, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT);
 
         for successful_allocations in [0, 1] {
             let mut heap = SourceHeap::default();
-            let (mut bns, mut bd, mut structure, at, at2, mut va, mut groups) =
-                no_path_fixture(&mut heap, 1, 1);
+            let (mut bns, mut bd, mut structure, at, at2, mut va, mut groups) = no_path_fixture(&mut heap, 1, 1);
             let before = heap.live_allocation_count();
             heap.fail_after_allocations(successful_allocations);
             assert_eq!(
@@ -18435,9 +17255,7 @@ mod tests {
             ),
             (3, 2, 0, 0)
         );
-        let vertices = alternating_heap
-            .slice(alternating_bns.vert.as_const())
-            .unwrap();
+        let vertices = alternating_heap.slice(alternating_bns.vert.as_const()).unwrap();
         assert_eq!(
             (
                 vertices[0].st_edge.cap,
@@ -18451,18 +17269,12 @@ mod tests {
         );
         assert_eq!(vertices[3], crate::source_types::BNS_VERTEX::default());
         assert_eq!(alternating_va, vec![VAL_AT::default(); 2]);
-        assert_eq!(
-            alternating_heap.live_allocation_count(),
-            alternating_allocations
-        );
+        assert_eq!(alternating_heap.live_allocation_count(), alternating_allocations);
     }
 
     #[test]
     fn source_port__ichirvr2__rearrangeplusminusedgesflow__line_3403() {
-        fn fixture(
-            heap: &mut SourceHeap,
-            timeout: bool,
-        ) -> (BN_STRUCT, BN_DATA, Vec<VAL_AT>, ALL_TC_GROUPS) {
+        fn fixture(heap: &mut SourceHeap, timeout: bool) -> (BN_STRUCT, BN_DATA, Vec<VAL_AT>, ALL_TC_GROUPS) {
             let definitions = [
                 (0_usize, 1_usize, 1_i32, 1_i32),
                 (0, 4, 2, 2),
@@ -18577,18 +17389,11 @@ mod tests {
         }
 
         let mut early_heap = SourceHeap::default();
-        let (mut early_bns, mut early_data, mut early_va, mut early_groups) =
-            fixture(&mut early_heap, false);
+        let (mut early_bns, mut early_data, mut early_va, mut early_groups) = fixture(&mut early_heap, false);
         early_heap.slice_mut(early_bns.edge).unwrap()[1].flow = 0;
         early_heap.slice_mut(early_bns.edge).unwrap()[3].flow = 0;
-        let early_edges = early_heap
-            .slice(early_bns.edge.as_const())
-            .unwrap()
-            .to_vec();
-        let early_vertices = early_heap
-            .slice(early_bns.vert.as_const())
-            .unwrap()
-            .to_vec();
+        let early_edges = early_heap.slice(early_bns.edge.as_const()).unwrap().to_vec();
+        let early_vertices = early_heap.slice(early_bns.vert.as_const()).unwrap().to_vec();
         let early_allocations = early_heap.live_allocation_count();
         early_heap.trace_source_allocations();
         assert_eq!(
@@ -18605,28 +17410,15 @@ mod tests {
         );
         assert_eq!(early_heap.source_allocation_calls(), 0);
         assert_eq!(early_heap.live_allocation_count(), early_allocations);
-        assert_eq!(
-            early_heap.slice(early_bns.edge.as_const()).unwrap(),
-            early_edges
-        );
-        assert_eq!(
-            early_heap.slice(early_bns.vert.as_const()).unwrap(),
-            early_vertices
-        );
+        assert_eq!(early_heap.slice(early_bns.edge.as_const()).unwrap(), early_edges);
+        assert_eq!(early_heap.slice(early_bns.vert.as_const()).unwrap(), early_vertices);
         assert_eq!(early_bns.tot_st_flow, 80);
         assert_eq!(early_bns.edge_forbidden_mask, 9);
 
         let mut failure_heap = SourceHeap::default();
-        let (mut failure_bns, mut failure_data, mut failure_va, mut failure_groups) =
-            fixture(&mut failure_heap, false);
-        let failure_edges = failure_heap
-            .slice(failure_bns.edge.as_const())
-            .unwrap()
-            .to_vec();
-        let failure_vertices = failure_heap
-            .slice(failure_bns.vert.as_const())
-            .unwrap()
-            .to_vec();
+        let (mut failure_bns, mut failure_data, mut failure_va, mut failure_groups) = fixture(&mut failure_heap, false);
+        let failure_edges = failure_heap.slice(failure_bns.edge.as_const()).unwrap().to_vec();
+        let failure_vertices = failure_heap.slice(failure_bns.vert.as_const()).unwrap().to_vec();
         let failure_allocations = failure_heap.live_allocation_count();
         failure_heap.fail_after_allocations(0);
         assert_eq!(
@@ -18642,10 +17434,7 @@ mod tests {
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(failure_heap.live_allocation_count(), failure_allocations);
-        assert_eq!(
-            failure_heap.slice(failure_bns.edge.as_const()).unwrap(),
-            failure_edges
-        );
+        assert_eq!(failure_heap.slice(failure_bns.edge.as_const()).unwrap(), failure_edges);
         assert_eq!(
             failure_heap.slice(failure_bns.vert.as_const()).unwrap(),
             failure_vertices
@@ -18657,15 +17446,7 @@ mod tests {
         let allocations = heap.live_allocation_count();
         heap.trace_source_allocations();
         assert_eq!(
-            RearrangePlusMinusEdgesFlow(
-                &mut heap,
-                &mut bns,
-                &mut data,
-                &mut valence_atoms,
-                &mut groups,
-                4,
-                0,
-            ),
+            RearrangePlusMinusEdgesFlow(&mut heap, &mut bns, &mut data, &mut valence_atoms, &mut groups, 4, 0,),
             Ok(0)
         );
         assert_eq!(heap.source_allocation_calls(), 1);
@@ -18678,10 +17459,7 @@ mod tests {
         assert!(edges.iter().all(|edge| edge.forbidden == 1));
         let vertices = heap.slice(bns.vert.as_const()).unwrap();
         assert_eq!(
-            vertices
-                .iter()
-                .map(|vertex| vertex.st_edge.flow)
-                .collect::<Vec<_>>(),
+            vertices.iter().map(|vertex| vertex.st_edge.flow).collect::<Vec<_>>(),
             vec![8, 8, 10, 10, 8, 8, 10, 10]
         );
         assert_eq!(bns.tot_st_flow, 72);
@@ -18689,8 +17467,7 @@ mod tests {
         assert_eq!(data.QSize, -1);
 
         let mut timeout_heap = SourceHeap::default();
-        let (mut timeout_bns, mut timeout_data, mut timeout_va, mut timeout_groups) =
-            fixture(&mut timeout_heap, true);
+        let (mut timeout_bns, mut timeout_data, mut timeout_va, mut timeout_groups) = fixture(&mut timeout_heap, true);
         assert_eq!(
             RearrangePlusMinusEdgesFlow(
                 &mut timeout_heap,
@@ -18742,12 +17519,7 @@ mod tests {
         );
     }
 
-    fn restore_fixture(
-        heap: &mut SourceHeap,
-        elements: Vec<u8>,
-        hydrogens: Vec<i8>,
-        connections: Vec<u16>,
-    ) -> INChI {
+    fn restore_fixture(heap: &mut SourceHeap, elements: Vec<u8>, hydrogens: Vec<i8>, connections: Vec<u16>) -> INChI {
         INChI {
             nNumberOfAtoms: elements.len() as i32,
             nAtom: heap.allocate_model_storage(elements).unwrap(),
@@ -18846,9 +17618,7 @@ mod tests {
         inactive_atoms[1].bond_type[0] = 77;
         inactive_atoms[1].sb_ord[0] = 0;
         inactive_atoms[1].sb_parity[0] = 1;
-        let inactive_pointer = inactive_heap
-            .allocate_model_storage(inactive_atoms.clone())
-            .unwrap();
+        let inactive_pointer = inactive_heap.allocate_model_storage(inactive_atoms.clone()).unwrap();
         let zero_isotopic = inactive_heap
             .allocate_model_storage(vec![INChI_Stereo::default()])
             .unwrap();
@@ -19025,9 +17795,7 @@ mod tests {
         malformed[1].valence = 1;
         malformed[1].neighbor[0] = 1;
         malformed[1].bond_type[0] = 1;
-        let malformed_pointer = error_heap
-            .allocate_model_storage(malformed.clone())
-            .unwrap();
+        let malformed_pointer = error_heap.allocate_model_storage(malformed.clone()).unwrap();
         let active = restore_stereo(&mut error_heap, vec![1], vec![1], vec![], 0);
         assert_eq!(
             SetStereoBondTypesFrom0DStereo(
@@ -19044,10 +17812,7 @@ mod tests {
             ),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(
-            error_heap.slice(malformed_pointer.as_const()).unwrap(),
-            malformed
-        );
+        assert_eq!(error_heap.slice(malformed_pointer.as_const()).unwrap(), malformed);
     }
 
     #[test]
@@ -19077,10 +17842,7 @@ mod tests {
             (direct[0].bond_type[0], direct[1].bond_type[0]),
             (BOND_TYPE_STEREO as u8, BOND_TYPE_STEREO as u8)
         );
-        assert_eq!(
-            (direct[0].chem_bonds_valence, direct[1].chem_bonds_valence),
-            (1, 1)
-        );
+        assert_eq!((direct[0].chem_bonds_valence, direct[1].chem_bonds_valence), (1, 1));
 
         let mut chain = vec![carbon(), carbon(), carbon()];
         chain[0].valence = 1;
@@ -19151,10 +17913,7 @@ mod tests {
             failed[2].bond_type[0] = 1;
             failed[2].chem_bonds_valence = 1;
             let before = failed.clone();
-            assert_eq!(
-                SetStereoBondTypeFor0DParity(&mut failed, 0, 0),
-                Ok(RI_ERR_SYNTAX)
-            );
+            assert_eq!(SetStereoBondTypeFor0DParity(&mut failed, 0, 0), Ok(RI_ERR_SYNTAX));
             assert_eq!(failed, before);
         }
 
@@ -19165,16 +17924,12 @@ mod tests {
         too_long[0].sb_parity[0] = 1;
         for index in 1..3 {
             too_long[index].valence = 2;
-            too_long[index].neighbor[..2]
-                .copy_from_slice(&[(index - 1) as u16, (index + 1) as u16]);
+            too_long[index].neighbor[..2].copy_from_slice(&[(index - 1) as u16, (index + 1) as u16]);
         }
         too_long[3].valence = 1;
         too_long[3].neighbor[0] = 2;
         let before = too_long.clone();
-        assert_eq!(
-            SetStereoBondTypeFor0DParity(&mut too_long, 0, 0),
-            Ok(RI_ERR_SYNTAX)
-        );
+        assert_eq!(SetStereoBondTypeFor0DParity(&mut too_long, 0, 0), Ok(RI_ERR_SYNTAX));
         assert_eq!(too_long, before);
 
         let mut partial = vec![carbon(), carbon(), carbon()];
@@ -19194,10 +17949,7 @@ mod tests {
         partial[2].chem_bonds_valence = 1;
         partial[2].sb_ord[0] = 0;
         partial[2].sb_parity[0] = 2;
-        assert_eq!(
-            SetStereoBondTypeFor0DParity(&mut partial, 0, 0),
-            Ok(RI_ERR_PROGR)
-        );
+        assert_eq!(SetStereoBondTypeFor0DParity(&mut partial, 0, 0), Ok(RI_ERR_PROGR));
         assert_eq!(partial[0].bond_type[0], BOND_TYPE_DOUBLE as u8);
         assert_eq!(partial[1].bond_type, {
             let mut value = [0; 20];
@@ -19232,15 +17984,9 @@ mod tests {
         }
 
         let mut atoms = pair(BOND_TYPE_SINGLE as u8, BOND_TYPE_DOUBLE as u8, 126, 125);
-        assert_eq!(
-            set_bond_type(&mut atoms, 0, 1, BOND_TYPE_TRIPLE as i32),
-            Ok(0)
-        );
+        assert_eq!(set_bond_type(&mut atoms, 0, 1, BOND_TYPE_TRIPLE as i32), Ok(0));
         assert_eq!((atoms[0].bond_type[0], atoms[1].bond_type[0]), (3, 3));
-        assert_eq!(
-            (atoms[0].chem_bonds_valence, atoms[1].chem_bonds_valence),
-            (-128, 127)
-        );
+        assert_eq!((atoms[0].chem_bonds_valence, atoms[1].chem_bonds_valence), (-128, 127));
 
         for (previous, next) in [
             (0_u8, BOND_TYPE_DOUBLE as i32),
@@ -19252,10 +17998,7 @@ mod tests {
             let mut unchanged_chem = pair(previous, 99, 31, -47);
             assert_eq!(set_bond_type(&mut unchanged_chem, 0, 1, next), Ok(0));
             assert_eq!(
-                (
-                    unchanged_chem[0].bond_type[0],
-                    unchanged_chem[1].bond_type[0]
-                ),
+                (unchanged_chem[0].bond_type[0], unchanged_chem[1].bond_type[0]),
                 (next as u8, next as u8)
             );
             assert_eq!(
@@ -19269,15 +18012,9 @@ mod tests {
 
         let mut negative = pair(BOND_TYPE_TRIPLE as u8, 1, i8::MIN, i8::MAX);
         assert_eq!(set_bond_type(&mut negative, 0, 1, -1), Ok(0));
+        assert_eq!((negative[0].bond_type[0], negative[1].bond_type[0]), (u8::MAX, u8::MAX));
         assert_eq!(
-            (negative[0].bond_type[0], negative[1].bond_type[0]),
-            (u8::MAX, u8::MAX)
-        );
-        assert_eq!(
-            (
-                negative[0].chem_bonds_valence,
-                negative[1].chem_bonds_valence
-            ),
+            (negative[0].chem_bonds_valence, negative[1].chem_bonds_valence),
             (124, 123)
         );
 
@@ -19315,14 +18052,7 @@ mod tests {
             ..StrFromINChI::default()
         };
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut heap,
-                &mut untouched,
-                4,
-                100,
-                &mut INChI::default(),
-                None,
-            ),
+            RestoreAtomConnectionsSetStereo(&mut heap, &mut untouched, 4, 100, &mut INChI::default(), None,),
             Ok(0)
         );
         assert_eq!(untouched.num_atoms, 71);
@@ -19336,14 +18066,7 @@ mod tests {
         };
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut failure_heap,
-                &mut failure_output,
-                0,
-                0,
-                &mut failure_inchi,
-                None,
-            ),
+            RestoreAtomConnectionsSetStereo(&mut failure_heap, &mut failure_output, 0, 0, &mut failure_inchi, None,),
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(failure_output.num_atoms, 73);
@@ -19360,16 +18083,9 @@ mod tests {
             }])
             .unwrap();
         let coordinates = baseline_heap
-            .allocate_model_storage(vec![crate::source_types::XYZ_COORD {
-                xyz: [1.25, -2.5, 0.0],
-            }])
+            .allocate_model_storage(vec![crate::source_types::XYZ_COORD { xyz: [1.25, -2.5, 0.0] }])
             .unwrap();
-        let mut baseline = restore_fixture(
-            &mut baseline_heap,
-            vec![6, 8, 7],
-            vec![3, 0, -1],
-            vec![1, 2, 1, 3, 2],
-        );
+        let mut baseline = restore_fixture(&mut baseline_heap, vec![6, 8, 7], vec![3, 0, -1], vec![1, 2, 1, 3, 2]);
         baseline.nTotalCharge = 130;
         baseline.nNumberOfIsotopicAtoms = 1;
         baseline.IsotopicAtom = isotope;
@@ -19377,14 +18093,7 @@ mod tests {
         baseline.nNumberOfIsotopicTGroups = 0;
         let mut baseline_output = StrFromINChI::default();
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut baseline_heap,
-                &mut baseline_output,
-                6,
-                400,
-                &mut baseline,
-                None,
-            ),
+            RestoreAtomConnectionsSetStereo(&mut baseline_heap, &mut baseline_output, 6, 400, &mut baseline, None,),
             Ok(3)
         );
         assert_eq!(baseline_output.num_atoms, 3);
@@ -19407,8 +18116,7 @@ mod tests {
         assert_eq!(atoms[1].num_iso_H, [1, 2, 3]);
 
         let mut invalid_element_heap = SourceHeap::default();
-        let mut invalid_element =
-            restore_fixture(&mut invalid_element_heap, vec![255], vec![0], vec![1]);
+        let mut invalid_element = restore_fixture(&mut invalid_element_heap, vec![255], vec![0], vec![1]);
         let mut partial = StrFromINChI::default();
         assert_eq!(
             RestoreAtomConnectionsSetStereo(
@@ -19428,12 +18136,7 @@ mod tests {
         );
 
         let mut invalid_connection_heap = SourceHeap::default();
-        let mut invalid_connection = restore_fixture(
-            &mut invalid_connection_heap,
-            vec![6, 6],
-            vec![0, 0],
-            vec![1, 3],
-        );
+        let mut invalid_connection = restore_fixture(&mut invalid_connection_heap, vec![6, 6], vec![0, 0], vec![1, 3]);
         let mut invalid_connection_output = StrFromINChI::default();
         assert_eq!(
             RestoreAtomConnectionsSetStereo(
@@ -19459,23 +18162,10 @@ mod tests {
             vec![0; 5],
             vec![1, 2, 1, 3, 1, 4, 1, 5, 1],
         );
-        center.Stereo = restore_stereo(
-            &mut center_heap,
-            vec![1],
-            vec![AB_PARITY_ODD as i8],
-            vec![],
-            -1,
-        );
+        center.Stereo = restore_stereo(&mut center_heap, vec![1], vec![AB_PARITY_ODD as i8], vec![], -1);
         let mut center_output = StrFromINChI::default();
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut center_heap,
-                &mut center_output,
-                1,
-                10,
-                &mut center,
-                None,
-            ),
+            RestoreAtomConnectionsSetStereo(&mut center_heap, &mut center_output, 1, 10, &mut center, None,),
             Ok(5)
         );
         let center_atoms = center_heap.slice(center_output.at.as_const()).unwrap();
@@ -19483,29 +18173,11 @@ mod tests {
         assert_eq!(center_atoms[0].p_orig_at_num, [12, 13, 14, 15]);
 
         let mut bond_heap = SourceHeap::default();
-        let mut bond = restore_fixture(
-            &mut bond_heap,
-            vec![6, 6, 9, 17],
-            vec![0; 4],
-            vec![1, 2, 1, 3, 1, 4, 2],
-        );
-        bond.Stereo = restore_stereo(
-            &mut bond_heap,
-            vec![],
-            vec![],
-            vec![(1, 2, AB_PARITY_ODD as i8)],
-            0,
-        );
+        let mut bond = restore_fixture(&mut bond_heap, vec![6, 6, 9, 17], vec![0; 4], vec![1, 2, 1, 3, 1, 4, 2]);
+        bond.Stereo = restore_stereo(&mut bond_heap, vec![], vec![], vec![(1, 2, AB_PARITY_ODD as i8)], 0);
         let mut bond_output = StrFromINChI::default();
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut bond_heap,
-                &mut bond_output,
-                0,
-                0,
-                &mut bond,
-                None,
-            ),
+            RestoreAtomConnectionsSetStereo(&mut bond_heap, &mut bond_output, 0, 0, &mut bond, None,),
             Ok(4)
         );
         let bond_atoms = bond_heap.slice(bond_output.at.as_const()).unwrap();
@@ -19521,13 +18193,7 @@ mod tests {
             vec![0; 5],
             vec![1, 2, 1, 3, 1, 4, 1, 5, 1],
         );
-        let mobile_stereo = restore_stereo(
-            &mut mobile_heap,
-            vec![1],
-            vec![AB_PARITY_ODD as i8],
-            vec![],
-            0,
-        );
+        let mobile_stereo = restore_stereo(&mut mobile_heap, vec![1], vec![AB_PARITY_ODD as i8], vec![], 0);
         let mobile = INChI {
             nNumberOfAtoms: 5,
             Stereo: mobile_stereo,
@@ -19535,21 +18201,11 @@ mod tests {
         };
         let mut mobile_output = StrFromINChI::default();
         assert_eq!(
-            RestoreAtomConnectionsSetStereo(
-                &mut mobile_heap,
-                &mut mobile_output,
-                0,
-                0,
-                &mut fixed,
-                Some(&mobile),
-            ),
+            RestoreAtomConnectionsSetStereo(&mut mobile_heap, &mut mobile_output, 0, 0, &mut fixed, Some(&mobile),),
             Ok(5)
         );
         assert!(!mobile_output.st.is_null());
-        assert_eq!(
-            mobile_heap.slice(mobile_output.at.as_const()).unwrap()[0].p_parity,
-            0
-        );
+        assert_eq!(mobile_heap.slice(mobile_output.at.as_const()).unwrap()[0].p_parity, 0);
         let mobile_stereo_atoms = mobile_heap.slice(mobile_output.st.as_const()).unwrap();
         assert_eq!(mobile_stereo_atoms[0].p_parity, AB_PARITY_ODD as i8);
         assert_eq!(mobile_stereo_atoms[0].p_orig_at_num, [2, 3, 4, 5]);
@@ -19561,13 +18217,8 @@ mod tests {
             vec![0; 5],
             vec![1, 2, 1, 3, 1, 4, 1, 5, 1],
         );
-        let second_failure_stereo = restore_stereo(
-            &mut second_failure_heap,
-            vec![1],
-            vec![AB_PARITY_EVEN as i8],
-            vec![],
-            0,
-        );
+        let second_failure_stereo =
+            restore_stereo(&mut second_failure_heap, vec![1], vec![AB_PARITY_EVEN as i8], vec![], 0);
         let second_failure_mobile = INChI {
             nNumberOfAtoms: 5,
             Stereo: second_failure_stereo,
@@ -19651,19 +18302,13 @@ mod tests {
             orig_at_number: 211,
             ..inp_ATOM::default()
         });
-        assert_eq!(
-            set_atom_0D_parity(&mut missing, None, 3, 1, 0, 3),
-            Ok(RI_ERR_PROGR)
-        );
+        assert_eq!(set_atom_0D_parity(&mut missing, None, 3, 1, 0, 3), Ok(RI_ERR_PROGR));
         assert_eq!(missing[0].p_orig_at_num, [211, 8, 8, 8]);
         assert_eq!(missing[0].p_parity, 0);
 
         let mut wrong = center_with_neighbors(2);
         wrong[0].p_orig_at_num = [7; 4];
-        assert_eq!(
-            set_atom_0D_parity(&mut wrong, None, 3, 0, 0, 1),
-            Ok(RI_ERR_PROGR)
-        );
+        assert_eq!(set_atom_0D_parity(&mut wrong, None, 3, 0, 0, 1), Ok(RI_ERR_PROGR));
         assert_eq!(wrong[0].p_orig_at_num, [7; 4]);
 
         let mut with_stereo = center_with_neighbors(3);
@@ -19804,10 +18449,7 @@ mod tests {
             assert_eq!(hydrogen.valence, 1);
         }
         assert_eq!(
-            complete[1..]
-                .iter()
-                .map(|atom| atom.iso_atw_diff)
-                .collect::<Vec<_>>(),
+            complete[1..].iter().map(|atom| atom.iso_atw_diff).collect::<Vec<_>>(),
             vec![0, 1, 2, 3]
         );
 
@@ -19823,15 +18465,7 @@ mod tests {
         deleted = 0;
         first_h = -1;
         assert_eq!(
-            AddExplicitDeletedH(
-                &mut duplicate_ordinary,
-                0,
-                1,
-                &mut deleted,
-                &mut first_h,
-                2,
-                0,
-            ),
+            AddExplicitDeletedH(&mut duplicate_ordinary, 0, 1, &mut deleted, &mut first_h, 2, 0,),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!((deleted, first_h), (0, 1));
@@ -19867,15 +18501,7 @@ mod tests {
         ];
         deleted = 0;
         assert_eq!(
-            AddExplicitDeletedH(
-                &mut duplicate_isotope,
-                0,
-                1,
-                &mut deleted,
-                &mut first_h,
-                2,
-                0,
-            ),
+            AddExplicitDeletedH(&mut duplicate_isotope, 0, 1, &mut deleted, &mut first_h, 2, 0,),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(deleted, 0);
@@ -19951,10 +18577,7 @@ mod tests {
         assert_eq!(output, [0, 1, 77, 77]);
 
         for blocked in [
-            inp_ATOM {
-                valence: 1,
-                ..carbon()
-            },
+            inp_ATOM { valence: 1, ..carbon() },
             inp_ATOM {
                 valence: 2,
                 num_H: 1,
@@ -19970,10 +18593,7 @@ mod tests {
             blocked_chain[1] = blocked;
             blocked_chain[1].neighbor[..2].copy_from_slice(&[0, 2]);
             output = [66; 4];
-            assert_eq!(
-                bFindCumuleneChain(&blocked_chain, 0, 3, &mut output, 3),
-                Ok(0)
-            );
+            assert_eq!(bFindCumuleneChain(&blocked_chain, 0, 3, &mut output, 3), Ok(0));
             assert_eq!(output, [0, 66, 66, 66]);
         }
 
@@ -19993,10 +18613,7 @@ mod tests {
         let mut no_neighbors = vec![carbon()];
         no_neighbors[0].valence = -1;
         output = [44; 4];
-        assert_eq!(
-            bFindCumuleneChain(&no_neighbors, 0, 0, &mut output, 3),
-            Ok(0)
-        );
+        assert_eq!(bFindCumuleneChain(&no_neighbors, 0, 0, &mut output, 3), Ok(0));
         assert_eq!(output, [0, 44, 44, 44]);
     }
 
@@ -20033,10 +18650,7 @@ mod tests {
         assert_eq!(atoms[2].sb_parity[0], AB_PARITY_ODD as i8);
 
         let already = atoms.clone();
-        assert_eq!(
-            set_cumulene_0D_parity(&mut atoms, None, 5, 3, 0, 2, 4, 4, 2),
-            Ok(0)
-        );
+        assert_eq!(set_cumulene_0D_parity(&mut atoms, None, 5, 3, 0, 2, 4, 4, 2), Ok(0));
         assert_eq!(atoms, already);
 
         let mut half = allene();
@@ -20106,17 +18720,7 @@ mod tests {
         one_inversion[2].valence = 3;
         one_inversion[2].neighbor[2] = 5;
         assert_eq!(
-            set_cumulene_0D_parity(
-                &mut one_inversion,
-                None,
-                6,
-                3,
-                0,
-                2,
-                4,
-                AB_PARITY_ODD as i32,
-                2,
-            ),
+            set_cumulene_0D_parity(&mut one_inversion, None, 6, 3, 0, 2, 4, AB_PARITY_ODD as i32, 2,),
             Ok(0)
         );
         assert_eq!(one_inversion[2].sb_parity[0], AB_PARITY_EVEN as i8);
@@ -20182,10 +18786,7 @@ mod tests {
             sn_orig_at_num: [61, 62, 63],
         };
         let mut atoms = vec![original.clone(), original.clone(), original.clone()];
-        assert_eq!(
-            CopySt2At(&mut atoms, Some(&[tetrahedral_only, bond_only]), 2),
-            Ok(())
-        );
+        assert_eq!(CopySt2At(&mut atoms, Some(&[tetrahedral_only, bond_only]), 2), Ok(()));
         assert_eq!(atoms[0].p_parity, -4);
         assert_eq!(atoms[0].p_orig_at_num, [1, 2, 3, 4]);
         assert_eq!(atoms[0].sb_ord, original.sb_ord);
@@ -20351,9 +18952,7 @@ mod tests {
         };
         network.altp[0] = alt_path;
         let endpoints = heap.allocate(vec![0_u16, 0, 1, 0, 0]).unwrap();
-        let restore = heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let mut structure = StrFromINChI {
             at: original,
             endpoint: endpoints,
@@ -20487,9 +19086,7 @@ mod tests {
             4
         ];
         let count_copy = count_heap.allocate(count_copy_values).unwrap();
-        let count_restore = count_heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let count_restore = count_heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let count_vertices = count_heap
             .allocate(vec![crate::source_types::BNS_VERTEX::default(); 4])
             .unwrap();
@@ -20554,16 +19151,12 @@ mod tests {
         assert_eq!((runs, total_delta), (3, 5));
 
         let mut unmatched_heap = SourceHeap::default();
-        let unmatched_original = unmatched_heap
-            .allocate(vec![inp_ATOM::default(); 2])
-            .unwrap();
+        let unmatched_original = unmatched_heap.allocate(vec![inp_ATOM::default(); 2]).unwrap();
         let mut unmatched_copy_values = vec![inp_ATOM::default(); 2];
         unmatched_copy_values[0].valence = 1;
         unmatched_copy_values[0].neighbor[0] = 1;
         unmatched_copy_values[0].charge = 9;
-        let unmatched_copy = unmatched_heap
-            .allocate(unmatched_copy_values.clone())
-            .unwrap();
+        let unmatched_copy = unmatched_heap.allocate(unmatched_copy_values.clone()).unwrap();
         let unmatched_incident = unmatched_heap.allocate(vec![0_i32]).unwrap();
         let unmatched_vertices = unmatched_heap
             .allocate(vec![
@@ -20636,9 +19229,7 @@ mod tests {
         }
         let ring_original = ring_heap.allocate(ring_atoms.clone()).unwrap();
         let ring_copy = ring_heap.allocate(ring_atoms.clone()).unwrap();
-        let ring_restore = ring_heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let ring_restore = ring_heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let ring_adjacency = [vec![0_i32, 2], vec![0_i32, 1], vec![2_i32, 1]];
         let ring_incident = ring_adjacency
             .iter()
@@ -20732,14 +19323,8 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            ring_heap.slice(ring_copy.as_const()).unwrap(),
-            ring_atoms.as_slice()
-        );
-        assert_eq!(
-            ring_heap.slice(ring_edges.as_const()).unwrap()[0].forbidden,
-            0x04
-        );
+        assert_eq!(ring_heap.slice(ring_copy.as_const()).unwrap(), ring_atoms.as_slice());
+        assert_eq!(ring_heap.slice(ring_edges.as_const()).unwrap()[0].forbidden, 0x04);
         assert_eq!(ring_heap.slice(atom_levels.as_const()).unwrap(), [0, 0, 0]);
         assert_eq!(ring_heap.slice(atom_sources.as_const()).unwrap(), [0, 0, 0]);
 
@@ -20747,9 +19332,7 @@ mod tests {
         let bns_atoms = vec![inp_ATOM::default(); 2];
         let bns_original = bns_heap.allocate(bns_atoms.clone()).unwrap();
         let bns_copy = bns_heap.allocate(vec![inp_ATOM::default(); 2]).unwrap();
-        let bns_restore = bns_heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let bns_restore = bns_heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let bns_vertices = bns_heap
             .allocate(vec![
                 crate::source_types::BNS_VERTEX::default(),
@@ -20847,10 +19430,7 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(
-            bns_heap.slice(bns_copy.as_const()).unwrap(),
-            bns_atoms.as_slice()
-        );
+        assert_eq!(bns_heap.slice(bns_copy.as_const()).unwrap(), bns_atoms.as_slice());
         assert_eq!(
             (
                 bns_heap.slice(bns_edges.as_const()).unwrap()[1].flow,
@@ -20860,12 +19440,8 @@ mod tests {
         );
         assert_eq!(
             (
-                bns_heap.slice(bns_vertices.as_const()).unwrap()[2]
-                    .st_edge
-                    .flow,
-                bns_heap.slice(bns_vertices.as_const()).unwrap()[3]
-                    .st_edge
-                    .flow,
+                bns_heap.slice(bns_vertices.as_const()).unwrap()[2].st_edge.flow,
+                bns_heap.slice(bns_vertices.as_const()).unwrap()[3].st_edge.flow,
                 bns_network.tot_st_flow,
             ),
             (1, 1, 2)
@@ -20896,9 +19472,7 @@ mod tests {
         short_atom.neighbor[0] = u16::MAX;
         let short_original = short_heap.allocate(vec![short_atom.clone()]).unwrap();
         let short_copy = short_heap.allocate(vec![inp_ATOM::default()]).unwrap();
-        let short_restore = short_heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let short_restore = short_heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let short_vertices = short_heap
             .allocate(vec![crate::source_types::BNS_VERTEX::default()])
             .unwrap();
@@ -20938,10 +19512,7 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(
-            short_heap.slice(short_copy.as_const()).unwrap()[0],
-            short_atom
-        );
+        assert_eq!(short_heap.slice(short_copy.as_const()).unwrap()[0], short_atom);
         assert_eq!((runs, total_delta), (7, 11));
 
         let mut heap = SourceHeap::default();
@@ -20954,16 +19525,8 @@ mod tests {
         atoms[2].neighbor[0] = 1;
         let original = heap.allocate(atoms.clone()).unwrap();
         let copied = heap.allocate(vec![inp_ATOM::default(); 3]).unwrap();
-        let restore = heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
-        let adjacency = [
-            vec![0_i32],
-            vec![0_i32, 1],
-            vec![1_i32],
-            Vec::new(),
-            Vec::new(),
-        ];
+        let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
+        let adjacency = [vec![0_i32], vec![0_i32, 1], vec![1_i32], Vec::new(), Vec::new()];
         let incident = adjacency
             .iter()
             .map(|edges| {
@@ -21037,9 +19600,7 @@ mod tests {
         };
         let cyano_list_index = CN_LIST
             .iter()
-            .position(|entry| {
-                entry.bits == ((cn_bits_N as i32) << cn_bits_shift) | cn_bits_M as i32
-            })
+            .position(|entry| entry.bits == ((cn_bits_N as i32) << cn_bits_shift) | cn_bits_M as i32)
             .unwrap() as i32
             + 1;
         let mut valence = vec![
@@ -21239,9 +19800,7 @@ mod tests {
         atoms[2].neighbor[0] = 1;
         let original = heap.allocate(atoms.clone()).unwrap();
         let copied = heap.allocate(vec![inp_ATOM::default(); 3]).unwrap();
-        let restore = heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let adjacency = [
             vec![0_i32],
             vec![0_i32, 1],
@@ -21754,10 +20313,7 @@ mod tests {
             Ok(0)
         );
         assert_eq!(zero_structure.at, zero_original);
-        assert_eq!(
-            zero_heap.slice(zero_edges.as_const()).unwrap(),
-            before_edges
-        );
+        assert_eq!(zero_heap.slice(zero_edges.as_const()).unwrap(), before_edges);
     }
 
     #[test]
@@ -21817,9 +20373,7 @@ mod tests {
         atoms[2].neighbor[0] = 1;
         let original = heap.allocate(atoms.clone()).unwrap();
         let copied = heap.allocate(vec![inp_ATOM::default(); 3]).unwrap();
-        let restore = heap
-            .allocate(vec![crate::source_types::SRM::default()])
-            .unwrap();
+        let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
         let adjacency = [
             vec![0_i32, 2],
             vec![0_i32, 1, 3],
@@ -21958,17 +20512,9 @@ mod tests {
             Ok(0)
         );
         assert_eq!(heap.slice(edges.as_const()).unwrap(), before_edges);
+        assert_eq!(heap.slice(vertices.as_const()).unwrap(), before_vertices.as_slice());
         assert_eq!(
-            heap.slice(vertices.as_const()).unwrap(),
-            before_vertices.as_slice()
-        );
-        assert_eq!(
-            (
-                network.tot_st_flow,
-                network.edge_forbidden_mask,
-                runs,
-                total_delta
-            ),
+            (network.tot_st_flow, network.edge_forbidden_mask, runs, total_delta),
             (4, 0, 7, 11)
         );
         assert_eq!(structure.at, original);
@@ -22019,13 +20565,9 @@ mod tests {
                 Ok(0)
             );
             assert_eq!((runs, total_delta), (7, 11));
-            heap.slice_mut(original)
-                .unwrap()
-                .clone_from_slice(&saved_atoms);
+            heap.slice_mut(original).unwrap().clone_from_slice(&saved_atoms);
             valence.clone_from_slice(&saved_valence);
-            heap.slice_mut(edges)
-                .unwrap()
-                .clone_from_slice(&saved_edges);
+            heap.slice_mut(edges).unwrap().clone_from_slice(&saved_edges);
         }
 
         heap.fail_after_allocations(0);
@@ -22081,9 +20623,7 @@ mod tests {
             atoms[3].neighbor[0] = 2;
             let original = heap.allocate(atoms).unwrap();
             let copied = heap.allocate(vec![inp_ATOM::default(); 4]).unwrap();
-            let restore = heap
-                .allocate(vec![crate::source_types::SRM::default()])
-                .unwrap();
+            let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
 
             let adjacency = [
                 vec![0_i32, 3],
@@ -22169,11 +20709,7 @@ mod tests {
                 ..BN_STRUCT::default()
             };
             let nnn_bits = cn_bits_M as i32 | ((cn_bits_N as i32) << cn_bits_shift);
-            let nnn_index = CN_LIST
-                .iter()
-                .position(|entry| entry.bits == nnn_bits)
-                .unwrap() as i32
-                + 1;
+            let nnn_index = CN_LIST.iter().position(|entry| entry.bits == nnn_bits).unwrap() as i32 + 1;
             let mut valence = vec![
                 VAL_AT {
                     cNumValenceElectrons: 5,
@@ -22287,8 +20823,7 @@ mod tests {
             [0, 0, 0, 0, 0],
             [1, 1, 1, 1, 0],
         ] {
-            let (result, before, after, total_flow, runs, delta, restored_pointer) =
-                run_case(flows, false, false);
+            let (result, before, after, total_flow, runs, delta, restored_pointer) = run_case(flows, false, false);
             assert_eq!(result, Ok(0), "flows={flows:?}");
             assert_eq!(after, before, "flows={flows:?}");
             assert_eq!(
@@ -22296,29 +20831,18 @@ mod tests {
                 (36, 7, 11, true),
                 "flows={flows:?}"
             );
-            assert!(
-                after.iter().all(|edge| edge.forbidden == 0),
-                "flows={flows:?}"
-            );
+            assert!(after.iter().all(|edge| edge.forbidden == 0), "flows={flows:?}");
         }
 
-        let (result, before, after, total_flow, runs, delta, restored_pointer) =
-            run_case([0, 0, 0, 0, 1], true, false);
+        let (result, before, after, total_flow, runs, delta, restored_pointer) = run_case([0, 0, 0, 0, 1], true, false);
         assert_eq!(result, Ok(0));
         assert_eq!(after, before);
-        assert_eq!(
-            (total_flow, runs, delta, restored_pointer),
-            (36, 7, 11, true)
-        );
+        assert_eq!((total_flow, runs, delta, restored_pointer), (36, 7, 11, true));
 
-        let (result, before, after, total_flow, runs, delta, restored_pointer) =
-            run_case([1, 0, 0, 0, 1], false, true);
+        let (result, before, after, total_flow, runs, delta, restored_pointer) = run_case([1, 0, 0, 0, 1], false, true);
         assert_eq!(result, Ok(RI_ERR_ALLOC));
         assert_eq!(after, before);
-        assert_eq!(
-            (total_flow, runs, delta, restored_pointer),
-            (36, 7, 11, true)
-        );
+        assert_eq!((total_flow, runs, delta, restored_pointer), (36, 7, 11, true));
     }
 
     #[test]
@@ -22347,9 +20871,7 @@ mod tests {
             }
             let original = heap.allocate(atoms).unwrap();
             let copied = heap.allocate(vec![inp_ATOM::default(); 4]).unwrap();
-            let restore = heap
-                .allocate(vec![crate::source_types::SRM::default()])
-                .unwrap();
+            let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
             let endpoint_array = heap.allocate(vec![0_u16, 0, 0, 0]).unwrap();
             let adjacency = [
                 vec![0_i32, 1, 2, 7],
@@ -22455,14 +20977,9 @@ mod tests {
                 tot_st_flow: 32,
                 ..BN_STRUCT::default()
             };
-            let npn_bits = cn_bits_N as i32
-                | ((cn_bits_P as i32) << cn_bits_shift)
-                | ((cn_bits_N as i32) << (2 * cn_bits_shift));
-            let npn_index = CN_LIST
-                .iter()
-                .position(|entry| entry.bits == npn_bits)
-                .unwrap() as i8
-                + 1;
+            let npn_bits =
+                cn_bits_N as i32 | ((cn_bits_P as i32) << cn_bits_shift) | ((cn_bits_N as i32) << (2 * cn_bits_shift));
+            let npn_index = CN_LIST.iter().position(|entry| entry.bits == npn_bits).unwrap() as i8 + 1;
             let mut valence = vec![
                 VAL_AT {
                     cNumValenceElectrons: 5,
@@ -22561,8 +21078,7 @@ mod tests {
         );
         assert_eq!((runs, total_delta, structure.at), (7, 11, copied));
 
-        let (result, before, after, total_flow, runs, points_to_copy) =
-            run_case(true, false, false, false);
+        let (result, before, after, total_flow, runs, points_to_copy) = run_case(true, false, false, false);
         assert_eq!(result, Ok(0));
         assert_eq!(after, before);
         assert_eq!((total_flow, runs, points_to_copy), (32, 7, true));
@@ -22577,15 +21093,13 @@ mod tests {
             assert!(after.iter().all(|edge| edge.forbidden == 0));
         }
 
-        let (result, before, after, total_flow, runs, points_to_copy) =
-            run_case(false, false, false, false);
+        let (result, before, after, total_flow, runs, points_to_copy) = run_case(false, false, false, false);
         assert_eq!(result, Ok(0));
         assert_eq!(after, before);
         assert_eq!((total_flow, runs, points_to_copy), (32, 7, true));
         assert!(after.iter().all(|edge| edge.forbidden == 0));
 
-        let (result, before, after, total_flow, runs, points_to_copy) =
-            run_case(false, false, false, true);
+        let (result, before, after, total_flow, runs, points_to_copy) = run_case(false, false, false, true);
         assert_eq!(result, Ok(RI_ERR_ALLOC));
         assert_eq!(&after[..3], &before[..3]);
         assert_eq!(
@@ -22649,10 +21163,7 @@ mod tests {
                 atoms[atom_index].neighbor[0] = 0;
                 atoms[atom_index].bond_type[0] = BOND_TYPE_SINGLE as u8;
             }
-            if matches!(
-                case,
-                Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor
-            ) {
+            if matches!(case, Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor) {
                 atoms[1].valence = 2;
                 atoms[1].neighbor[1] = 0;
                 atoms[1].bond_type[1] = BOND_TYPE_SINGLE as u8;
@@ -22666,16 +21177,11 @@ mod tests {
 
             let original = heap.allocate(atoms).unwrap();
             let copied = heap.allocate(vec![inp_ATOM::default(); 5]).unwrap();
-            let restore = heap
-                .allocate(vec![crate::source_types::SRM::default()])
-                .unwrap();
+            let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
             let endpoint_array = heap.allocate(vec![0_u16; 5]).unwrap();
             let adjacency = [
                 vec![0_i32, 1, 2, 3, 8],
-                if matches!(
-                    case,
-                    Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor
-                ) {
+                if matches!(case, Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor) {
                     vec![0_i32, 0]
                 } else {
                     vec![0_i32]
@@ -22786,21 +21292,12 @@ mod tests {
                 tot_st_flow: 36,
                 ..BN_STRUCT::default()
             };
-            let npn_bits = cn_bits_N as i32
-                | ((cn_bits_P as i32) << cn_bits_shift)
-                | ((cn_bits_N as i32) << (2 * cn_bits_shift));
-            let npn_index = CN_LIST
-                .iter()
-                .position(|entry| entry.bits == npn_bits)
-                .unwrap() as i8
-                + 1;
+            let npn_bits =
+                cn_bits_N as i32 | ((cn_bits_P as i32) << cn_bits_shift) | ((cn_bits_N as i32) << (2 * cn_bits_shift));
+            let npn_index = CN_LIST.iter().position(|entry| entry.bits == npn_bits).unwrap() as i8 + 1;
             let mut valence = vec![VAL_AT::default(); 5];
             valence[0] = VAL_AT {
-                cNumValenceElectrons: if matches!(case, Case::NitrogenFlower) {
-                    5
-                } else {
-                    6
-                },
+                cNumValenceElectrons: if matches!(case, Case::NitrogenFlower) { 5 } else { 6 },
                 cMetal: i8::from(matches!(case, Case::Metal)),
                 cInitCharge: i8::from(matches!(case, Case::Charged)),
                 nCPlusGroupEdge: 5,
@@ -22811,10 +21308,7 @@ mod tests {
                 },
                 ..VAL_AT::default()
             };
-            if matches!(
-                case,
-                Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor
-            ) {
+            if matches!(case, Case::ProtectedNeighbor | Case::AlreadyForbiddenNeighbor) {
                 valence[1].cNumValenceElectrons = 5;
             }
             let mut groups = ALL_TC_GROUPS {
@@ -22935,47 +21429,28 @@ mod tests {
             );
             assert_eq!(
                 outcome.copied_atoms[0].valence,
-                if matches!(case, Case::WrongValence) {
-                    3
-                } else {
-                    4
-                }
+                if matches!(case, Case::WrongValence) { 3 } else { 4 }
             );
         }
 
         let candidate_failure = run_case(Case::Candidate, true);
         assert_eq!(candidate_failure.result, Ok(RI_ERR_ALLOC));
-        assert_eq!(
-            candidate_failure.after_edges,
-            candidate_failure.before_edges
-        );
-        assert_eq!(
-            candidate_failure.after_vertices,
-            candidate_failure.before_vertices
-        );
+        assert_eq!(candidate_failure.after_edges, candidate_failure.before_edges);
+        assert_eq!(candidate_failure.after_vertices, candidate_failure.before_vertices);
         assert_eq!(candidate_failure.total_flow, 36);
 
         let nitrogen_failure = run_case(Case::NitrogenFlower, true);
         assert_eq!(nitrogen_failure.result, Ok(RI_ERR_ALLOC));
         assert_eq!(nitrogen_failure.after_edges[5].forbidden, 0x20);
         assert_eq!(nitrogen_failure.after_edges[5].flow, 1);
-        assert_eq!(
-            &nitrogen_failure.after_edges[..5],
-            &nitrogen_failure.before_edges[..5]
-        );
-        assert_eq!(
-            &nitrogen_failure.after_edges[6..],
-            &nitrogen_failure.before_edges[6..]
-        );
+        assert_eq!(&nitrogen_failure.after_edges[..5], &nitrogen_failure.before_edges[..5]);
+        assert_eq!(&nitrogen_failure.after_edges[6..], &nitrogen_failure.before_edges[6..]);
         assert_eq!(nitrogen_failure.total_flow, 36);
 
         let metal_failure = run_case(Case::Metal, true);
         assert_eq!(metal_failure.result, Ok(RI_ERR_ALLOC));
         assert_eq!(metal_failure.after_edges[0].forbidden, 0x20);
-        assert_eq!(
-            &metal_failure.after_edges[1..],
-            &metal_failure.before_edges[1..]
-        );
+        assert_eq!(&metal_failure.after_edges[1..], &metal_failure.before_edges[1..]);
         assert_eq!(metal_failure.total_flow, 36);
     }
 
@@ -23040,9 +21515,7 @@ mod tests {
             }
             let original = heap.allocate(atoms).unwrap();
             let copied = heap.allocate(vec![inp_ATOM::default(); 3]).unwrap();
-            let restore = heap
-                .allocate(vec![crate::source_types::SRM::default()])
-                .unwrap();
+            let restore = heap.allocate(vec![crate::source_types::SRM::default()]).unwrap();
             let endpoint_array = heap.allocate(vec![0_u16; 3]).unwrap();
             let adjacency = [vec![0_i32], vec![0_i32, 1], vec![1_i32]];
             let incident = adjacency
@@ -23130,11 +21603,7 @@ mod tests {
             let mut valence = vec![
                 VAL_AT {
                     cMetal: i8::from(matches!(case, Case::OxygenMetal)),
-                    cNumValenceElectrons: if matches!(case, Case::OxygenElectrons) {
-                        5
-                    } else {
-                        6
-                    },
+                    cNumValenceElectrons: if matches!(case, Case::OxygenElectrons) { 5 } else { 6 },
                     cInitCharge: i8::from(matches!(case, Case::OxygenCharge)),
                     nCMinusGroupEdge: if matches!(case, Case::MissingOxygenChargeEdge) {
                         0
@@ -23144,11 +21613,7 @@ mod tests {
                     ..VAL_AT::default()
                 },
                 VAL_AT {
-                    cNumValenceElectrons: if matches!(case, Case::NitrogenElectrons) {
-                        6
-                    } else {
-                        5
-                    },
+                    cNumValenceElectrons: if matches!(case, Case::NitrogenElectrons) { 6 } else { 5 },
                     cInitCharge: i8::from(matches!(case, Case::NitrogenCharge)),
                     nCPlusGroupEdge: if matches!(case, Case::MissingNitrogenChargeEdge) {
                         0
@@ -23289,11 +21754,7 @@ mod tests {
 
         for failed_allocation in 0..=2 {
             let outcome = run_case(Case::Valid, Some(failed_allocation));
-            assert_eq!(
-                outcome.result,
-                Ok(RI_ERR_ALLOC),
-                "allocation={failed_allocation}"
-            );
+            assert_eq!(outcome.result, Ok(RI_ERR_ALLOC), "allocation={failed_allocation}");
             assert_eq!(
                 outcome.after_edges, outcome.before_edges,
                 "allocation={failed_allocation}"
@@ -23449,15 +21910,8 @@ mod tests {
                 tot_st_flow: 12,
                 ..BN_STRUCT::default()
             };
-            let result = AdjustTgroupsToForbiddenEdges2(
-                &mut heap,
-                &mut network,
-                &atoms,
-                &valence_atoms,
-                4,
-                0x20,
-            )
-            .unwrap();
+            let result =
+                AdjustTgroupsToForbiddenEdges2(&mut heap, &mut network, &atoms, &valence_atoms, 4, 0x20).unwrap();
             (
                 result,
                 heap.slice(edge_pointer.as_const()).unwrap().to_vec(),
@@ -23492,14 +21946,7 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         assert_eq!(
-            AdjustTgroupsToForbiddenEdges2(
-                &mut heap,
-                &mut BN_STRUCT::default(),
-                &[],
-                &[],
-                -1,
-                0x20,
-            ),
+            AdjustTgroupsToForbiddenEdges2(&mut heap, &mut BN_STRUCT::default(), &[], &[], -1, 0x20,),
             Ok(0)
         );
     }
@@ -23536,15 +21983,11 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let copied = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
+        let copied = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
         let restore = heap
             .allocate_model_storage(vec![crate::source_types::SRM::default()])
             .unwrap();
-        let vertices = heap
-            .allocate_model_storage(vec![BNS_VERTEX::default()])
-            .unwrap();
+        let vertices = heap.allocate_model_storage(vec![BNS_VERTEX::default()]).unwrap();
         let mut network = BN_STRUCT {
             num_atoms: 1,
             num_vertices: 1,
@@ -23635,16 +22078,7 @@ mod tests {
             group: crate::source_types::TC_GROUP,
             total_cap: i32,
             total_flow: i32,
-        ) -> (
-            i32,
-            Vec<BNS_EDGE>,
-            Vec<BNS_VERTEX>,
-            Vec<inp_ATOM>,
-            i32,
-            i32,
-            i32,
-            i32,
-        ) {
+        ) -> (i32, Vec<BNS_EDGE>, Vec<BNS_VERTEX>, Vec<inp_ATOM>, i32, i32, i32, i32) {
             let mut heap = SourceHeap::default();
             for (vertex, incident) in vertices.iter_mut().zip(adjacency) {
                 vertex.num_adj_edges = incident.len() as AT_NUMB;
@@ -23728,15 +22162,11 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let copy = heap
-            .allocate_model_storage(vec![inp_ATOM::default()])
-            .unwrap();
+        let copy = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
         let restore = heap
             .allocate_model_storage(vec![crate::source_types::SRM::default()])
             .unwrap();
-        let vertex = heap
-            .allocate_model_storage(vec![BNS_VERTEX::default()])
-            .unwrap();
+        let vertex = heap.allocate_model_storage(vec![BNS_VERTEX::default()]).unwrap();
         let mut structure = StrFromINChI {
             at: original,
             at2: copy,
@@ -24013,9 +22443,7 @@ mod tests {
         atoms[2].neighbor[0] = 1;
         atoms[2].charge = -4;
         let original = heap.allocate_model_storage(atoms.clone()).unwrap();
-        let copy = heap
-            .allocate_model_storage(vec![inp_ATOM::default(); 3])
-            .unwrap();
+        let copy = heap.allocate_model_storage(vec![inp_ATOM::default(); 3]).unwrap();
         let restore = heap
             .allocate_model_storage(vec![crate::source_types::SRM::default()])
             .unwrap();
@@ -24139,10 +22567,7 @@ mod tests {
         assert_eq!((output_edges[0].flow, output_edges[1].flow), (1, 0));
         let output_vertices = heap.slice(vertices.as_const()).unwrap();
         assert_eq!(
-            (
-                output_vertices[0].st_edge.flow,
-                output_vertices[2].st_edge.flow,
-            ),
+            (output_vertices[0].st_edge.flow, output_vertices[2].st_edge.flow,),
             (1, 0)
         );
         assert_eq!((network.tot_st_cap, network.tot_st_flow), (1, 0));
@@ -24154,9 +22579,7 @@ mod tests {
         fn search_data(heap: &mut SourceHeap, slots: usize) -> BN_DATA {
             BN_DATA {
                 BasePtr: heap.allocate_model_storage(vec![NO_VERTEX; slots]).unwrap(),
-                SwitchEdge: heap
-                    .allocate_model_storage(vec![[NO_VERTEX, -1]; slots])
-                    .unwrap(),
+                SwitchEdge: heap.allocate_model_storage(vec![[NO_VERTEX, -1]; slots]).unwrap(),
                 Tree: heap.allocate_model_storage(vec![0_i8; slots]).unwrap(),
                 ScanQ: heap.allocate_model_storage(vec![NO_VERTEX; slots]).unwrap(),
                 Pu: heap.allocate_model_storage(vec![NO_VERTEX; slots]).unwrap(),
@@ -24173,16 +22596,7 @@ mod tests {
             minus_flow: Option<i32>,
             initial_charge: i8,
             endpoint_groups: (AT_NUMB, AT_NUMB),
-        ) -> (
-            i32,
-            Vec<BNS_EDGE>,
-            Vec<BNS_VERTEX>,
-            i32,
-            i32,
-            i32,
-            i32,
-            bool,
-        ) {
+        ) -> (i32, Vec<BNS_EDGE>, Vec<BNS_VERTEX>, i32, i32, i32, i32, bool) {
             let mut heap = SourceHeap::default();
             let mut atoms = vec![inp_ATOM::default(); 4];
             atoms[0].el_number = 7;
@@ -24196,9 +22610,7 @@ mod tests {
             atoms[2].endpoint = endpoint_groups.1;
 
             let original = heap.allocate_model_storage(atoms).unwrap();
-            let copy = heap
-                .allocate_model_storage(vec![inp_ATOM::default(); 4])
-                .unwrap();
+            let copy = heap.allocate_model_storage(vec![inp_ATOM::default(); 4]).unwrap();
             let restore = heap
                 .allocate_model_storage(vec![crate::source_types::SRM::default(); 4])
                 .unwrap();
@@ -24404,15 +22816,11 @@ mod tests {
             Ok(0)
         );
 
-        let (result, edges, vertices, total_cap, total_flow, runs, delta, restored) =
-            run_case(1, 1, None, 0, (1, 1));
+        let (result, edges, vertices, total_cap, total_flow, runs, delta, restored) = run_case(1, 1, None, 0, (1, 1));
         assert_eq!(result, 0);
         assert_eq!((edges[3].flow, edges[3].forbidden), (1, 2));
         assert_eq!((vertices[0].st_edge.flow, vertices[4].st_edge.flow), (1, 1));
-        assert_eq!(
-            (total_cap, total_flow, runs, delta, restored),
-            (2, 2, 17, 19, true)
-        );
+        assert_eq!((total_cap, total_flow, runs, delta, restored), (2, 2, 17, 19, true));
 
         let skipped_sum = run_case(2, 2, None, 0, (1, 1));
         assert_eq!(skipped_sum.0, 0);
@@ -24420,10 +22828,7 @@ mod tests {
 
         let mixed_groups = run_case(1, 1, None, 0, (1, 2));
         assert_eq!(mixed_groups.0, 0);
-        assert_eq!(
-            (mixed_groups.1[3].flow, mixed_groups.1[3].forbidden),
-            (1, 2)
-        );
+        assert_eq!((mixed_groups.1[3].flow, mixed_groups.1[3].forbidden), (1, 2));
 
         let unreachable_zero_delta = run_case(0, 0, Some(1), 1, (1, 1));
         assert_eq!(unreachable_zero_delta.0, 0);

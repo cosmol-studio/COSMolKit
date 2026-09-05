@@ -169,9 +169,7 @@ impl Default for MoleculeState {
 }
 
 fn conversion_error(reason: impl Into<String>) -> FingerprintError {
-    FingerprintError::AvalonConversion {
-        reason: reason.into(),
-    }
+    FingerprintError::AvalonConversion { reason: reason.into() }
 }
 
 /// In-memory equivalent of Avalon's `Fortran_FILE` string path.
@@ -251,11 +249,7 @@ impl<'a> FortranString<'a> {
         let bytes = self.source.as_bytes();
         let start = self.offset;
         let mut end = start;
-        while end < bytes.len()
-            && end - start < MAX_BUFFER
-            && bytes[end] != b'\r'
-            && bytes[end] != b'\n'
-        {
+        while end < bytes.len() && end - start < MAX_BUFFER && bytes[end] != b'\r' && bytes[end] != b'\n' {
             end += 1;
         }
         self.offset = end;
@@ -294,12 +288,7 @@ fn parse_f32(text: &str, label: &str) -> Result<f32, FingerprintError> {
         .map_err(|_| conversion_error(format!("invalid {label}")))
 }
 
-fn scan_decimal_field<'a>(
-    text: &'a str,
-    cursor: &mut usize,
-    width: usize,
-    fractional: bool,
-) -> Option<&'a str> {
+fn scan_decimal_field<'a>(text: &'a str, cursor: &mut usize, width: usize, fractional: bool) -> Option<&'a str> {
     let bytes = text.as_bytes();
     while *cursor < bytes.len() && bytes[*cursor].is_ascii_whitespace() {
         *cursor += 1;
@@ -499,9 +488,7 @@ fn read_v2000_bond(stream: &mut FortranString<'_>) -> Result<Bond, FingerprintEr
     let line = stream.line()?;
     let nitems = line.len().div_ceil(3).min(7);
     if nitems < 3 {
-        return Err(conversion_error(
-            "V2000 bond line has fewer than three fields",
-        ));
+        return Err(conversion_error("V2000 bond line has fewer than three fields"));
     }
     let mut values = [0_i32; 7];
     for (index, value) in values.iter_mut().enumerate().take(nitems) {
@@ -662,11 +649,7 @@ fn lookup_mass_difference(mass: f64, symbol: &str) -> i32 {
     }
 }
 
-fn parse_v30_symbol(
-    symbol: &str,
-    atom_index: usize,
-    state: &mut MoleculeState,
-) -> Result<String, FingerprintError> {
+fn parse_v30_symbol(symbol: &str, atom_index: usize, state: &mut MoleculeState) -> Result<String, FingerprintError> {
     // Avalon✔️✔️: struct symbol_list_t *ParseV30SymbolList(char *symbol,
     // Avalon✔️✔️:                                         int iatom,
     // Avalon✔️✔️:                                         struct reaccs_molecule_t *mp,
@@ -711,11 +694,7 @@ fn parse_v30_symbol(
     Ok("L".to_string())
 }
 
-fn parse_v30_atom(
-    line: &str,
-    index: usize,
-    state: &mut MoleculeState,
-) -> Result<Atom, FingerprintError> {
+fn parse_v30_atom(line: &str, index: usize, state: &mut MoleculeState) -> Result<Atom, FingerprintError> {
     // Avalon❗✔️: int ReadV30Atom(Fortran_FILE *fp,
     // Avalon❗✔️:                 struct reaccs_atom_t *ap,
     // Avalon❗✔️:                 struct reaccs_molecule_t *mp)
@@ -788,15 +767,9 @@ fn parse_v30_atom(
     // Avalon❗✔️:    GetBuffer(fp);
     // Avalon❗✔️:    return(FORTRAN_NORMAL);
     // Avalon❗✔️: }
-    let fields: Vec<&str> = line
-        .strip_prefix("M  V30 ")
-        .unwrap_or("")
-        .split_whitespace()
-        .collect();
+    let fields: Vec<&str> = line.strip_prefix("M  V30 ").unwrap_or("").split_whitespace().collect();
     if fields.len() < 6 {
-        return Err(conversion_error(
-            "incorrect number of arguments on V3000 atom line",
-        ));
+        return Err(conversion_error("incorrect number of arguments on V3000 atom line"));
     }
     let symbol = fields[1];
     if symbol.len() >= V30_ATOM_SYMBOL_CAPACITY {
@@ -893,15 +866,9 @@ fn parse_v30_bond(line: &str) -> Result<Bond, FingerprintError> {
     // Avalon❗✔️:    GetBuffer(fp);
     // Avalon❗✔️:    return(FORTRAN_NORMAL);
     // Avalon❗✔️: }
-    let fields: Vec<&str> = line
-        .strip_prefix("M  V30 ")
-        .unwrap_or("")
-        .split_whitespace()
-        .collect();
+    let fields: Vec<&str> = line.strip_prefix("M  V30 ").unwrap_or("").split_whitespace().collect();
     if fields.len() < 4 {
-        return Err(conversion_error(
-            "incorrect number of arguments on V3000 bond line",
-        ));
+        return Err(conversion_error("incorrect number of arguments on V3000 bond line"));
     }
     if fields
         .iter()
@@ -931,9 +898,7 @@ fn property_pairs(line: &str, prefix: &str) -> Result<Vec<(usize, i32)>, Fingerp
         .parse::<usize>()
         .map_err(|_| conversion_error("invalid property entry count"))?;
     if count > 8 || fields.len() < 1 + count * 2 {
-        return Err(conversion_error(
-            "property line entry count exceeds its source fields",
-        ));
+        return Err(conversion_error("property line entry count exceeds its source fields"));
     }
     (0..count)
         .map(|index| {
@@ -948,10 +913,7 @@ fn property_pairs(line: &str, prefix: &str) -> Result<Vec<(usize, i32)>, Fingerp
         .collect()
 }
 
-fn property_atom<'a>(
-    atoms: &'a mut [Atom],
-    index: usize,
-) -> Result<&'a mut Atom, FingerprintError> {
+fn property_atom<'a>(atoms: &'a mut [Atom], index: usize) -> Result<&'a mut Atom, FingerprintError> {
     atoms
         .get_mut(index.wrapping_sub(1))
         .ok_or_else(|| conversion_error("property atom index is outside the atom table"))
@@ -1305,17 +1267,14 @@ fn read_properties(
 
 fn is_ignored_sgroup_property(line: &str) -> bool {
     [
-        "M  SLB", "M  STY", "M  SAL", "M  SBL", "M  SDI", "M  SMT", "M  SBV", "M  SCL", "M  SAP",
-        "M  SDT", "M  SDD", "M  SED", "M  SDS",
+        "M  SLB", "M  STY", "M  SAL", "M  SBL", "M  SDI", "M  SMT", "M  SBV", "M  SCL", "M  SAP", "M  SDT", "M  SDD",
+        "M  SED", "M  SDS",
     ]
     .iter()
     .any(|prefix| line.starts_with(prefix))
 }
 
-fn read_v2000_symbol_lists(
-    stream: &mut FortranString<'_>,
-    count: usize,
-) -> Result<Vec<SymbolList>, FingerprintError> {
+fn read_v2000_symbol_lists(stream: &mut FortranString<'_>, count: usize) -> Result<Vec<SymbolList>, FingerprintError> {
     // Avalon❗✔️: result = (struct symbol_list_t *)NULL;
     // Avalon❗✔️: for (i=0; i<nlists; i++)
     // Avalon❗✔️: {
@@ -1351,12 +1310,9 @@ fn read_v2000_symbol_lists(
         let mut symbols = Vec::with_capacity(element_count);
         for index in 0..element_count {
             let atomic_number = parse_i32_or_zero(field(line, 11 + 4 * index, 15 + 4 * index));
-            let atomic_number = u8::try_from(atomic_number)
-                .map_err(|_| conversion_error("invalid atom-list atomic number"))?;
-            symbols.push(
-                rdkit_element_symbol(atomic_number)
-                    .map_err(|error| conversion_error(error.to_string()))?,
-            );
+            let atomic_number =
+                u8::try_from(atomic_number).map_err(|_| conversion_error("invalid atom-list atomic number"))?;
+            symbols.push(rdkit_element_symbol(atomic_number).map_err(|error| conversion_error(error.to_string()))?);
         }
         lists.push(SymbolList {
             atom,
@@ -1451,9 +1407,7 @@ fn parse_info_line(line: &str, state: &mut MoleculeState) {
     state.registry_number = registry_number.parse().unwrap_or(0);
 }
 
-fn parse_v2000_counts(
-    line: &str,
-) -> Result<(usize, usize, usize, i32, i32, usize, usize), FingerprintError> {
+fn parse_v2000_counts(line: &str) -> Result<(usize, usize, usize, i32, i32, usize, usize), FingerprintError> {
     // Avalon❗✔️: BlankToZero(buffer);
     // Avalon❗✔️: nitems = sscanf(buffer,"%3d%3d%3d%3d%3d%3d%*12c%3d",
     // Avalon❗✔️:                 &mp->n_atoms, &mp->n_bonds, &mp->n_atom_lists,
@@ -1476,9 +1430,7 @@ fn parse_v2000_counts(
     let n_bonds = usize::try_from(parse_i32(field(line, 3, 6), "V2000 bond count")?)
         .map_err(|_| conversion_error("negative V2000 bond count"))?;
     if n_atoms > MAX_ATOMS || n_bonds > MAX_BONDS {
-        return Err(conversion_error(
-            "V2000 atom or bond count exceeds Avalon limits",
-        ));
+        return Err(conversion_error("V2000 atom or bond count exceeds Avalon limits"));
     }
     Ok((
         n_atoms,
@@ -1491,10 +1443,7 @@ fn parse_v2000_counts(
     ))
 }
 
-fn read_v3000(
-    stream: &mut FortranString<'_>,
-    state: &mut MoleculeState,
-) -> Result<(), FingerprintError> {
+fn read_v3000(stream: &mut FortranString<'_>, state: &mut MoleculeState) -> Result<(), FingerprintError> {
     // Avalon❗✔️: if (0 == strcmp(mp->version, "V3000"))
     // Avalon❗✔️: {
     // Avalon❗✔️:     GetBuffer(fp);
@@ -1631,19 +1580,13 @@ fn read_v3000(
         }
     }
     if expected_atoms != Some(state.atoms.len()) || expected_bonds != Some(state.bonds.len()) {
-        return Err(conversion_error(
-            "V3000 parsed atom or bond count differs from COUNTS",
-        ));
+        return Err(conversion_error("V3000 parsed atom or bond count differs from COUNTS"));
     }
     state.version = "V2000".to_string();
     Ok(())
 }
 
-fn read_v2000(
-    stream: &mut FortranString<'_>,
-    counts: &str,
-    state: &mut MoleculeState,
-) -> Result<(), FingerprintError> {
+fn read_v2000(stream: &mut FortranString<'_>, counts: &str, state: &mut MoleculeState) -> Result<(), FingerprintError> {
     // Avalon❗✔️: else                                     // old MOL format
     // Avalon❗✔️: {
     // Avalon❗✔️:    BlankToZero(buffer);
@@ -1698,8 +1641,7 @@ fn read_v2000(
     // Avalon❗✔️:     mp->prop_lines = ReadProperties(fp,mp,mp->n_props);
     // Avalon❗✔️:     mp->n_props = CountPropLines(mp->prop_lines);
     // Avalon❗✔️: }
-    let (n_atoms, n_bonds, n_atom_lists, dummy1, chiral_flag, n_stexts, n_props) =
-        parse_v2000_counts(counts)?;
+    let (n_atoms, n_bonds, n_atom_lists, dummy1, chiral_flag, n_stexts, n_props) = parse_v2000_counts(counts)?;
     state.dummy1 = dummy1;
     state.chiral_flag = chiral_flag;
     if state.version.is_empty() {
@@ -1719,12 +1661,8 @@ fn read_v2000(
     for _ in 0..n_stexts {
         let coordinates = stream.line()?;
         let mut fields = coordinates.split_whitespace();
-        let x = fields
-            .next()
-            .map_or(Ok(0.0), |value| parse_f32(value, "S-text x"))?;
-        let y = fields
-            .next()
-            .map_or(Ok(0.0), |value| parse_f32(value, "S-text y"))?;
+        let x = fields.next().map_or(Ok(0.0), |value| parse_f32(value, "S-text x"))?;
+        let y = fields.next().map_or(Ok(0.0), |value| parse_f32(value, "S-text y"))?;
         stream.advance();
         let text: String = stream.line()?.chars().take(MDL_MAX_LINE).collect();
         stream.advance();
@@ -1848,8 +1786,7 @@ pub(super) fn mol_to_reaccs(molecule: &Molecule) -> Result<MoleculeState, Finger
         kekulize: true,
         precision: 6,
     };
-    let block = mol_to_mol_block_with_params(molecule, &params)
-        .map_err(|error| conversion_error(error.to_string()))?;
+    let block = mol_to_mol_block_with_params(molecule, &params).map_err(|error| conversion_error(error.to_string()))?;
     parse_mol_block(&block)
 }
 
@@ -1894,8 +1831,7 @@ mod tests {
     #[test]
     fn retained_property_lines_use_the_source_mdl_limit() {
         let long_property = format!("M  XYZ{}", "x".repeat(MDL_MAX_LINE));
-        let block =
-            format!("\n\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\n{long_property}\nM  END\n");
+        let block = format!("\n\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\n{long_property}\nM  END\n");
         let state = parse_mol_block(&block).unwrap();
         assert_eq!(state.prop_lines.len(), 1);
         assert_eq!(state.prop_lines[0].len(), MDL_MAX_LINE);

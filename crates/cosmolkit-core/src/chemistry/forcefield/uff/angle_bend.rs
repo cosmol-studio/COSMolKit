@@ -98,14 +98,8 @@ impl AngleBendContrib {
         let owner_ptr = owner as *const ForceField;
         // RDKit✔️✔️:   d_forceConstant = Utils::calcAngleForceConstant(
         // RDKit✔️✔️:       d_theta0, bondOrder12, bondOrder23, at1Params, at2Params, at3Params);
-        let force_constant = calc_angle_force_constant(
-            theta0,
-            bond_order12,
-            bond_order23,
-            at1_params,
-            at2_params,
-            at3_params,
-        )?;
+        let force_constant =
+            calc_angle_force_constant(theta0, bond_order12, bond_order23, at1_params, at2_params, at3_params)?;
         let mut c0 = 0.0;
         let mut c1 = 0.0;
         let mut c2 = 0.0;
@@ -365,11 +359,7 @@ impl AngleBendContrib {
         // RDKit✔️✔️:                    d_order == 4,
         // RDKit✔️✔️:                "bad order");
         assert!(
-            self.order == 0
-                || self.order == 1
-                || self.order == 2
-                || self.order == 3
-                || self.order == 4,
+            self.order == 0 || self.order == 1 || self.order == 2 || self.order == 3 || self.order == 4,
             "bad order"
         );
         // RDKit✔️✔️:   // cos(2x) = cos^2(x) - sin^2(x);
@@ -403,10 +393,7 @@ impl AngleBendContrib {
                 // RDKit✔️✔️:         res = int_pow<4>(cosTheta) - 6. * cosTheta * cosTheta * sinThetaSq +
                 // RDKit✔️✔️:               sinThetaSq * sinThetaSq;
                 // RDKit✔️✔️:         break;
-                4 => {
-                    cos_theta.powi(4) - 6.0 * cos_theta * cos_theta * sin_theta_sq
-                        + sin_theta_sq * sin_theta_sq
-                }
+                4 => cos_theta.powi(4) - 6.0 * cos_theta * cos_theta * sin_theta_sq + sin_theta_sq * sin_theta_sq,
                 _ => unreachable!("bad order"),
             }
         };
@@ -430,11 +417,7 @@ impl AngleBendContrib {
         // RDKit✔️✔️:                    d_order == 4,
         // RDKit✔️✔️:                "bad order");
         assert!(
-            self.order == 0
-                || self.order == 1
-                || self.order == 2
-                || self.order == 3
-                || self.order == 4,
+            self.order == 0 || self.order == 1 || self.order == 2 || self.order == 3 || self.order == 4,
             "bad order"
         );
 
@@ -627,8 +610,8 @@ mod tests {
     fn angle_energy_with_fresh_distance_cache(order: u32, pos: &[f64; 9]) -> f64 {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order)
-            .expect("valid constructor");
+        let contrib =
+            AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order).expect("valid constructor");
         contrib.get_energy(pos)
     }
 
@@ -652,10 +635,9 @@ mod tests {
         let ff = force_field();
         let (at1, at2, at3) = params();
 
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
-        let expected_force = calc_angle_force_constant(at2.theta0, 1.0, 1.0, &at1, &at2, &at3)
-            .expect("valid force constant");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
+        let expected_force =
+            calc_angle_force_constant(at2.theta0, 1.0, 1.0, &at1, &at2, &at3).expect("valid force constant");
         let sin_theta0 = at2.theta0.sin();
         let cos_theta0 = at2.theta0.cos();
         let c2 = 1.0 / (4.0 * (sin_theta0 * sin_theta0).max(1e-8));
@@ -679,8 +661,7 @@ mod tests {
         let ff = force_field();
         let (at1, at2, at3) = params();
 
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3).expect("valid constructor");
 
         assert_eq!(contrib.order(), 3);
         assert_close(contrib.theta0(), at2.theta0);
@@ -701,8 +682,8 @@ mod tests {
         ];
 
         for (order, theta0) in cases {
-            let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order)
-                .expect("valid constructor");
+            let contrib =
+                AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order).expect("valid constructor");
             assert_eq!(contrib.order(), 0);
             assert_close(contrib.theta0(), theta0);
             assert!(contrib.c2() > 0.0);
@@ -714,8 +695,7 @@ mod tests {
         let ff = force_field();
         let (at1, at2, at3) = params();
 
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 31)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 31).expect("valid constructor");
 
         assert_eq!(contrib.order(), 0);
         assert_close(contrib.theta0(), at2.theta0);
@@ -758,14 +738,12 @@ mod tests {
     fn uff_anglebendcontrib_get_energy_order0_uses_polynomial_term() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let cos_theta = 0.0;
         let sin_theta_sq = 1.0;
         let cos2_theta = cos_theta * cos_theta - sin_theta_sq;
-        let expected = contrib.force_constant()
-            * (contrib.c0() + contrib.c1() * cos_theta + contrib.c2() * cos2_theta);
+        let expected = contrib.force_constant() * (contrib.c0() + contrib.c1() * cos_theta + contrib.c2() * cos2_theta);
 
         assert_close(contrib.get_energy(&pos), expected);
     }
@@ -778,13 +756,10 @@ mod tests {
         let cases = [(1, 1.0), (2, 0.5), (3, 1.0 / 9.0), (4, 0.0)];
 
         for (order, angle_term) in cases {
-            let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order)
-                .expect("valid constructor");
+            let contrib =
+                AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order).expect("valid constructor");
 
-            assert_close(
-                contrib.get_energy(&pos),
-                contrib.force_constant() * angle_term,
-            );
+            assert_close(contrib.get_energy(&pos), contrib.force_constant() * angle_term);
         }
     }
 
@@ -796,10 +771,8 @@ mod tests {
         let cos_theta = 0.95 / (0.95_f64 * 0.95 + 0.2_f64 * 0.2).sqrt();
         assert!(cos_theta > super::ANGLE_CORRECTION_THRESHOLD);
 
-        let order1 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 1)
-            .expect("valid constructor");
-        let order0 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
+        let order1 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 1).expect("valid constructor");
+        let order0 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
         let sin_theta_sq = 1.0 - cos_theta * cos_theta;
         let order1_base = order1.force_constant() * order1.get_energy_term(cos_theta, sin_theta_sq);
         let correction = (-20.0 * (cos_theta.acos() - order1.theta0() + 0.25)).exp();
@@ -813,8 +786,7 @@ mod tests {
     fn uff_anglebendcontrib_get_energy_skips_correction_below_threshold() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 2)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 2).expect("valid constructor");
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0];
         let cos_theta = 0.5 / (0.5_f64 * 0.5 + 1.0_f64).sqrt();
         assert!(cos_theta <= super::ANGLE_CORRECTION_THRESHOLD);
@@ -828,8 +800,7 @@ mod tests {
     fn uff_anglebendcontrib_get_energy_term_clips_source_boundary_inputs_by_caller_contract() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3).expect("valid constructor");
         let mut above = 1.0 + 1.0e-12;
         let mut below = -1.0 - 1.0e-12;
 
@@ -849,8 +820,7 @@ mod tests {
         let at2 = atomic_params(0.700, 0.0, 6.899, 2.544);
         let at3 = atomic_params(0.658, 109.47_f64.to_radians(), 8.741, 2.3);
 
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
 
         assert_close(contrib.c2(), 1.0 / (4.0 * 1.0e-8));
         assert!(
@@ -864,8 +834,7 @@ mod tests {
     fn uff_anglebendcontrib_get_grad_matches_energy_finite_difference_for_order0() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
         let pos = [1.1, 0.2, 0.0, 0.0, 0.0, 0.1, -0.1, 0.9, 0.2];
         let mut grad = [0.0; 9];
 
@@ -884,8 +853,7 @@ mod tests {
     fn uff_anglebendcontrib_get_grad_matches_energy_finite_difference_for_periodic_order() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 3).expect("valid constructor");
         let pos = [1.2, -0.2, 0.1, 0.0, 0.0, 0.0, -0.2, 1.1, -0.1];
         let mut grad = [0.0; 9];
 
@@ -901,8 +869,7 @@ mod tests {
     fn uff_anglebendcontrib_get_grad_includes_small_angle_correction_derivative() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 1)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 1).expect("valid constructor");
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.95, 0.2, 0.0];
         let mut grad = [0.0; 9];
 
@@ -918,8 +885,7 @@ mod tests {
         let sin_theta = (1.0 - cos_theta * cos_theta).sqrt().max(1.0e-8);
         let theta = cos_theta.acos();
         let base_de_dtheta = contrib.get_theta_deriv(cos_theta, sin_theta);
-        let corrected_de_dtheta =
-            base_de_dtheta + -20.0 * (-20.0 * (theta - contrib.theta0() + 0.25)).exp();
+        let corrected_de_dtheta = base_de_dtheta + -20.0 * (-20.0 * (theta - contrib.theta0() + 0.25)).exp();
         let mut base_grad = [0.0; 9];
         let mut expected = [0.0; 9];
 
@@ -1038,16 +1004,15 @@ mod tests {
         let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
         let sin2_theta = 2.0 * sin_theta * cos_theta;
 
-        let order0 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0)
-            .expect("valid constructor");
+        let order0 = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 0).expect("valid constructor");
         assert_close(
             order0.get_theta_deriv(cos_theta, sin_theta),
             -order0.force_constant() * (order0.c1() * sin_theta + 2.0 * order0.c2() * sin2_theta),
         );
 
         for order in 1..=4 {
-            let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order)
-                .expect("valid constructor");
+            let contrib =
+                AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order).expect("valid constructor");
             let base = match order {
                 1 => -sin_theta,
                 2 => sin2_theta,
@@ -1066,8 +1031,7 @@ mod tests {
     fn uff_anglebendcontrib_get_grad_singularity_clamp_keeps_collinear_gradient_finite() {
         let ff = initialized_force_field();
         let (at1, at2, at3) = params();
-        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 2)
-            .expect("valid constructor");
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, 2).expect("valid constructor");
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
         let mut grad = [0.0; 9];
 

@@ -287,6 +287,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmolkit-wasm"
+version = "0.3.0"
+dependencies = [
+ "cosmolkit",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

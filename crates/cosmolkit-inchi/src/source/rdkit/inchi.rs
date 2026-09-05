@@ -4,23 +4,19 @@ use crate::source::api::inchi_dll::{FreeINCHI, FreeStructFromINCHI, GetINCHI, Ge
 use crate::source::base::ichiparm::InchiBuildMetadata;
 use crate::source::base::ikey_dll::GetINCHIKeyFromINCHI;
 use crate::source_types::{
-    FILE, INCHIKEY_EMPTY_INPUT, INCHIKEY_INVALID_INCHI, INCHIKEY_INVALID_INCHI_PREFIX,
-    INCHIKEY_INVALID_STD_INCHI, INCHIKEY_NOT_ENOUGH_MEMORY, INCHIKEY_OK, INCHIKEY_UNKNOWN_ERROR,
-    ISOTOPIC_SHIFT_FLAG, MAXVAL, NO_ATOM, SourceHeap, SourceHeapError, SourceMutPointer, clock_t,
-    inchi_Atom, inchi_Input, inchi_InputINCHI, inchi_Output, inchi_OutputStruct, inchi_Stereo0D,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP, tagINCHIBondType_INCHI_BOND_TYPE_ALTERN,
-    tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE, tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
-    tagINCHIStereoParity0D_INCHI_PARITY_NONE, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
-    tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, tagINCHIStereoType0D_INCHI_StereoType_Allene,
-    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond, tagINCHIStereoType0D_INCHI_StereoType_None,
-    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagRetValGetINCHI_inchi_Ret_OKAY,
-    tagRetValGetINCHI_inchi_Ret_WARNING,
+    FILE, INCHIKEY_EMPTY_INPUT, INCHIKEY_INVALID_INCHI, INCHIKEY_INVALID_INCHI_PREFIX, INCHIKEY_INVALID_STD_INCHI,
+    INCHIKEY_NOT_ENOUGH_MEMORY, INCHIKEY_OK, INCHIKEY_UNKNOWN_ERROR, ISOTOPIC_SHIFT_FLAG, MAXVAL, NO_ATOM, SourceHeap,
+    SourceHeapError, SourceMutPointer, clock_t, inchi_Atom, inchi_Input, inchi_InputINCHI, inchi_Output,
+    inchi_OutputStruct, inchi_Stereo0D, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP,
+    tagINCHIBondType_INCHI_BOND_TYPE_ALTERN, tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE,
+    tagINCHIStereoParity0D_INCHI_PARITY_EVEN, tagINCHIStereoParity0D_INCHI_PARITY_NONE,
+    tagINCHIStereoParity0D_INCHI_PARITY_ODD, tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED,
+    tagINCHIStereoType0D_INCHI_StereoType_Allene, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
+    tagINCHIStereoType0D_INCHI_StereoType_None, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
+    tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_WARNING,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -305,10 +301,7 @@ impl From<SourceHeapError> for InchiToInchiKeyError {
 }
 
 pub(crate) trait InchiKeyEngine {
-    fn get_inchi_key(
-        &mut self,
-        inchi_with_nul: &[u8],
-    ) -> Result<AdapterInchiKeyOutput, SourceHeapError>;
+    fn get_inchi_key(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiKeyOutput, SourceHeapError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -342,44 +335,22 @@ pub(crate) trait InchiGenerationEngine {
 }
 
 pub trait MolToInchiToolkit {
-    fn needs_update_property_cache(
-        &mut self,
-        molecule: &AdapterMol,
-    ) -> Result<bool, AdapterToolkitError>;
+    fn needs_update_property_cache(&mut self, molecule: &AdapterMol) -> Result<bool, AdapterToolkitError>;
 
-    fn update_property_cache(
-        &mut self,
-        molecule: &mut AdapterMol,
-        strict: bool,
-    ) -> Result<(), AdapterToolkitError>;
+    fn update_property_cache(&mut self, molecule: &mut AdapterMol, strict: bool) -> Result<(), AdapterToolkitError>;
 
-    fn kekulize(
-        &mut self,
-        molecule: &mut AdapterMol,
-        mark_atoms_bonds: bool,
-    ) -> Result<(), AdapterToolkitError>;
+    fn kekulize(&mut self, molecule: &mut AdapterMol, mark_atoms_bonds: bool) -> Result<(), AdapterToolkitError>;
 
     fn element_symbol(&mut self, atomic_number: i32) -> Result<Vec<u8>, AdapterToolkitError>;
 
     fn atomic_weight(&mut self, atomic_number: i32) -> Result<f64, AdapterToolkitError>;
 
-    fn total_num_hydrogens(
-        &mut self,
-        molecule: &AdapterMol,
-        atom_index: u32,
-    ) -> Result<u32, AdapterToolkitError>;
+    fn total_num_hydrogens(&mut self, molecule: &AdapterMol, atom_index: u32) -> Result<u32, AdapterToolkitError>;
 
-    fn calc_implicit_valence(
-        &mut self,
-        molecule: &mut AdapterMol,
-        atom_index: u32,
-    ) -> Result<i32, AdapterToolkitError>;
+    fn calc_implicit_valence(&mut self, molecule: &mut AdapterMol, atom_index: u32)
+    -> Result<i32, AdapterToolkitError>;
 
-    fn total_degree(
-        &mut self,
-        molecule: &AdapterMol,
-        atom_index: u32,
-    ) -> Result<u32, AdapterToolkitError>;
+    fn total_degree(&mut self, molecule: &AdapterMol, atom_index: u32) -> Result<u32, AdapterToolkitError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -422,10 +393,7 @@ impl From<BondIndexRangeError> for InchiToMolError {
 }
 
 pub(crate) trait InchiStructureEngine {
-    fn get_struct_from_inchi(
-        &mut self,
-        inchi_with_nul: &[u8],
-    ) -> Result<AdapterInchiStructureOutput, SourceHeapError>;
+    fn get_struct_from_inchi(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiStructureOutput, SourceHeapError>;
 
     fn free_struct_from_inchi(&mut self) -> Result<(), SourceHeapError>;
 }
@@ -435,16 +403,9 @@ pub trait InchiToMolToolkit {
 
     fn average_atomic_weight(&mut self, atomic_number: i32) -> Result<f64, AdapterToolkitError>;
 
-    fn update_property_cache(
-        &mut self,
-        molecule: &mut AdapterMol,
-        strict: bool,
-    ) -> Result<(), AdapterToolkitError>;
+    fn update_property_cache(&mut self, molecule: &mut AdapterMol, strict: bool) -> Result<(), AdapterToolkitError>;
 
-    fn assign_atom_cip_ranks(
-        &mut self,
-        molecule: &mut AdapterMol,
-    ) -> Result<Vec<u32>, AdapterToolkitError>;
+    fn assign_atom_cip_ranks(&mut self, molecule: &mut AdapterMol) -> Result<Vec<u32>, AdapterToolkitError>;
 
     fn remove_hydrogens(&mut self, molecule: &mut AdapterMol) -> Result<(), AdapterToolkitError>;
 
@@ -456,10 +417,7 @@ pub trait InchiToMolToolkit {
     /// on `AdapterMol`. Toolkits with a separate native molecule representation
     /// use this exact source boundary to retain the single-molecule ownership
     /// model of RDKit's `InchiToMol` implementation.
-    fn synchronize_after_cleanup(
-        &mut self,
-        _molecule: &AdapterMol,
-    ) -> Result<(), AdapterToolkitError> {
+    fn synchronize_after_cleanup(&mut self, _molecule: &AdapterMol) -> Result<(), AdapterToolkitError> {
         Ok(())
     }
 
@@ -495,10 +453,7 @@ impl<'a> SourceInchiStructureEngine<'a> {
     }
 }
 
-fn source_c_text(
-    heap: &SourceHeap,
-    pointer: SourceMutPointer<i8>,
-) -> Result<Vec<u8>, SourceHeapError> {
+fn source_c_text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Result<Vec<u8>, SourceHeapError> {
     let bytes = heap.slice(pointer.as_const())?;
     let end = bytes
         .iter()
@@ -508,10 +463,7 @@ fn source_c_text(
 }
 
 impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
-    fn get_struct_from_inchi(
-        &mut self,
-        inchi_with_nul: &[u8],
-    ) -> Result<AdapterInchiStructureOutput, SourceHeapError> {
+    fn get_struct_from_inchi(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiStructureOutput, SourceHeapError> {
         if self.pending_output.is_some() {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
@@ -546,40 +498,36 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
         } else {
             Some(source_c_text(self.heap, output.szLog)?)
         };
-        let atoms = if return_code == tagRetValGetINCHI_inchi_Ret_OKAY
-            || return_code == tagRetValGetINCHI_inchi_Ret_WARNING
-        {
-            let count = usize::try_from(output.num_atoms)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            if count == 0 {
-                Vec::new()
+        let atoms =
+            if return_code == tagRetValGetINCHI_inchi_Ret_OKAY || return_code == tagRetValGetINCHI_inchi_Ret_WARNING {
+                let count = usize::try_from(output.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                if count == 0 {
+                    Vec::new()
+                } else {
+                    self.heap
+                        .slice(output.atom.as_const())?
+                        .get(..count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                }
             } else {
-                self.heap
-                    .slice(output.atom.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec()
-            }
-        } else {
-            Vec::new()
-        };
-        let stereo0d = if return_code == tagRetValGetINCHI_inchi_Ret_OKAY
-            || return_code == tagRetValGetINCHI_inchi_Ret_WARNING
-        {
-            let count = usize::try_from(output.num_stereo0D)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            if count == 0 {
                 Vec::new()
+            };
+        let stereo0d =
+            if return_code == tagRetValGetINCHI_inchi_Ret_OKAY || return_code == tagRetValGetINCHI_inchi_Ret_WARNING {
+                let count = usize::try_from(output.num_stereo0D).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                if count == 0 {
+                    Vec::new()
+                } else {
+                    self.heap
+                        .slice(output.stereo0D.as_const())?
+                        .get(..count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                }
             } else {
-                self.heap
-                    .slice(output.stereo0D.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec()
-            }
-        } else {
-            Vec::new()
-        };
+                Vec::new()
+            };
         self.pending_output = Some(output);
         Ok(AdapterInchiStructureOutput {
             return_code,
@@ -670,10 +618,7 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
             }
         };
         let options = if let Some(options) = &input.options_with_nul {
-            match self
-                .heap
-                .allocate(options.iter().map(|byte| *byte as i8).collect())
-            {
+            match self.heap.allocate(options.iter().map(|byte| *byte as i8).collect()) {
                 Ok(options) => options,
                 Err(error) => {
                     self.heap.free(stereo0d)?;
@@ -754,8 +699,7 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
             .take()
             .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
         let output_result = FreeINCHI(self.heap, Some(&mut pending.output));
-        let input_result =
-            free_generation_inputs(self.heap, pending.atoms, pending.stereo0d, pending.options);
+        let input_result = free_generation_inputs(self.heap, pending.atoms, pending.stereo0d, pending.options);
         output_result?;
         input_result
     }
@@ -772,10 +716,7 @@ impl<'a> SourceInchiKeyEngine<'a> {
 }
 
 impl InchiKeyEngine for SourceInchiKeyEngine<'_> {
-    fn get_inchi_key(
-        &mut self,
-        inchi_with_nul: &[u8],
-    ) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
+    fn get_inchi_key(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
         let input = self
             .heap
             .allocate_model_storage(inchi_with_nul.iter().map(|byte| *byte as i8).collect())?;
@@ -1076,9 +1017,7 @@ pub(crate) fn assign_bond_dirs(
                     BondDirection::EndUpRight
                 };
 
-                for (rules, rule_direction) in
-                    [(z_bond_pairs, direction), (e_bond_pairs, other_direction)]
-                {
+                for (rules, rule_direction) in [(z_bond_pairs, direction), (e_bond_pairs, other_direction)] {
                     for &(first, second) in rules {
                         let other = if first == current_bond_index {
                             second
@@ -1310,10 +1249,7 @@ pub(crate) fn find_alternating_bonds(
     None
 }
 
-pub(crate) fn get_num_double_bonded_negatively_charged_neighboring_si(
-    mol: &AdapterMol,
-    atom_index: u32,
-) -> i32 {
+pub(crate) fn get_num_double_bonded_negatively_charged_neighboring_si(mol: &AdapterMol, atom_index: u32) -> i32 {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:306 getNumDoubleBondedNegativelyChargedNeighboringSi
     // RDKit✔️✔️: int getNumDoubleBondedNegativelyChargedNeighboringSi(ROMol &mol, Atom *a) {
     // RDKit✔️✔️:   RWMol::ADJ_ITER nid1, end1;
@@ -1342,10 +1278,7 @@ pub(crate) fn get_num_double_bonded_negatively_charged_neighboring_si(
     for &(neighbor_index, bond_index) in &mol.adjacency[atom_index as usize] {
         let neighbor = &mol.atoms[neighbor_index as usize];
         let bond = &mol.bonds[bond_index as usize];
-        if neighbor.atomic_number == 14
-            && neighbor.formal_charge == -1
-            && bond.bond_type == BondType::Double
-        {
+        if neighbor.atomic_number == 14 && neighbor.formal_charge == -1 && bond.bond_type == BondType::Double {
             silicon_count += 1;
         }
     }
@@ -1376,10 +1309,7 @@ impl From<AdapterValenceError> for AdapterCleanup5Error {
     }
 }
 
-fn cleanup_explicit_valence(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<i32, AdapterValenceError> {
+fn cleanup_explicit_valence(mol: &mut AdapterMol, atom_index: u32) -> Result<i32, AdapterValenceError> {
     let mut valence = f64::from(mol.atoms[atom_index as usize].num_explicit_hydrogens);
     for &(_, bond_index) in &mol.adjacency[atom_index as usize] {
         let bond = &mol.bonds[bond_index as usize];
@@ -1541,17 +1471,14 @@ fn valence5n_cleanup6_matches(mol: &AdapterMol) -> Vec<[u32; 7]> {
                                 {
                                     continue;
                                 }
-                                let Some(bond_50) = bond_index_between(mol, query_5, query_0)
-                                else {
+                                let Some(bond_50) = bond_index_between(mol, query_5, query_0) else {
                                     continue;
                                 };
                                 if mol.bonds[bond_50 as usize].bond_type != BondType::Double {
                                     continue;
                                 }
 
-                                let mapping = [
-                                    query_0, query_1, query_2, query_3, query_4, query_5, query_6,
-                                ];
+                                let mapping = [query_0, query_1, query_2, query_3, query_4, query_5, query_6];
                                 let mut atom_set = mapping;
                                 atom_set.sort_unstable();
                                 if seen_atom_sets.insert(atom_set) {
@@ -1619,17 +1546,14 @@ fn valence5n_cleanup7_matches(mol: &AdapterMol) -> Vec<[u32; 7]> {
                                 {
                                     continue;
                                 }
-                                let Some(bond_50) = bond_index_between(mol, query_5, query_0)
-                                else {
+                                let Some(bond_50) = bond_index_between(mol, query_5, query_0) else {
                                     continue;
                                 };
                                 if mol.bonds[bond_50 as usize].bond_type != BondType::Single {
                                     continue;
                                 }
 
-                                let mapping = [
-                                    query_0, query_1, query_2, query_3, query_4, query_5, query_6,
-                                ];
+                                let mapping = [query_0, query_1, query_2, query_3, query_4, query_5, query_6];
                                 let mut atom_set = mapping;
                                 atom_set.sort_unstable();
                                 if seen_atom_sets.insert(atom_set) {
@@ -1806,10 +1730,7 @@ fn valence5n_cleanupa_matches(mol: &AdapterMol) -> Vec<[u32; 2]> {
     matches
 }
 
-pub(crate) fn valence4n_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence4n_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:324 _Valence4NCleanUp1
     // RDKit✔️✔️: bool _Valence4NCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // replace the N- with Sn
@@ -1894,8 +1815,8 @@ pub(crate) fn valence4n_cleanup1(
         (mapping[3], mapping[4], BondType::Double),
         (mapping[4], mapping[0], BondType::Single),
     ] {
-        let bond_index = bond_index_between(mol, first, second)
-            .expect("the selected substructure match contains every query bond");
+        let bond_index =
+            bond_index_between(mol, first, second).expect("the selected substructure match contains every query bond");
         mol.bonds[bond_index as usize].bond_type = bond_type;
     }
     mol.atoms[atom_position].atomic_number = 7;
@@ -1953,10 +1874,7 @@ pub(crate) fn valence4n_cleanup2(mol: &mut AdapterMol, atom_index: u32) -> bool 
     true
 }
 
-pub(crate) fn valence5n_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:393 _Valence5NCleanUp1
     // RDKit✔️✔️: bool _Valence5NCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   std::stack<Bond *> stack;
@@ -2020,10 +1938,7 @@ pub(crate) fn valence5n_cleanup1(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup2(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup2(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:417 _Valence5NCleanUp2
     // RDKit✔️✔️: bool _Valence5NCleanUp2(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   std::stack<Bond *> stack;
@@ -2094,10 +2009,7 @@ pub(crate) fn valence5n_cleanup2(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup3(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup3(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:443 _Valence5NCleanUp3
     // RDKit✔️✔️: bool _Valence5NCleanUp3(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   std::stack<Bond *> stack;
@@ -2266,10 +2178,7 @@ pub(crate) fn valence5n_cleanup4(mol: &mut AdapterMol, atom_index: u32) -> bool 
     for &(neighbor_index, bond_index) in &mol.adjacency[atom_index as usize] {
         let neighbor = &mol.atoms[neighbor_index as usize];
         let bond = &mol.bonds[bond_index as usize];
-        if neighbor.atomic_number == 14
-            && neighbor.formal_charge == -1
-            && bond.bond_type == BondType::Double
-        {
+        if neighbor.atomic_number == 14 && neighbor.formal_charge == -1 && bond.bond_type == BondType::Double {
             if silicon_count >= 2 {
                 return false;
             }
@@ -2464,10 +2373,7 @@ pub(crate) fn valence5n_cleanup5(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup6(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup6(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:625 _Valence5NCleanUp6
     // RDKit✔️✔️: bool _Valence5NCleanUp6(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // replace the N with Sn
@@ -2551,8 +2457,8 @@ pub(crate) fn valence5n_cleanup6(
         (mapping[4], mapping[5], BondType::Double),
         (mapping[5], mapping[0], BondType::Single),
     ] {
-        let bond_index = bond_index_between(mol, first, second)
-            .expect("the selected substructure match contains every query bond");
+        let bond_index =
+            bond_index_between(mol, first, second).expect("the selected substructure match contains every query bond");
         mol.bonds[bond_index as usize].bond_type = bond_type;
     }
     mol.atoms[atom_position].atomic_number = 7;
@@ -2560,10 +2466,7 @@ pub(crate) fn valence5n_cleanup6(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup7(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup7(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:679 _Valence5NCleanUp7
     // RDKit✔️✔️: bool _Valence5NCleanUp7(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // is it connected to O via alternating bonds?
@@ -2693,10 +2596,7 @@ pub(crate) fn valence5n_cleanup7(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup8(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup8(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:750 _Valence5NCleanUp8
     // RDKit✔️✔️: bool _Valence5NCleanUp8(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // replace the N with Sn
@@ -2777,8 +2677,8 @@ pub(crate) fn valence5n_cleanup8(
         (mapping[4], mapping[0], BondType::Double),
         (mapping[5], mapping[0], BondType::Single),
     ] {
-        let bond_index = bond_index_between(mol, first, second)
-            .expect("the selected substructure match contains every query bond");
+        let bond_index =
+            bond_index_between(mol, first, second).expect("the selected substructure match contains every query bond");
         mol.bonds[bond_index as usize].bond_type = bond_type;
     }
     mol.atoms[mapping[1] as usize].formal_charge = -1;
@@ -2787,10 +2687,7 @@ pub(crate) fn valence5n_cleanup8(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanup9(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanup9(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:804 _Valence5NCleanUp9
     // RDKit✔️✔️: bool _Valence5NCleanUp9(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // replace the N with Sn
@@ -2867,8 +2764,8 @@ pub(crate) fn valence5n_cleanup9(
         (mapping[1], mapping[2], BondType::Single),
         (mapping[5], mapping[0], BondType::Single),
     ] {
-        let bond_index = bond_index_between(mol, first, second)
-            .expect("the selected substructure match contains every query bond");
+        let bond_index =
+            bond_index_between(mol, first, second).expect("the selected substructure match contains every query bond");
         mol.bonds[bond_index as usize].bond_type = bond_type;
     }
     mol.atoms[mapping[2] as usize].formal_charge = -1;
@@ -2877,10 +2774,7 @@ pub(crate) fn valence5n_cleanup9(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanupa(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanupa(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:855 _Valence5NCleanUpA
     // RDKit✔️✔️: bool _Valence5NCleanUpA(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   // replace the N with Sn
@@ -3005,10 +2899,7 @@ pub(crate) fn valence5n_cleanupa(
     Ok(true)
 }
 
-pub(crate) fn valence5n_cleanupb(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5n_cleanupb(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:916 _Valence5NCleanUpB
     // RDKit✔️✔️: bool _Valence5NCleanUpB(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   std::stack<Bond *> stack;
@@ -3063,10 +2954,7 @@ pub(crate) fn valence5n_cleanupb(
     Ok(true)
 }
 
-pub(crate) fn valence7s_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence7s_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:941 _Valence7SCleanUp1
     // RDKit✔️✔️: bool _Valence7SCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->getAtomicNum() != 16 || atom->getFormalCharge() != -1 ||
@@ -3167,10 +3055,7 @@ pub(crate) fn valence7s_cleanup1(
     Ok(true)
 }
 
-pub(crate) fn valence7s_cleanup2(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence7s_cleanup2(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:989 _Valence7SCleanUp2
     // RDKit✔️✔️: bool _Valence7SCleanUp2(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->getAtomicNum() != 16 || atom->getFormalCharge() != -1 ||
@@ -3252,10 +3137,7 @@ pub(crate) fn valence7s_cleanup2(
     Ok(true)
 }
 
-pub(crate) fn valence7s_cleanup3(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence7s_cleanup3(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1021 _Valence7SCleanUp3
     // RDKit✔️✔️: bool _Valence7SCleanUp3(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->getAtomicNum() != 16 || atom->getFormalCharge() != -1 ||
@@ -3320,10 +3202,7 @@ pub(crate) fn valence7s_cleanup3(
     Ok(true)
 }
 
-pub(crate) fn valence8s_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence8s_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1044 _Valence8SCleanUp1
     // RDKit✔️✔️: bool _Valence8SCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->getAtomicNum() != 16 || atom->getFormalCharge() != -1 ||
@@ -3405,10 +3284,7 @@ pub(crate) fn valence8s_cleanup1(
     Ok(true)
 }
 
-pub(crate) fn valence8cl_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence8cl_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1079 _Valence8ClCleanUp1
     // RDKit✔️✔️: bool _Valence8ClCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->calcExplicitValence(false) != 8 || atom->getFormalCharge() != -1) {
@@ -3450,9 +3326,7 @@ pub(crate) fn valence8cl_cleanup1(
     // RDKit✔️✔️: before charge, and treats an empty neighbor range as all oxygen.
     // END RDKIT ACTIVE CONFIGURATION: _Valence8ClCleanUp1
 
-    if cleanup_explicit_valence(mol, atom_index)? != 8
-        || mol.atoms[atom_index as usize].formal_charge != -1
-    {
+    if cleanup_explicit_valence(mol, atom_index)? != 8 || mol.atoms[atom_index as usize].formal_charge != -1 {
         return Ok(false);
     }
 
@@ -3477,10 +3351,7 @@ pub(crate) fn valence8cl_cleanup1(
     Ok(true)
 }
 
-pub(crate) fn valence5cl_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence5cl_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1114 _Valence5ClCleanUp1
     // RDKit✔️✔️: bool _Valence5ClCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->calcExplicitValence(false) != 6 || atom->getFormalCharge() != 1) {
@@ -3507,9 +3378,7 @@ pub(crate) fn valence5cl_cleanup1(
     // RDKit✔️✔️: adjacency target, and deliberately does not recalculate target valence.
     // END RDKIT ACTIVE CONFIGURATION: _Valence5ClCleanUp1
 
-    if cleanup_explicit_valence(mol, atom_index)? != 6
-        || mol.atoms[atom_index as usize].formal_charge != 1
-    {
+    if cleanup_explicit_valence(mol, atom_index)? != 6 || mol.atoms[atom_index as usize].formal_charge != 1 {
         return Ok(false);
     }
 
@@ -3539,10 +3408,7 @@ pub(crate) fn valence5cl_cleanup1(
     Ok(true)
 }
 
-pub(crate) fn valence3cl_cleanup1(
-    mol: &mut AdapterMol,
-    atom_index: u32,
-) -> Result<bool, AdapterValenceError> {
+pub(crate) fn valence3cl_cleanup1(mol: &mut AdapterMol, atom_index: u32) -> Result<bool, AdapterValenceError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1134 _Valence3ClCleanUp1
     // RDKit✔️✔️: bool _Valence3ClCleanUp1(RWMol &mol, Atom *atom) {
     // RDKit✔️✔️:   if (atom->calcExplicitValence(false) != 3 || atom->getFormalCharge() != 0) {
@@ -3567,9 +3433,7 @@ pub(crate) fn valence3cl_cleanup1(
     // RDKit✔️✔️: recalculate target valence after changing the triple bond to single.
     // END RDKIT ACTIVE CONFIGURATION: _Valence3ClCleanUp1
 
-    if cleanup_explicit_valence(mol, atom_index)? != 3
-        || mol.atoms[atom_index as usize].formal_charge != 0
-    {
+    if cleanup_explicit_valence(mol, atom_index)? != 3 || mol.atoms[atom_index as usize].formal_charge != 0 {
         return Ok(false);
     }
 
@@ -3716,9 +3580,7 @@ pub(crate) fn clean_up(mol: &mut AdapterMol) -> Result<(), AdapterCleanup5Error>
                     if valence4n_cleanup1(mol, atom_index)? {
                         continue;
                     }
-                    if mol.atoms[atom_index as usize].formal_charge == -1
-                        && valence4n_cleanup2(mol, atom_index)
-                    {
+                    if mol.atoms[atom_index as usize].formal_charge == -1 && valence4n_cleanup2(mol, atom_index) {
                         continue;
                     }
                     continue;
@@ -3770,19 +3632,13 @@ pub(crate) fn clean_up(mol: &mut AdapterMol) -> Result<(), AdapterCleanup5Error>
                 }
             }
             17 => {
-                if cleanup_explicit_valence(mol, atom_index)? == 8
-                    && valence8cl_cleanup1(mol, atom_index)?
-                {
+                if cleanup_explicit_valence(mol, atom_index)? == 8 && valence8cl_cleanup1(mol, atom_index)? {
                     continue;
                 }
-                if cleanup_explicit_valence(mol, atom_index)? == 5
-                    && valence5cl_cleanup1(mol, atom_index)?
-                {
+                if cleanup_explicit_valence(mol, atom_index)? == 5 && valence5cl_cleanup1(mol, atom_index)? {
                     continue;
                 }
-                if cleanup_explicit_valence(mol, atom_index)? == 3
-                    && valence3cl_cleanup1(mol, atom_index)?
-                {
+                if cleanup_explicit_valence(mol, atom_index)? == 3 && valence3cl_cleanup1(mol, atom_index)? {
                     continue;
                 }
             }
@@ -3820,9 +3676,13 @@ pub(crate) fn clean_up(mol: &mut AdapterMol) -> Result<(), AdapterCleanup5Error>
 }
 
 fn adapter_element_name(atom: &inchi_Atom) -> Result<Vec<u8>, InchiToMolError> {
-    let end = atom.elname.iter().position(|byte| *byte == 0).ok_or(
-        InchiToMolError::InvalidSourceOutput("inchi atom element name is not NUL-terminated"),
-    )?;
+    let end = atom
+        .elname
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(InchiToMolError::InvalidSourceOutput(
+            "inchi atom element name is not NUL-terminated",
+        ))?;
     Ok(atom.elname[..end].iter().map(|byte| *byte as u8).collect())
 }
 
@@ -3843,10 +3703,7 @@ fn adapter_add_bond(molecule: &mut AdapterMol, bond: AdapterBond) -> u32 {
     index
 }
 
-fn adapter_count_swaps_to_interconvert(
-    reference: &[u32],
-    mut probe: Vec<u32>,
-) -> Result<u32, InchiToMolError> {
+fn adapter_count_swaps_to_interconvert(reference: &[u32], mut probe: Vec<u32>) -> Result<u32, InchiToMolError> {
     if reference.len() != probe.len() {
         return Err(InchiToMolError::InvalidSourceOutput(
             "tetrahedral bond ordering size mismatch",
@@ -3871,11 +3728,7 @@ fn adapter_count_swaps_to_interconvert(
     Ok(swaps)
 }
 
-fn adapter_perturbation_order(
-    molecule: &AdapterMol,
-    atom_index: u32,
-    probe: &[u32],
-) -> Result<u32, InchiToMolError> {
+fn adapter_perturbation_order(molecule: &AdapterMol, atom_index: u32, probe: &[u32]) -> Result<u32, InchiToMolError> {
     let reference: Vec<u32> = molecule
         .adjacency
         .get(atom_index as usize)
@@ -4406,9 +4259,8 @@ pub(crate) fn inchi_to_mol(
         for (index, inchi_atom) in output.atoms.iter().enumerate() {
             let bond_count = inchi_atom.num_bonds as u32;
             for bond_offset in 0..bond_count {
-                let offset = usize::try_from(bond_offset).map_err(|_| {
-                    InchiToMolError::InvalidSourceOutput("bond offset exceeds usize")
-                })?;
+                let offset = usize::try_from(bond_offset)
+                    .map_err(|_| InchiToMolError::InvalidSourceOutput("bond offset exceeds usize"))?;
                 if offset >= inchi_atom.neighbor.len() {
                     return Err(InchiToMolError::InvalidSourceOutput(
                         "InChI atom bond count exceeds fixed source array",
@@ -4416,17 +4268,13 @@ pub(crate) fn inchi_to_mol(
                 }
                 let neighbor = inchi_atom.neighbor[offset] as u32;
                 let index = index as u32;
-                if bond_register.contains(&(index, neighbor))
-                    || bond_register.contains(&(neighbor, index))
-                {
+                if bond_register.contains(&(index, neighbor)) || bond_register.contains(&(neighbor, index)) {
                     continue;
                 }
                 bond_register.insert((index, neighbor));
 
                 let raw_bond_type = inchi_atom.bond_type[offset] as u32;
-                let (bond_type, is_aromatic) = if raw_bond_type
-                    <= tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE as u32
-                {
+                let (bond_type, is_aromatic) = if raw_bond_type <= tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE as u32 {
                     (
                         match raw_bond_type {
                             0 => BondType::Unspecified,
@@ -4439,9 +4287,10 @@ pub(crate) fn inchi_to_mol(
                     )
                 } else if raw_bond_type == tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as u32 {
                     diagnostics.push(AdapterDiagnostic {
-                            level: AdapterDiagnosticLevel::Warning,
-                            message: "receive ALTERN bond type which should be avoided. This is treated as aromatic.".to_owned(),
-                        });
+                        level: AdapterDiagnosticLevel::Warning,
+                        message: "receive ALTERN bond type which should be avoided. This is treated as aromatic."
+                            .to_owned(),
+                    });
                     (BondType::Aromatic, true)
                 } else {
                     diagnostics.push(AdapterDiagnostic {
@@ -4455,21 +4304,21 @@ pub(crate) fn inchi_to_mol(
                     });
                 };
 
-                let begin_atom_index = *index_to_atom_index_mapping.get(index as usize).ok_or(
-                    InchiToMolError::InvalidSourceOutput(
-                        "source atom index is outside atom mapping",
-                    ),
-                )?;
-                let end_atom_index = *index_to_atom_index_mapping.get(neighbor as usize).ok_or(
-                    InchiToMolError::InvalidSourceOutput(
-                        "source neighbor index is outside atom mapping",
-                    ),
-                )?;
+                let begin_atom_index =
+                    *index_to_atom_index_mapping
+                        .get(index as usize)
+                        .ok_or(InchiToMolError::InvalidSourceOutput(
+                            "source atom index is outside atom mapping",
+                        ))?;
+                let end_atom_index =
+                    *index_to_atom_index_mapping
+                        .get(neighbor as usize)
+                        .ok_or(InchiToMolError::InvalidSourceOutput(
+                            "source neighbor index is outside atom mapping",
+                        ))?;
                 let raw_stereo = i32::from(inchi_atom.bond_stereo[offset]);
                 let direction = match raw_stereo {
-                    value if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE => {
-                        BondDirection::None
-                    }
+                    value if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE => BondDirection::None,
                     value
                         if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP
                             || value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN =>
@@ -4482,9 +4331,7 @@ pub(crate) fn inchi_to_mol(
                     {
                         BondDirection::BeginDash
                     }
-                    value if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER => {
-                        BondDirection::Unknown
-                    }
+                    value if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER => BondDirection::Unknown,
                     value if value == tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER => {
                         BondDirection::EitherDouble
                     }
@@ -4505,11 +4352,9 @@ pub(crate) fn inchi_to_mol(
         }
 
         for (isotope, source_atom_index, repeat) in isotopes {
-            let attached_atom_index = *index_to_atom_index_mapping
-                .get(source_atom_index as usize)
-                .ok_or(InchiToMolError::InvalidSourceOutput(
-                    "isotope-H parent index is outside atom mapping",
-                ))?;
+            let attached_atom_index = *index_to_atom_index_mapping.get(source_atom_index as usize).ok_or(
+                InchiToMolError::InvalidSourceOutput("isotope-H parent index is outside atom mapping"),
+            )?;
             for _ in 0..repeat {
                 let hydrogen_index = adapter_add_atom(
                     &mut built,
@@ -4569,29 +4414,21 @@ pub(crate) fn inchi_to_mol(
                         let original_left_neighbor = mapped(stereo.neighbor[0])? as i32;
                         let original_right_neighbor = mapped(stereo.neighbor[3])? as i32;
 
-                        let Some(double_bond_index) = bond_index_between(&built, left, right)
-                        else {
+                        let Some(double_bond_index) = bond_index_between(&built, left, right) else {
                             diagnostics.push(AdapterDiagnostic {
                                 level: AdapterDiagnosticLevel::Warning,
-                                message:
-                                    "Extended double-bond stereochemistry (e.g. C=C=C=C) ignored"
-                                        .to_owned(),
+                                message: "Extended double-bond stereochemistry (e.g. C=C=C=C) ignored".to_owned(),
                             });
                             continue;
                         };
 
-                        let find_neighbors = |molecule: &AdapterMol,
-                                              reference: u32|
-                         -> (i32, i32) {
+                        let find_neighbors = |molecule: &AdapterMol, reference: u32| -> (i32, i32) {
                             let mut neighbor = -1_i32;
                             let mut extra_neighbor = -1_i32;
                             let mut cip = -1_i32;
-                            for &(other_atom, bond_index) in &molecule.adjacency[reference as usize]
-                            {
+                            for &(other_atom, bond_index) in &molecule.adjacency[reference as usize] {
                                 let bond = &molecule.bonds[bond_index as usize];
-                                if bond.bond_type != BondType::Single
-                                    && bond.bond_type != BondType::Aromatic
-                                {
+                                if bond.bond_type != BondType::Single && bond.bond_type != BondType::Aromatic {
                                     continue;
                                 }
                                 // GCC converts the unsigned rank to the source `int _cip`
@@ -4614,53 +4451,34 @@ pub(crate) fn inchi_to_mol(
                         if left_neighbor < 0 || right_neighbor < 0 {
                             diagnostics.push(AdapterDiagnostic {
                                 level: AdapterDiagnosticLevel::Warning,
-                                message: "Ignoring stereochemistry on double-bond without appropriate neighbors".to_owned(),
+                                message: "Ignoring stereochemistry on double-bond without appropriate neighbors"
+                                    .to_owned(),
                             });
                             continue;
                         }
 
                         let switch_ez = (original_left_neighbor == left_neighbor
                             && original_right_neighbor != right_neighbor)
-                            || (original_left_neighbor != left_neighbor
-                                && original_right_neighbor == right_neighbor);
+                            || (original_left_neighbor != left_neighbor && original_right_neighbor == right_neighbor);
                         let mut effective_parity = parity;
-                        if effective_parity == tagINCHIStereoParity0D_INCHI_PARITY_ODD as i32
-                            && switch_ez
-                        {
+                        if effective_parity == tagINCHIStereoParity0D_INCHI_PARITY_ODD as i32 && switch_ez {
                             effective_parity = tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i32;
-                        } else if effective_parity
-                            == tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i32
-                            && switch_ez
-                        {
+                        } else if effective_parity == tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i32 && switch_ez {
                             effective_parity = tagINCHIStereoParity0D_INCHI_PARITY_ODD as i32;
                         }
 
                         let mut find_bond_pairs =
-                            |reference: u32,
-                             neighbor: i32,
-                             extra_neighbor: i32|
-                             -> Result<u32, InchiToMolError> {
-                                let selected =
-                                    bond_index_between(&built, reference, neighbor as u32).ok_or(
-                                        InchiToMolError::InvalidSourceOutput(
-                                            "selected stereo neighbor has no bond",
-                                        ),
-                                    )?;
+                            |reference: u32, neighbor: i32, extra_neighbor: i32| -> Result<u32, InchiToMolError> {
+                                let selected = bond_index_between(&built, reference, neighbor as u32).ok_or(
+                                    InchiToMolError::InvalidSourceOutput("selected stereo neighbor has no bond"),
+                                )?;
                                 if extra_neighbor >= 0 {
                                     let mut modifier = -1_i32;
-                                    if built.bonds[selected as usize].begin_atom_index != reference
-                                    {
+                                    if built.bonds[selected as usize].begin_atom_index != reference {
                                         modifier *= -1;
                                     }
-                                    let extra = bond_index_between(
-                                        &built,
-                                        reference,
-                                        extra_neighbor as u32,
-                                    )
-                                    .ok_or(
-                                        InchiToMolError::InvalidSourceOutput(
-                                            "extra stereo neighbor has no bond",
-                                        ),
+                                    let extra = bond_index_between(&built, reference, extra_neighbor as u32).ok_or(
+                                        InchiToMolError::InvalidSourceOutput("extra stereo neighbor has no bond"),
                                     )?;
                                     if built.bonds[extra as usize].begin_atom_index != reference {
                                         modifier *= -1;
@@ -4674,8 +4492,7 @@ pub(crate) fn inchi_to_mol(
                                 Ok(selected)
                             };
                         let left_bond = find_bond_pairs(left, left_neighbor, extra_left_neighbor)?;
-                        let right_bond =
-                            find_bond_pairs(right, right_neighbor, extra_right_neighbor)?;
+                        let right_bond = find_bond_pairs(right, right_neighbor, extra_right_neighbor)?;
 
                         let mut modifier = -1_i32;
                         if built.bonds[left_bond as usize].begin_atom_index != left {
@@ -4693,18 +4510,14 @@ pub(crate) fn inchi_to_mol(
                             } else {
                                 z_bond_pairs.push((left_bond as i32, right_bond as i32));
                             }
-                        } else if effective_parity
-                            == tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i32
-                        {
+                        } else if effective_parity == tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i32 {
                             bond.stereo = BondStereo::E;
                             if modifier == 1 {
                                 z_bond_pairs.push((left_bond as i32, right_bond as i32));
                             } else {
                                 e_bond_pairs.push((left_bond as i32, right_bond as i32));
                             }
-                        } else if effective_parity
-                            == tagINCHIStereoParity0D_INCHI_PARITY_NONE as i32
-                        {
+                        } else if effective_parity == tagINCHIStereoParity0D_INCHI_PARITY_NONE as i32 {
                             bond.stereo = BondStereo::None;
                         } else {
                             bond.stereo = BondStereo::Any;
@@ -4734,9 +4547,7 @@ pub(crate) fn inchi_to_mol(
                                     "tetrahedral neighbor is outside atom mapping",
                                 ))?;
                             let bond = bond_index_between(&built, central, end).ok_or(
-                                InchiToMolError::InvalidSourceOutput(
-                                    "tetrahedral neighbor has no central bond",
-                                ),
+                                InchiToMolError::InvalidSourceOutput("tetrahedral neighbor has no central bond"),
                             )?;
                             neighbors.push(bond);
                             neighbor_position += 1;
@@ -4755,7 +4566,8 @@ pub(crate) fn inchi_to_mol(
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_Allene as i32 => {
                         diagnostics.push(AdapterDiagnostic {
                             level: AdapterDiagnosticLevel::Warning,
-                            message: "Allene-style stereochemistry is not supported yet and will be ignored.".to_owned(),
+                            message: "Allene-style stereochemistry is not supported yet and will be ignored."
+                                .to_owned(),
                         });
                     }
                     value => {
@@ -4792,10 +4604,7 @@ pub(crate) fn inchi_to_mol(
         molecule = Some(built);
     }
 
-    Ok(InchiToMolResult {
-        molecule,
-        diagnostics,
-    })
+    Ok(InchiToMolResult { molecule, diagnostics })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4804,10 +4613,7 @@ pub(crate) enum FixOptionSymbolError {
     OutputIsTooSmall,
 }
 
-pub(crate) fn fix_option_symbol(
-    input: &[u8],
-    output: &mut [u8],
-) -> Result<(), FixOptionSymbolError> {
+pub(crate) fn fix_option_symbol(input: &[u8], output: &mut [u8]) -> Result<(), FixOptionSymbolError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1674 fixOptionSymbol
     // RDKit✔️✔️: void fixOptionSymbol(const char *in, char *out) {
     // RDKit✔️✔️:   unsigned int i;
@@ -4887,9 +4693,7 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
     let mut matches = Vec::new();
 
     for query_0 in 0..molecule.atoms.len() as u32 {
-        if molecule.atoms[query_0 as usize].atomic_number != 8
-            || molecule.atoms[query_0 as usize].formal_charge != -1
-        {
+        if molecule.atoms[query_0 as usize].atomic_number != 8 || molecule.atoms[query_0 as usize].formal_charge != -1 {
             continue;
         }
         let mut central_atoms = molecule.adjacency[query_0 as usize]
@@ -5829,10 +5633,7 @@ mod tests {
     }
 
     impl InchiKeyEngine for ScriptedInchiKeyEngine {
-        fn get_inchi_key(
-            &mut self,
-            inchi_with_nul: &[u8],
-        ) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
+        fn get_inchi_key(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
             self.seen_inputs.push(inchi_with_nul.to_vec());
             self.output.clone()
         }
@@ -5866,10 +5667,7 @@ mod tests {
             (INCHIKEY_INVALID_INCHI_PREFIX as i32, "Invalid InChI prefix"),
             (INCHIKEY_NOT_ENOUGH_MEMORY as i32, "Not enough memory"),
             (INCHIKEY_INVALID_INCHI as i32, "Invalid input InChI string"),
-            (
-                INCHIKEY_INVALID_STD_INCHI as i32,
-                "Invalid standard InChI string",
-            ),
+            (INCHIKEY_INVALID_STD_INCHI as i32, "Invalid standard InChI string"),
             (i32::MAX, ""),
         ];
         for &(status, prefix) in failures {
@@ -5901,9 +5699,7 @@ mod tests {
         };
         assert_eq!(
             inchi_to_inchi_key(&mut engine_error, b"InChI=1S/CH4/h1H4"),
-            Err(InchiToInchiKeyError::Source(
-                SourceHeapError::AllocationFailed
-            ))
+            Err(InchiToInchiKeyError::Source(SourceHeapError::AllocationFailed))
         );
 
         let mut invalid_success = ScriptedInchiKeyEngine {
@@ -5971,18 +5767,12 @@ mod tests {
         );
         let output = String::from_utf8(oracle.stdout).expect("oracle output must be UTF-8 JSONL");
         let records = output.lines().collect::<Vec<_>>();
-        assert_eq!(
-            records.len(),
-            9,
-            "InchiToInchiKey oracle case count changed"
-        );
+        assert_eq!(records.len(), 9, "InchiToInchiKey oracle case count changed");
         let mut case_ids = BTreeSet::new();
 
         for line in records {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
-            let case_id = official["case_id"]
-                .as_str()
-                .expect("case_id must be a string");
+            let case_id = official["case_id"].as_str().expect("case_id must be a string");
             assert!(case_ids.insert(case_id.to_owned()), "duplicate {case_id}");
             let input = bytes(&official["input"]["inchi"], "input.inchi", case_id);
             let status = i32::try_from(
@@ -6115,10 +5905,7 @@ mod tests {
         );
         assert_eq!(generation.calls, ["GetINCHI", "FreeINCHI"]);
         assert_eq!(generation.seen_inputs.len(), 1);
-        assert_eq!(
-            generation.seen_inputs[0].options_with_nul,
-            Some(b"-FixedH\0".to_vec())
-        );
+        assert_eq!(generation.seen_inputs[0].options_with_nul, Some(b"-FixedH\0".to_vec()));
         assert_eq!(key.seen_inputs, [b"InChI=1S/generated\0".to_vec()]);
         assert_eq!(molecule, molecule_before);
 
@@ -6176,9 +5963,9 @@ mod tests {
                 &AdapterMol::from_graph(Vec::new(), Vec::new()),
                 None,
             ),
-            Err(MolToInchiKeyError::InchiToInchiKey(
-                InchiToInchiKeyError::Source(SourceHeapError::PointerOutOfBounds)
-            ))
+            Err(MolToInchiKeyError::InchiToInchiKey(InchiToInchiKeyError::Source(
+                SourceHeapError::PointerOutOfBounds
+            )))
         );
         assert_eq!(generated_before_key_error.calls, ["GetINCHI", "FreeINCHI"]);
         assert_eq!(failed_key.seen_inputs.len(), 1);
@@ -6218,10 +6005,7 @@ mod tests {
         }
 
         impl InchiKeyEngine for OrderedKeyEngine {
-            fn get_inchi_key(
-                &mut self,
-                inchi_with_nul: &[u8],
-            ) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
+            fn get_inchi_key(&mut self, inchi_with_nul: &[u8]) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
                 self.calls.borrow_mut().push("GetINCHIKeyFromINCHI");
                 self.inner.get_inchi_key(inchi_with_nul)
             }
@@ -6297,9 +6081,7 @@ mod tests {
 
         for line in records {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
-            let case_id = official["case_id"]
-                .as_str()
-                .expect("case_id must be a string");
+            let case_id = official["case_id"].as_str().expect("case_id must be a string");
             assert!(case_ids.insert(case_id.to_owned()), "duplicate {case_id}");
             assert_eq!(official["schema_version"], "cosmolkit-inchi-rdkit-cpp-v1");
             assert_eq!(official["rdkit_version"], "2026.03.1");
@@ -6321,22 +6103,14 @@ mod tests {
             );
 
             let input = &official["input"];
-            assert_eq!(
-                input.as_object().unwrap().len(),
-                10,
-                "{case_id}: input fields"
-            );
+            assert_eq!(input.as_object().unwrap().len(), 10, "{case_id}: input fields");
             let atom_fields = input["atoms"].as_array().expect("atoms must be an array");
             let mut hydrogens = Vec::with_capacity(atom_fields.len());
             let mut total_degrees = Vec::with_capacity(atom_fields.len());
             let atoms = atom_fields
                 .iter()
                 .map(|field| {
-                    assert_eq!(
-                        field.as_object().unwrap().len(),
-                        10,
-                        "{case_id}: atom fields"
-                    );
+                    assert_eq!(field.as_object().unwrap().len(), 10, "{case_id}: atom fields");
                     hydrogens.push(mol_to_inchi_oracle_u32(
                         &field["total_hydrogens"],
                         "total_hydrogens",
@@ -6345,23 +6119,11 @@ mod tests {
                     total_degrees.push(if field["total_degree"].is_null() {
                         None
                     } else {
-                        Some(mol_to_inchi_oracle_u32(
-                            &field["total_degree"],
-                            "total_degree",
-                            case_id,
-                        ))
+                        Some(mol_to_inchi_oracle_u32(&field["total_degree"], "total_degree", case_id))
                     });
                     AdapterAtom {
-                        atomic_number: mol_to_inchi_oracle_i32(
-                            &field["atomic_number"],
-                            "atomic_number",
-                            case_id,
-                        ),
-                        formal_charge: mol_to_inchi_oracle_i32(
-                            &field["formal_charge"],
-                            "formal_charge",
-                            case_id,
-                        ),
+                        atomic_number: mol_to_inchi_oracle_i32(&field["atomic_number"], "atomic_number", case_id),
+                        formal_charge: mol_to_inchi_oracle_i32(&field["formal_charge"], "formal_charge", case_id),
                         num_explicit_hydrogens: mol_to_inchi_oracle_u32(
                             &field["explicit_hydrogens"],
                             "explicit_hydrogens",
@@ -6374,9 +6136,7 @@ mod tests {
                             "radical_electrons",
                             case_id,
                         ),
-                        no_implicit: field["no_implicit"]
-                            .as_bool()
-                            .expect("no_implicit must be bool"),
+                        no_implicit: field["no_implicit"].as_bool().expect("no_implicit must be bool"),
                         chiral_tag: mol_to_inchi_oracle_chiral_tag(&field["chiral_tag"], case_id),
                         cip_rank: None,
                         cached_explicit_valence: None,
@@ -6389,16 +6149,8 @@ mod tests {
                 .expect("bonds must be an array")
                 .iter()
                 .map(|field| AdapterBond {
-                    begin_atom_index: mol_to_inchi_oracle_u32(
-                        &field["begin_atom_index"],
-                        "begin_atom_index",
-                        case_id,
-                    ),
-                    end_atom_index: mol_to_inchi_oracle_u32(
-                        &field["end_atom_index"],
-                        "end_atom_index",
-                        case_id,
-                    ),
+                    begin_atom_index: mol_to_inchi_oracle_u32(&field["begin_atom_index"], "begin_atom_index", case_id),
+                    end_atom_index: mol_to_inchi_oracle_u32(&field["end_atom_index"], "end_atom_index", case_id),
                     bond_type: mol_to_inchi_oracle_bond_type(&field["bond_type"], case_id),
                     direction: mol_to_inchi_oracle_direction(&field["direction"], case_id),
                     is_aromatic: field["aromatic"].as_bool().expect("aromatic must be bool"),
@@ -6436,21 +6188,13 @@ mod tests {
             let molecule_before = molecule.clone();
 
             let scripted = &input["scripted_generation_output"];
-            let throw_on_get = scripted["throw_on_get"]
-                .as_bool()
-                .expect("throw_on_get must be bool");
-            let throw_on_free = scripted["throw_on_free"]
-                .as_bool()
-                .expect("throw_on_free must be bool");
+            let throw_on_get = scripted["throw_on_get"].as_bool().expect("throw_on_get must be bool");
+            let throw_on_free = scripted["throw_on_free"].as_bool().expect("throw_on_free must be bool");
             let shared_calls = Rc::new(RefCell::new(Vec::new()));
             let mut generation = OrderedGenerationEngine {
                 inner: ScriptedGenerationEngine {
                     output: AdapterInchiGenerationOutput {
-                        return_code: mol_to_inchi_oracle_i32(
-                            &scripted["return_code"],
-                            "return_code",
-                            case_id,
-                        ),
+                        return_code: mol_to_inchi_oracle_i32(&scripted["return_code"], "return_code", case_id),
                         inchi: optional_bytes(&scripted["inchi"], case_id),
                         message: optional_bytes(&scripted["message"], case_id),
                         log: optional_bytes(&scripted["log"], case_id),
@@ -6462,9 +6206,7 @@ mod tests {
                 },
                 calls: Rc::clone(&shared_calls),
             };
-            let throw_on_key = input["throw_on_key"]
-                .as_bool()
-                .expect("throw_on_key must be bool");
+            let throw_on_key = input["throw_on_key"].as_bool().expect("throw_on_key must be bool");
             let mut key = OrderedKeyEngine {
                 inner: ScriptedInchiKeyEngine {
                     output: if throw_on_key {
@@ -6476,10 +6218,7 @@ mod tests {
                                 "scripted_key_status",
                                 case_id,
                             ),
-                            key_buffer: mol_to_inchi_oracle_bytes(
-                                &input["scripted_key_buffer"],
-                                case_id,
-                            ),
+                            key_buffer: mol_to_inchi_oracle_bytes(&input["scripted_key_buffer"], case_id),
                         })
                     },
                     seen_inputs: Vec::new(),
@@ -6500,22 +6239,10 @@ mod tests {
             } else {
                 Some(mol_to_inchi_oracle_bytes(&input["options"], case_id))
             };
-            let result = mol_to_inchi_key(
-                &mut generation,
-                &mut key,
-                &mut toolkit,
-                &molecule,
-                options.as_deref(),
-            );
+            let result = mol_to_inchi_key(&mut generation, &mut key, &mut toolkit, &molecule, options.as_deref());
 
             let (status, exception_kind, exception_message, key_bytes, diagnostics) = match result {
-                Ok(result) => (
-                    "returned",
-                    Value::Null,
-                    Value::Null,
-                    result.key,
-                    result.diagnostics,
-                ),
+                Ok(result) => ("returned", Value::Null, Value::Null, result.key, result.diagnostics),
                 Err(MolToInchiKeyError::MolToInchi(MolToInchiError::Toolkit(error))) => (
                     "exception",
                     json!("MolSanitizeException"),
@@ -6523,37 +6250,27 @@ mod tests {
                     Vec::new(),
                     Vec::new(),
                 ),
-                Err(MolToInchiKeyError::MolToInchi(MolToInchiError::Source(_))) if throw_on_get => {
-                    (
-                        "exception",
-                        json!("runtime_error"),
-                        json!("GetINCHI"),
-                        Vec::new(),
-                        Vec::new(),
-                    )
-                }
-                Err(MolToInchiKeyError::MolToInchi(MolToInchiError::Source(_)))
-                    if throw_on_free =>
-                {
-                    (
-                        "exception",
-                        json!("runtime_error"),
-                        json!("FreeINCHI"),
-                        Vec::new(),
-                        Vec::new(),
-                    )
-                }
-                Err(MolToInchiKeyError::InchiToInchiKey(InchiToInchiKeyError::Source(_)))
-                    if throw_on_key =>
-                {
-                    (
-                        "exception",
-                        json!("runtime_error"),
-                        json!("GetINCHIKeyFromINCHI"),
-                        Vec::new(),
-                        Vec::new(),
-                    )
-                }
+                Err(MolToInchiKeyError::MolToInchi(MolToInchiError::Source(_))) if throw_on_get => (
+                    "exception",
+                    json!("runtime_error"),
+                    json!("GetINCHI"),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                Err(MolToInchiKeyError::MolToInchi(MolToInchiError::Source(_))) if throw_on_free => (
+                    "exception",
+                    json!("runtime_error"),
+                    json!("FreeINCHI"),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                Err(MolToInchiKeyError::InchiToInchiKey(InchiToInchiKeyError::Source(_))) if throw_on_key => (
+                    "exception",
+                    json!("runtime_error"),
+                    json!("GetINCHIKeyFromINCHI"),
+                    Vec::new(),
+                    Vec::new(),
+                ),
                 Err(error) => panic!("{case_id}: unexpected Rust error {error:?}"),
             };
             let warning_text = diagnostics
@@ -6579,8 +6296,7 @@ mod tests {
                                 .take_while(|byte| **byte != 0)
                                 .map(|byte| *byte as u8)
                                 .collect::<Vec<_>>();
-                            let count = usize::try_from(atom.num_bonds)
-                                .expect("num_bonds must be nonnegative");
+                            let count = usize::try_from(atom.num_bonds).expect("num_bonds must be nonnegative");
                             json!({
                                 "x": atom.x,
                                 "y": atom.y,
@@ -6661,10 +6377,7 @@ mod tests {
                 "original_bonds": original_bonds(&molecule),
                 "original_conformers": molecule.conformers,
             });
-            assert_eq!(
-                molecule, molecule_before,
-                "{case_id}: original molecule mutated"
-            );
+            assert_eq!(molecule, molecule_before, "{case_id}: original molecule mutated");
             assert_eq!(
                 actual_output, official["output"],
                 "{case_id}: exact MolToInchiKey record mismatch"
@@ -6711,9 +6424,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             for handle in handles {
-                handle
-                    .join()
-                    .expect("pinned RDKit scalar oracle worker must not panic");
+                handle.join().expect("pinned RDKit scalar oracle worker must not panic");
             }
         });
     }
@@ -6751,15 +6462,13 @@ mod tests {
                 .collect(),
             bonds
                 .iter()
-                .map(
-                    |&(begin_atom_index, end_atom_index, bond_type)| AdapterBond {
-                        begin_atom_index,
-                        end_atom_index,
-                        bond_type,
-                        direction: BondDirection::None,
-                        ..AdapterBond::default()
-                    },
-                )
+                .map(|&(begin_atom_index, end_atom_index, bond_type)| AdapterBond {
+                    begin_atom_index,
+                    end_atom_index,
+                    bond_type,
+                    direction: BondDirection::None,
+                    ..AdapterBond::default()
+                })
                 .collect(),
         )
     }
@@ -6854,10 +6563,7 @@ mod tests {
             }
         }
 
-        fn average_atomic_weight(
-            &mut self,
-            atomic_number: i32,
-        ) -> Result<f64, AdapterToolkitError> {
+        fn average_atomic_weight(&mut self, atomic_number: i32) -> Result<f64, AdapterToolkitError> {
             self.record("average_atomic_weight")?;
             match atomic_number {
                 1 => Ok(1.008),
@@ -6883,10 +6589,7 @@ mod tests {
             self.record("update_property_cache")
         }
 
-        fn assign_atom_cip_ranks(
-            &mut self,
-            molecule: &mut AdapterMol,
-        ) -> Result<Vec<u32>, AdapterToolkitError> {
+        fn assign_atom_cip_ranks(&mut self, molecule: &mut AdapterMol) -> Result<Vec<u32>, AdapterToolkitError> {
             self.record("assign_atom_cip_ranks")?;
             Ok(self
                 .ranks
@@ -6894,17 +6597,11 @@ mod tests {
                 .unwrap_or_else(|| (0..molecule.atoms.len() as u32).collect()))
         }
 
-        fn remove_hydrogens(
-            &mut self,
-            _molecule: &mut AdapterMol,
-        ) -> Result<(), AdapterToolkitError> {
+        fn remove_hydrogens(&mut self, _molecule: &mut AdapterMol) -> Result<(), AdapterToolkitError> {
             self.record("remove_hydrogens")
         }
 
-        fn sanitize_molecule(
-            &mut self,
-            _molecule: &mut AdapterMol,
-        ) -> Result<(), AdapterToolkitError> {
+        fn sanitize_molecule(&mut self, _molecule: &mut AdapterMol) -> Result<(), AdapterToolkitError> {
             self.record("sanitize_molecule")
         }
 
@@ -6950,10 +6647,7 @@ mod tests {
         atoms[second].num_bonds += 1;
     }
 
-    fn scripted_output(
-        atoms: Vec<inchi_Atom>,
-        stereo0d: Vec<inchi_Stereo0D>,
-    ) -> AdapterInchiStructureOutput {
+    fn scripted_output(atoms: Vec<inchi_Atom>, stereo0d: Vec<inchi_Stereo0D>) -> AdapterInchiStructureOutput {
         AdapterInchiStructureOutput {
             return_code: tagRetValGetINCHI_inchi_Ret_OKAY,
             atoms,
@@ -7064,18 +6758,12 @@ mod tests {
         }
 
         fn hydrogen_count(&self, atom_index: u32) -> u32 {
-            self.hydrogens
-                .get(atom_index as usize)
-                .copied()
-                .unwrap_or(0)
+            self.hydrogens.get(atom_index as usize).copied().unwrap_or(0)
         }
     }
 
     impl MolToInchiToolkit for RecordingGenerationToolkit {
-        fn needs_update_property_cache(
-            &mut self,
-            _molecule: &AdapterMol,
-        ) -> Result<bool, AdapterToolkitError> {
+        fn needs_update_property_cache(&mut self, _molecule: &AdapterMol) -> Result<bool, AdapterToolkitError> {
             self.record("needs_update_property_cache")?;
             Ok(self.needs_update)
         }
@@ -7089,11 +6777,7 @@ mod tests {
             self.record("update_property_cache")
         }
 
-        fn kekulize(
-            &mut self,
-            _molecule: &mut AdapterMol,
-            mark_atoms_bonds: bool,
-        ) -> Result<(), AdapterToolkitError> {
+        fn kekulize(&mut self, _molecule: &mut AdapterMol, mark_atoms_bonds: bool) -> Result<(), AdapterToolkitError> {
             assert!(!mark_atoms_bonds);
             self.record("kekulize")
         }
@@ -7142,11 +6826,7 @@ mod tests {
             }
         }
 
-        fn total_num_hydrogens(
-            &mut self,
-            _molecule: &AdapterMol,
-            atom_index: u32,
-        ) -> Result<u32, AdapterToolkitError> {
+        fn total_num_hydrogens(&mut self, _molecule: &AdapterMol, atom_index: u32) -> Result<u32, AdapterToolkitError> {
             self.record("total_num_hydrogens")?;
             Ok(self.hydrogen_count(atom_index))
         }
@@ -7160,19 +6840,14 @@ mod tests {
             Ok(0)
         }
 
-        fn total_degree(
-            &mut self,
-            molecule: &AdapterMol,
-            atom_index: u32,
-        ) -> Result<u32, AdapterToolkitError> {
+        fn total_degree(&mut self, molecule: &AdapterMol, atom_index: u32) -> Result<u32, AdapterToolkitError> {
             self.record("total_degree")?;
             Ok(self
                 .total_degrees
                 .get(atom_index as usize)
                 .and_then(|degree| *degree)
                 .unwrap_or_else(|| {
-                    molecule.adjacency[atom_index as usize].len() as u32
-                        + self.hydrogen_count(atom_index)
+                    molecule.adjacency[atom_index as usize].len() as u32 + self.hydrogen_count(atom_index)
                 }))
         }
     }
@@ -7191,10 +6866,7 @@ mod tests {
         toolkit: &mut RecordingGenerationToolkit,
         engine: &mut ScriptedGenerationEngine,
         options: Option<&[u8]>,
-    ) -> (
-        Result<MolToInchiResult, MolToInchiError>,
-        ExtraInchiReturnValues,
-    ) {
+    ) -> (Result<MolToInchiResult, MolToInchiError>, ExtraInchiReturnValues) {
         let mut values = generation_values();
         let result = mol_to_inchi(engine, toolkit, molecule, &mut values, options);
         (result, values)
@@ -7241,10 +6913,7 @@ mod tests {
         assert_eq!(atom_engine.calls, ["GetINCHI", "FreeINCHI"]);
         assert_eq!(atom_engine.seen_inputs.len(), 1);
         let atom_input = &atom_engine.seen_inputs[0];
-        assert_eq!(
-            atom_input.options_with_nul,
-            Some(b"-AuxNone -FixedH\0".to_vec())
-        );
+        assert_eq!(atom_input.options_with_nul, Some(b"-AuxNone -FixedH\0".to_vec()));
         assert!(atom_input.stereo0d.is_empty());
         assert_eq!(atom_input.atoms.len(), 8);
         assert!(
@@ -7265,11 +6934,7 @@ mod tests {
         assert!(atom_input.atoms.iter().all(|atom| atom.radical == 0));
         assert_eq!(
             atom_toolkit.calls[..3],
-            [
-                "needs_update_property_cache",
-                "update_property_cache",
-                "kekulize"
-            ]
+            ["needs_update_property_cache", "update_property_cache", "kekulize"]
         );
         assert_eq!(
             atom_toolkit
@@ -7288,12 +6953,7 @@ mod tests {
         let cleanup_before = cleanup_molecule.clone();
         let mut cleanup_toolkit = RecordingGenerationToolkit::default();
         let mut cleanup_engine = ScriptedGenerationEngine::default();
-        let (cleanup_result, _) = run_generation(
-            &cleanup_molecule,
-            &mut cleanup_toolkit,
-            &mut cleanup_engine,
-            None,
-        );
+        let (cleanup_result, _) = run_generation(&cleanup_molecule, &mut cleanup_toolkit, &mut cleanup_engine, None);
         assert!(cleanup_result.is_ok());
         assert_eq!(cleanup_molecule, cleanup_before);
         assert_eq!(
@@ -7310,11 +6970,7 @@ mod tests {
         );
         assert_eq!(
             cleanup_engine.seen_inputs[0].atoms[1].bond_type[..3],
-            [
-                BondType::Single as i8,
-                BondType::Double as i8,
-                BondType::Double as i8
-            ]
+            [BondType::Single as i8, BondType::Double as i8, BondType::Double as i8]
         );
 
         let mut conformer_molecule = AdapterMol::from_graph(
@@ -7327,12 +6983,8 @@ mod tests {
         conformer_molecule.conformers = vec![vec![[1.25, -2.5, 3.75]], vec![[9.0; 3]]];
         let mut conformer_toolkit = RecordingGenerationToolkit::default();
         let mut conformer_engine = ScriptedGenerationEngine::default();
-        let (conformer_result, _) = run_generation(
-            &conformer_molecule,
-            &mut conformer_toolkit,
-            &mut conformer_engine,
-            None,
-        );
+        let (conformer_result, _) =
+            run_generation(&conformer_molecule, &mut conformer_toolkit, &mut conformer_engine, None);
         assert!(conformer_result.is_ok());
         assert_eq!(
             (
@@ -7438,18 +7090,14 @@ mod tests {
                 ..RecordingGenerationToolkit::default()
             };
             let mut tetra_engine = ScriptedGenerationEngine::default();
-            let (tetra_result, _) =
-                run_generation(&tetra_molecule, &mut tetra_toolkit, &mut tetra_engine, None);
+            let (tetra_result, _) = run_generation(&tetra_molecule, &mut tetra_toolkit, &mut tetra_engine, None);
             let tetra_result = tetra_result.unwrap();
             let stereo = &tetra_engine.seen_inputs[0].stereo0d;
             match expected_parity {
                 Some(parity) => {
                     assert_eq!(stereo.len(), 1);
                     assert_eq!(stereo[0].central_atom, 0);
-                    assert_eq!(
-                        stereo[0].type_,
-                        tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8
-                    );
+                    assert_eq!(stereo[0].type_, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8);
                     assert_eq!(stereo[0].parity, parity);
                     assert_eq!(stereo[0].neighbor, expected_neighbors);
                     assert!(tetra_result.diagnostics.is_empty());
@@ -7521,8 +7169,7 @@ mod tests {
             );
             let mut bond_toolkit = RecordingGenerationToolkit::default();
             let mut bond_engine = ScriptedGenerationEngine::default();
-            let (bond_result, _) =
-                run_generation(&bond_molecule, &mut bond_toolkit, &mut bond_engine, None);
+            let (bond_result, _) = run_generation(&bond_molecule, &mut bond_toolkit, &mut bond_engine, None);
             let bond_result = bond_result.unwrap();
             assert_eq!(bond_engine.seen_inputs[0].atoms[0].num_bonds, 1);
             assert_eq!(bond_engine.seen_inputs[0].atoms[0].neighbor[0], 1);
@@ -7568,33 +7215,18 @@ mod tests {
                 );
                 let mut direction_toolkit = RecordingGenerationToolkit::default();
                 let mut direction_engine = ScriptedGenerationEngine::default();
-                let (direction_result, _) = run_generation(
-                    &direction_molecule,
-                    &mut direction_toolkit,
-                    &mut direction_engine,
-                    None,
-                );
+                let (direction_result, _) =
+                    run_generation(&direction_molecule, &mut direction_toolkit, &mut direction_engine, None);
                 assert!(direction_result.is_ok());
                 let modifier = if reversed { -1 } else { 1 };
                 let expected = match direction {
-                    BondDirection::BeginWedge => {
-                        modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP
-                    }
-                    BondDirection::BeginDash => {
-                        modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN
-                    }
-                    BondDirection::EitherDouble => {
-                        tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER
-                    }
-                    BondDirection::Unknown => {
-                        modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER
-                    }
+                    BondDirection::BeginWedge => modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
+                    BondDirection::BeginDash => modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
+                    BondDirection::EitherDouble => tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
+                    BondDirection::Unknown => modifier * tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
                     _ => tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE,
                 };
-                assert_eq!(
-                    direction_engine.seen_inputs[0].atoms[0].bond_stereo[0],
-                    expected as i8
-                );
+                assert_eq!(direction_engine.seen_inputs[0].atoms[0].bond_stereo[0], expected as i8);
             }
         }
 
@@ -7603,14 +7235,8 @@ mod tests {
             (BondStereo::Cis, tagINCHIStereoParity0D_INCHI_PARITY_ODD),
             (BondStereo::E, tagINCHIStereoParity0D_INCHI_PARITY_EVEN),
             (BondStereo::Trans, tagINCHIStereoParity0D_INCHI_PARITY_EVEN),
-            (
-                BondStereo::AtropCw,
-                tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
-            ),
-            (
-                BondStereo::AtropCcw,
-                tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
-            ),
+            (BondStereo::AtropCw, tagINCHIStereoParity0D_INCHI_PARITY_EVEN),
+            (BondStereo::AtropCcw, tagINCHIStereoParity0D_INCHI_PARITY_EVEN),
         ] {
             let stereo_molecule = AdapterMol::from_graph(
                 vec![
@@ -7645,12 +7271,7 @@ mod tests {
             );
             let mut stereo_toolkit = RecordingGenerationToolkit::default();
             let mut stereo_engine = ScriptedGenerationEngine::default();
-            let (stereo_result, _) = run_generation(
-                &stereo_molecule,
-                &mut stereo_toolkit,
-                &mut stereo_engine,
-                None,
-            );
+            let (stereo_result, _) = run_generation(&stereo_molecule, &mut stereo_toolkit, &mut stereo_engine, None);
             assert!(stereo_result.is_ok());
             assert_eq!(stereo_engine.seen_inputs[0].stereo0d.len(), 1);
             assert_eq!(
@@ -7712,8 +7333,7 @@ mod tests {
         any_molecule.conformers = vec![vec![[1.0, 2.0, 3.0], [7.0, 8.0, 9.0]]];
         let mut any_toolkit = RecordingGenerationToolkit::default();
         let mut any_engine = ScriptedGenerationEngine::default();
-        let (any_result, _) =
-            run_generation(&any_molecule, &mut any_toolkit, &mut any_engine, None);
+        let (any_result, _) = run_generation(&any_molecule, &mut any_toolkit, &mut any_engine, None);
         assert!(any_result.is_ok());
         assert!(any_engine.seen_inputs[0].stereo0d.is_empty());
         assert_eq!(
@@ -7751,13 +7371,9 @@ mod tests {
         swap_molecule = AdapterMol::from_graph(swap_molecule.atoms, swap_molecule.bonds);
         let mut swap_toolkit = RecordingGenerationToolkit::default();
         let mut swap_engine = ScriptedGenerationEngine::default();
-        let (swap_result, _) =
-            run_generation(&swap_molecule, &mut swap_toolkit, &mut swap_engine, None);
+        let (swap_result, _) = run_generation(&swap_molecule, &mut swap_toolkit, &mut swap_engine, None);
         assert!(swap_result.is_ok());
-        assert_eq!(
-            swap_engine.seen_inputs[0].stereo0d[0].neighbor,
-            [0, 1, 2, 3]
-        );
+        assert_eq!(swap_engine.seen_inputs[0].stereo0d[0].neighbor, [0, 1, 2, 3]);
 
         let max_atoms = vec![
             AdapterAtom {
@@ -7777,8 +7393,7 @@ mod tests {
         let max_molecule = AdapterMol::from_graph(max_atoms, max_bonds);
         let mut max_toolkit = RecordingGenerationToolkit::default();
         let mut max_engine = ScriptedGenerationEngine::default();
-        let (max_result, max_values) =
-            run_generation(&max_molecule, &mut max_toolkit, &mut max_engine, None);
+        let (max_result, max_values) = run_generation(&max_molecule, &mut max_toolkit, &mut max_engine, None);
         assert_eq!(
             max_result,
             Ok(MolToInchiResult {
@@ -7799,12 +7414,8 @@ mod tests {
         invalid_conformer.conformers[0].clear();
         let mut invalid_toolkit = RecordingGenerationToolkit::default();
         let mut invalid_engine = ScriptedGenerationEngine::default();
-        let (invalid_result, invalid_values) = run_generation(
-            &invalid_conformer,
-            &mut invalid_toolkit,
-            &mut invalid_engine,
-            None,
-        );
+        let (invalid_result, invalid_values) =
+            run_generation(&invalid_conformer, &mut invalid_toolkit, &mut invalid_engine, None);
         assert_eq!(invalid_result, Err(MolToInchiError::InvalidConformer));
         assert!(invalid_engine.calls.is_empty());
         assert_eq!(invalid_values, generation_values());
@@ -7815,12 +7426,7 @@ mod tests {
                 ..RecordingGenerationToolkit::default()
             };
             let mut symbol_engine = ScriptedGenerationEngine::default();
-            let (symbol_result, _) = run_generation(
-                &conformer_molecule,
-                &mut symbol_toolkit,
-                &mut symbol_engine,
-                None,
-            );
+            let (symbol_result, _) = run_generation(&conformer_molecule, &mut symbol_toolkit, &mut symbol_engine, None);
             assert_eq!(symbol_result, Err(MolToInchiError::ElementSymbolTooLong));
             assert!(symbol_engine.calls.is_empty());
         }
@@ -7919,12 +7525,8 @@ mod tests {
             get_error: Some(SourceHeapError::AllocationFailed),
             ..ScriptedGenerationEngine::default()
         };
-        let (get_error_result, get_error_values) = run_generation(
-            &empty_molecule,
-            &mut get_error_toolkit,
-            &mut get_error_engine,
-            None,
-        );
+        let (get_error_result, get_error_values) =
+            run_generation(&empty_molecule, &mut get_error_toolkit, &mut get_error_engine, None);
         assert_eq!(
             get_error_result,
             Err(MolToInchiError::Source(SourceHeapError::AllocationFailed))
@@ -7937,12 +7539,8 @@ mod tests {
             free_error: Some(SourceHeapError::MissingAllocation),
             ..ScriptedGenerationEngine::default()
         };
-        let (free_error_result, free_error_values) = run_generation(
-            &empty_molecule,
-            &mut free_error_toolkit,
-            &mut free_error_engine,
-            None,
-        );
+        let (free_error_result, free_error_values) =
+            run_generation(&empty_molecule, &mut free_error_toolkit, &mut free_error_engine, None);
         assert_eq!(
             free_error_result,
             Err(MolToInchiError::Source(SourceHeapError::MissingAllocation))
@@ -8109,9 +7707,7 @@ mod tests {
 
         for line in records {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
-            let case_id = official["case_id"]
-                .as_str()
-                .expect("case_id must be a string");
+            let case_id = official["case_id"].as_str().expect("case_id must be a string");
             assert_eq!(official["schema_version"], "cosmolkit-inchi-rdkit-cpp-v1");
             assert_eq!(official["rdkit_version"], "2026.03.1");
             assert_eq!(
@@ -8123,29 +7719,17 @@ mod tests {
                 "000d4eff4353e06aaa802057674fa24f91726872b0c0f9bb593d7a1937721ac2"
             );
             assert_eq!(official["operation"], "MolToInchi");
-            assert_eq!(
-                official.as_object().unwrap().len(),
-                8,
-                "{case_id}: record fields"
-            );
+            assert_eq!(official.as_object().unwrap().len(), 8, "{case_id}: record fields");
 
             let input = &official["input"];
-            assert_eq!(
-                input.as_object().unwrap().len(),
-                7,
-                "{case_id}: input fields"
-            );
+            assert_eq!(input.as_object().unwrap().len(), 7, "{case_id}: input fields");
             let atom_fields = input["atoms"].as_array().expect("atoms must be an array");
             let mut hydrogens = Vec::with_capacity(atom_fields.len());
             let mut total_degrees = Vec::with_capacity(atom_fields.len());
             let atoms = atom_fields
                 .iter()
                 .map(|field| {
-                    assert_eq!(
-                        field.as_object().unwrap().len(),
-                        10,
-                        "{case_id}: atom fields"
-                    );
+                    assert_eq!(field.as_object().unwrap().len(), 10, "{case_id}: atom fields");
                     hydrogens.push(mol_to_inchi_oracle_u32(
                         &field["total_hydrogens"],
                         "total_hydrogens",
@@ -8154,23 +7738,11 @@ mod tests {
                     total_degrees.push(if field["total_degree"].is_null() {
                         None
                     } else {
-                        Some(mol_to_inchi_oracle_u32(
-                            &field["total_degree"],
-                            "total_degree",
-                            case_id,
-                        ))
+                        Some(mol_to_inchi_oracle_u32(&field["total_degree"], "total_degree", case_id))
                     });
                     AdapterAtom {
-                        atomic_number: mol_to_inchi_oracle_i32(
-                            &field["atomic_number"],
-                            "atomic_number",
-                            case_id,
-                        ),
-                        formal_charge: mol_to_inchi_oracle_i32(
-                            &field["formal_charge"],
-                            "formal_charge",
-                            case_id,
-                        ),
+                        atomic_number: mol_to_inchi_oracle_i32(&field["atomic_number"], "atomic_number", case_id),
+                        formal_charge: mol_to_inchi_oracle_i32(&field["formal_charge"], "formal_charge", case_id),
                         num_explicit_hydrogens: mol_to_inchi_oracle_u32(
                             &field["explicit_hydrogens"],
                             "explicit_hydrogens",
@@ -8183,9 +7755,7 @@ mod tests {
                             "radical_electrons",
                             case_id,
                         ),
-                        no_implicit: field["no_implicit"]
-                            .as_bool()
-                            .expect("no_implicit must be bool"),
+                        no_implicit: field["no_implicit"].as_bool().expect("no_implicit must be bool"),
                         chiral_tag: mol_to_inchi_oracle_chiral_tag(&field["chiral_tag"], case_id),
                         cip_rank: None,
                         cached_explicit_valence: None,
@@ -8198,22 +7768,14 @@ mod tests {
                 .expect("bonds must be an array")
                 .iter()
                 .map(|field| {
-                    assert_eq!(
-                        field.as_object().unwrap().len(),
-                        7,
-                        "{case_id}: bond fields"
-                    );
+                    assert_eq!(field.as_object().unwrap().len(), 7, "{case_id}: bond fields");
                     AdapterBond {
                         begin_atom_index: mol_to_inchi_oracle_u32(
                             &field["begin_atom_index"],
                             "begin_atom_index",
                             case_id,
                         ),
-                        end_atom_index: mol_to_inchi_oracle_u32(
-                            &field["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        end_atom_index: mol_to_inchi_oracle_u32(&field["end_atom_index"], "end_atom_index", case_id),
                         bond_type: mol_to_inchi_oracle_bond_type(&field["bond_type"], case_id),
                         direction: mol_to_inchi_oracle_direction(&field["direction"], case_id),
                         is_aromatic: field["aromatic"].as_bool().expect("aromatic must be bool"),
@@ -8257,22 +7819,12 @@ mod tests {
                 7,
                 "{case_id}: scripted output fields"
             );
-            let optional_bytes = |value: &Value| {
-                (!value.is_null()).then(|| mol_to_inchi_oracle_bytes(value, case_id))
-            };
-            let throw_on_get = scripted["throw_on_get"]
-                .as_bool()
-                .expect("throw_on_get must be bool");
-            let throw_on_free = scripted["throw_on_free"]
-                .as_bool()
-                .expect("throw_on_free must be bool");
+            let optional_bytes = |value: &Value| (!value.is_null()).then(|| mol_to_inchi_oracle_bytes(value, case_id));
+            let throw_on_get = scripted["throw_on_get"].as_bool().expect("throw_on_get must be bool");
+            let throw_on_free = scripted["throw_on_free"].as_bool().expect("throw_on_free must be bool");
             let mut engine = ScriptedGenerationEngine {
                 output: AdapterInchiGenerationOutput {
-                    return_code: mol_to_inchi_oracle_i32(
-                        &scripted["return_code"],
-                        "return_code",
-                        case_id,
-                    ),
+                    return_code: mol_to_inchi_oracle_i32(&scripted["return_code"], "return_code", case_id),
                     inchi: optional_bytes(&scripted["inchi"]),
                     message: optional_bytes(&scripted["message"]),
                     log: optional_bytes(&scripted["log"]),
@@ -8307,13 +7859,7 @@ mod tests {
             );
 
             let (status, exception_kind, exception_message, inchi, diagnostics) = match result {
-                Ok(result) => (
-                    "returned",
-                    Value::Null,
-                    Value::Null,
-                    result.inchi,
-                    result.diagnostics,
-                ),
+                Ok(result) => ("returned", Value::Null, Value::Null, result.inchi, result.diagnostics),
                 Err(MolToInchiError::Toolkit(error)) => (
                     "exception",
                     json!("MolSanitizeException"),
@@ -8360,8 +7906,7 @@ mod tests {
                                 .take_while(|byte| **byte != 0)
                                 .map(|byte| *byte as u8)
                                 .collect::<Vec<_>>();
-                            let count = usize::try_from(atom.num_bonds)
-                                .expect("num_bonds must be nonnegative");
+                            let count = usize::try_from(atom.num_bonds).expect("num_bonds must be nonnegative");
                             json!({
                                 "x": atom.x,
                                 "y": atom.y,
@@ -8466,10 +8011,7 @@ mod tests {
                 "original_bonds": original_bonds,
                 "original_conformers": molecule.conformers,
             });
-            assert_eq!(
-                molecule, molecule_before,
-                "{case_id}: original molecule mutated"
-            );
+            assert_eq!(molecule, molecule_before, "{case_id}: original molecule mutated");
             assert_eq!(
                 actual, official["output"],
                 "{case_id}: Rust output differs from pinned C++ MolToInchi"
@@ -8594,17 +8136,8 @@ mod tests {
             vec![0, 0, 0, 0, 0]
         );
         assert_eq!(
-            one_neutral
-                .bonds
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
-            vec![
-                BondType::Double,
-                BondType::Single,
-                BondType::Double,
-                BondType::Double
-            ]
+            one_neutral.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
+            vec![BondType::Double, BondType::Single, BondType::Double, BondType::Double]
         );
         for (after, before) in one_neutral.bonds.iter().zip(&one_neutral_before.bonds) {
             assert_eq!(after.direction, before.direction);
@@ -8627,17 +8160,8 @@ mod tests {
                 vec![-1, 0, 0, 0, 0]
             );
             assert_eq!(
-                no_neutral
-                    .bonds
-                    .iter()
-                    .map(|bond| bond.bond_type)
-                    .collect::<Vec<_>>(),
-                vec![
-                    BondType::Single,
-                    BondType::Double,
-                    BondType::Double,
-                    BondType::Double
-                ]
+                no_neutral.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
+                vec![BondType::Single, BondType::Double, BondType::Double, BondType::Double]
             );
         }
 
@@ -8829,16 +8353,8 @@ mod tests {
                         "{case_id}: contiguous bond indices"
                     );
                     AdapterBond {
-                        begin_atom_index: unsigned(
-                            &bond["begin_atom_index"],
-                            "begin_atom_index",
-                            case_id,
-                        ),
-                        end_atom_index: unsigned(
-                            &bond["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        begin_atom_index: unsigned(&bond["begin_atom_index"], "begin_atom_index", case_id),
+                        end_atom_index: unsigned(&bond["end_atom_index"], "end_atom_index", case_id),
                         bond_type: bond_type(&bond["bond_type"], case_id),
                         direction: direction(&bond["direction"], case_id),
                         is_aromatic: bond["is_aromatic"]
@@ -9030,11 +8546,7 @@ mod tests {
             assert!(case_ids.insert(case_id.to_owned()), "duplicate {case_id}");
 
             let input = bytes(&official["input"]["input_bytes"], "input_bytes", case_id);
-            let mut output_bytes = bytes(
-                &official["input"]["output_bytes"],
-                "initial output_bytes",
-                case_id,
-            );
+            let mut output_bytes = bytes(&official["input"]["output_bytes"], "initial output_bytes", case_id);
             fix_option_symbol(&input, &mut output_bytes)
                 .unwrap_or_else(|error| panic!("{case_id}: Rust failed: {error:?}"));
 
@@ -9087,13 +8599,9 @@ mod tests {
             message: None,
             log: Some(b"new-log".to_vec()),
         };
-        let (failure, failure_engine, failure_values) =
-            run_scripted(failure_output, &mut failure_toolkit, true, true);
+        let (failure, failure_engine, failure_values) = run_scripted(failure_output, &mut failure_toolkit, true, true);
         assert_eq!(failure.unwrap().molecule, None);
-        assert_eq!(
-            failure_engine.seen_inputs,
-            vec![b"InChI=1S/test\0tail\0".to_vec()]
-        );
+        assert_eq!(failure_engine.seen_inputs, vec![b"InChI=1S/test\0tail\0".to_vec()]);
         assert_eq!(failure_engine.free_count, 1);
         assert_eq!(failure_values.return_code, 2);
         assert_eq!(failure_values.message, b"old-message");
@@ -9125,12 +8633,8 @@ mod tests {
             connect_source_atoms(&mut atoms, 0, second, bond_type, stereo, 0);
         }
         let mut mapping_toolkit = RecordingToolkit::default();
-        let (mapping_result, mapping_engine, mapping_values) = run_scripted(
-            scripted_output(atoms, Vec::new()),
-            &mut mapping_toolkit,
-            false,
-            true,
-        );
+        let (mapping_result, mapping_engine, mapping_values) =
+            run_scripted(scripted_output(atoms, Vec::new()), &mut mapping_toolkit, false, true);
         let mapping_result = mapping_result.unwrap();
         let mapping = mapping_result.molecule.unwrap();
         assert_eq!(mapping_engine.free_count, 1);
@@ -9147,10 +8651,7 @@ mod tests {
         assert_eq!(mapping.atoms.len(), 14);
         assert_eq!(mapping.bonds.len(), 13);
         assert_eq!(
-            mapping.bonds[..9]
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
+            mapping.bonds[..9].iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
             vec![
                 BondType::Unspecified,
                 BondType::Single,
@@ -9165,10 +8666,7 @@ mod tests {
         );
         assert!(mapping.bonds[4].is_aromatic);
         assert_eq!(
-            mapping.bonds[..9]
-                .iter()
-                .map(|bond| bond.direction)
-                .collect::<Vec<_>>(),
+            mapping.bonds[..9].iter().map(|bond| bond.direction).collect::<Vec<_>>(),
             vec![
                 BondDirection::None,
                 BondDirection::BeginWedge,
@@ -9193,14 +8691,10 @@ mod tests {
                 .iter()
                 .any(|diagnostic| { diagnostic.message.contains("treated as aromatic") })
         );
-        assert_eq!(
-            mapping_toolkit.calls.last(),
-            Some(&"assign_stereochemistry")
-        );
+        assert_eq!(mapping_toolkit.calls.last(), Some(&"assign_stereochemistry"));
         assert!(!mapping_toolkit.calls.contains(&"remove_hydrogens"));
 
-        for (remove_hs, expected_call) in [(true, "remove_hydrogens"), (false, "sanitize_molecule")]
-        {
+        for (remove_hs, expected_call) in [(true, "remove_hydrogens"), (false, "sanitize_molecule")] {
             let mut toolkit = RecordingToolkit::default();
             let (result, engine, _) = run_scripted(
                 scripted_output(vec![source_atom(b"C")], Vec::new()),
@@ -9226,14 +8720,12 @@ mod tests {
         let illegal = illegal.unwrap();
         assert!(illegal.molecule.is_none());
         assert_eq!(illegal_engine.free_count, 1);
-        assert_eq!(
-            illegal.diagnostics.last().unwrap().level,
-            AdapterDiagnosticLevel::Error
-        );
+        assert_eq!(illegal.diagnostics.last().unwrap().level, AdapterDiagnosticLevel::Error);
         assert!(
-            illegal_toolkit.calls.iter().all(|call| {
-                *call != "update_property_cache" && *call != "assign_stereochemistry"
-            })
+            illegal_toolkit
+                .calls
+                .iter()
+                .all(|call| { *call != "update_property_cache" && *call != "assign_stereochemistry" })
         );
 
         let stereo_graph = || {
@@ -9271,12 +8763,11 @@ mod tests {
             assert_eq!(engine.free_count, 1);
             assert_eq!(molecule.bonds[0].stereo, expected_stereo);
             assert_eq!(molecule.bonds[0].stereo_atoms, vec![2, 4]);
-            assert!(molecule.bonds[1..].iter().any(|bond| {
-                matches!(
-                    bond.direction,
-                    BondDirection::EndDownRight | BondDirection::EndUpRight
-                )
-            }));
+            assert!(
+                molecule.bonds[1..]
+                    .iter()
+                    .any(|bond| { matches!(bond.direction, BondDirection::EndDownRight | BondDirection::EndUpRight) })
+            );
         }
 
         for parity in [
@@ -9296,10 +8787,7 @@ mod tests {
                 false,
                 false,
             );
-            assert_eq!(
-                result.unwrap().molecule.unwrap().bonds[0].stereo,
-                BondStereo::None
-            );
+            assert_eq!(result.unwrap().molecule.unwrap().bonds[0].stereo, BondStereo::None);
         }
 
         let absent_double = inchi_Stereo0D {
@@ -9310,10 +8798,7 @@ mod tests {
         };
         let mut absent_toolkit = RecordingToolkit::default();
         let (absent_result, _, _) = run_scripted(
-            scripted_output(
-                vec![source_atom(b"C"), source_atom(b"C")],
-                vec![absent_double],
-            ),
+            scripted_output(vec![source_atom(b"C"), source_atom(b"C")], vec![absent_double]),
             &mut absent_toolkit,
             false,
             false,
@@ -9396,10 +8881,7 @@ mod tests {
 
         for (stereo_type, expected_text) in [
             (tagINCHIStereoType0D_INCHI_StereoType_None as i8, None),
-            (
-                tagINCHIStereoType0D_INCHI_StereoType_Allene as i8,
-                Some("Allene-style"),
-            ),
+            (tagINCHIStereoType0D_INCHI_StereoType_Allene as i8, Some("Allene-style")),
             (99, Some("Unrecognized stereo0D type")),
         ] {
             let stereo = inchi_Stereo0D {
@@ -9546,10 +9028,7 @@ mod tests {
                 .as_str()
                 .unwrap_or_else(|| panic!("{case_id}: atom element must be text"))
                 .as_bytes();
-            assert!(
-                element.len() < atom.elname.len(),
-                "{case_id}: element too long"
-            );
+            assert!(element.len() < atom.elname.len(), "{case_id}: element too long");
             for (destination, source) in atom.elname.iter_mut().zip(element.iter().copied()) {
                 *destination = source as i8;
             }
@@ -9572,30 +9051,24 @@ mod tests {
             atom.num_bonds = i16::try_from(count).expect("source bond count must fit i16");
             for offset in 0..count {
                 atom.neighbor[offset] =
-                    i16::try_from(integer(&neighbors[offset], "neighbor", case_id))
-                        .expect("neighbor must fit i16");
+                    i16::try_from(integer(&neighbors[offset], "neighbor", case_id)).expect("neighbor must fit i16");
                 atom.bond_type[offset] =
-                    i8::try_from(integer(&bond_types[offset], "bond_type", case_id))
-                        .expect("bond type must fit i8");
-                atom.bond_stereo[offset] =
-                    i8::try_from(integer(&bond_stereo[offset], "bond_stereo", case_id))
-                        .expect("bond stereo must fit i8");
+                    i8::try_from(integer(&bond_types[offset], "bond_type", case_id)).expect("bond type must fit i8");
+                atom.bond_stereo[offset] = i8::try_from(integer(&bond_stereo[offset], "bond_stereo", case_id))
+                    .expect("bond stereo must fit i8");
             }
             let isotope_h = value["num_iso_h"]
                 .as_array()
                 .unwrap_or_else(|| panic!("{case_id}: num_iso_h must be an array"));
             assert_eq!(isotope_h.len(), 4, "{case_id}: isotope-H slot count");
             for (destination, source) in atom.num_iso_H.iter_mut().zip(isotope_h) {
-                *destination = i8::try_from(integer(source, "num_iso_h", case_id))
-                    .expect("isotope-H count must fit i8");
+                *destination =
+                    i8::try_from(integer(source, "num_iso_h", case_id)).expect("isotope-H count must fit i8");
             }
-            atom.isotopic_mass =
-                i16::try_from(integer(&value["isotopic_mass"], "isotopic_mass", case_id))
-                    .expect("isotopic mass must fit i16");
-            atom.radical = i8::try_from(integer(&value["radical"], "radical", case_id))
-                .expect("radical must fit i8");
-            atom.charge = i8::try_from(integer(&value["charge"], "charge", case_id))
-                .expect("charge must fit i8");
+            atom.isotopic_mass = i16::try_from(integer(&value["isotopic_mass"], "isotopic_mass", case_id))
+                .expect("isotopic mass must fit i16");
+            atom.radical = i8::try_from(integer(&value["radical"], "radical", case_id)).expect("radical must fit i8");
+            atom.charge = i8::try_from(integer(&value["charge"], "charge", case_id)).expect("charge must fit i8");
             atom
         }
 
@@ -9606,16 +9079,15 @@ mod tests {
             assert_eq!(neighbors.len(), 4, "{case_id}: stereo neighbor count");
             let mut result = inchi_Stereo0D::default();
             for (destination, source) in result.neighbor.iter_mut().zip(neighbors) {
-                *destination = i16::try_from(integer(source, "stereo neighbor", case_id))
-                    .expect("stereo neighbor must fit i16");
+                *destination =
+                    i16::try_from(integer(source, "stereo neighbor", case_id)).expect("stereo neighbor must fit i16");
             }
-            result.central_atom =
-                i16::try_from(integer(&value["central_atom"], "central_atom", case_id))
-                    .expect("central atom must fit i16");
-            result.type_ = i8::try_from(integer(&value["type"], "stereo type", case_id))
-                .expect("stereo type must fit i8");
-            result.parity = i8::try_from(integer(&value["parity"], "parity", case_id))
-                .expect("stereo parity must fit i8");
+            result.central_atom = i16::try_from(integer(&value["central_atom"], "central_atom", case_id))
+                .expect("central atom must fit i16");
+            result.type_ =
+                i8::try_from(integer(&value["type"], "stereo type", case_id)).expect("stereo type must fit i8");
+            result.parity =
+                i8::try_from(integer(&value["parity"], "parity", case_id)).expect("stereo parity must fit i8");
             result
         }
 
@@ -9718,9 +9190,7 @@ mod tests {
                     .expect("return code must fit i32"),
                 atoms,
                 stereo0d,
-                message: input["message"]
-                    .as_str()
-                    .map(|value| value.as_bytes().to_vec()),
+                message: input["message"].as_str().map(|value| value.as_bytes().to_vec()),
                 log: input["log"].as_str().map(|value| value.as_bytes().to_vec()),
             };
             let mut engine = ScriptedStructureEngine::new(source_output);
@@ -9734,9 +9204,7 @@ mod tests {
                 .as_array()
                 .unwrap_or_else(|| panic!("{case_id}: ranks must be an array"))
                 .iter()
-                .map(|rank| {
-                    u32::try_from(unsigned(rank, "rank", case_id)).expect("rank must fit u32")
-                })
+                .map(|rank| u32::try_from(unsigned(rank, "rank", case_id)).expect("rank must fit u32"))
                 .collect::<Vec<_>>();
             let fail_on = match input["fail_on"].as_str() {
                 None => None,
@@ -9776,11 +9244,7 @@ mod tests {
                 Ok(result) => (
                     "return",
                     Value::Null,
-                    result
-                        .molecule
-                        .as_ref()
-                        .map(molecule_json)
-                        .unwrap_or(Value::Null),
+                    result.molecule.as_ref().map(molecule_json).unwrap_or(Value::Null),
                     result.diagnostics.as_slice(),
                 ),
                 Err(InchiToMolError::Toolkit(error)) => {
@@ -9888,10 +9352,7 @@ mod tests {
         ];
         assert_eq!(
             case_ids,
-            expected_case_ids
-                .iter()
-                .map(|case_id| (*case_id).to_owned())
-                .collect()
+            expected_case_ids.iter().map(|case_id| (*case_id).to_owned()).collect()
         );
     }
 
@@ -9945,14 +9406,7 @@ mod tests {
 
     fn cleanup8_graph(root_atomic_number: i32) -> AdapterMol {
         let mut molecule = graph(
-            &[
-                (6, -2),
-                (7, 3),
-                (6, -4),
-                (7, 5),
-                (7, -6),
-                (root_atomic_number, 0),
-            ],
+            &[(6, -2), (7, 3), (6, -4), (7, 5), (7, -6), (root_atomic_number, 0)],
             &[
                 (0, 1, BondType::Single),
                 (1, 2, BondType::Double),
@@ -9968,14 +9422,7 @@ mod tests {
 
     fn cleanup9_graph(root_atomic_number: i32) -> AdapterMol {
         let mut molecule = graph(
-            &[
-                (6, -2),
-                (7, 3),
-                (7, -4),
-                (6, 5),
-                (6, -6),
-                (root_atomic_number, 0),
-            ],
+            &[(6, -2), (7, 3), (7, -4), (6, 5), (6, -6), (root_atomic_number, 0)],
             &[
                 (1, 0, BondType::Single),
                 (1, 2, BondType::Double),
@@ -10135,11 +9582,7 @@ mod tests {
                     "{case_id}"
                 );
                 AdapterBond {
-                    begin_atom_index: oracle_u32(
-                        &field["begin_atom_index"],
-                        "begin_atom_index",
-                        case_id,
-                    ),
+                    begin_atom_index: oracle_u32(&field["begin_atom_index"], "begin_atom_index", case_id),
                     end_atom_index: oracle_u32(&field["end_atom_index"], "end_atom_index", case_id),
                     bond_type: oracle_bond_type(&field["bond_type"], case_id),
                     direction: oracle_direction(&field["direction"], case_id),
@@ -10287,10 +9730,7 @@ mod tests {
 
         assert_eq!(
             case_ids,
-            expected_case_ids
-                .iter()
-                .map(|case_id| (*case_id).to_owned())
-                .collect()
+            expected_case_ids.iter().map(|case_id| (*case_id).to_owned()).collect()
         );
     }
 
@@ -10348,11 +9788,7 @@ mod tests {
                 Some("return") => {
                     assert_eq!(rust, Ok(()), "{case_id}");
                     assert!(official["output"]["exception"].is_null(), "{case_id}");
-                    assert_eq!(
-                        official["output"]["diagnostics"],
-                        Value::Array(vec![]),
-                        "{case_id}"
-                    );
+                    assert_eq!(official["output"]["diagnostics"], Value::Array(vec![]), "{case_id}");
                 }
                 Some("exception") => {
                     let exception = &official["output"]["exception"];
@@ -10364,11 +9800,7 @@ mod tests {
                     };
                     assert_eq!(exception["kind"], expected.kind, "{case_id}");
                     assert_eq!(exception["message"], expected.message, "{case_id}");
-                    assert_eq!(
-                        rust,
-                        Err(AdapterCleanup5Error::Valence(expected.clone())),
-                        "{case_id}"
-                    );
+                    assert_eq!(rust, Err(AdapterCleanup5Error::Valence(expected.clone())), "{case_id}");
                     let diagnostics = official["output"]["diagnostics"]
                         .as_array()
                         .unwrap_or_else(|| panic!("{case_id}: diagnostics must be array"));
@@ -10540,11 +9972,7 @@ mod tests {
             );
             let molecule_before = molecule.clone();
             let atom_index = oracle_u32(&official["input"]["atom_index"], "atom_index", case_id);
-            let atomic_number = oracle_i32(
-                &official["input"]["atomic_number"],
-                "atomic_number",
-                case_id,
-            );
+            let atomic_number = oracle_i32(&official["input"]["atomic_number"], "atomic_number", case_id);
             let rust = valence5n_cleanup5(&mut molecule, atom_index, atomic_number);
 
             match official["output"]["status"].as_str() {
@@ -10644,9 +10072,7 @@ mod tests {
 
     #[test]
     fn source_port__inchi__assignbonddirs__line_91() {
-        use BondDirection::{
-            BeginDash, BeginWedge, EitherDouble, EndDownRight, EndUpRight, None, Unknown,
-        };
+        use BondDirection::{BeginDash, BeginWedge, EitherDouble, EndDownRight, EndUpRight, None, Unknown};
 
         let preserved = [
             None,
@@ -10670,27 +10096,14 @@ mod tests {
         assert_eq!(directions(&mol), [EndUpRight, EndDownRight, EndDownRight]);
 
         let mut mol = molecule(&[None; 6]);
-        assert_eq!(
-            assign_bond_dirs(&mut mol, &[(5, 4), (3, 2)], &[(1, 0)]),
-            Ok(true)
-        );
+        assert_eq!(assign_bond_dirs(&mut mol, &[(5, 4), (3, 2)], &[(1, 0)]), Ok(true));
         assert_eq!(
             directions(&mol),
-            [
-                EndUpRight,
-                EndDownRight,
-                EndUpRight,
-                EndUpRight,
-                EndUpRight,
-                EndUpRight,
-            ]
+            [EndUpRight, EndDownRight, EndUpRight, EndUpRight, EndUpRight, EndUpRight,]
         );
 
         let mut mol = molecule(&[None; 2]);
-        assert_eq!(
-            assign_bond_dirs(&mut mol, &[(0, 1), (1, 0), (0, 1)], &[]),
-            Ok(true)
-        );
+        assert_eq!(assign_bond_dirs(&mut mol, &[(0, 1), (1, 0), (0, 1)], &[]), Ok(true));
         assert_eq!(directions(&mol), [EndUpRight, EndUpRight]);
 
         let mut mol = molecule(&[None; 3]);
@@ -10702,10 +10115,7 @@ mod tests {
         assert_eq!(directions(&mol), [EndUpRight, EndUpRight]);
 
         let mut mol = molecule(&[None; 3]);
-        assert_eq!(
-            assign_bond_dirs(&mut mol, &[(0, 1), (1, 2)], &[(0, 2)]),
-            Ok(false)
-        );
+        assert_eq!(assign_bond_dirs(&mut mol, &[(0, 1), (1, 2)], &[(0, 2)]), Ok(false));
         assert_eq!(directions(&mol), [EndUpRight, EndUpRight, EndDownRight]);
 
         let mut mol = molecule(&[BeginWedge]);
@@ -10753,19 +10163,7 @@ mod tests {
         let mut path = vec![7, 8];
         let mut visited = BTreeSet::from([7, 8]);
         assert_eq!(
-            find_alternating_bonds(
-                &isolated,
-                0,
-                7,
-                0,
-                Single,
-                Single,
-                0,
-                0,
-                None,
-                &mut path,
-                &mut visited,
-            ),
+            find_alternating_bonds(&isolated, 0, 7, 0, Single, Single, 0, 0, None, &mut path, &mut visited,),
             None
         );
         assert!(path.is_empty());
@@ -10775,19 +10173,7 @@ mod tests {
         path = vec![0, 0];
         visited = BTreeSet::from([0]);
         assert_eq!(
-            find_alternating_bonds(
-                &direct,
-                1,
-                7,
-                0,
-                Double,
-                Single,
-                1,
-                0,
-                Some(0),
-                &mut path,
-                &mut visited,
-            ),
+            find_alternating_bonds(&direct, 1, 7, 0, Double, Single, 1, 0, Some(0), &mut path, &mut visited,),
             Some(1)
         );
         assert_eq!(path, [0]);
@@ -10796,19 +10182,7 @@ mod tests {
         path = vec![0];
         visited = BTreeSet::from([0]);
         assert_eq!(
-            find_alternating_bonds(
-                &direct,
-                1,
-                7,
-                0,
-                Double,
-                Single,
-                1,
-                9,
-                Some(0),
-                &mut path,
-                &mut visited,
-            ),
+            find_alternating_bonds(&direct, 1, 7, 0, Double, Single, 1, 9, Some(0), &mut path, &mut visited,),
             None
         );
         assert_eq!(path, [0]);
@@ -10859,10 +10233,7 @@ mod tests {
         );
         assert_eq!(path, [1, 0]);
 
-        let triple_then_single = graph(
-            &[(7, 0), (6, -1), (7, -1)],
-            &[(0, 1, Triple), (1, 2, Single)],
-        );
+        let triple_then_single = graph(&[(7, 0), (6, -1), (7, -1)], &[(0, 1, Triple), (1, 2, Single)]);
         path.clear();
         visited.clear();
         assert_eq!(
@@ -10904,8 +10275,7 @@ mod tests {
         );
         assert_eq!(path, [0]);
 
-        let special_ending_miss =
-            graph(&[(6, 0), (6, 0), (7, 0)], &[(0, 1, Triple), (1, 2, Single)]);
+        let special_ending_miss = graph(&[(6, 0), (6, 0), (7, 0)], &[(0, 1, Triple), (1, 2, Single)]);
         path.clear();
         visited.clear();
         assert_eq!(
@@ -10955,19 +10325,7 @@ mod tests {
         path.clear();
         visited.clear();
         assert_eq!(
-            find_alternating_bonds(
-                &cycle,
-                0,
-                7,
-                0,
-                Single,
-                Single,
-                0,
-                9,
-                None,
-                &mut path,
-                &mut visited,
-            ),
+            find_alternating_bonds(&cycle, 0, 7, 0, Single, Single, 0, 9, None, &mut path, &mut visited,),
             None
         );
         assert!(path.is_empty());
@@ -10975,12 +10333,7 @@ mod tests {
 
         let shorter_later = graph(
             &[(6, 0), (6, 0), (6, 0), (7, 0), (7, 0)],
-            &[
-                (0, 1, Single),
-                (1, 2, Double),
-                (2, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Single), (1, 2, Double), (2, 3, Single), (0, 4, Single)],
         );
         path.clear();
         visited.clear();
@@ -11053,22 +10406,11 @@ mod tests {
 
         let isolated = graph(&[(6, 0)], &[]);
         let isolated_before = isolated.clone();
-        assert_eq!(
-            get_num_double_bonded_negatively_charged_neighboring_si(&isolated, 0),
-            0
-        );
+        assert_eq!(get_num_double_bonded_negatively_charged_neighboring_si(&isolated, 0), 0);
         assert_eq!(isolated, isolated_before);
 
         let molecule = graph(
-            &[
-                (6, 0),
-                (14, -1),
-                (14, 0),
-                (13, -1),
-                (14, -1),
-                (14, -1),
-                (14, -1),
-            ],
+            &[(6, 0), (14, -1), (14, 0), (13, -1), (14, -1), (14, -1), (14, -1)],
             &[
                 (0, 1, Double),
                 (0, 2, Double),
@@ -11079,14 +10421,8 @@ mod tests {
             ],
         );
         let molecule_before = molecule.clone();
-        assert_eq!(
-            get_num_double_bonded_negatively_charged_neighboring_si(&molecule, 0),
-            2
-        );
-        assert_eq!(
-            get_num_double_bonded_negatively_charged_neighboring_si(&molecule, 1),
-            0
-        );
+        assert_eq!(get_num_double_bonded_negatively_charged_neighboring_si(&molecule, 0), 2);
+        assert_eq!(get_num_double_bonded_negatively_charged_neighboring_si(&molecule, 1), 0);
         assert_eq!(molecule, molecule_before);
     }
 
@@ -11129,10 +10465,7 @@ mod tests {
         assert_eq!(valence4n_cleanup1(&mut explicit_h, 0), Ok(false));
         assert_eq!(explicit_h, explicit_h_before);
 
-        let mut no_match = graph(
-            &[(7, -1), (7, 0), (7, 0)],
-            &[(0, 1, Double), (2, 0, Double)],
-        );
+        let mut no_match = graph(&[(7, -1), (7, 0), (7, 0)], &[(0, 1, Double), (2, 0, Double)]);
         let no_match_before = no_match.clone();
         assert_eq!(valence4n_cleanup1(&mut no_match, 0), Ok(false));
         assert_eq!(no_match, no_match_before);
@@ -11153,11 +10486,7 @@ mod tests {
         assert_eq!(valence4n_cleanup1(&mut unique, 2), Ok(true));
         assert_eq!(unique.atoms, unique_atoms_before);
         assert_eq!(
-            unique
-                .bonds
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
+            unique.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
             vec![Double, Single, Single, Double, Single, Single]
         );
         assert_eq!(unique.bonds[0].direction, BeginDash);
@@ -11180,16 +10509,7 @@ mod tests {
         assert_eq!(multiple, multiple_before);
 
         let mut remote = graph(
-            &[
-                (7, -1),
-                (8, 0),
-                (8, 0),
-                (6, 0),
-                (7, 0),
-                (50, 0),
-                (7, 0),
-                (7, 0),
-            ],
+            &[(7, -1), (8, 0), (8, 0), (6, 0), (7, 0), (50, 0), (7, 0), (7, 0)],
             &[
                 (0, 1, Double),
                 (2, 0, Double),
@@ -11204,11 +10524,7 @@ mod tests {
         assert_eq!(valence4n_cleanup1(&mut remote, 0), Ok(true));
         assert_eq!(remote.atoms, remote_atoms_before);
         assert_eq!(
-            remote
-                .bonds
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
+            remote.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
             vec![Double, Double, Double, Single, Single, Double, Single]
         );
     }
@@ -11220,21 +10536,13 @@ mod tests {
 
         let no_target = graph(
             &[(7, -1), (6, 0), (7, 1), (7, 0), (7, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Double),
-                (0, 3, Single),
-                (0, 4, Triple),
-            ],
+            &[(0, 1, Double), (0, 2, Double), (0, 3, Single), (0, 4, Triple)],
         );
         let mut no_target_actual = no_target.clone();
         assert!(!valence4n_cleanup2(&mut no_target_actual, 0));
         assert_eq!(no_target_actual, no_target);
 
-        let mut unique = graph(
-            &[(7, -1), (7, 0), (8, -2)],
-            &[(1, 0, Double), (0, 2, Single)],
-        );
+        let mut unique = graph(&[(7, -1), (7, 0), (8, -2)], &[(1, 0, Double), (0, 2, Single)]);
         unique.atoms[0].num_explicit_hydrogens = 2;
         unique.atoms[1].num_explicit_hydrogens = 1;
         unique.bonds[0].direction = BeginWedge;
@@ -11250,10 +10558,7 @@ mod tests {
         assert_eq!(unique.bonds[1].bond_type, Single);
         assert_eq!(unique.bonds[1].direction, EndDownRight);
 
-        let mut multiple = graph(
-            &[(7, -1), (7, 0), (7, 0)],
-            &[(0, 2, Double), (0, 1, Double)],
-        );
+        let mut multiple = graph(&[(7, -1), (7, 0), (7, 0)], &[(0, 2, Double), (0, 1, Double)]);
         assert!(valence4n_cleanup2(&mut multiple, 0));
         assert_eq!(multiple.atoms[0].formal_charge, 0);
         assert_eq!(multiple.atoms[1].formal_charge, 0);
@@ -11272,10 +10577,7 @@ mod tests {
         assert_eq!(valence5n_cleanup1(&mut no_target_actual, 0), Ok(false));
         assert_eq!(no_target_actual, no_target);
 
-        let mut direct = graph(
-            &[(6, -3), (7, 1), (8, 2)],
-            &[(1, 0, Double), (1, 2, Single)],
-        );
+        let mut direct = graph(&[(6, -3), (7, 1), (8, 2)], &[(1, 0, Double), (1, 2, Single)]);
         direct.atoms[0].num_explicit_hydrogens = 2;
         direct.atoms[1].num_explicit_hydrogens = 1;
         direct.bonds[0].direction = BeginDash;
@@ -11299,11 +10601,7 @@ mod tests {
         assert_eq!(alternating.atoms[0].formal_charge, 1);
         assert_eq!(alternating.atoms[3].formal_charge, 0);
         assert_eq!(
-            alternating
-                .bonds
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
+            alternating.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
             [Single, Double, Single]
         );
 
@@ -11322,10 +10620,7 @@ mod tests {
         assert_eq!(valence5n_cleanup1(&mut over_limit_actual, 0), Ok(false));
         assert_eq!(over_limit_actual, over_limit);
 
-        let mut valence_error = graph(
-            &[(7, -1), (7, 1), (6, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut valence_error = graph(&[(7, -1), (7, 1), (6, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         let valence_error_before = valence_error.clone();
         assert_eq!(
             valence5n_cleanup1(&mut valence_error, 0),
@@ -11494,10 +10789,7 @@ mod tests {
         assert_eq!(mutate.bonds[1].direction, EndDownRight);
         assert_eq!(mutate.bonds[2].bond_type, Single);
 
-        let mut target_valence_error = graph(
-            &[(7, 0), (7, 0), (6, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut target_valence_error = graph(&[(7, 0), (7, 0), (6, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         let target_error_before = target_valence_error.clone();
         assert_eq!(
             valence5n_cleanup3(&mut target_valence_error, 0),
@@ -11513,10 +10805,7 @@ mod tests {
         assert_eq!(target_valence_error.atoms[2], target_error_before.atoms[2]);
         assert_eq!(target_valence_error.bonds, target_error_before.bonds);
 
-        let mut root_valence_error = graph(
-            &[(7, 0), (7, 0), (6, 0)],
-            &[(0, 1, Double), (0, 2, ThreeCenter)],
-        );
+        let mut root_valence_error = graph(&[(7, 0), (7, 0), (6, 0)], &[(0, 1, Double), (0, 2, ThreeCenter)]);
         root_valence_error.bonds[0].direction = BeginDash;
         assert_eq!(
             valence5n_cleanup3(&mut root_valence_error, 0),
@@ -11574,46 +10863,22 @@ mod tests {
         two_matching_silicons.bonds[4].direction = BeginWedge;
         let two_matching_silicons_before = two_matching_silicons.clone();
         assert!(valence5n_cleanup4(&mut two_matching_silicons, 0));
-        assert_eq!(
-            two_matching_silicons.atoms[0],
-            two_matching_silicons_before.atoms[0]
-        );
-        assert_eq!(
-            two_matching_silicons.atoms[1],
-            two_matching_silicons_before.atoms[1]
-        );
+        assert_eq!(two_matching_silicons.atoms[0], two_matching_silicons_before.atoms[0]);
+        assert_eq!(two_matching_silicons.atoms[1], two_matching_silicons_before.atoms[1]);
         assert_eq!(two_matching_silicons.atoms[2].formal_charge, 0);
         assert_eq!(two_matching_silicons.atoms[2].num_explicit_hydrogens, 1);
-        assert_eq!(
-            two_matching_silicons.atoms[3],
-            two_matching_silicons_before.atoms[3]
-        );
+        assert_eq!(two_matching_silicons.atoms[3], two_matching_silicons_before.atoms[3]);
         assert_eq!(two_matching_silicons.atoms[4].formal_charge, 0);
         assert_eq!(two_matching_silicons.atoms[4].num_explicit_hydrogens, 2);
-        assert_eq!(
-            two_matching_silicons.atoms[5],
-            two_matching_silicons_before.atoms[5]
-        );
-        assert_eq!(
-            two_matching_silicons.atoms[6],
-            two_matching_silicons_before.atoms[6]
-        );
-        assert_eq!(
-            two_matching_silicons.bonds[0],
-            two_matching_silicons_before.bonds[0]
-        );
+        assert_eq!(two_matching_silicons.atoms[5], two_matching_silicons_before.atoms[5]);
+        assert_eq!(two_matching_silicons.atoms[6], two_matching_silicons_before.atoms[6]);
+        assert_eq!(two_matching_silicons.bonds[0], two_matching_silicons_before.bonds[0]);
         assert_eq!(two_matching_silicons.bonds[1].bond_type, Single);
         assert_eq!(two_matching_silicons.bonds[1].direction, EndUpRight);
-        assert_eq!(
-            two_matching_silicons.bonds[2],
-            two_matching_silicons_before.bonds[2]
-        );
+        assert_eq!(two_matching_silicons.bonds[2], two_matching_silicons_before.bonds[2]);
         assert_eq!(two_matching_silicons.bonds[3].bond_type, Single);
         assert_eq!(two_matching_silicons.bonds[3].direction, EndDownRight);
-        assert_eq!(
-            two_matching_silicons.bonds[4],
-            two_matching_silicons_before.bonds[4]
-        );
+        assert_eq!(two_matching_silicons.bonds[4], two_matching_silicons_before.bonds[4]);
 
         let three_matching_silicons = graph(
             &[(7, 3), (14, -1), (14, -1), (14, -1)],
@@ -11636,19 +10901,10 @@ mod tests {
         assert_eq!(exactly_two_before_late_nonmatch.atoms[2].formal_charge, 0);
         assert_eq!(exactly_two_before_late_nonmatch.atoms[3].formal_charge, -1);
         assert_eq!(exactly_two_before_late_nonmatch.bonds[0].bond_type, Single);
-        assert_eq!(
-            exactly_two_before_late_nonmatch.bonds[0].direction,
-            BeginDash
-        );
+        assert_eq!(exactly_two_before_late_nonmatch.bonds[0].direction, BeginDash);
         assert_eq!(exactly_two_before_late_nonmatch.bonds[1].bond_type, Single);
-        assert_eq!(
-            exactly_two_before_late_nonmatch.bonds[1].direction,
-            EndUpRight
-        );
-        assert_eq!(
-            exactly_two_before_late_nonmatch.bonds[2],
-            late_nonmatch_before.bonds[2]
-        );
+        assert_eq!(exactly_two_before_late_nonmatch.bonds[1].direction, EndUpRight);
+        assert_eq!(exactly_two_before_late_nonmatch.bonds[2], late_nonmatch_before.bonds[2]);
     }
 
     #[test]
@@ -11671,10 +10927,7 @@ mod tests {
         for atomic_number in [8, 16, 9, 17] {
             let no_target = graph(&[(7, -2), (6, 1)], &[(0, 1, Double)]);
             let mut no_target_actual = no_target.clone();
-            assert_eq!(
-                valence5n_cleanup5(&mut no_target_actual, 0, atomic_number),
-                Ok(false)
-            );
+            assert_eq!(valence5n_cleanup5(&mut no_target_actual, 0, atomic_number), Ok(false));
             assert_eq!(no_target_actual, no_target);
         }
 
@@ -11733,16 +10986,7 @@ mod tests {
         assert_eq!(both.bonds[2], both_before.bonds[2]);
 
         let mut depth_seven = graph(
-            &[
-                (7, 0),
-                (6, 0),
-                (6, 0),
-                (6, 0),
-                (6, 0),
-                (6, 0),
-                (6, 0),
-                (17, 0),
-            ],
+            &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0), (6, 0), (6, 0), (17, 0)],
             &[
                 (0, 1, Double),
                 (1, 2, Single),
@@ -11757,11 +11001,7 @@ mod tests {
         assert_eq!(depth_seven.atoms[0].formal_charge, 1);
         assert_eq!(depth_seven.atoms[7].formal_charge, -1);
         assert_eq!(
-            depth_seven
-                .bonds
-                .iter()
-                .map(|bond| bond.bond_type)
-                .collect::<Vec<_>>(),
+            depth_seven.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
             [Single, Double, Single, Double, Single, Double, Single]
         );
 
@@ -11794,10 +11034,7 @@ mod tests {
         assert_eq!(valence5n_cleanup5(&mut over_depth_actual, 0, 8), Ok(false));
         assert_eq!(over_depth_actual, over_depth);
 
-        let mut only_uncharged_error = graph(
-            &[(7, 0), (8, 0), (6, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut only_uncharged_error = graph(&[(7, 0), (8, 0), (6, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         assert_eq!(
             valence5n_cleanup5(&mut only_uncharged_error, 0, 8),
             Err(AdapterCleanup5Error::Valence(AdapterValenceError {
@@ -11811,10 +11048,7 @@ mod tests {
         assert_eq!(only_uncharged_error.atoms[1].formal_charge, -1);
         assert_eq!(only_uncharged_error.bonds[0].bond_type, Single);
 
-        let mut only_charged_error = graph(
-            &[(7, 0), (8, 1), (6, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut only_charged_error = graph(&[(7, 0), (8, 1), (6, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         only_charged_error.atoms[1].num_explicit_hydrogens = 2;
         assert_eq!(
             valence5n_cleanup5(&mut only_charged_error, 0, 8),
@@ -11832,12 +11066,7 @@ mod tests {
 
         let mut charged_first_error = graph(
             &[(7, 0), (8, 0), (8, 1), (6, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Double),
-                (1, 3, ThreeCenter),
-                (2, 4, ThreeCenter),
-            ],
+            &[(0, 1, Double), (0, 2, Double), (1, 3, ThreeCenter), (2, 4, ThreeCenter)],
         );
         charged_first_error.atoms[1].num_explicit_hydrogens = 3;
         charged_first_error.atoms[2].num_explicit_hydrogens = 4;
@@ -11882,9 +11111,9 @@ mod tests {
     fn source_port__inchi__valence5ncleanup6__line_625() {
         use BondDirection::{BeginDash, BeginWedge, EndDownRight, EndUpRight};
         use BondType::{
-            Aromatic, Dative, DativeL, DativeOne, DativeR, Double, FiveAndAHalf, FourAndAHalf,
-            Hextuple, Hydrogen, Ionic, OneAndAHalf, Other, Quadruple, Quintuple, Single,
-            ThreeAndAHalf, ThreeCenter, Triple, TwoAndAHalf, Unspecified, Zero,
+            Aromatic, Dative, DativeL, DativeOne, DativeR, Double, FiveAndAHalf, FourAndAHalf, Hextuple, Hydrogen,
+            Ionic, OneAndAHalf, Other, Quadruple, Quintuple, Single, ThreeAndAHalf, ThreeCenter, Triple, TwoAndAHalf,
+            Unspecified, Zero,
         };
 
         let wrong_element = graph(&[(6, 0), (6, 0)], &[(0, 1, ThreeCenter)]);
@@ -11899,12 +11128,7 @@ mod tests {
 
         let wrong_valence = graph(
             &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (0, 1, Single),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Single), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let mut wrong_valence_actual = wrong_valence.clone();
         assert_eq!(valence5n_cleanup6(&mut wrong_valence_actual, 0), Ok(false));
@@ -11987,11 +11211,7 @@ mod tests {
             expected.bonds[4].bond_type = Double;
             expected.bonds[5].bond_type = Single;
 
-            assert_eq!(
-                valence5n_cleanup6(&mut unique, 2),
-                Ok(true),
-                "bridge case {case_index}"
-            );
+            assert_eq!(valence5n_cleanup6(&mut unique, 2), Ok(true), "bridge case {case_index}");
             assert_eq!(unique, expected, "bridge case {case_index}");
             assert_eq!(unique.bonds[3].bond_type, bridge_type);
         }
@@ -12030,9 +11250,9 @@ mod tests {
     fn source_port__inchi__valence5ncleanup7__line_679() {
         use BondDirection::{BeginDash, BeginWedge, EndDownRight, EndUpRight};
         use BondType::{
-            Aromatic, Dative, DativeL, DativeOne, DativeR, Double, FiveAndAHalf, FourAndAHalf,
-            Hextuple, Hydrogen, Ionic, OneAndAHalf, Other, Quadruple, Quintuple, Single,
-            ThreeAndAHalf, ThreeCenter, Triple, TwoAndAHalf, Unspecified, Zero,
+            Aromatic, Dative, DativeL, DativeOne, DativeR, Double, FiveAndAHalf, FourAndAHalf, Hextuple, Hydrogen,
+            Ionic, OneAndAHalf, Other, Quadruple, Quintuple, Single, ThreeAndAHalf, ThreeCenter, Triple, TwoAndAHalf,
+            Unspecified, Zero,
         };
 
         let no_target = graph(&[(7, 0), (6, 0)], &[(0, 1, ThreeCenter)]);
@@ -12059,12 +11279,7 @@ mod tests {
 
         let mut valence_error = graph(
             &[(7, 0), (6, 0), (6, 0), (8, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (1, 2, Single),
-                (2, 3, Double),
-                (0, 4, ThreeCenter),
-            ],
+            &[(0, 1, Double), (1, 2, Single), (2, 3, Double), (0, 4, ThreeCenter)],
         );
         let valence_error_before = valence_error.clone();
         assert_eq!(
@@ -12132,11 +11347,7 @@ mod tests {
             expected.bonds[7].bond_type = Single;
             expected.atoms[7].formal_charge = -1;
 
-            assert_eq!(
-                valence5n_cleanup7(&mut unique, 2),
-                Ok(true),
-                "bridge case {case_index}"
-            );
+            assert_eq!(valence5n_cleanup7(&mut unique, 2), Ok(true), "bridge case {case_index}");
             assert_eq!(unique, expected, "bridge case {case_index}");
             assert_eq!(unique.bonds[0].bond_type, bridge_type);
         }
@@ -12268,8 +11479,7 @@ mod tests {
         }
         for bond_index in 0_usize..5 {
             let mut no_match = cleanup8_graph(7);
-            no_match.bonds[bond_index].bond_type = if no_match.bonds[bond_index].bond_type == Single
-            {
+            no_match.bonds[bond_index].bond_type = if no_match.bonds[bond_index].bond_type == Single {
                 Double
             } else {
                 Single
@@ -12310,12 +11520,7 @@ mod tests {
 
         let target_component = graph(
             &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Double), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let remote = cleanup8_graph(50);
         let mut remote_match = disjoint_union(&target_component, &remote);
@@ -12374,8 +11579,7 @@ mod tests {
         }
         for bond_index in 0_usize..5 {
             let mut no_match = cleanup9_graph(7);
-            no_match.bonds[bond_index].bond_type = if no_match.bonds[bond_index].bond_type == Single
-            {
+            no_match.bonds[bond_index].bond_type = if no_match.bonds[bond_index].bond_type == Single {
                 Double
             } else {
                 Single
@@ -12414,12 +11618,7 @@ mod tests {
 
         let target_component = graph(
             &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Double), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let remote = cleanup9_graph(50);
         let mut remote_match = disjoint_union(&target_component, &remote);
@@ -12471,12 +11670,7 @@ mod tests {
 
         let mut no_match = graph(
             &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Double), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let before = no_match.clone();
         assert_eq!(valence5n_cleanupa(&mut no_match, 0), Ok(false));
@@ -12484,28 +11678,15 @@ mod tests {
 
         let mut only_match_contains_root = graph(
             &[(7, 0), (7, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (1, 0, Double),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(1, 0, Double), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let before = only_match_contains_root.clone();
-        assert_eq!(
-            valence5n_cleanupa(&mut only_match_contains_root, 0),
-            Ok(false)
-        );
+        assert_eq!(valence5n_cleanupa(&mut only_match_contains_root, 0), Ok(false));
         assert_eq!(only_match_contains_root, before);
 
         let root = graph(
             &[(7, 0), (6, 0), (6, 0), (6, 0), (6, 0)],
-            &[
-                (0, 1, Double),
-                (0, 2, Single),
-                (0, 3, Single),
-                (0, 4, Single),
-            ],
+            &[(0, 1, Double), (0, 2, Single), (0, 3, Single), (0, 4, Single)],
         );
         let pair = graph(&[(7, 0), (7, 0)], &[(1, 0, Double)]);
         let mut no_path = disjoint_union(&root, &pair);
@@ -12528,11 +11709,7 @@ mod tests {
         let mut at_limit = cleanupa_path_graph(9);
         let mut expected = at_limit.clone();
         for bond in &mut expected.bonds[..9] {
-            bond.bond_type = if bond.bond_type == Single {
-                Double
-            } else {
-                Single
-            };
+            bond.bond_type = if bond.bond_type == Single { Double } else { Single };
         }
         expected.atoms[0].formal_charge = 1;
         assert_eq!(valence5n_cleanupa(&mut at_limit, 0), Ok(true));
@@ -12544,16 +11721,7 @@ mod tests {
         assert_eq!(over_limit, before);
 
         let mut shortest = graph(
-            &[
-                (7, 0),
-                (6, 0),
-                (6, 0),
-                (7, 0),
-                (7, 0),
-                (7, 0),
-                (7, 0),
-                (6, 0),
-            ],
+            &[(7, 0), (6, 0), (6, 0), (7, 0), (7, 0), (7, 0), (7, 0), (6, 0)],
             &[
                 (0, 1, Double),
                 (1, 2, Single),
@@ -12597,11 +11765,7 @@ mod tests {
         );
         let mut expected = equal_paths.clone();
         for bond in &mut expected.bonds[..3] {
-            bond.bond_type = if bond.bond_type == Single {
-                Double
-            } else {
-                Single
-            };
+            bond.bond_type = if bond.bond_type == Single { Double } else { Single };
         }
         expected.atoms[0].formal_charge = 1;
         assert_eq!(valence5n_cleanupa(&mut equal_paths, 0), Ok(true));
@@ -12613,10 +11777,7 @@ mod tests {
         use BondDirection::{BeginDash, BeginWedge, EndDownRight};
         use BondType::{Double, Single, ThreeCenter};
 
-        let mut no_target = graph(
-            &[(7, -4), (6, 0), (8, 0)],
-            &[(0, 1, Single), (0, 2, ThreeCenter)],
-        );
+        let mut no_target = graph(&[(7, -4), (6, 0), (8, 0)], &[(0, 1, Single), (0, 2, ThreeCenter)]);
         let before = no_target.clone();
         assert_eq!(valence5n_cleanupb(&mut no_target, 0), Ok(false));
         assert_eq!(no_target, before);
@@ -12642,10 +11803,7 @@ mod tests {
         assert_eq!(valence5n_cleanupb(&mut success, 0), Ok(true));
         assert_eq!(success, expected);
 
-        let mut first_in_adjacency = graph(
-            &[(15, 3), (6, 0), (6, 0)],
-            &[(0, 2, Double), (0, 1, Double)],
-        );
+        let mut first_in_adjacency = graph(&[(15, 3), (6, 0), (6, 0)], &[(0, 2, Double), (0, 1, Double)]);
         first_in_adjacency.bonds[0].direction = BeginDash;
         first_in_adjacency.bonds[1].direction = EndDownRight;
         let mut expected = first_in_adjacency.clone();
@@ -12655,10 +11813,7 @@ mod tests {
         assert_eq!(valence5n_cleanupb(&mut first_in_adjacency, 0), Ok(true));
         assert_eq!(first_in_adjacency, expected);
 
-        let mut target_valence_error = graph(
-            &[(7, 0), (6, 0), (8, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut target_valence_error = graph(&[(7, 0), (6, 0), (8, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         let mut expected = target_valence_error.clone();
         expected.atoms[1].formal_charge = -1;
         assert_eq!(
@@ -12672,10 +11827,7 @@ mod tests {
         );
         assert_eq!(target_valence_error, expected);
 
-        let mut root_valence_error = graph(
-            &[(7, -3), (6, 0), (8, 0)],
-            &[(0, 1, Double), (0, 2, ThreeCenter)],
-        );
+        let mut root_valence_error = graph(&[(7, -3), (6, 0), (8, 0)], &[(0, 1, Double), (0, 2, ThreeCenter)]);
         let mut expected = root_valence_error.clone();
         expected.atoms[0].formal_charge = 1;
         expected.atoms[1].formal_charge = -1;
@@ -12743,19 +11895,13 @@ mod tests {
         assert_eq!(valence7s_cleanup1(&mut no_oxygen, 0), Ok(false));
         assert_eq!(no_oxygen, before);
 
-        let mut criteria_false = graph(
-            &[(16, -1), (8, 0), (8, 0)],
-            &[(0, 1, Double), (0, 2, Double)],
-        );
+        let mut criteria_false = graph(&[(16, -1), (8, 0), (8, 0)], &[(0, 1, Double), (0, 2, Double)]);
         criteria_false.atoms[0].num_explicit_hydrogens = 3;
         let before = criteria_false.clone();
         assert_eq!(valence7s_cleanup1(&mut criteria_false, 0), Ok(false));
         assert_eq!(criteria_false, before);
 
-        let mut one_carbon = graph(
-            &[(16, -1), (8, 4), (6, -5)],
-            &[(0, 1, Double), (0, 2, Single)],
-        );
+        let mut one_carbon = graph(&[(16, -1), (8, 4), (6, -5)], &[(0, 1, Double), (0, 2, Single)]);
         one_carbon.atoms[0].num_explicit_hydrogens = 4;
         one_carbon.atoms[1].num_explicit_hydrogens = 2;
         one_carbon.bonds[0].direction = BeginWedge;
@@ -12843,12 +11989,7 @@ mod tests {
 
         let mut over_depth = graph(
             &[(16, -1), (6, 0), (6, 0), (6, 0), (7, 0)],
-            &[
-                (0, 1, Double),
-                (1, 2, Single),
-                (2, 3, Double),
-                (3, 4, Triple),
-            ],
+            &[(0, 1, Double), (1, 2, Single), (2, 3, Double), (3, 4, Triple)],
         );
         over_depth.atoms[0].num_explicit_hydrogens = 5;
         let before = over_depth.clone();
@@ -12865,10 +12006,7 @@ mod tests {
         assert_eq!(valence7s_cleanup2(&mut direct, 0), Ok(true));
         assert_eq!(direct, expected);
 
-        let mut two_bonds = graph(
-            &[(16, -1), (6, -3), (7, 0)],
-            &[(0, 1, Double), (1, 2, Triple)],
-        );
+        let mut two_bonds = graph(&[(16, -1), (6, -3), (7, 0)], &[(0, 1, Double), (1, 2, Triple)]);
         two_bonds.atoms[0].num_explicit_hydrogens = 5;
         two_bonds.bonds[0].direction = BeginDash;
         two_bonds.bonds[1].direction = EndDownRight;
@@ -12895,10 +12033,7 @@ mod tests {
         assert_eq!(valence7s_cleanup2(&mut at_limit, 0), Ok(true));
         assert_eq!(at_limit, expected);
 
-        let mut first_equal_path = graph(
-            &[(16, -1), (7, 0), (7, 0)],
-            &[(0, 2, Triple), (0, 1, Triple)],
-        );
+        let mut first_equal_path = graph(&[(16, -1), (7, 0), (7, 0)], &[(0, 2, Triple), (0, 1, Triple)]);
         first_equal_path.atoms[0].num_explicit_hydrogens = 1;
         first_equal_path.bonds[0].direction = EndDownRight;
         first_equal_path.bonds[1].direction = EndUpRight;
@@ -12954,10 +12089,7 @@ mod tests {
         assert_eq!(valence7s_cleanup3(&mut charged_target, 0), Ok(false));
         assert_eq!(charged_target, before);
 
-        let mut over_depth = graph(
-            &[(16, -1), (6, 0), (7, 0)],
-            &[(0, 1, Double), (1, 2, Double)],
-        );
+        let mut over_depth = graph(&[(16, -1), (6, 0), (7, 0)], &[(0, 1, Double), (1, 2, Double)]);
         over_depth.atoms[0].num_explicit_hydrogens = 5;
         let before = over_depth.clone();
         assert_eq!(valence7s_cleanup3(&mut over_depth, 0), Ok(false));
@@ -12974,10 +12106,7 @@ mod tests {
         assert_eq!(valence7s_cleanup3(&mut success, 0), Ok(true));
         assert_eq!(success, expected);
 
-        let mut first_equal_path = graph(
-            &[(16, -1), (7, 0), (7, 0)],
-            &[(0, 2, Double), (0, 1, Double)],
-        );
+        let mut first_equal_path = graph(&[(16, -1), (7, 0), (7, 0)], &[(0, 2, Double), (0, 1, Double)]);
         first_equal_path.atoms[0].num_explicit_hydrogens = 3;
         first_equal_path.bonds[0].direction = BeginDash;
         first_equal_path.bonds[1].direction = EndDownRight;
@@ -12988,20 +12117,15 @@ mod tests {
         assert_eq!(valence7s_cleanup3(&mut first_equal_path, 0), Ok(true));
         assert_eq!(first_equal_path, expected);
 
-        let mut target_valence_not_recomputed = graph(
-            &[(16, -1), (7, 0), (6, -4)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut target_valence_not_recomputed =
+            graph(&[(16, -1), (7, 0), (6, -4)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         target_valence_not_recomputed.atoms[0].num_explicit_hydrogens = 5;
         target_valence_not_recomputed.bonds[0].direction = EndUpRight;
         let mut expected = target_valence_not_recomputed.clone();
         expected.bonds[0].bond_type = Single;
         expected.atoms[0].formal_charge = 0;
         expected.atoms[1].formal_charge = -1;
-        assert_eq!(
-            valence7s_cleanup3(&mut target_valence_not_recomputed, 0),
-            Ok(true)
-        );
+        assert_eq!(valence7s_cleanup3(&mut target_valence_not_recomputed, 0), Ok(true));
         assert_eq!(target_valence_not_recomputed, expected);
     }
 
@@ -13109,19 +12233,11 @@ mod tests {
         at_limit.atoms[0].num_explicit_hydrogens = 5;
         at_limit.atoms[9].num_explicit_hydrogens = 4;
         for (index, bond) in at_limit.bonds.iter_mut().enumerate() {
-            bond.direction = if index % 2 == 0 {
-                EndUpRight
-            } else {
-                EndDownRight
-            };
+            bond.direction = if index % 2 == 0 { EndUpRight } else { EndDownRight };
         }
         let mut expected = at_limit.clone();
         for bond in &mut expected.bonds {
-            bond.bond_type = if bond.bond_type == Double {
-                Single
-            } else {
-                Double
-            };
+            bond.bond_type = if bond.bond_type == Double { Single } else { Double };
         }
         expected.atoms[0].formal_charge = 0;
         expected.atoms[9].formal_charge = -1;
@@ -13163,10 +12279,7 @@ mod tests {
         assert_eq!(valence8s_cleanup1(&mut over_limit, 0), Ok(false));
         assert_eq!(over_limit, before);
 
-        let mut first_equal_path = graph(
-            &[(16, -1), (7, 0), (7, 0)],
-            &[(0, 2, Double), (0, 1, Double)],
-        );
+        let mut first_equal_path = graph(&[(16, -1), (7, 0), (7, 0)], &[(0, 2, Double), (0, 1, Double)]);
         first_equal_path.atoms[0].num_explicit_hydrogens = 3;
         first_equal_path.atoms[2].num_explicit_hydrogens = 2;
         first_equal_path.bonds[0].direction = EndUpRight;
@@ -13179,10 +12292,7 @@ mod tests {
         assert_eq!(valence8s_cleanup1(&mut first_equal_path, 0), Ok(true));
         assert_eq!(first_equal_path, expected);
 
-        let mut target_valence_error = graph(
-            &[(16, -1), (7, 0), (6, -4)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut target_valence_error = graph(&[(16, -1), (7, 0), (6, -4)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         target_valence_error.atoms[0].num_explicit_hydrogens = 5;
         target_valence_error.atoms[1].num_explicit_hydrogens = 4;
         target_valence_error.bonds[0].direction = BeginDash;
@@ -13244,10 +12354,7 @@ mod tests {
         assert_eq!(empty_neighbors.atoms[0].formal_charge, 3);
         assert_eq!(empty_neighbors.atoms[0].num_explicit_hydrogens, 8);
 
-        let mut mixed_bonds = graph(
-            &[(17, -1), (8, 4), (8, 5)],
-            &[(0, 1, Double), (0, 2, Single)],
-        );
+        let mut mixed_bonds = graph(&[(17, -1), (8, 4), (8, 5)], &[(0, 1, Double), (0, 2, Single)]);
         mixed_bonds.atoms[0].num_explicit_hydrogens = 5;
         mixed_bonds.atoms[1].num_explicit_hydrogens = 2;
         mixed_bonds.atoms[2].num_explicit_hydrogens = 3;
@@ -13333,10 +12440,8 @@ mod tests {
         assert_eq!(valence5cl_cleanup1(&mut wrong_bond, 0), Ok(false));
         assert_eq!(wrong_bond, before);
 
-        let mut success_without_element_guard = graph(
-            &[(15, 1), (8, -1), (6, 4)],
-            &[(0, 1, Single), (1, 2, ThreeCenter)],
-        );
+        let mut success_without_element_guard =
+            graph(&[(15, 1), (8, -1), (6, 4)], &[(0, 1, Single), (1, 2, ThreeCenter)]);
         success_without_element_guard.atoms[0].num_explicit_hydrogens = 5;
         success_without_element_guard.atoms[1].num_explicit_hydrogens = 3;
         success_without_element_guard.bonds[0].direction = BeginWedge;
@@ -13345,16 +12450,10 @@ mod tests {
         expected.bonds[0].bond_type = Double;
         expected.atoms[0].formal_charge = 0;
         expected.atoms[1].formal_charge = 0;
-        assert_eq!(
-            valence5cl_cleanup1(&mut success_without_element_guard, 0),
-            Ok(true)
-        );
+        assert_eq!(valence5cl_cleanup1(&mut success_without_element_guard, 0), Ok(true));
         assert_eq!(success_without_element_guard, expected);
 
-        let mut first_equal_target = graph(
-            &[(17, 1), (8, -1), (8, -1)],
-            &[(0, 1, Single), (0, 2, Single)],
-        );
+        let mut first_equal_target = graph(&[(17, 1), (8, -1), (8, -1)], &[(0, 1, Single), (0, 2, Single)]);
         first_equal_target.atoms[0].num_explicit_hydrogens = 4;
         first_equal_target.atoms[1].num_explicit_hydrogens = 2;
         first_equal_target.atoms[2].num_explicit_hydrogens = 3;
@@ -13412,19 +12511,14 @@ mod tests {
         assert_eq!(valence3cl_cleanup1(&mut wrong_bond, 0), Ok(false));
         assert_eq!(wrong_bond, before);
 
-        let mut success_without_element_guard = graph(
-            &[(15, 0), (16, 0), (6, 4)],
-            &[(0, 1, Triple), (1, 2, ThreeCenter)],
-        );
+        let mut success_without_element_guard =
+            graph(&[(15, 0), (16, 0), (6, 4)], &[(0, 1, Triple), (1, 2, ThreeCenter)]);
         success_without_element_guard.atoms[1].num_explicit_hydrogens = 3;
         success_without_element_guard.bonds[0].direction = BeginWedge;
         success_without_element_guard.bonds[1].direction = BeginDash;
         let mut expected = success_without_element_guard.clone();
         expected.bonds[0].bond_type = Single;
-        assert_eq!(
-            valence3cl_cleanup1(&mut success_without_element_guard, 0),
-            Ok(true)
-        );
+        assert_eq!(valence3cl_cleanup1(&mut success_without_element_guard, 0), Ok(true));
         assert_eq!(success_without_element_guard, expected);
     }
 
@@ -13470,19 +12564,13 @@ mod tests {
         valence4_cleanup1.atoms[2].is_aromatic = true;
         valence4_cleanup1.bonds[0].direction = BeginDash;
         let mut expected = valence4_cleanup1.clone();
-        for (bond_index, bond_type) in [Double, Single, Single, Double, Single]
-            .into_iter()
-            .enumerate()
-        {
+        for (bond_index, bond_type) in [Double, Single, Single, Double, Single].into_iter().enumerate() {
             expected.bonds[bond_index].bond_type = bond_type;
         }
         assert_eq!(clean_up(&mut valence4_cleanup1), Ok(()));
         assert_eq!(valence4_cleanup1, expected);
 
-        let mut valence4_cleanup2 = graph(
-            &[(7, -1), (7, 0), (8, -2)],
-            &[(1, 0, Double), (0, 2, Single)],
-        );
+        let mut valence4_cleanup2 = graph(&[(7, -1), (7, 0), (8, -2)], &[(1, 0, Double), (0, 2, Single)]);
         valence4_cleanup2.atoms[0].num_explicit_hydrogens = 1;
         valence4_cleanup2.atoms[0].is_aromatic = true;
         let mut expected = valence4_cleanup2.clone();
@@ -13561,10 +12649,7 @@ mod tests {
         assert_eq!(cleanup1.bonds[0].bond_type, Single);
         assert!(cleanup1.atoms[0].is_aromatic);
 
-        let mut cleanup2 = graph(
-            &[(7, 0), (6, 0), (7, -1)],
-            &[(0, 1, Triple), (1, 2, Single)],
-        );
+        let mut cleanup2 = graph(&[(7, 0), (6, 0), (7, -1)], &[(0, 1, Triple), (1, 2, Single)]);
         cleanup2.atoms[0].num_explicit_hydrogens = 2;
         cleanup2.atoms[0].is_aromatic = true;
         assert_eq!(clean_up(&mut cleanup2), Ok(()));
@@ -13583,10 +12668,7 @@ mod tests {
         assert_eq!(cleanup3.bonds[0].bond_type, Single);
         assert!(cleanup3.atoms[0].is_aromatic);
 
-        let mut cleanup4 = graph(
-            &[(7, 0), (14, -1), (14, -1)],
-            &[(0, 1, Double), (0, 2, Double)],
-        );
+        let mut cleanup4 = graph(&[(7, 0), (14, -1), (14, -1)], &[(0, 1, Double), (0, 2, Double)]);
         cleanup4.atoms[0].num_explicit_hydrogens = 1;
         cleanup4.atoms[0].is_aromatic = true;
         assert_eq!(clean_up(&mut cleanup4), Ok(()));
@@ -13616,10 +12698,7 @@ mod tests {
         assert_eq!(cleanupb.bonds[0].bond_type, Single);
         assert!(cleanupb.atoms[0].is_aromatic);
 
-        let mut partial_error = graph(
-            &[(7, 0), (8, 0), (6, 0)],
-            &[(0, 1, Double), (1, 2, ThreeCenter)],
-        );
+        let mut partial_error = graph(&[(7, 0), (8, 0), (6, 0)], &[(0, 1, Double), (1, 2, ThreeCenter)]);
         partial_error.atoms[0].num_explicit_hydrogens = 3;
         partial_error.atoms[0].is_aromatic = true;
         assert_eq!(
@@ -13653,10 +12732,7 @@ mod tests {
         assert_eq!(chlorine3.bonds[0].bond_type, Single);
         assert_eq!(chlorine3.bonds[0].direction, BeginWedge);
 
-        let mut sulfur7_cleanup1 = graph(
-            &[(16, -1), (8, 4), (6, -5)],
-            &[(0, 1, Double), (0, 2, Single)],
-        );
+        let mut sulfur7_cleanup1 = graph(&[(16, -1), (8, 4), (6, -5)], &[(0, 1, Double), (0, 2, Single)]);
         sulfur7_cleanup1.atoms[0].num_explicit_hydrogens = 4;
         sulfur7_cleanup1.atoms[1].num_explicit_hydrogens = 2;
         sulfur7_cleanup1.bonds[0].direction = BeginWedge;
@@ -13700,10 +12776,7 @@ mod tests {
 
         for mut bromine_miss in [
             graph(&[(35, 1), (34, 0)], &[(0, 1, Triple)]),
-            graph(
-                &[(35, 0), (34, 0), (6, 0)],
-                &[(0, 1, Double), (0, 2, Single)],
-            ),
+            graph(&[(35, 0), (34, 0), (6, 0)], &[(0, 1, Double), (0, 2, Single)]),
             graph(&[(35, 0), (6, 0)], &[(0, 1, Triple)]),
         ] {
             let before = bromine_miss.clone();
@@ -13801,12 +12874,8 @@ mod tests {
             "unsupported-valence-bond-exception-after-search".to_owned(),
             "zero-substructure-matches".to_owned(),
         ];
-        case_ids.extend(
-            [0_u32, 1, 3, 4, 5, 6].map(|atom_index| format!("atom-predicate-miss-{atom_index}")),
-        );
-        case_ids.extend(
-            [4_u32, 5].map(|bond_index| format!("nonpath-bond-predicate-miss-{bond_index}")),
-        );
+        case_ids.extend([0_u32, 1, 3, 4, 5, 6].map(|atom_index| format!("atom-predicate-miss-{atom_index}")));
+        case_ids.extend([4_u32, 5].map(|bond_index| format!("nonpath-bond-predicate-miss-{bond_index}")));
         case_ids.extend((0..=21).map(|bond_type| format!("unspecified-bridge-type-{bond_type}")));
         case_ids.extend([
             "depth-five-nontarget-stops-search".to_owned(),
@@ -14452,8 +13521,7 @@ mod tests {
             String::from_utf8_lossy(&oracle.stderr)
         );
 
-        let output =
-            String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
         let mut case_ids = BTreeSet::new();
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -14509,16 +13577,8 @@ mod tests {
                     );
                     assert_eq!(field["direction"], 0, "{case_id}");
                     AdapterBond {
-                        begin_atom_index: u32_field(
-                            &field["begin_atom_index"],
-                            "begin_atom_index",
-                            case_id,
-                        ),
-                        end_atom_index: u32_field(
-                            &field["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        begin_atom_index: u32_field(&field["begin_atom_index"], "begin_atom_index", case_id),
+                        end_atom_index: u32_field(&field["end_atom_index"], "end_atom_index", case_id),
                         bond_type: bond_type(&field["bond_type"], case_id),
                         direction: BondDirection::None,
                         ..AdapterBond::default()
@@ -14528,8 +13588,7 @@ mod tests {
             let molecule = AdapterMol::from_graph(atoms, bonds);
             let molecule_before = molecule.clone();
             let atom_index = u32_field(&official["input"]["atom_index"], "atom_index", case_id);
-            let rust =
-                get_num_double_bonded_negatively_charged_neighboring_si(&molecule, atom_index);
+            let rust = get_num_double_bonded_negatively_charged_neighboring_si(&molecule, atom_index);
 
             assert_eq!(
                 rust,
@@ -14685,16 +13744,8 @@ mod tests {
                         "{case_id}"
                     );
                     AdapterBond {
-                        begin_atom_index: u32_field(
-                            &field["begin_atom_index"],
-                            "begin_atom_index",
-                            case_id,
-                        ),
-                        end_atom_index: u32_field(
-                            &field["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        begin_atom_index: u32_field(&field["begin_atom_index"], "begin_atom_index", case_id),
+                        end_atom_index: u32_field(&field["end_atom_index"], "end_atom_index", case_id),
                         bond_type: bond_type(&field["bond_type"], case_id),
                         direction: direction(&field["direction"], case_id),
                         ..AdapterBond::default()
@@ -14952,16 +14003,8 @@ mod tests {
                         "{case_id}"
                     );
                     AdapterBond {
-                        begin_atom_index: u32_field(
-                            &field["begin_atom_index"],
-                            "begin_atom_index",
-                            case_id,
-                        ),
-                        end_atom_index: u32_field(
-                            &field["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        begin_atom_index: u32_field(&field["begin_atom_index"], "begin_atom_index", case_id),
+                        end_atom_index: u32_field(&field["end_atom_index"], "end_atom_index", case_id),
                         bond_type: bond_type(&field["bond_type"], case_id),
                         direction: direction(&field["direction"], case_id),
                         ..AdapterBond::default()
@@ -15014,17 +14057,9 @@ mod tests {
             let rust = valence4n_cleanup2(&mut molecule, atom_index);
 
             assert_eq!(official["output"]["status"], "return", "{case_id}");
-            assert_eq!(
-                official["output"]["result"].as_bool(),
-                Some(rust),
-                "{case_id}"
-            );
+            assert_eq!(official["output"]["result"].as_bool(), Some(rust), "{case_id}");
             assert!(official["output"]["exception"].is_null(), "{case_id}");
-            assert_eq!(
-                official["output"]["diagnostics"],
-                Value::Array(vec![]),
-                "{case_id}"
-            );
+            assert_eq!(official["output"]["diagnostics"], Value::Array(vec![]), "{case_id}");
             assert_eq!(
                 official["output"]["graph_unchanged"].as_bool(),
                 Some(molecule == molecule_before),
@@ -15061,11 +14096,7 @@ mod tests {
                 ),
                 "{case_id}"
             );
-            assert_eq!(
-                official["output"]["properties"],
-                Value::Array(vec![]),
-                "{case_id}"
-            );
+            assert_eq!(official["output"]["properties"], Value::Array(vec![]), "{case_id}");
         }
 
         assert_eq!(
@@ -15159,8 +14190,7 @@ mod tests {
             String::from_utf8_lossy(&oracle.stderr)
         );
 
-        let output =
-            String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -15191,10 +14221,8 @@ mod tests {
                 "{case_id}"
             );
 
-            let expected_directions = parse_directions(
-                &official["output"]["stereo_fields"]["bond_directions"],
-                case_id,
-            );
+            let expected_directions =
+                parse_directions(&official["output"]["stereo_fields"]["bond_directions"], case_id);
             assert_eq!(directions(&molecule), expected_directions, "{case_id}");
             let bond_fields = official["output"]["bond_fields"]
                 .as_array()
@@ -15211,21 +14239,14 @@ mod tests {
             assert_eq!(official["output"]["atom_fields"], Value::Array(vec![]));
             assert_eq!(official["output"]["properties"], Value::Array(vec![]));
 
-            match official["output"]["status"]
-                .as_str()
-                .expect("status must be text")
-            {
+            match official["output"]["status"].as_str().expect("status must be text") {
                 "return" => {
                     let expected = official["output"]["result"]
                         .as_bool()
                         .unwrap_or_else(|| panic!("{case_id}: result must be bool"));
                     assert_eq!(rust, Ok(expected), "{case_id}");
                     assert!(official["output"]["exception"].is_null(), "{case_id}");
-                    assert_eq!(
-                        official["output"]["diagnostics"],
-                        Value::Array(vec![]),
-                        "{case_id}"
-                    );
+                    assert_eq!(official["output"]["diagnostics"], Value::Array(vec![]), "{case_id}");
                 }
                 "exception" => {
                     assert!(official["output"]["result"].is_null(), "{case_id}");
@@ -15244,11 +14265,7 @@ mod tests {
                     .unwrap_or_else(|_| panic!("{case_id}: upper_bound exceeds u32"));
                     assert_eq!(exception["kind"], "Range Error", "{case_id}");
                     assert_eq!(exception["expression"], "idx", "{case_id}");
-                    assert_eq!(
-                        exception["detail"],
-                        format!("{index} < {upper_bound}"),
-                        "{case_id}"
-                    );
+                    assert_eq!(exception["detail"], format!("{index} < {upper_bound}"), "{case_id}");
                     assert_eq!(
                         rust,
                         Err(BondIndexRangeError {
@@ -15399,16 +14416,8 @@ mod tests {
                         "{case_id}: bond index"
                     );
                     AdapterBond {
-                        begin_atom_index: parse_u32(
-                            &field["begin_atom_index"],
-                            "begin_atom_index",
-                            case_id,
-                        ),
-                        end_atom_index: parse_u32(
-                            &field["end_atom_index"],
-                            "end_atom_index",
-                            case_id,
-                        ),
+                        begin_atom_index: parse_u32(&field["begin_atom_index"], "begin_atom_index", case_id),
+                        end_atom_index: parse_u32(&field["end_atom_index"], "end_atom_index", case_id),
                         bond_type: parse_bond_type(&field["bond_type"], case_id),
                         direction: parse_direction(&field["direction"], case_id),
                         ..AdapterBond::default()
@@ -15435,8 +14444,7 @@ mod tests {
             String::from_utf8_lossy(&oracle.stderr)
         );
 
-        let output =
-            String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
+        let output = String::from_utf8(oracle.stdout).expect("RDKit C++ oracle output must be UTF-8");
         let mut case_ids = BTreeSet::new();
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -15459,35 +14467,17 @@ mod tests {
             let bonds = parse_bonds(&input["bond_fields"], case_id);
             let mut molecule = AdapterMol::from_graph(atoms, bonds);
             let molecule_before = molecule.clone();
-            let current_atom_index =
-                parse_u32(&input["current_atom_index"], "current_atom_index", case_id);
-            let desired_atomic_number = parse_i32(
-                &input["desired_atomic_number"],
-                "desired_atomic_number",
-                case_id,
-            );
-            let desired_atom_charge = parse_i32(
-                &input["desired_atom_charge"],
-                "desired_atom_charge",
-                case_id,
-            );
+            let current_atom_index = parse_u32(&input["current_atom_index"], "current_atom_index", case_id);
+            let desired_atomic_number = parse_i32(&input["desired_atomic_number"], "desired_atomic_number", case_id);
+            let desired_atom_charge = parse_i32(&input["desired_atom_charge"], "desired_atom_charge", case_id);
             let desired_next_bond_type = parse_bond_type(&input["desired_next_bond_type"], case_id);
-            let desired_ending_bond_type =
-                parse_bond_type(&input["desired_ending_bond_type"], case_id);
-            let current_path_length = parse_u32(
-                &input["current_path_length"],
-                "current_path_length",
-                case_id,
-            );
+            let desired_ending_bond_type = parse_bond_type(&input["desired_ending_bond_type"], case_id);
+            let current_path_length = parse_u32(&input["current_path_length"], "current_path_length", case_id);
             let max_path_length = parse_u32(&input["max_path_length"], "max_path_length", case_id);
             let last_bond_index = if input["last_bond_index"].is_null() {
                 None
             } else {
-                Some(parse_u32(
-                    &input["last_bond_index"],
-                    "last_bond_index",
-                    case_id,
-                ))
+                Some(parse_u32(&input["last_bond_index"], "last_bond_index", case_id))
             };
             let mut path = parse_u32_array(&input["initial_path"], "initial_path", case_id);
             let mut visited = parse_visited(&input["initial_visited"], case_id);
@@ -15530,16 +14520,8 @@ mod tests {
             assert_eq!(official["output"]["graph_unchanged"], true, "{case_id}");
             assert_eq!(official["output"]["status"], "return", "{case_id}");
             assert!(official["output"]["exception"].is_null(), "{case_id}");
-            assert_eq!(
-                official["output"]["diagnostics"],
-                Value::Array(vec![]),
-                "{case_id}"
-            );
-            assert_eq!(
-                official["output"]["properties"],
-                Value::Array(vec![]),
-                "{case_id}"
-            );
+            assert_eq!(official["output"]["diagnostics"], Value::Array(vec![]), "{case_id}");
+            assert_eq!(official["output"]["properties"], Value::Array(vec![]), "{case_id}");
             assert_eq!(
                 official["output"]["atom_count"].as_u64(),
                 Some(molecule.atoms.len() as u64),

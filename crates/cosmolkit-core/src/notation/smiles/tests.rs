@@ -30,10 +30,7 @@ fn shared_get_iso_map_smiles_adapter_preserves_missing_atom_error() {
         .add_bond(BondSpec::new(carbon, deuterium, BondOrder::Single))
         .unwrap();
     let missing = AtomId::new(7);
-    builder
-        .bond_mut(bond)
-        .unwrap()
-        .set_endpoints(carbon, missing);
+    builder.bond_mut(bond).unwrap().set_endpoints(carbon, missing);
 
     let error = tracked_smiles_isotopic_hydrogens(&builder).unwrap_err();
 
@@ -213,10 +210,7 @@ fn lexer_emits_chiral_class_tokens_like_smiles_ll() {
         lexer.next_token().unwrap(),
         SmilesToken::ChiralClass(ChiralTag::Tetrahedral)
     );
-    assert_eq!(
-        lexer.next_token().unwrap(),
-        SmilesToken::ChiralClass(ChiralTag::Allene)
-    );
+    assert_eq!(lexer.next_token().unwrap(), SmilesToken::ChiralClass(ChiralTag::Allene));
     assert_eq!(
         lexer.next_token().unwrap(),
         SmilesToken::ChiralClass(ChiralTag::SquarePlanar)
@@ -349,15 +343,11 @@ fn parse_ring_number_accepts_percent_group_forms_like_rdkit() {
 fn parse_ring_number_rejects_empty_and_oversized_percent_groups() {
     assert_eq!(
         parse_ring_number_token("%()"),
-        Err(SmilesParseError::ParseError(
-            "empty ring number".to_string()
-        ))
+        Err(SmilesParseError::ParseError("empty ring number".to_string()))
     );
     assert_eq!(
         parse_ring_number_token("%(123456)"),
-        Err(SmilesParseError::ParseError(
-            "ring number too large".to_string()
-        ))
+        Err(SmilesParseError::ParseError("ring number too large".to_string()))
     );
 }
 
@@ -388,12 +378,8 @@ fn add_first_atom_parse_mol_keeps_disconnected_fragment_starts_like_rdkit() {
 fn build_state_add_disconnected_atom_starts_new_active_fragment_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    state
-        .add_disconnected_atom(SmilesAtomToken::new(8))
-        .unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(9))
-        .unwrap();
+    state.add_disconnected_atom(SmilesAtomToken::new(8)).unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(9)).unwrap();
     let molecule = state.into_molecule().unwrap();
 
     assert_eq!(molecule.atomic_numbers(), vec![6, 8, 9]);
@@ -411,9 +397,7 @@ fn build_state_add_disconnected_atom_starts_new_active_fragment_like_rdkit() {
 fn build_state_add_atom_connected_to_active_uses_unspecified_bond_type_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(8))
-        .unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(8)).unwrap();
     let molecule = state.into_molecule().unwrap();
 
     assert_eq!(molecule.atomic_numbers(), vec![6, 8]);
@@ -428,19 +412,14 @@ fn add_atom_connected_to_active_requires_existing_active_atom() {
         .add_atom_connected_to_active(SmilesAtomToken::new(6))
         .unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("no active atom".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("no active atom".to_string()));
 }
 
 #[test]
 fn add_branch_atom_connected_to_active_tracks_branch_root_and_new_active_atom_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
     state
         .add_branch_atom_connected_to_active(11, SmilesAtomToken::new(8))
         .unwrap();
@@ -467,12 +446,8 @@ fn add_branch_atom_connected_to_active_tracks_branch_root_and_new_active_atom_li
 fn add_branch_single_bond_tracks_branch_root_and_single_bond_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
-    state
-        .add_branch_single_bond(13, SmilesAtomToken::new(8))
-        .unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
+    state.add_branch_single_bond(13, SmilesAtomToken::new(8)).unwrap();
 
     assert_eq!(state.active_atom, Some(AtomId::new(2)));
     assert_eq!(
@@ -495,9 +470,7 @@ fn add_branch_single_bond_tracks_branch_root_and_single_bond_like_rdkit() {
 fn add_single_bond_to_atom_adds_explicit_single_bond_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    state
-        .add_single_bond_to_atom(SmilesAtomToken::new(8))
-        .unwrap();
+    state.add_single_bond_to_atom(SmilesAtomToken::new(8)).unwrap();
 
     let molecule = state.into_molecule().unwrap();
     assert_eq!(molecule.atomic_numbers(), vec![6, 8]);
@@ -513,10 +486,7 @@ fn build_state_add_explicit_bond_to_atom_normalizes_dative_direction_like_rdkit(
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(7)).unwrap();
     state
-        .add_explicit_bond_to_atom(
-            SmilesBondToken::new(BondOrder::DativeLeft),
-            SmilesAtomToken::new(8),
-        )
+        .add_explicit_bond_to_atom(SmilesBondToken::new(BondOrder::DativeLeft), SmilesAtomToken::new(8))
         .unwrap();
     let molecule = state.into_molecule().unwrap();
 
@@ -564,15 +534,9 @@ fn build_state_add_explicit_bond_to_atom_maps_null_query_bond_to_any_like_rdkit_
 fn add_branch_explicit_bond_tracks_branch_root_and_new_active_atom_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
     state
-        .add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
-    state
-        .add_branch_explicit_bond(
-            17,
-            SmilesBondToken::new(BondOrder::Double),
-            SmilesAtomToken::new(8),
-        )
+        .add_branch_explicit_bond(17, SmilesBondToken::new(BondOrder::Double), SmilesAtomToken::new(8))
         .unwrap();
 
     assert_eq!(state.active_atom, Some(AtomId::new(2)));
@@ -641,10 +605,7 @@ fn from_smiles_with_sanitize_false_preserves_directional_and_cx_wedge_state_like
     let directional = Molecule::from_smiles_with_sanitize("C/C", false).unwrap();
     let wedged = Molecule::from_smiles_with_sanitize("CC |wU:1.0|", false).unwrap();
 
-    assert_eq!(
-        directional.bonds()[0].direction(),
-        BondDirection::EndUpRight
-    );
+    assert_eq!(directional.bonds()[0].direction(), BondDirection::EndUpRight);
     assert_eq!(directional.bonds()[0].prop(UNSPECIFIED_ORDER_PROP), None);
     assert_eq!(wedged.bonds()[0].direction(), BondDirection::None);
     assert_eq!(wedged.bonds()[0].prop("_MolFileBondCfg"), Some("1"));
@@ -665,9 +626,7 @@ fn handle_cx_part_and_name_reports_strict_non_name_text_like_rdkit() {
 
     assert_eq!(
         error,
-        SmilesParseError::ParseError(
-            "CXSMILES extension does not start with | and parseName=false".to_string()
-        )
+        SmilesParseError::ParseError("CXSMILES extension does not start with | and parseName=false".to_string())
     );
 }
 
@@ -683,10 +642,7 @@ fn mol_from_smiles_top_level_parses_simple_smiles_like_rdkit() {
 fn mol_from_smiles_top_level_propagates_unclosed_ring_parse_failure_like_rdkit() {
     let error = mol_from_smiles("C1CC", &SmilesParseParams::default()).unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("unclosed ring".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("unclosed ring".to_string()));
 }
 
 #[test]
@@ -713,10 +669,7 @@ fn handle_cx_part_and_name_parses_atom_labels_and_name_like_rdkit() {
 
     assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
     assert_eq!(molecule.atoms()[2].prop("atomLabel"), Some("foo"));
-    assert_eq!(
-        molecule.properties().prop("_CXSMILES_Data"),
-        Some("|$;;foo$|")
-    );
+    assert_eq!(molecule.properties().prop("_CXSMILES_Data"), Some("|$;;foo$|"));
     assert_eq!(molecule.properties().name(), Some("ethanol"));
 }
 
@@ -739,9 +692,12 @@ fn cleanup_after_parsing_clears_parser_temporary_props_like_rdkit() {
             .iter()
             .all(|atom| atom.prop(SMILES_START_PROP).is_none())
     );
-    assert!(molecule.bonds().iter().all(|bond| {
-        bond.prop(UNSPECIFIED_ORDER_PROP).is_none() && bond.prop(CXSMILES_BOND_IDX_PROP).is_none()
-    }));
+    assert!(
+        molecule
+            .bonds()
+            .iter()
+            .all(|bond| { bond.prop(UNSPECIFIED_ORDER_PROP).is_none() && bond.prop(CXSMILES_BOND_IDX_PROP).is_none() })
+    );
     assert!(
         molecule.bonds()[..6]
             .iter()
@@ -814,11 +770,8 @@ fn parse_cx_polymer_sgroup_rejects_unknown_type_like_rdkit() {
 
 #[test]
 fn handle_cx_part_and_name_parses_atom_values_and_props_like_rdkit() {
-    let molecule = Molecule::from_smiles_with_sanitize(
-        "CC |$_AV:first;second$,atomProp:1.foo.bar&#46;baz|",
-        false,
-    )
-    .unwrap();
+    let molecule =
+        Molecule::from_smiles_with_sanitize("CC |$_AV:first;second$,atomProp:1.foo.bar&#46;baz|", false).unwrap();
 
     assert_eq!(molecule.atoms()[0].prop("molFileValue"), Some("first"));
     assert_eq!(molecule.atoms()[1].prop("molFileValue"), Some("second"));
@@ -831,18 +784,9 @@ fn handle_cx_part_and_name_parses_coordinates_like_rdkit() {
 
     assert_eq!(molecule.conformers_3d().len(), 1);
     assert!(molecule.conformers_3d()[0].is_3d());
-    assert_eq!(
-        molecule.conformers_3d()[0].coordinates()[0],
-        [0.0, 0.0, 0.0]
-    );
-    assert_eq!(
-        molecule.conformers_3d()[0].coordinates()[1],
-        [1.0, 0.0, 0.0]
-    );
-    assert_eq!(
-        molecule.conformers_3d()[0].coordinates()[2],
-        [2.0, 0.0, 0.5]
-    );
+    assert_eq!(molecule.conformers_3d()[0].coordinates()[0], [0.0, 0.0, 0.0]);
+    assert_eq!(molecule.conformers_3d()[0].coordinates()[1], [1.0, 0.0, 0.0]);
+    assert_eq!(molecule.conformers_3d()[0].coordinates()[2], [2.0, 0.0, 0.5]);
 }
 
 #[test]
@@ -883,8 +827,7 @@ fn mol_from_smiles_conformer_selection_reports_only_first_3d_when_no_2d_exists()
 
 fn coordinate_free_atropisomer_candidate(direction: BondDirection) -> Molecule {
     let mut builder = MoleculeBuilder::new();
-    let chlorine = builder
-        .add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_no_implicit(true));
+    let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_no_implicit(true));
     let axis_begin = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let alkene_left = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let axis_end = builder.add_atom(AtomSpec::new(Element::C));
@@ -934,18 +877,14 @@ fn mol_from_smiles_flips_coordinate_free_atropisomer_bond_stereo_for_hash_like_r
 
 fn conformer_backed_atropisomer_candidate(is_3d: bool) -> Molecule {
     let mut builder = MoleculeBuilder::new();
-    let chlorine = builder
-        .add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_no_implicit(true));
+    let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_no_implicit(true));
     let axis_begin = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let alkene_left = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let axis_end = builder.add_atom(AtomSpec::new(Element::C));
     let alkene_right = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
 
     builder
-        .add_bond(
-            BondSpec::new(axis_begin, chlorine, BondOrder::Single)
-                .with_direction(BondDirection::BeginWedge),
-        )
+        .add_bond(BondSpec::new(axis_begin, chlorine, BondOrder::Single).with_direction(BondDirection::BeginWedge))
         .unwrap();
     builder
         .add_bond(BondSpec::new(axis_begin, alkene_left, BondOrder::Double))
@@ -974,9 +913,7 @@ fn conformer_backed_atropisomer_candidate(is_3d: bool) -> Molecule {
             [1.0, -1.0, 0.0],
         ]
     };
-    builder
-        .add_conformer(Conformer3D::new(0, coords, is_3d))
-        .unwrap();
+    builder.add_conformer(Conformer3D::new(0, coords, is_3d)).unwrap();
 
     builder
         .build()
@@ -1023,12 +960,7 @@ fn three_neighbor_3d_carbon(formal_charge: i8) -> Molecule {
     builder
         .add_conformer(Conformer3D::new(
             0,
-            vec![
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0],
-            ],
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             true,
         ))
         .unwrap();
@@ -1069,10 +1001,7 @@ fn assign_chiral_types_from_3d_marks_non_explicit_3d_chirality_like_rdkit() {
     assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_ne!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
-    assert_eq!(
-        molecule.atoms()[0].prop("_NonExplicit3DChirality"),
-        Some("1")
-    );
+    assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
 }
 
 #[test]
@@ -1104,12 +1033,7 @@ fn three_neighbor_pseudo_2d_carbon() -> Molecule {
     builder
         .add_conformer(Conformer3D::new(
             0,
-            vec![
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [-1.0, -1.0, 0.0],
-            ],
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]],
             true,
         ))
         .unwrap();
@@ -1133,25 +1057,14 @@ fn stereogenic_double_bond_molecule_with_conformer(same_side: bool, is_3d: bool)
     let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
     let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-    builder
-        .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c0, f, BondOrder::Single))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
-        .unwrap();
+    builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
+    builder.add_bond(BondSpec::new(c0, f, BondOrder::Single)).unwrap();
+    builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
     let right_y = if same_side { 1.0 } else { -1.0 };
     builder
         .add_conformer(Conformer3D::new(
             0,
-            vec![
-                [-1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [-1.0, 1.0, 0.0],
-                [1.0, right_y, 0.0],
-            ],
+            vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, right_y, 0.0]],
             is_3d,
         ))
         .unwrap();
@@ -1168,15 +1081,9 @@ fn stereogenic_double_bond_molecule_without_conformer() -> Molecule {
     let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
     let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-    builder
-        .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c0, f, BondOrder::Single))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
-        .unwrap();
+    builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
+    builder.add_bond(BondSpec::new(c0, f, BondOrder::Single)).unwrap();
+    builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
     builder.build().unwrap()
 }
 
@@ -1186,24 +1093,13 @@ fn linear_double_bond_3d_molecule() -> Molecule {
     let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
     let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-    builder
-        .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c0, f, BondOrder::Single))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
-        .unwrap();
+    builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
+    builder.add_bond(BondSpec::new(c0, f, BondOrder::Single)).unwrap();
+    builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
     builder
         .add_conformer(Conformer3D::new(
             0,
-            vec![
-                [-1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [-2.0, 0.0, 0.0],
-                [2.0, 1.0, 0.0],
-            ],
+            vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-2.0, 0.0, 0.0], [2.0, 1.0, 0.0]],
             true,
         ))
         .unwrap();
@@ -1216,24 +1112,13 @@ fn squiggle_neighbor_double_bond_3d_molecule() -> Molecule {
     let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let h = builder.add_atom(AtomSpec::new(Element::H));
     let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-    builder
-        .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(h, c0, BondOrder::Single))
-        .unwrap();
-    builder
-        .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
-        .unwrap();
+    builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
+    builder.add_bond(BondSpec::new(h, c0, BondOrder::Single)).unwrap();
+    builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
     builder
         .add_conformer(Conformer3D::new(
             0,
-            vec![
-                [-1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [-2.0, 1.0, 0.0],
-                [2.0, 1.0, 0.0],
-            ],
+            vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-2.0, 1.0, 0.0], [2.0, 1.0, 0.0]],
             true,
         ))
         .unwrap();
@@ -1302,8 +1187,8 @@ fn set_double_bond_neighbor_directions_materializes_symm_sssr_ring_cache_like_rd
 
 #[test]
 fn legacy_stereo_cleanup_persists_symm_sssr_from_chiral_special_case_scan_like_rdkit() {
-    let mut molecule = Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1C(=C3C=CC1CC3)C2=O")
-        .expect("parse fused-ring regression molecule");
+    let mut molecule =
+        Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1C(=C3C=CC1CC3)C2=O").expect("parse fused-ring regression molecule");
     molecule.derived_cache_mut().rings =
         Some(crate::find_sssr(&molecule).expect("materialize the pre-cleanup SSSR state"));
 
@@ -1383,9 +1268,9 @@ fn set_double_bond_neighbor_directions_reorients_existing_dir_to_rdkit_raw_bond_
 #[test]
 fn from_smiles_assigns_ring_closure_double_bond_stereo_atoms_like_rdkit_row_86() {
     let molecule = Molecule::from_smiles(
-            "C=C1/C(C[C@@H](O)CC1)=C\\C=C2[C@@]3([H])[C@@](CCC\\2)(C)[C@]([C@H](C)/C=C/[C@H](C)C(C)C)([H])CC3",
-        )
-        .unwrap();
+        "C=C1/C(C[C@@H](O)CC1)=C\\C=C2[C@@]3([H])[C@@](CCC\\2)(C)[C@]([C@H](C)/C=C/[C@H](C)C(C)C)([H])CC3",
+    )
+    .unwrap();
 
     assert_eq!(molecule.bonds()[9].stereo(), BondStereo::E);
     assert_eq!(
@@ -1405,10 +1290,8 @@ fn from_smiles_does_not_leave_directional_bonds_for_nonstereo_ring_like_rdkit_ro
 }
 
 #[test]
-fn from_smiles_does_not_assign_imine_stereo_without_distinguishable_substituents_like_rdkit_row_88()
-{
-    let molecule =
-        Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
+fn from_smiles_does_not_assign_imine_stereo_without_distinguishable_substituents_like_rdkit_row_88() {
+    let molecule = Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
     assert_eq!(molecule.bonds()[3].direction(), BondDirection::None);
     assert_eq!(molecule.bonds()[3].stereo(), BondStereo::None);
     assert_eq!(molecule.bonds()[3].stereo_atoms(), None);
@@ -1545,10 +1428,7 @@ M  END
     .unwrap();
 
     assert_eq!(molecule.bonds()[8].direction(), BondDirection::EndUpRight);
-    assert_eq!(
-        molecule.bonds()[10].direction(),
-        BondDirection::EndDownRight
-    );
+    assert_eq!(molecule.bonds()[10].direction(), BondDirection::EndDownRight);
     assert_eq!(molecule.bonds()[21].direction(), BondDirection::EndUpRight);
 }
 
@@ -1635,9 +1515,7 @@ M  END
 fn smarts_set_bond_stereo_from_directions() {
     let mut molecule = stereogenic_double_bond_3d_molecule(true);
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
-    molecule
-        .properties_mut()
-        .set_prop("_needsDetectBondStereo", "1");
+    molecule.properties_mut().set_prop("_needsDetectBondStereo", "1");
 
     apply_bond_stereo_from_directions_to_molecule(&mut molecule).unwrap();
 
@@ -1653,9 +1531,7 @@ fn smarts_set_bond_stereo_from_directions() {
 fn set_bond_stereo_from_directions_leaves_stereo_unset_without_both_neighbor_dirs_like_rdkit() {
     let mut molecule = stereogenic_double_bond_molecule_without_conformer();
     molecule.topology_block_mut().bonds[1].set_direction(BondDirection::EndUpRight);
-    molecule
-        .properties_mut()
-        .set_prop("_needsDetectBondStereo", "1");
+    molecule.properties_mut().set_prop("_needsDetectBondStereo", "1");
 
     set_bond_stereo_from_directions(&mut molecule).unwrap();
 
@@ -1668,9 +1544,7 @@ fn set_bond_stereo_from_directions_leaves_stereo_unset_without_both_neighbor_dir
 fn set_bond_stereo_from_directions_updates_internal_molecule_state_like_rdkit() {
     let mut molecule = stereogenic_double_bond_3d_molecule(true);
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
-    molecule
-        .properties_mut()
-        .set_prop("_needsDetectBondStereo", "1");
+    molecule.properties_mut().set_prop("_needsDetectBondStereo", "1");
 
     set_bond_stereo_from_directions(&mut molecule).unwrap();
 
@@ -1738,8 +1612,7 @@ fn stereochemistry_from_3d_clears_existing_double_bond_stereo_before_reassignmen
 
 fn square_planar_3d_phosphorus(coords: Vec<[f64; 3]>) -> Molecule {
     let mut builder = MoleculeBuilder::new();
-    let center = builder
-        .add_atom(AtomSpec::new(Element::from_atomic_number(15).unwrap()).with_no_implicit(true));
+    let center = builder.add_atom(AtomSpec::new(Element::from_atomic_number(15).unwrap()).with_no_implicit(true));
     let ligand_elements = [
         Element::from_atomic_number(9).unwrap(),
         Element::from_atomic_number(17).unwrap(),
@@ -1754,9 +1627,7 @@ fn square_planar_3d_phosphorus(coords: Vec<[f64; 3]>) -> Molecule {
             .add_bond(BondSpec::new(center, ligand, BondOrder::Single))
             .unwrap();
     }
-    builder
-        .add_conformer(Conformer3D::new(0, coords, true))
-        .unwrap();
+    builder.add_conformer(Conformer3D::new(0, coords, true)).unwrap();
     builder.build().unwrap()
 }
 
@@ -1774,10 +1645,7 @@ fn assign_chiral_types_from_3d_assigns_square_planar_from_two_opposite_pairs_lik
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::SquarePlanar);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(2));
-    assert_eq!(
-        molecule.atoms()[0].prop("_NonExplicit3DChirality"),
-        Some("1")
-    );
+    assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
 }
 
 #[test]
@@ -1808,15 +1676,9 @@ fn assign_chiral_types_from_3d_assigns_trigonal_bipyramidal_from_one_opposite_pa
 
     assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
-    assert_eq!(
-        molecule.atoms()[0].chiral_tag(),
-        ChiralTag::TrigonalBipyramidal
-    );
+    assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::TrigonalBipyramidal);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(7));
-    assert_eq!(
-        molecule.atoms()[0].prop("_NonExplicit3DChirality"),
-        Some("1")
-    );
+    assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
 }
 
 #[test]
@@ -1831,10 +1693,7 @@ fn assign_chiral_types_from_3d_assigns_seesaw_trigonal_bipyramidal_like_rdkit() 
 
     assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
-    assert_eq!(
-        molecule.atoms()[0].chiral_tag(),
-        ChiralTag::TrigonalBipyramidal
-    );
+    assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::TrigonalBipyramidal);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(7));
 }
 
@@ -1905,14 +1764,10 @@ fn assign_chiral_types_from_3d_covers_all_seesaw_octahedral_branches_like_rdkit(
 
     for (coords, expected_perm) in cases {
         let mut molecule = square_planar_3d_phosphorus(coords);
-        assign_chiral_types_from_3d(&mut molecule, 0)
-            .expect("3D chirality assignment should succeed");
+        assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
         assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
-        assert_eq!(
-            molecule.atoms()[0].chiral_permutation(),
-            Some(expected_perm)
-        );
+        assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(expected_perm));
     }
 }
 
@@ -1982,10 +1837,7 @@ fn handle_cx_part_and_name_parses_enhanced_stereo_groups_like_rdkit() {
     assert_eq!(molecule.stereo_groups().len(), 1);
     assert_eq!(molecule.stereo_groups()[0].kind(), StereoGroupKind::Or);
     assert_eq!(molecule.stereo_groups()[0].id(), Some(1));
-    assert_eq!(
-        molecule.stereo_groups()[0].atoms(),
-        &[AtomId::new(1), AtomId::new(2)]
-    );
+    assert_eq!(molecule.stereo_groups()[0].atoms(), &[AtomId::new(1), AtomId::new(2)]);
 }
 
 #[test]
@@ -2092,30 +1944,15 @@ fn parse_cx_coords_marks_2d_and_3d_conformers_like_rdkit_has_non_zero_z() {
     assert_eq!(molecule.conformers_3d().len(), 2);
     assert!(!molecule.conformers_3d()[0].is_3d());
     assert!(molecule.conformers_3d()[1].is_3d());
-    assert_eq!(
-        molecule.conformers_3d()[1].coordinates()[2],
-        [2.0, 0.0, 0.5]
-    );
+    assert_eq!(molecule.conformers_3d()[1].coordinates()[2], [2.0, 0.0, 0.5]);
 }
 
 #[test]
 fn get_unspecified_bond_type_for_atoms_matches_rdkit_aromatic_rule() {
-    assert_eq!(
-        get_unspecified_bond_type_for_atoms(true, true),
-        BondOrder::Aromatic
-    );
-    assert_eq!(
-        get_unspecified_bond_type_for_atoms(true, false),
-        BondOrder::Single
-    );
-    assert_eq!(
-        get_unspecified_bond_type_for_atoms(false, true),
-        BondOrder::Single
-    );
-    assert_eq!(
-        get_unspecified_bond_type_for_atoms(false, false),
-        BondOrder::Single
-    );
+    assert_eq!(get_unspecified_bond_type_for_atoms(true, true), BondOrder::Aromatic);
+    assert_eq!(get_unspecified_bond_type_for_atoms(true, false), BondOrder::Single);
+    assert_eq!(get_unspecified_bond_type_for_atoms(false, true), BondOrder::Single);
+    assert_eq!(get_unspecified_bond_type_for_atoms(false, false), BondOrder::Single);
 }
 
 #[test]
@@ -2155,9 +1992,7 @@ fn handle_cx_part_and_name_completes_substitution_scan_queries_like_rdkit() {
 
     assert_eq!(
         molecule.atoms()[0].query(),
-        Some(&QueryNode::predicate(
-            AtomQueryPredicate::NonHydrogenDegree(1,)
-        ))
+        Some(&QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(1,)))
     );
     assert_eq!(molecule.properties().prop("_NeedsQueryScan"), None);
 }
@@ -2172,9 +2007,7 @@ fn handle_cx_part_and_name_completes_ring_and_non_ring_scan_queries_like_rdkit()
     );
     assert_eq!(
         molecule.atoms()[3].query(),
-        Some(&QueryNode::predicate(
-            AtomQueryPredicate::NonHydrogenDegree(1)
-        ))
+        Some(&QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(1)))
     );
     assert_eq!(molecule.properties().prop("_NeedsQueryScan"), None);
 }
@@ -2185,9 +2018,7 @@ fn handle_cx_part_and_name_parses_substitution_query_like_rdkit() {
 
     assert_eq!(
         molecule.atoms()[0].query(),
-        Some(&QueryNode::predicate(
-            AtomQueryPredicate::NonHydrogenDegree(1)
-        ))
+        Some(&QueryNode::predicate(AtomQueryPredicate::NonHydrogenDegree(1)))
     );
 }
 
@@ -2200,9 +2031,7 @@ fn shared_canon_helpers_has_single_h_query_matches_rdkit_atomand_only() {
     ]);
     let nested_atom_and_h = QueryNode::and(vec![
         QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
-        QueryNode::and(vec![QueryNode::predicate(
-            AtomQueryPredicate::ImplicitHydrogenCount(1),
-        )]),
+        QueryNode::and(vec![QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCount(1))]),
     ]);
     let atom_or_h = QueryNode::or(vec![
         QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
@@ -2221,24 +2050,12 @@ fn shared_canon_helpers_has_single_h_query_matches_rdkit_atomand_only() {
 
 #[test]
 fn shared_canon_helpers_pure_predicates_cover_every_source_condition() {
-    assert!(!canon_chiral_atom_needs_tag_inversion(
-        2, 1, true, false, 1, false
-    ));
-    assert!(canon_chiral_atom_needs_tag_inversion(
-        3, 1, true, true, 0, true
-    ));
-    assert!(canon_chiral_atom_needs_tag_inversion(
-        3, 0, false, false, 1, false
-    ));
-    assert!(!canon_chiral_atom_needs_tag_inversion(
-        3, 0, false, true, 1, false
-    ));
-    assert!(!canon_chiral_atom_needs_tag_inversion(
-        3, 0, false, false, 0, false
-    ));
-    assert!(!canon_chiral_atom_needs_tag_inversion(
-        3, 0, false, false, 1, true
-    ));
+    assert!(!canon_chiral_atom_needs_tag_inversion(2, 1, true, false, 1, false));
+    assert!(canon_chiral_atom_needs_tag_inversion(3, 1, true, true, 0, true));
+    assert!(canon_chiral_atom_needs_tag_inversion(3, 0, false, false, 1, false));
+    assert!(!canon_chiral_atom_needs_tag_inversion(3, 0, false, true, 1, false));
+    assert!(!canon_chiral_atom_needs_tag_inversion(3, 0, false, false, 0, false));
+    assert!(!canon_chiral_atom_needs_tag_inversion(3, 0, false, false, 1, true));
 
     assert!(canon_atom_has_fourth_valence(1, false, false));
     assert!(canon_atom_has_fourth_valence(0, true, false));
@@ -2251,25 +2068,11 @@ fn shared_canon_helpers_chiral_permutation_kernel_covers_tags_inverse_and_errors
     let incident = [0, 1, 2, 3, 4, 5];
     let square_probe = [Some(1), Some(0), Some(2), Some(3)];
     assert_eq!(
-        nontetrahedral_chiral_permutation_kernel(
-            1,
-            ChiralTag::SquarePlanar,
-            6,
-            &incident[..4],
-            &square_probe,
-            false,
-        ),
+        nontetrahedral_chiral_permutation_kernel(1, ChiralTag::SquarePlanar, 6, &incident[..4], &square_probe, false,),
         Ok(3)
     );
     assert_eq!(
-        nontetrahedral_chiral_permutation_kernel(
-            1,
-            ChiralTag::SquarePlanar,
-            6,
-            &incident[..4],
-            &square_probe,
-            true,
-        ),
+        nontetrahedral_chiral_permutation_kernel(1, ChiralTag::SquarePlanar, 6, &incident[..4], &square_probe, true,),
         Ok(3)
     );
     assert_eq!(
@@ -2295,25 +2098,11 @@ fn shared_canon_helpers_chiral_permutation_kernel_covers_tags_inverse_and_errors
         Ok(17)
     );
     assert_eq!(
-        nontetrahedral_chiral_permutation_kernel(
-            0,
-            ChiralTag::SquarePlanar,
-            4,
-            &incident[..4],
-            &square_probe,
-            false,
-        ),
+        nontetrahedral_chiral_permutation_kernel(0, ChiralTag::SquarePlanar, 4, &incident[..4], &square_probe, false,),
         Ok(0)
     );
     assert_eq!(
-        nontetrahedral_chiral_permutation_kernel(
-            1,
-            ChiralTag::TetrahedralCw,
-            4,
-            &incident[..4],
-            &square_probe,
-            false,
-        ),
+        nontetrahedral_chiral_permutation_kernel(1, ChiralTag::TetrahedralCw, 4, &incident[..4], &square_probe, false,),
         Ok(0)
     );
     assert_eq!(
@@ -2445,10 +2234,7 @@ fn perturbation_order_rejects_size_mismatch_like_rdkit() {
 
     let error = state.perturbation_order(center, &[0]).unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("size mismatch".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("size mismatch".to_string()));
 }
 
 #[test]
@@ -2496,11 +2282,7 @@ fn shared_canon_helpers_parser_chiral_inversion_preserves_degree_and_unsaturatio
         .builder
         .add_bond(BondSpec::new(first, f3, BondOrder::Single))
         .unwrap();
-    assert!(
-        first_atom
-            .chiral_atom_needs_tag_inversion(first, 0)
-            .unwrap()
-    );
+    assert!(first_atom.chiral_atom_needs_tag_inversion(first, 0).unwrap());
 
     let mut closure_atom = SmilesBuildState::new();
     let s0 = closure_atom.builder.add_atom(AtomSpec::new(Element::C));
@@ -2560,35 +2342,25 @@ fn handle_cx_part_and_name_records_wiggly_single_bond_cfg_like_rdkit() {
     assert_eq!(molecule.bonds()[0].end(), AtomId::new(0));
     assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
     assert_eq!(molecule.bonds()[0].prop("_MolFileBondCfg"), Some("2"));
-    assert_eq!(
-        molecule.properties().prop("_needsDetectBondStereo"),
-        Some("1")
-    );
+    assert_eq!(molecule.properties().prop("_needsDetectBondStereo"), Some("1"));
 }
 
 #[test]
 fn handle_cx_part_and_name_parses_linknodes_like_rdkit() {
     let molecule = Molecule::from_smiles_with_sanitize("C1CC1 |LN:1:1.3|", false).unwrap();
 
-    assert_eq!(
-        molecule.properties().prop("_MolFileLinkNodes"),
-        Some("1 3 2 2 1 2 3")
-    );
+    assert_eq!(molecule.properties().prop("_MolFileLinkNodes"), Some("1 3 2 2 1 2 3"));
 }
 
 #[test]
 fn handle_cx_part_and_name_parses_data_sgroups_like_rdkit() {
-    let molecule =
-        Molecule::from_smiles_with_sanitize("CCO |SgD:2,1:FIELD:info::::|", false).unwrap();
+    let molecule = Molecule::from_smiles_with_sanitize("CCO |SgD:2,1:FIELD:info::::|", false).unwrap();
 
     assert_eq!(molecule.substance_groups().len(), 1);
     let sgroup = &molecule.substance_groups()[0];
     assert_eq!(sgroup.kind(), &SubstanceGroupKind::Data);
     assert_eq!(sgroup.atoms(), &[AtomId::new(2), AtomId::new(1)]);
-    assert_eq!(
-        sgroup.props().get("FIELDNAME").map(String::as_str),
-        Some("FIELD")
-    );
+    assert_eq!(sgroup.props().get("FIELDNAME").map(String::as_str), Some("FIELD"));
     assert_eq!(sgroup.data_fields(), &["info".to_string()]);
     assert_eq!(sgroup.props().get("index").map(String::as_str), Some("1"));
 }
@@ -2608,13 +2380,9 @@ fn parse_cx_data_sgroup_consumes_coords_for_dropped_group_like_rdkit() {
 
 #[test]
 fn handle_cx_part_and_name_parses_variable_attachments_like_rdkit() {
-    let molecule =
-        Molecule::from_smiles_with_sanitize("CO*.C1=CC=NC=C1 |m:2:3.5.4|", false).unwrap();
+    let molecule = Molecule::from_smiles_with_sanitize("CO*.C1=CC=NC=C1 |m:2:3.5.4|", false).unwrap();
 
-    assert_eq!(
-        molecule.bonds()[1].prop("_MolFileBondEndPts"),
-        Some("(3 4 6 5)")
-    );
+    assert_eq!(molecule.bonds()[1].prop("_MolFileBondEndPts"), Some("(3 4 6 5)"));
     assert_eq!(molecule.bonds()[1].prop("_MolFileBondAttach"), Some("ANY"));
 }
 
@@ -2627,10 +2395,7 @@ fn handle_cx_part_and_name_parses_double_bond_stereo_like_rdkit() {
         molecule.bonds()[1].stereo_atoms(),
         Some([AtomId::new(0), AtomId::new(3)])
     );
-    assert_eq!(
-        molecule.properties().prop("_needsDetectBondStereo"),
-        Some("1")
-    );
+    assert_eq!(molecule.properties().prop("_needsDetectBondStereo"), Some("1"));
 }
 
 #[test]
@@ -2653,9 +2418,7 @@ fn remove_hs_update_explicit_count_tracks_isotopic_hydrogens_and_clears_stale_pr
     let carbon = state
         .builder
         .add_atom(AtomSpec::new(Element::C).with_tracked_isotopic_hydrogens(vec![9]));
-    let deuterium = state
-        .builder
-        .add_atom(AtomSpec::new(Element::H).with_isotope(2));
+    let deuterium = state.builder.add_atom(AtomSpec::new(Element::H).with_isotope(2));
     state
         .builder
         .add_bond(BondSpec::new(carbon, deuterium, BondOrder::Single))
@@ -2678,13 +2441,9 @@ fn remove_hs_update_explicit_count_tracks_isotopic_hydrogens_and_clears_stale_pr
 #[test]
 fn remove_hs_update_explicit_count_tracks_isotopes_after_nonisotopic_prepass() {
     let mut state = SmilesBuildState::new();
-    let carbon = state
-        .builder
-        .add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+    let carbon = state.builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
     let protium = state.builder.add_atom(AtomSpec::new(Element::H));
-    let deuterium = state
-        .builder
-        .add_atom(AtomSpec::new(Element::H).with_isotope(2));
+    let deuterium = state.builder.add_atom(AtomSpec::new(Element::H).with_isotope(2));
     state
         .builder
         .add_bond(BondSpec::new(carbon, protium, BondOrder::Single))
@@ -2751,10 +2510,7 @@ fn remove_hs_update_explicit_count_default_removes_hydrogen_with_wedged_bond() {
     let hydrogen = state.builder.add_atom(AtomSpec::new(Element::H));
     state
         .builder
-        .add_bond(
-            BondSpec::new(carbon, hydrogen, BondOrder::Single)
-                .with_direction(BondDirection::BeginWedge),
-        )
+        .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::BeginWedge))
         .unwrap();
 
     state
@@ -2777,10 +2533,7 @@ fn remove_hs_update_explicit_count_preserves_hydrogen_when_wedged_removal_disabl
     let hydrogen = state.builder.add_atom(AtomSpec::new(Element::H));
     state
         .builder
-        .add_bond(
-            BondSpec::new(carbon, hydrogen, BondOrder::Single)
-                .with_direction(BondDirection::BeginWedge),
-        )
+        .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::BeginWedge))
         .unwrap();
 
     state
@@ -2822,9 +2575,9 @@ fn remove_hs_update_explicit_count_preserves_hydrogen_on_nontetrahedral_neighbor
 fn remove_hs_update_explicit_count_preserves_query_hydrogen_by_default() {
     let mut state = SmilesBuildState::new();
     let carbon = state.builder.add_atom(AtomSpec::new(Element::C));
-    let hydrogen = state.builder.add_atom(
-        AtomSpec::new(Element::H).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
-    );
+    let hydrogen = state
+        .builder
+        .add_atom(AtomSpec::new(Element::H).with_query(QueryNode::predicate(AtomQueryPredicate::Any)));
     state
         .builder
         .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single))
@@ -2912,9 +2665,7 @@ fn remove_hs_update_explicit_count_removes_higher_degree_hydrogen_when_enabled()
 fn remove_hs_update_explicit_count_removes_hydride_when_enabled() {
     let mut state = SmilesBuildState::new();
     let carbon = state.builder.add_atom(AtomSpec::new(Element::C));
-    let hydride = state
-        .builder
-        .add_atom(AtomSpec::new(Element::H).with_formal_charge(-1));
+    let hydride = state.builder.add_atom(AtomSpec::new(Element::H).with_formal_charge(-1));
     state
         .builder
         .add_bond(BondSpec::new(carbon, hydride, BondOrder::Single))
@@ -2960,10 +2711,7 @@ fn remove_hs_update_explicit_count_moves_end_direction_from_removed_hydrogen_lik
     let oxygen = state.builder.add_atom(AtomSpec::new(Element::O));
     state
         .builder
-        .add_bond(
-            BondSpec::new(carbon, hydrogen, BondOrder::Single)
-                .with_direction(BondDirection::EndUpRight),
-        )
+        .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::EndUpRight))
         .unwrap();
     state
         .builder
@@ -3026,10 +2774,7 @@ fn remove_hs_update_explicit_count_sets_unknown_stereo_on_heavy_atom_like_rdkit(
     let hydrogen = state.builder.add_atom(AtomSpec::new(Element::H));
     state
         .builder
-        .add_bond(
-            BondSpec::new(carbon, hydrogen, BondOrder::Single)
-                .with_direction(BondDirection::Unknown),
-        )
+        .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::Unknown))
         .unwrap();
 
     state
@@ -3079,8 +2824,7 @@ fn remove_hs_update_explicit_count_applies_sgroup_special_role_and_emptying_guar
     state
         .builder
         .add_substance_group(
-            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
-                .with_atoms(vec![isolated_h]),
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom).with_atoms(vec![isolated_h]),
         )
         .unwrap();
 
@@ -3104,8 +2848,7 @@ fn remove_hs_update_explicit_count_respects_remove_in_sgroups_false_membership_g
     state
         .builder
         .add_substance_group(
-            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
-                .with_atoms(vec![hydrogen]),
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom).with_atoms(vec![hydrogen]),
         )
         .unwrap();
 
@@ -3180,16 +2923,8 @@ fn from_smiles_with_sanitize_false_parses_bracket_element_lexer_table_like_rdkit
 
     for (symbol, atomic_number, aromatic) in cases {
         let molecule = Molecule::from_smiles_with_sanitize(&format!("[{symbol}]"), false).unwrap();
-        assert_eq!(
-            molecule.atoms()[0].atomic_number(),
-            atomic_number,
-            "symbol {symbol}"
-        );
-        assert_eq!(
-            molecule.atoms()[0].is_aromatic(),
-            aromatic,
-            "symbol {symbol}"
-        );
+        assert_eq!(molecule.atoms()[0].atomic_number(), atomic_number, "symbol {symbol}");
+        assert_eq!(molecule.atoms()[0].is_aromatic(), aromatic, "symbol {symbol}");
     }
 }
 
@@ -3197,11 +2932,7 @@ fn from_smiles_with_sanitize_false_parses_bracket_element_lexer_table_like_rdkit
 fn from_smiles_with_sanitize_false_parses_quoted_biovia_atoms_like_rdkit() {
     for &(symbol, atomic_number) in QUOTED_BIOVIA_ATOM_SYMBOLS {
         let molecule = Molecule::from_smiles_with_sanitize(&format!("[{symbol}]"), false).unwrap();
-        assert_eq!(
-            molecule.atoms()[0].atomic_number(),
-            atomic_number,
-            "symbol {symbol}"
-        );
+        assert_eq!(molecule.atoms()[0].atomic_number(), atomic_number, "symbol {symbol}");
     }
 }
 
@@ -3225,26 +2956,19 @@ fn from_smiles_with_sanitize_false_preserves_non_tetrahedral_chiral_classes_like
 
     assert_eq!(allene.atoms()[0].chiral_tag(), ChiralTag::Allene);
     assert_eq!(allene.atoms()[0].chiral_permutation(), Some(1));
-    assert_eq!(
-        square_planar.atoms()[0].chiral_tag(),
-        ChiralTag::SquarePlanar
-    );
+    assert_eq!(square_planar.atoms()[0].chiral_tag(), ChiralTag::SquarePlanar);
     assert_eq!(square_planar.atoms()[0].chiral_permutation(), Some(3));
     assert_eq!(
         trigonal_bipyramidal.atoms()[0].chiral_tag(),
         ChiralTag::TrigonalBipyramidal
     );
-    assert_eq!(
-        trigonal_bipyramidal.atoms()[0].chiral_permutation(),
-        Some(20)
-    );
+    assert_eq!(trigonal_bipyramidal.atoms()[0].chiral_permutation(), Some(20));
     assert_eq!(octahedral.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
     assert_eq!(octahedral.atoms()[0].chiral_permutation(), Some(30));
 }
 
 #[test]
-fn from_smiles_with_sanitize_false_preserves_default_non_tetrahedral_chiral_permutations_like_rdkit()
- {
+fn from_smiles_with_sanitize_false_preserves_default_non_tetrahedral_chiral_permutations_like_rdkit() {
     let allene = Molecule::from_smiles_with_sanitize("[C@AL]", false).unwrap();
     let square_planar = Molecule::from_smiles_with_sanitize("[C@SP]", false).unwrap();
     let trigonal_bipyramidal = Molecule::from_smiles_with_sanitize("[C@TB]", false).unwrap();
@@ -3252,19 +2976,13 @@ fn from_smiles_with_sanitize_false_preserves_default_non_tetrahedral_chiral_perm
 
     assert_eq!(allene.atoms()[0].chiral_tag(), ChiralTag::Allene);
     assert_eq!(allene.atoms()[0].chiral_permutation(), Some(0));
-    assert_eq!(
-        square_planar.atoms()[0].chiral_tag(),
-        ChiralTag::SquarePlanar
-    );
+    assert_eq!(square_planar.atoms()[0].chiral_tag(), ChiralTag::SquarePlanar);
     assert_eq!(square_planar.atoms()[0].chiral_permutation(), Some(0));
     assert_eq!(
         trigonal_bipyramidal.atoms()[0].chiral_tag(),
         ChiralTag::TrigonalBipyramidal
     );
-    assert_eq!(
-        trigonal_bipyramidal.atoms()[0].chiral_permutation(),
-        Some(0)
-    );
+    assert_eq!(trigonal_bipyramidal.atoms()[0].chiral_permutation(), Some(0));
     assert_eq!(octahedral.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
     assert_eq!(octahedral.atoms()[0].chiral_permutation(), Some(0));
 }
@@ -3281,42 +2999,24 @@ fn from_smiles_with_sanitize_false_recomputes_nontetrahedral_ring_permutation_li
 }
 
 #[test]
-fn shared_canon_helpers_molecule_chiral_permutation_returns_zero_for_nonpositive_or_oversized_cases()
- {
+fn shared_canon_helpers_molecule_chiral_permutation_returns_zero_for_nonpositive_or_oversized_cases() {
     let mut builder = Molecule::builder();
-    let center_without_perm =
-        builder.add_atom(AtomSpec::new(Element::PT).with_chiral_tag(ChiralTag::SquarePlanar));
+    let center_without_perm = builder.add_atom(AtomSpec::new(Element::PT).with_chiral_tag(ChiralTag::SquarePlanar));
     let neighbor_a = builder.add_atom(AtomSpec::new(Element::CL));
     let neighbor_b = builder.add_atom(AtomSpec::new(Element::CL));
     let neighbor_c = builder.add_atom(AtomSpec::new(Element::CL));
     let neighbor_d = builder.add_atom(AtomSpec::new(Element::CL));
     let bond_a = builder
-        .add_bond(BondSpec::new(
-            center_without_perm,
-            neighbor_a,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_without_perm, neighbor_a, BondOrder::Single))
         .unwrap();
     let bond_b = builder
-        .add_bond(BondSpec::new(
-            center_without_perm,
-            neighbor_b,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_without_perm, neighbor_b, BondOrder::Single))
         .unwrap();
     let bond_c = builder
-        .add_bond(BondSpec::new(
-            center_without_perm,
-            neighbor_c,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_without_perm, neighbor_c, BondOrder::Single))
         .unwrap();
     let bond_d = builder
-        .add_bond(BondSpec::new(
-            center_without_perm,
-            neighbor_d,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_without_perm, neighbor_d, BondOrder::Single))
         .unwrap();
     let molecule_without_perm = builder.build().unwrap();
 
@@ -3343,39 +3043,19 @@ fn shared_canon_helpers_molecule_chiral_permutation_returns_zero_for_nonpositive
     let neighbor_d = builder.add_atom(AtomSpec::new(Element::CL));
     let extra_neighbor = builder.add_atom(AtomSpec::new(Element::CL));
     let bond_a = builder
-        .add_bond(BondSpec::new(
-            center_with_perm,
-            neighbor_a,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_with_perm, neighbor_a, BondOrder::Single))
         .unwrap();
     let bond_b = builder
-        .add_bond(BondSpec::new(
-            center_with_perm,
-            neighbor_b,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_with_perm, neighbor_b, BondOrder::Single))
         .unwrap();
     let bond_c = builder
-        .add_bond(BondSpec::new(
-            center_with_perm,
-            neighbor_c,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_with_perm, neighbor_c, BondOrder::Single))
         .unwrap();
     let bond_d = builder
-        .add_bond(BondSpec::new(
-            center_with_perm,
-            neighbor_d,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_with_perm, neighbor_d, BondOrder::Single))
         .unwrap();
     let extra_bond = builder
-        .add_bond(BondSpec::new(
-            center_with_perm,
-            extra_neighbor,
-            BondOrder::Single,
-        ))
+        .add_bond(BondSpec::new(center_with_perm, extra_neighbor, BondOrder::Single))
         .unwrap();
     let molecule_with_perm = builder.build().unwrap();
 
@@ -3383,13 +3063,7 @@ fn shared_canon_helpers_molecule_chiral_permutation_returns_zero_for_nonpositive
         nontetrahedral_chiral_permutation_for_probe(
             &molecule_with_perm,
             center_with_perm,
-            &[
-                Some(bond_a),
-                Some(bond_b),
-                Some(bond_c),
-                Some(bond_d),
-                Some(extra_bond),
-            ],
+            &[Some(bond_a), Some(bond_b), Some(bond_c), Some(bond_d), Some(extra_bond),],
             false,
         )
         .unwrap(),
@@ -3418,44 +3092,26 @@ fn from_smiles_with_sanitize_false_rejects_non_tetrahedral_chiral_permutation_li
 }
 
 #[test]
-fn from_smiles_with_sanitize_false_preserves_tetrahedral_chirality_across_ring_closure_ordering_like_rdkit()
- {
+fn from_smiles_with_sanitize_false_preserves_tetrahedral_chirality_across_ring_closure_ordering_like_rdkit() {
     let linear = Molecule::from_smiles_with_sanitize("F[C@](Cl)(Br)I", false).unwrap();
     let closure = Molecule::from_smiles_with_sanitize("F[C@]1(Br)I.Cl1", false).unwrap();
 
-    assert_eq!(
-        linear.atoms()[1].chiral_tag(),
-        closure.atoms()[1].chiral_tag()
-    );
+    assert_eq!(linear.atoms()[1].chiral_tag(), closure.atoms()[1].chiral_tag());
 }
 
 #[test]
 fn from_smiles_with_sanitize_false_parses_fused_ring_row_94_like_rdkit() {
-    let molecule = Molecule::from_smiles_with_sanitize(
-        "Cl.Cl.COc1ccc2nccc([C@@H](O)[C@@H]3C[C@@H]4CCN3C[C@@H]4C=C)c2c1",
-        false,
-    )
-    .unwrap();
+    let molecule =
+        Molecule::from_smiles_with_sanitize("Cl.Cl.COc1ccc2nccc([C@@H](O)[C@@H]3C[C@@H]4CCN3C[C@@H]4C=C)c2c1", false)
+            .unwrap();
 
     assert_eq!(molecule.num_atoms(), 26);
-    assert_eq!(
-        molecule
-            .atomic_numbers()
-            .iter()
-            .filter(|&&z| z == 17)
-            .count(),
-        2
-    );
+    assert_eq!(molecule.atomic_numbers().iter().filter(|&&z| z == 17).count(), 2);
     assert_eq!(
         molecule
             .atoms()
             .iter()
-            .filter(|atom| {
-                matches!(
-                    atom.chiral_tag(),
-                    ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-                )
-            })
+            .filter(|atom| { matches!(atom.chiral_tag(), ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) })
             .count(),
         4
     );
@@ -3645,20 +3301,14 @@ fn from_smiles_with_sanitize_false_parses_percent_ring_numbers() {
 fn from_smiles_with_sanitize_false_reports_unclosed_ring_like_rdkit() {
     let error = Molecule::from_smiles_with_sanitize("C1CC", false).unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("unclosed ring".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("unclosed ring".to_string()));
 }
 
 #[test]
 fn finish_parse_reports_unclosed_ring_before_invalid_chirality_like_rdkit() {
     let error = to_mol("C1[C@TH3]").unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("unclosed ring".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("unclosed ring".to_string()));
 }
 
 #[test]
@@ -3676,10 +3326,7 @@ fn close_mol_rings_reports_unclosed_ring_for_remaining_opening_like_rdkit() {
 
     let error = state.close_mol_rings().unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("unclosed ring".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("unclosed ring".to_string()));
 }
 
 #[test]
@@ -3687,12 +3334,8 @@ fn second_ring_marker_preallocates_cx_smiles_bond_idx_like_rdkit() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
     state.add_ring_marker(1).unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
-    state
-        .add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
+    state.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
     state.add_ring_marker(1).unwrap();
 
     let closure = state.pending_ring_closures.first().unwrap();
@@ -3734,9 +3377,7 @@ fn from_smiles_with_sanitize_false_reports_duplicate_ring_bond_like_rdkit() {
 
     assert_eq!(
         error,
-        SmilesParseError::ParseError(
-            "ring closure duplicates bond between atom 0 and atom 1".to_string()
-        )
+        SmilesParseError::ParseError("ring closure duplicates bond between atom 0 and atom 1".to_string())
     );
 }
 
@@ -3764,10 +3405,7 @@ fn from_smiles_with_sanitize_false_reports_empty_branch_payload_like_rdkit_parse
 fn from_smiles_with_sanitize_false_reports_bad_character_as_syntax_error_like_rdkit() {
     let error = Molecule::from_smiles_with_sanitize("C&N", false).unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("syntax error".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("syntax error".to_string()));
 }
 
 #[test]
@@ -3808,12 +3446,7 @@ fn from_smiles_with_sanitize_false_marks_aromatic_atoms_and_unspecified_bonds_li
     assert_eq!(molecule.num_bonds(), 6);
     assert!(molecule.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(molecule.bonds().iter().all(|bond| bond.is_aromatic()));
-    assert!(
-        molecule
-            .bonds()
-            .iter()
-            .all(|bond| bond.order() == BondOrder::Aromatic)
-    );
+    assert!(molecule.bonds().iter().all(|bond| bond.order() == BondOrder::Aromatic));
 }
 
 #[test]
@@ -3836,10 +3469,8 @@ fn from_smiles_converts_non_ring_aromatic_bridge_to_single_like_rdkit_biphenyl()
 
 #[test]
 fn from_smiles_clears_nonunique_tetrahedral_tag_like_rdkit_row_92() {
-    let molecule = Molecule::from_smiles(
-        "O/C1=C/C=C/C=C1/CN3CCN(CC=2C=CC=CC=2O)[C@]3([H])C=4/C=C(/OC)C(=CC=4)OC",
-    )
-    .unwrap();
+    let molecule =
+        Molecule::from_smiles("O/C1=C/C=C/C=C1/CN3CCN(CC=2C=CC=CC=2O)[C@]3([H])C=4/C=C(/OC)C(=CC=4)OC").unwrap();
 
     assert!(
         molecule
@@ -3862,10 +3493,9 @@ fn from_smiles_clears_nonunique_tetrahedral_tag_like_rdkit_row_92() {
 
 #[test]
 fn from_smiles_preserves_ring_special_case_chiral_tags_like_rdkit_row_83() {
-    let molecule = Molecule::from_smiles(
-        "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12",
-    )
-    .unwrap();
+    let molecule =
+        Molecule::from_smiles("O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12")
+            .unwrap();
 
     let tagged_atom_indices = molecule
         .atoms()
@@ -3880,8 +3510,7 @@ fn from_smiles_preserves_ring_special_case_chiral_tags_like_rdkit_row_83() {
 
 #[test]
 fn from_smiles_assigns_ring_closure_double_bond_stereo_like_rdkit_row_106() {
-    let molecule =
-        Molecule::from_smiles("O=C(N(C(S/1)=S)CCC(O)=O)C1=C\\C2=CC=C(C3=CC=C(C=C3)Cl)O2").unwrap();
+    let molecule = Molecule::from_smiles("O=C(N(C(S/1)=S)CCC(O)=O)C1=C\\C2=CC=C(C3=CC=C(C=C3)Cl)O2").unwrap();
 
     let directional_bonds = molecule
         .bonds()
@@ -3994,25 +3623,18 @@ fn from_smiles_assigns_rdkit_legacy_cip_ranks_for_acetic_acid() {
     let observed = molecule
         .atoms()
         .iter()
-        .map(|atom| {
-            atom.prop("_CIPRank")
-                .and_then(|value| value.parse::<u32>().ok())
-        })
+        .map(|atom| atom.prop("_CIPRank").and_then(|value| value.parse::<u32>().ok()))
         .collect::<Vec<_>>();
     assert_eq!(observed, vec![Some(0), Some(1), Some(3), Some(2)]);
 }
 
 #[test]
 fn from_smiles_reranks_legacy_cip_labels_when_possible_centers_remain_like_rdkit_row_2508() {
-    let molecule =
-        Molecule::from_smiles("CC(C)(c1ccc(OCC[C@H](O)Cl)cc1)c1ccc(OCC[C@@H](O)Cl)cc1").unwrap();
+    let molecule = Molecule::from_smiles("CC(C)(c1ccc(OCC[C@H](O)Cl)cc1)c1ccc(OCC[C@@H](O)Cl)cc1").unwrap();
     let observed = molecule
         .atoms()
         .iter()
-        .map(|atom| {
-            atom.prop("_CIPRank")
-                .and_then(|value| value.parse::<u32>().ok())
-        })
+        .map(|atom| atom.prop("_CIPRank").and_then(|value| value.parse::<u32>().ok()))
         .collect::<Vec<_>>();
 
     assert_eq!(observed[0], Some(0));
@@ -4298,8 +3920,7 @@ fn smiles_parse_ops_add_frag_to_mol_connects_first_fragment_atom_in_insert_order
 
     let mut frag = SmilesBuildState::new();
     frag.add_first_atom(SmilesAtomToken::new(8)).unwrap();
-    frag.add_atom_connected_to_active(SmilesAtomToken::new(7))
-        .unwrap();
+    frag.add_atom_connected_to_active(SmilesAtomToken::new(7)).unwrap();
 
     root.add_frag_to_mol(frag, BondOrder::Single, BondDirection::None)
         .unwrap();
@@ -4317,13 +3938,11 @@ fn smiles_parse_ops_add_frag_to_mol_connects_first_fragment_atom_in_insert_order
 fn smiles_parse_ops_add_frag_to_mol_remaps_fragment_atom_and_bond_state_like_rdkit() {
     let mut root = SmilesBuildState::new();
     root.add_first_atom(SmilesAtomToken::new(6)).unwrap();
-    root.add_atom_connected_to_active(SmilesAtomToken::new(6))
-        .unwrap();
+    root.add_atom_connected_to_active(SmilesAtomToken::new(6)).unwrap();
 
     let mut frag = SmilesBuildState::new();
     frag.add_first_atom(SmilesAtomToken::new(8)).unwrap();
-    frag.add_atom_connected_to_active(SmilesAtomToken::new(7))
-        .unwrap();
+    frag.add_atom_connected_to_active(SmilesAtomToken::new(7)).unwrap();
     frag.ring_closures_by_atom.insert(
         AtomId::new(0),
         vec![RingClosureRecord {
@@ -4366,10 +3985,7 @@ fn smiles_parse_ops_add_frag_to_mol_remaps_fragment_atom_and_bond_state_like_rdk
             input_position: 4,
         })
     );
-    assert_eq!(
-        root.temporary_chiral_permutations.get(&AtomId::new(3)),
-        Some(&2)
-    );
+    assert_eq!(root.temporary_chiral_permutations.get(&AtomId::new(3)), Some(&2));
     assert_eq!(root.cx_stereo_group_tracker.get(&(1, 4)), Some(&3));
 }
 
@@ -4391,15 +4007,11 @@ fn smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like
     );
 
     let mut degree_two_nonzero = SmilesBuildState::new();
-    let b0 = degree_two_nonzero
-        .builder
-        .add_atom(AtomSpec::new(Element::C));
+    let b0 = degree_two_nonzero.builder.add_atom(AtomSpec::new(Element::C));
     let b1 = degree_two_nonzero
         .builder
         .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
-    let b2 = degree_two_nonzero
-        .builder
-        .add_atom(AtomSpec::new(Element::F));
+    let b2 = degree_two_nonzero.builder.add_atom(AtomSpec::new(Element::F));
     degree_two_nonzero
         .builder
         .add_bond(BondSpec::new(b0, b1, BondOrder::Single))
@@ -4408,9 +4020,7 @@ fn smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like
         .builder
         .add_bond(BondSpec::new(b1, b2, BondOrder::Single))
         .unwrap();
-    degree_two_nonzero
-        .check_ring_closure_branch_status(b1)
-        .unwrap();
+    degree_two_nonzero.check_ring_closure_branch_status(b1).unwrap();
     assert_eq!(
         degree_two_nonzero.builder.atoms()[b1.index()].chiral_tag(),
         ChiralTag::TetrahedralCcw
@@ -4420,15 +4030,9 @@ fn smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like
     let c0 = degree_three_root
         .builder
         .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
-    let c1 = degree_three_root
-        .builder
-        .add_atom(AtomSpec::new(Element::F));
-    let c2 = degree_three_root
-        .builder
-        .add_atom(AtomSpec::new(Element::CL));
-    let c3 = degree_three_root
-        .builder
-        .add_atom(AtomSpec::new(Element::BR));
+    let c1 = degree_three_root.builder.add_atom(AtomSpec::new(Element::F));
+    let c2 = degree_three_root.builder.add_atom(AtomSpec::new(Element::CL));
+    let c3 = degree_three_root.builder.add_atom(AtomSpec::new(Element::BR));
     degree_three_root
         .builder
         .add_bond(BondSpec::new(c0, c1, BondOrder::Single))
@@ -4441,9 +4045,7 @@ fn smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like
         .builder
         .add_bond(BondSpec::new(c0, c3, BondOrder::Single))
         .unwrap();
-    degree_three_root
-        .check_ring_closure_branch_status(c0)
-        .unwrap();
+    degree_three_root.check_ring_closure_branch_status(c0).unwrap();
     assert_eq!(
         degree_three_root.builder.atoms()[c0.index()].chiral_tag(),
         ChiralTag::TetrahedralCcw
@@ -4469,20 +4071,14 @@ fn smiles_parse_ops_check_ring_closure_branch_status_leaves_nonmatching_cases_un
 
     state.check_ring_closure_branch_status(a2).unwrap();
 
-    assert_eq!(
-        state.builder.atoms()[a2.index()].chiral_tag(),
-        ChiralTag::TetrahedralCw
-    );
+    assert_eq!(state.builder.atoms()[a2.index()].chiral_tag(), ChiralTag::TetrahedralCw);
 }
 
 #[test]
 fn smiles_parse_ops_to_mol_reports_parse_error_and_cleans_partial_state_like_rdkit() {
     let error = to_mol("C1CC").unwrap_err();
 
-    assert_eq!(
-        error,
-        SmilesParseError::ParseError("unclosed ring".to_string())
-    );
+    assert_eq!(error, SmilesParseError::ParseError("unclosed ring".to_string()));
 }
 
 #[test]
@@ -4556,10 +4152,7 @@ fn smarts_parse_ops_adjust_atom_chirality_flags() {
     let mut state = SmilesBuildState::new();
     state.builder.add_atom(AtomSpec::new(Element::C));
     state.adjust_atom_chirality_flags().unwrap();
-    assert_eq!(
-        state.builder.atoms()[0].chiral_tag(),
-        ChiralTag::Unspecified
-    );
+    assert_eq!(state.builder.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
 }
 
 #[test]
@@ -4570,26 +4163,16 @@ fn smarts_parse_ops_get_unspecified_bond_type() {
 #[test]
 fn smarts_parse_ops_set_unspecified_bond_types() {
     let mut state = SmilesBuildState::new();
-    let first = state
-        .builder
-        .add_atom(AtomSpec::new(Element::C).with_aromatic(true));
-    let second = state
-        .builder
-        .add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+    let first = state.builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+    let second = state.builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
     state.atom_aromatic.extend([true, true]);
     let bond = state
         .builder
-        .add_bond(
-            BondSpec::new(first, second, BondOrder::Unspecified)
-                .with_prop(UNSPECIFIED_ORDER_PROP, "1"),
-        )
+        .add_bond(BondSpec::new(first, second, BondOrder::Unspecified).with_prop(UNSPECIFIED_ORDER_PROP, "1"))
         .unwrap();
     state.explicit_unspecified_bonds.push(bond);
     state.set_unspecified_bond_types().unwrap();
-    assert_eq!(
-        state.builder.bond(bond).unwrap().order(),
-        BondOrder::Aromatic
-    );
+    assert_eq!(state.builder.bond(bond).unwrap().order(), BondOrder::Aromatic);
     assert!(state.builder.bond(bond).unwrap().is_aromatic());
 }
 
@@ -4663,18 +4246,9 @@ fn smarts_parse_ops_cleanup_after_parsing() {
 fn smarts_parse_ops_get_unspecified_query_bond() {
     let (order, query) = get_unspecified_query_bond(false, None);
     assert_eq!(order, BondOrder::Single);
-    assert_eq!(
-        query,
-        crate::search::query::make_single_or_aromatic_bond_query()
-    );
-    assert_eq!(
-        get_unspecified_query_bond(true, None).0,
-        BondOrder::Aromatic
-    );
-    assert_eq!(
-        get_unspecified_query_bond(true, Some(false)).0,
-        BondOrder::Single
-    );
+    assert_eq!(query, crate::search::query::make_single_or_aromatic_bond_query());
+    assert_eq!(get_unspecified_query_bond(true, None).0, BondOrder::Aromatic);
+    assert_eq!(get_unspecified_query_bond(true, Some(false)).0, BondOrder::Single);
 }
 
 #[test]

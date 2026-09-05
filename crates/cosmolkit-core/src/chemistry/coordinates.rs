@@ -210,8 +210,7 @@ fn parse_rdkit_template_line(line: &str) -> Result<RdkitTemplateLineParts, Coord
     }
     if !suffix.starts_with('|') {
         return Err(Coordinate2DError::UnsupportedFeature(
-            "RDKit template line parsing does not support template suffix text without a CX block"
-                .to_string(),
+            "RDKit template line parsing does not support template suffix text without a CX block".to_string(),
         ));
     }
 
@@ -230,13 +229,9 @@ fn parse_rdkit_template_line(line: &str) -> Result<RdkitTemplateLineParts, Coord
     })
 }
 
-fn parse_rdkit_template_graph_model(
-    smarts: &str,
-) -> Result<RdkitTemplateGraphModel, Coordinate2DError> {
+fn parse_rdkit_template_graph_model(smarts: &str) -> Result<RdkitTemplateGraphModel, Coordinate2DError> {
     let parsed = mol_from_smarts(smarts, &SmartsParseParams::default()).map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit template SMARTS graph parsing failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit template SMARTS graph parsing failed: {error}"))
     })?;
     let atom_queries = parsed
         .atoms()
@@ -258,9 +253,7 @@ fn parse_rdkit_template_graph_model(
     })
 }
 
-fn build_rdkit_template_runtime_model(
-    line: &str,
-) -> Result<RdkitTemplateRuntimeModel, Coordinate2DError> {
+fn build_rdkit_template_runtime_model(line: &str) -> Result<RdkitTemplateRuntimeModel, Coordinate2DError> {
     let parts = parse_rdkit_template_line(line)?;
     let graph = parse_rdkit_template_graph_model(&parts.smarts_body)?;
     let (coords_2d, conformer_3d, source_coordinate_dim) = match parts.cx_block.as_deref() {
@@ -270,9 +263,7 @@ fn build_rdkit_template_runtime_model(
     let topology_molecule = build_template_topology_probe_molecule(&graph)?;
     let fragment_count = crate::fragment::get_num_fragments(&topology_molecule);
     let rings = crate::symmetrize_sssr(&topology_molecule).map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit template runtime ring initialization failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit template runtime ring initialization failed: {error}"))
     })?;
     let bond_ring_counts = topology_molecule
         .bonds()
@@ -290,10 +281,7 @@ fn build_rdkit_template_runtime_model(
     })
 }
 
-fn assert_valid_rdkit_template(
-    runtime: &RdkitTemplateRuntimeModel,
-    smiles: &str,
-) -> Result<(), Coordinate2DError> {
+fn assert_valid_rdkit_template(runtime: &RdkitTemplateRuntimeModel, smiles: &str) -> Result<(), Coordinate2DError> {
     // RDKit✔️✔️:   // template must have 2D coordinates
     // RDKit✔️✔️:   if (mol.getNumConformers() == 0) {
     // RDKit✔️✔️:     std::string msg = "Template missing coordinates: " + smiles;
@@ -354,10 +342,7 @@ fn assert_valid_rdkit_template(
     Ok(())
 }
 
-fn for_each_rdkit_template_file_line<F>(
-    template_path: &str,
-    mut visit: F,
-) -> Result<(), Coordinate2DError>
+fn for_each_rdkit_template_file_line<F>(template_path: &str, mut visit: F) -> Result<(), Coordinate2DError>
 where
     F: FnMut(&str) -> Result<(), Coordinate2DError>,
 {
@@ -370,9 +355,8 @@ where
     // RDKit✔️✔️:     std::string msg = "Could not open file " + templatePath;
     // RDKit✔️✔️:     throw RDDepict::DepictException(msg);
     // RDKit✔️✔️:   }
-    let file = File::open(template_path).map_err(|_| {
-        Coordinate2DError::UnsupportedFeature(format!("Could not open file {template_path}"))
-    })?;
+    let file = File::open(template_path)
+        .map_err(|_| Coordinate2DError::UnsupportedFeature(format!("Could not open file {template_path}")))?;
 
     // RDKit✔️✔️:   // Try loading templates in from this directory, if unsuccessful, keep current
     // RDKit✔️✔️:   // templates
@@ -397,9 +381,7 @@ fn parse_rdkit_template_line_for_loading(
     line: &str,
 ) -> Result<RdkitTemplateRuntimeModel, Coordinate2DError> {
     build_rdkit_template_runtime_model(line).map_err(|_| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "Could not load templates from {template_path}: Invalid smarts"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("Could not load templates from {template_path}: Invalid smarts"))
     })
 }
 
@@ -443,8 +425,7 @@ fn load_rdkit_templates_from_path(
     Ok(())
 }
 
-static RDKIT_COORDINATE_TEMPLATE_REGISTRY: OnceLock<RwLock<RdkitCoordinateTemplateRegistry>> =
-    OnceLock::new();
+static RDKIT_COORDINATE_TEMPLATE_REGISTRY: OnceLock<RwLock<RdkitCoordinateTemplateRegistry>> = OnceLock::new();
 
 fn rdkit_coordinate_template_registry() -> &'static RwLock<RdkitCoordinateTemplateRegistry> {
     // RDKit✔️✔️:   static CoordinateTemplates template_mols;
@@ -608,8 +589,7 @@ fn parse_template_cx_coordinate_block(
 > {
     if !cx_block.starts_with("|(") || !cx_block.ends_with(")|") {
         return Err(Coordinate2DError::UnsupportedFeature(
-            "RDKit template runtime model currently supports only a leading CX coordinate block"
-                .to_string(),
+            "RDKit template runtime model currently supports only a leading CX coordinate block".to_string(),
         ));
     }
     let payload = &cx_block[2..cx_block.len() - 2];
@@ -624,27 +604,21 @@ fn parse_template_cx_coordinate_block(
             && !x.is_empty()
         {
             coords_3d[atom_idx][0] = x.parse::<f64>().map_err(|_| {
-                Coordinate2DError::UnsupportedFeature(
-                    "RDKit template CX coordinate parsing failed for x".to_string(),
-                )
+                Coordinate2DError::UnsupportedFeature("RDKit template CX coordinate parsing failed for x".to_string())
             })?;
         }
         if let Some(y) = pieces.next()
             && !y.is_empty()
         {
             coords_3d[atom_idx][1] = y.parse::<f64>().map_err(|_| {
-                Coordinate2DError::UnsupportedFeature(
-                    "RDKit template CX coordinate parsing failed for y".to_string(),
-                )
+                Coordinate2DError::UnsupportedFeature("RDKit template CX coordinate parsing failed for y".to_string())
             })?;
         }
         if let Some(z) = pieces.next()
             && !z.is_empty()
         {
             coords_3d[atom_idx][2] = z.parse::<f64>().map_err(|_| {
-                Coordinate2DError::UnsupportedFeature(
-                    "RDKit template CX coordinate parsing failed for z".to_string(),
-                )
+                Coordinate2DError::UnsupportedFeature("RDKit template CX coordinate parsing failed for z".to_string())
             })?;
             saw_z_token = true;
         }
@@ -658,9 +632,7 @@ fn parse_template_cx_coordinate_block(
     }
 }
 
-fn build_template_topology_probe_molecule(
-    graph: &RdkitTemplateGraphModel,
-) -> Result<Molecule, Coordinate2DError> {
+fn build_template_topology_probe_molecule(graph: &RdkitTemplateGraphModel) -> Result<Molecule, Coordinate2DError> {
     let mut builder = MoleculeBuilder::new();
     let atom_ids: Vec<_> = (0..graph.atom_queries.len())
         .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
@@ -673,24 +645,18 @@ fn build_template_topology_probe_molecule(
                 bond_order_for_template_probe(&bond.query),
             ))
             .map_err(|error| {
-                Coordinate2DError::UnsupportedFeature(format!(
-                    "RDKit template topology probe build failed: {error}"
-                ))
+                Coordinate2DError::UnsupportedFeature(format!("RDKit template topology probe build failed: {error}"))
             })?;
     }
     builder.build().map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit template topology probe molecule build failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit template topology probe molecule build failed: {error}"))
     })
 }
 
 fn bond_order_for_template_probe(query: &crate::QueryNode<crate::BondQueryPredicate>) -> BondOrder {
     match query {
         crate::QueryNode::Predicate(crate::BondQueryPredicate::Order(order)) => *order,
-        crate::QueryNode::Predicate(crate::BondQueryPredicate::IsAromatic(true)) => {
-            BondOrder::Aromatic
-        }
+        crate::QueryNode::Predicate(crate::BondQueryPredicate::IsAromatic(true)) => BondOrder::Aromatic,
         _ => BondOrder::Single,
     }
 }
@@ -1006,12 +972,7 @@ impl RdkitTransform2D {
         this
     }
 
-    fn set_transform_two_point(
-        ref1: (f64, f64),
-        ref2: (f64, f64),
-        pt1: (f64, f64),
-        pt2: (f64, f64),
-    ) -> Self {
+    fn set_transform_two_point(ref1: (f64, f64), ref2: (f64, f64), pt1: (f64, f64), pt2: (f64, f64)) -> Self {
         let rvec = (ref2.0 - ref1.0, ref2.1 - ref1.1);
         let pvec = (pt2.0 - pt1.0, pt2.1 - pt1.1);
         let dp = rvec.0 * pvec.0 + rvec.1 * pvec.1;
@@ -1138,12 +1099,7 @@ fn rdkit_transform_points(nring_cor: &mut RdkitIntPoint2DMap, trans: [f64; 6]) {
     }
 }
 
-fn rdkit_compute_bisect_point(
-    rcr: (f64, f64),
-    ang: f64,
-    nb1: (f64, f64),
-    nb2: (f64, f64),
-) -> (f64, f64) {
+fn rdkit_compute_bisect_point(rcr: (f64, f64), ang: f64, nb1: (f64, f64), nb2: (f64, f64)) -> (f64, f64) {
     // RDKit✔️✔️: RDGeom::Point2D computeBisectPoint(const RDGeom::Point2D &rcr, double ang,
     // RDKit✔️✔️:                                    const RDGeom::Point2D &nb1,
     // RDKit✔️✔️:                                    const RDGeom::Point2D &nb2) {
@@ -1435,12 +1391,7 @@ impl RdkitEmbeddedFrag {
 
     // RDKit✔️✔️: void EmbeddedFrag::computeNbrsAndAng(unsigned int aid,
     // RDKit✔️✔️:                                      const RDKit::INT_VECT &doneNbrs) { ... }
-    fn compute_nbrs_and_ang(
-        &mut self,
-        aid: usize,
-        done_nbrs: &[usize],
-        atom_ring_counts: &[usize],
-    ) {
+    fn compute_nbrs_and_ang(&mut self, aid: usize, done_nbrs: &[usize], atom_ring_counts: &[usize]) {
         // RDKit✔️✔️:   auto winner = anglePairs.back();
         // RDKit✔️✔️:   for (auto pr : boost::adaptors::reverse(anglePairs)) {
         // RDKit✔️✔️:     if ((dp_mol->getRingInfo()->numAtomRings(pr.second.first) <= 1) &&
@@ -1467,11 +1418,7 @@ impl RdkitEmbeddedFrag {
                 let a = done_nbrs[i];
                 let b = done_nbrs[j];
                 angle_pairs.push((
-                    compute_angle(
-                        self.eatoms[&aid].loc,
-                        self.eatoms[&a].loc,
-                        self.eatoms[&b].loc,
-                    ),
+                    compute_angle(self.eatoms[&aid].loc, self.eatoms[&a].loc, self.eatoms[&b].loc),
                     (a, b),
                 ));
             }
@@ -1482,8 +1429,7 @@ impl RdkitEmbeddedFrag {
         };
         for pair in angle_pairs.iter().rev() {
             let (a, b) = pair.1;
-            if atom_ring_counts.get(a).copied().unwrap_or(0) <= 1
-                && atom_ring_counts.get(b).copied().unwrap_or(0) <= 1
+            if atom_ring_counts.get(a).copied().unwrap_or(0) <= 1 && atom_ring_counts.get(b).copied().unwrap_or(0) <= 1
             {
                 winner = *pair;
                 break;
@@ -1582,21 +1528,14 @@ impl RdkitEmbeddedFrag {
 
     // RDKit✔️✔️: int EmbeddedFrag::findNeighbor(unsigned int aid) { ... }
     fn find_neighbor(&self, aid: usize, adjacency: &[Vec<usize>]) -> Option<usize> {
-        adjacency[aid]
-            .iter()
-            .copied()
-            .find(|nb| self.eatoms.contains_key(nb))
+        adjacency[aid].iter().copied().find(|nb| self.eatoms.contains_key(nb))
     }
 
     // RDKit✔️✔️: void EmbeddedFrag::setupAttachmentPoints() { ... }
     fn setup_attachment_points(&mut self, adjacency: &[Vec<usize>], atom_ring_counts: &[usize]) {
         let attach_ids: Vec<usize> = self.attach_pts.iter().copied().collect();
         for dai in attach_ids {
-            let enbrs = self
-                .eatoms
-                .get(&dai)
-                .map(|st| st.pending.clone())
-                .unwrap_or_default();
+            let enbrs = self.eatoms.get(&dai).map(|st| st.pending.clone()).unwrap_or_default();
             let done_nbrs: Vec<usize> = adjacency[dai]
                 .iter()
                 .copied()
@@ -1820,13 +1759,8 @@ impl RdkitEmbeddedFrag {
                         .position(|frag| !frag.done && frag.eatoms.contains_key(&nbri));
                     if let Some(idx) = found {
                         let mut other = efrags.remove(idx);
-                        self.merge_no_common(
-                            &mut other, aid, nbri, atoms, bonds, adjacency, degree, cip_ranks,
-                        )?;
-                        let remove_attach = self
-                            .eatoms
-                            .get(&nbri)
-                            .is_some_and(|st| st.pending.is_empty())
+                        self.merge_no_common(&mut other, aid, nbri, atoms, bonds, adjacency, degree, cip_ranks)?;
+                        let remove_attach = self.eatoms.get(&nbri).is_some_and(|st| st.pending.is_empty())
                             && self.attach_pts.iter().any(|&x| x == nbri);
                         if remove_attach {
                             self.attach_pts.retain(|&x| x != nbri);
@@ -1891,11 +1825,7 @@ impl RdkitEmbeddedFrag {
                 let Some(&rs_aidx) = ring_system_atoms.get(rs_local_aidx) else {
                     return None;
                 };
-                if let Some(coord) = template
-                    .coords_2d
-                    .as_ref()
-                    .and_then(|coords| coords.get(template_aidx))
-                {
+                if let Some(coord) = template.coords_2d.as_ref().and_then(|coords| coords.get(template_aidx)) {
                     self.eatoms.insert(
                         rs_aidx,
                         TreeEmbeddedAtom {
@@ -1924,11 +1854,7 @@ impl RdkitEmbeddedFrag {
     // RDKit✔️✔️: static void mirrorTransRingAtoms(const RDKit::ROMol &mol,
     // RDKit✔️✔️:                                  const RDKit::INT_VECT &ring,
     // RDKit✔️✔️:                                  RDGeom::INT_POINT2D_MAP &coords) { ... }
-    fn mirror_trans_ring_atoms(
-        bonds: &[Bond],
-        ring: &[usize],
-        coords: &mut BTreeMap<usize, (f64, f64)>,
-    ) {
+    fn mirror_trans_ring_atoms(bonds: &[Bond], ring: &[usize], coords: &mut BTreeMap<usize, (f64, f64)>) {
         // RDKit✔️✔️:   RDKit::INT_VECT transRingAtoms;
         // RDKit✔️✔️:   for (size_t i = 0; i < ring.size(); ++i) {
         for i in 0..ring.len() {
@@ -2315,10 +2241,7 @@ impl RdkitEmbeddedFrag {
         let onb2 = oeatm.nbr2?;
         let onb1_loc = other.eatoms.get(&onb1)?.loc;
         let onb2_loc = other.eatoms.get(&onb2)?.loc;
-        let mid_pt = (
-            (onb1_loc.0 + onb2_loc.0) * 0.5,
-            (onb1_loc.1 + onb2_loc.1) * 0.5,
-        );
+        let mid_pt = ((onb1_loc.0 + onb2_loc.0) * 0.5, (onb1_loc.1 + onb2_loc.1) * 0.5);
         let nb1 = self.eatoms.get(&comm_aid)?.nbr1?;
         let nb2 = self.eatoms.get(&comm_aid)?.nbr2?;
         let nbp1 = self.eatoms.get(&nb1)?.loc;
@@ -2390,12 +2313,7 @@ impl RdkitEmbeddedFrag {
 
     // RDKit✔️✔️: double EmbeddedFrag::mimicDistMatAndDensityCostFunc(
     // RDKit✔️✔️:     const DOUBLE_SMART_PTR *dmat, double mimicDmatWt) { ... }
-    fn mimic_dist_mat_and_density_cost_func(
-        &self,
-        num_atoms: usize,
-        dmat: Option<&[f64]>,
-        mimic_dmat_wt: f64,
-    ) -> f64 {
+    fn mimic_dist_mat_and_density_cost_func(&self, num_atoms: usize, dmat: Option<&[f64]>, mimic_dmat_wt: f64) -> f64 {
         if num_atoms < 2 {
             return 0.0;
         }
@@ -2470,9 +2388,8 @@ impl RdkitEmbeddedFrag {
         mimic_dmat_wt: f64,
         permute_deg4_nodes: bool,
     ) {
-        let rot_bonds = rdkit_get_all_rotatable_bonds(bonds, |bid| {
-            is_ring_bond_in_component(bid, bonds, comp, adjacency)
-        });
+        let rot_bonds =
+            rdkit_get_all_rotatable_bonds(bonds, |bid| is_ring_bond_in_component(bid, bonds, comp, adjacency));
         let nb = rot_bonds.len();
 
         let mut nd4 = 0usize;
@@ -2483,9 +2400,8 @@ impl RdkitEmbeddedFrag {
             for caid in 0..atoms.len() {
                 if adjacency[caid].len() == 4
                     && !adjacency[caid].iter().any(|&nbr| {
-                        bond_between_idx(bonds, caid, nbr).is_some_and(|bid| {
-                            is_ring_bond_in_component(bid, bonds, comp, adjacency)
-                        })
+                        bond_between_idx(bonds, caid, nbr)
+                            .is_some_and(|bid| is_ring_bond_in_component(bid, bonds, comp, adjacency))
                     })
                 {
                     let (aids, bids) = rdkit_get_nbr_atom_and_bond_ids(caid, bonds, adjacency);
@@ -2510,8 +2426,7 @@ impl RdkitEmbeddedFrag {
         let mut rng = RdkitMinStdRand::new(seed);
 
         let mut best_crd_map = BTreeMap::<usize, (f64, f64)>::new();
-        let mut best_dens =
-            self.mimic_dist_mat_and_density_cost_func(atoms.len(), dmat, mimic_dmat_wt);
+        let mut best_dens = self.mimic_dist_mat_and_density_cost_func(atoms.len(), dmat, mimic_dmat_wt);
         for (&aid, st) in &self.eatoms {
             best_crd_map.insert(aid, st.loc);
         }
@@ -2530,15 +2445,9 @@ impl RdkitEmbeddedFrag {
                 } else {
                     let d4i = ri - nb;
                     let ai = deg4nodes[d4i];
-                    let nbr_locs: Vec<(f64, f64)> = deg4_nbr_aids[d4i]
-                        .iter()
-                        .map(|aid| self.eatoms[aid].loc)
-                        .collect();
-                    let bnd_pairs = rdkit_find_bond_pairs_to_permute_deg4(
-                        self.eatoms[&ai].loc,
-                        &deg4_nbr_bids[d4i],
-                        &nbr_locs,
-                    );
+                    let nbr_locs: Vec<(f64, f64)> = deg4_nbr_aids[d4i].iter().map(|aid| self.eatoms[aid].loc).collect();
+                    let bnd_pairs =
+                        rdkit_find_bond_pairs_to_permute_deg4(self.eatoms[&ai].loc, &deg4_nbr_bids[d4i], &nbr_locs);
                     let fbi = if rng.next_unit_f64() > 0.5 { 1 } else { 0 };
                     let (bid1, bid2) = bnd_pairs[fbi];
                     let aid1 = if bonds[bid1].begin().index() == ai {
@@ -2554,8 +2463,7 @@ impl RdkitEmbeddedFrag {
                     self.permute_bonds(ai, aid1, aid2, adjacency);
                 }
             }
-            let density =
-                self.mimic_dist_mat_and_density_cost_func(atoms.len(), dmat, mimic_dmat_wt);
+            let density = self.mimic_dist_mat_and_density_cost_func(atoms.len(), dmat, mimic_dmat_wt);
             if best_dens - density > 1.0e-4 {
                 best_dens = density;
                 for (&aid, st) in &self.eatoms {
@@ -2721,14 +2629,7 @@ impl RdkitEmbeddedFrag {
 
     // RDKit✔️✔️: void EmbeddedFrag::openAngles(const double *dmat, unsigned int aid1,
     // RDKit✔️✔️:                               unsigned int aid2) { ... }
-    fn open_angles(
-        &mut self,
-        adjacency: &[Vec<usize>],
-        num_atoms: usize,
-        dmat: &[f64],
-        aid1: usize,
-        aid2: usize,
-    ) {
+    fn open_angles(&mut self, adjacency: &[Vec<usize>], num_atoms: usize, dmat: &[f64], aid1: usize, aid2: usize) {
         let deg1 = adjacency[aid1].len();
         let deg2 = adjacency[aid2].len();
         let fixed1 = self.eatoms[&aid1].df_fixed;
@@ -2815,14 +2716,10 @@ impl RdkitEmbeddedFrag {
         while iter < RDKIT_MAX_COLL_ITERS && !colls.is_empty() {
             let ncols = colls.len();
             let c_aids = colls[0];
-            let rot_bonds = rdkit_get_rotatable_bonds_between(
-                c_aids.0,
-                c_aids.1,
-                atoms.len(),
-                bonds,
-                adjacency,
-                |bid| is_ring_bond_in_component(bid, bonds, comp, adjacency),
-            );
+            let rot_bonds =
+                rdkit_get_rotatable_bonds_between(c_aids.0, c_aids.1, atoms.len(), bonds, adjacency, |bid| {
+                    is_ring_bond_in_component(bid, bonds, comp, adjacency)
+                });
             let prev_density = self.total_density();
             for ri in rot_bonds {
                 let done = *done_bonds.get(&ri).unwrap_or(&0);
@@ -2892,13 +2789,7 @@ impl RdkitEmbeddedFrag {
         adjacency: &[Vec<usize>],
     ) {
         let dmat = component_graph_distance_matrix(atoms.len(), comp, adjacency);
-        for (aid1, aid2) in self.find_collisions(
-            atoms,
-            bonds,
-            adjacency,
-            &self.compute_dist_mat(atoms.len()),
-            false,
-        ) {
+        for (aid1, aid2) in self.find_collisions(atoms, bonds, adjacency, &self.compute_dist_mat(atoms.len()), false) {
             self.open_angles(adjacency, atoms.len(), &dmat, aid1, aid2);
         }
     }
@@ -2948,10 +2839,8 @@ impl RdkitEmbeddedFrag {
                         loc.0 *= 0.9;
                         loc.1 *= 0.9;
                         if norm(loc) > 0.75 {
-                            self.eatoms.get_mut(&aid1).expect("embedded atom").loc = (
-                                self.eatoms[&aid_a].loc.0 + loc.0,
-                                self.eatoms[&aid_a].loc.1 + loc.1,
-                            );
+                            self.eatoms.get_mut(&aid1).expect("embedded atom").loc =
+                                (self.eatoms[&aid_a].loc.0 + loc.0, self.eatoms[&aid_a].loc.1 + loc.1);
                         }
                     }
                     if deg2 == 1
@@ -2965,32 +2854,16 @@ impl RdkitEmbeddedFrag {
                         loc.0 *= 0.9;
                         loc.1 *= 0.9;
                         if norm(loc) > 0.75 {
-                            self.eatoms.get_mut(&aid2).expect("embedded atom").loc = (
-                                self.eatoms[&aid_a].loc.0 + loc.0,
-                                self.eatoms[&aid_a].loc.1 + loc.1,
-                            );
+                            self.eatoms.get_mut(&aid2).expect("embedded atom").loc =
+                                (self.eatoms[&aid_a].loc.0 + loc.0, self.eatoms[&aid_a].loc.1 + loc.1);
                         }
                     }
                 } else {
                     let mut r_path = Vec::<usize>::new();
                     let mut nbr_map = BTreeMap::<usize, Vec<usize>>::new();
-                    recurse_deg_two_ring_atoms_component(
-                        aid1,
-                        bonds,
-                        comp,
-                        adjacency,
-                        &mut r_path,
-                        &mut nbr_map,
-                    );
+                    recurse_deg_two_ring_atoms_component(aid1, bonds, comp, adjacency, &mut r_path, &mut nbr_map);
                     if r_path.is_empty() {
-                        recurse_deg_two_ring_atoms_component(
-                            aid2,
-                            bonds,
-                            comp,
-                            adjacency,
-                            &mut r_path,
-                            &mut nbr_map,
-                        );
+                        recurse_deg_two_ring_atoms_component(aid2, bonds, comp, adjacency, &mut r_path, &mut nbr_map);
                     }
                     let mut move_map = BTreeMap::<usize, (f64, f64)>::new();
                     for &rpi in &r_path {
@@ -2999,10 +2872,8 @@ impl RdkitEmbeddedFrag {
                         }
                         let nbrs = &nbr_map[&rpi];
                         let mut mv = (
-                            (self.eatoms[&nbrs[0]].loc.0 + self.eatoms[&nbrs[1]].loc.0) * 0.5
-                                - self.eatoms[&rpi].loc.0,
-                            (self.eatoms[&nbrs[0]].loc.1 + self.eatoms[&nbrs[1]].loc.1) * 0.5
-                                - self.eatoms[&rpi].loc.1,
+                            (self.eatoms[&nbrs[0]].loc.0 + self.eatoms[&nbrs[1]].loc.0) * 0.5 - self.eatoms[&rpi].loc.0,
+                            (self.eatoms[&nbrs[0]].loc.1 + self.eatoms[&nbrs[1]].loc.1) * 0.5 - self.eatoms[&rpi].loc.1,
                         );
                         let len = norm(mv);
                         if len > 1.0e-12 {
@@ -3014,8 +2885,7 @@ impl RdkitEmbeddedFrag {
                     for rpi in r_path {
                         if let Some(mv) = move_map.get(&rpi) {
                             let cur = self.eatoms[&rpi].loc;
-                            self.eatoms.get_mut(&rpi).expect("embedded atom").loc =
-                                (cur.0 + mv.0, cur.1 + mv.1);
+                            self.eatoms.get_mut(&rpi).expect("embedded atom").loc = (cur.0 + mv.0, cur.1 + mv.1);
                         }
                     }
                 }
@@ -3076,38 +2946,22 @@ impl RdkitEmbeddedFrag {
         if common.len() == 1 {
             let comm_aid = common[0];
             let other_atom;
-            if self
-                .eatoms
-                .get(&comm_aid)
-                .and_then(|st| st.cis_trans_nbr)
-                .is_some()
-            {
+            if self.eatoms.get(&comm_aid).and_then(|st| st.cis_trans_nbr).is_some() {
                 ct_case = 2;
                 other_atom = self.eatoms.get(&comm_aid)?.nbr1;
                 if let Some(aid) = other_atom {
-                    other.add_non_ring_atom(
-                        aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks,
-                    )?;
+                    other.add_non_ring_atom(aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks)?;
                 }
-            } else if other
-                .eatoms
-                .get(&comm_aid)
-                .and_then(|st| st.cis_trans_nbr)
-                .is_some()
-            {
+            } else if other.eatoms.get(&comm_aid).and_then(|st| st.cis_trans_nbr).is_some() {
                 ct_case = 1;
                 other_atom = other.eatoms.get(&comm_aid)?.nbr1;
                 if let Some(aid) = other_atom {
-                    self.add_non_ring_atom(
-                        aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks,
-                    )?;
+                    self.add_non_ring_atom(aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks)?;
                 }
             } else {
                 other_atom = self.eatoms.get(&comm_aid)?.nbr1;
                 if let Some(aid) = other_atom {
-                    other.add_non_ring_atom(
-                        aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks,
-                    )?;
+                    other.add_non_ring_atom(aid, comm_aid, atoms, bonds, adjacency, degree, cip_ranks)?;
                 }
             }
             if let Some(aid) = other_atom {
@@ -3214,14 +3068,9 @@ impl RdkitEmbeddedFrag {
             let Some((idx, common)) = found else { break };
             let common_for_cleanup = common.clone();
             let mut other = efrags.remove(idx);
-            self.merge_with_common(
-                &mut other, common, atoms, bonds, adjacency, degree, cip_ranks,
-            )?;
+            self.merge_with_common(&mut other, common, atoms, bonds, adjacency, degree, cip_ranks)?;
             for cai in common_for_cleanup {
-                let remove_attach = self
-                    .eatoms
-                    .get(&cai)
-                    .is_some_and(|st| st.pending.is_empty())
+                let remove_attach = self.eatoms.get(&cai).is_some_and(|st| st.pending.is_empty())
                     && self.attach_pts.iter().any(|&x| x == cai);
                 if remove_attach {
                     self.attach_pts.retain(|&x| x != cai);
@@ -3251,9 +3100,7 @@ impl RdkitEmbeddedFrag {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        if use_ring_templates
-            && (fused_rings.len() > 1 || (fused_rings.len() == 1 && fused_rings[0].len() > 8))
-        {
+        if use_ring_templates && (fused_rings.len() > 1 || (fused_rings.len() == 1 && fused_rings[0].len() > 8)) {
             if self.match_to_template(
                 atoms,
                 bonds,
@@ -3312,8 +3159,7 @@ impl RdkitEmbeddedFrag {
             .into_iter()
             .collect();
         while self.eatoms.len() < funion.len() {
-            let (next_id, common_atom_ids) =
-                rdkit_find_next_ring_to_embed(&done_rings, fused_rings)?;
+            let (next_id, common_atom_ids) = rdkit_find_next_ring_to_embed(&done_rings, fused_rings)?;
             let mut emb_ring = Self::default();
             emb_ring.init_from_ring_coords(&fused_rings[next_id], &coords[next_id]);
             let mut pin_atoms = Vec::new();
@@ -3353,9 +3199,7 @@ fn build_rdkit_template_query_molecule(
             .clone()
             .with_2d_coordinate_block(coords.clone())
             .map_err(|error| {
-                Coordinate2DError::UnsupportedFeature(format!(
-                    "RDKit template query coordinate build failed: {error}"
-                ))
+                Coordinate2DError::UnsupportedFeature(format!("RDKit template query coordinate build failed: {error}"))
             })
     } else {
         Ok(template.graph.compiled_query.clone())
@@ -3386,9 +3230,7 @@ fn build_rdkit_ring_system_molecule(
             .with_direction(bond.direction())
             .with_unknown_stereo(bond.unknown_stereo());
         if let Some([a0, a1]) = bond.stereo_atoms() {
-            if let (Some(&mapped0), Some(&mapped1)) =
-                (atom_map.get(&a0.index()), atom_map.get(&a1.index()))
-            {
+            if let (Some(&mapped0), Some(&mapped1)) = (atom_map.get(&a0.index()), atom_map.get(&a1.index())) {
                 spec = spec.with_stereo_atoms(mapped0, mapped1);
             }
         }
@@ -3396,22 +3238,15 @@ fn build_rdkit_ring_system_molecule(
             spec = spec.with_query(query.clone());
         }
         builder.add_bond(spec).map_err(|error| {
-            Coordinate2DError::UnsupportedFeature(format!(
-                "RDKit ring-system molecule build failed: {error}"
-            ))
+            Coordinate2DError::UnsupportedFeature(format!("RDKit ring-system molecule build failed: {error}"))
         })?;
     }
     builder.build().map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit ring-system molecule finalization failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit ring-system molecule finalization failed: {error}"))
     })
 }
 
-fn build_rdkit_molecule_from_slices(
-    atoms: &[Atom],
-    bonds: &[Bond],
-) -> Result<Molecule, Coordinate2DError> {
+fn build_rdkit_molecule_from_slices(atoms: &[Atom], bonds: &[Bond]) -> Result<Molecule, Coordinate2DError> {
     let mut builder = MoleculeBuilder::new();
     let mut atom_map = Vec::with_capacity(atoms.len());
     for atom in atoms {
@@ -3433,26 +3268,18 @@ fn build_rdkit_molecule_from_slices(
             spec = spec.with_query(query.clone());
         }
         builder.add_bond(spec).map_err(|error| {
-            Coordinate2DError::UnsupportedFeature(format!(
-                "RDKit whole-molecule build failed: {error}"
-            ))
+            Coordinate2DError::UnsupportedFeature(format!("RDKit whole-molecule build failed: {error}"))
         })?;
     }
     builder.build().map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit whole-molecule finalization failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit whole-molecule finalization failed: {error}"))
     })
 }
 
-fn build_rdkit_depict_molecule_from_slices(
-    atoms: &[Atom],
-    bonds: &[Bond],
-) -> Result<Molecule, Coordinate2DError> {
+fn build_rdkit_depict_molecule_from_slices(atoms: &[Atom], bonds: &[Bond]) -> Result<Molecule, Coordinate2DError> {
     let mut molecule = build_rdkit_molecule_from_slices(atoms, bonds)?;
     let valence =
-        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
-        .map_err(|error| {
+        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false).map_err(|error| {
             Coordinate2DError::UnsupportedFeature(format!(
                 "RDKit updatePropertyCache(false) equivalent failed during 2D coordinate generation: {error}"
             ))
@@ -3526,9 +3353,7 @@ fn rdkit_template_degree_counts(mol: &Molecule, dummy_atomic_num: Option<u8>) ->
         }
         let mut degree = 0usize;
         for nbr in adjacency.neighbors_of(atom.id().index()) {
-            if dummy_atomic_num
-                .is_some_and(|anum| mol.atoms()[nbr.atom_index].atomic_number() == anum)
-            {
+            if dummy_atomic_num.is_some_and(|anum| mol.atoms()[nbr.atom_index].atomic_number() == anum) {
                 continue;
             }
             degree += 1;
@@ -3541,24 +3366,15 @@ fn rdkit_template_degree_counts(mol: &Molecule, dummy_atomic_num: Option<u8>) ->
     counts
 }
 
-fn rdkit_query_template_degree_counts(
-    query: &crate::QueryGraph,
-    dummy_atomic_num: Option<u8>,
-) -> [i32; 5] {
+fn rdkit_query_template_degree_counts(query: &crate::QueryGraph, dummy_atomic_num: Option<u8>) -> [i32; 5] {
     let mut counts = [0i32; 5];
     for atom in query.atoms() {
         if dummy_atomic_num.is_some_and(|anum| atom.atomic_number() == anum) {
             continue;
         }
         let mut degree = 0usize;
-        for &(neighbor, _) in query
-            .adjacency()
-            .get(atom.id().index())
-            .into_iter()
-            .flatten()
-        {
-            if dummy_atomic_num.is_some_and(|anum| query.atoms()[neighbor].atomic_number() == anum)
-            {
+        for &(neighbor, _) in query.adjacency().get(atom.id().index()).into_iter().flatten() {
+            if dummy_atomic_num.is_some_and(|anum| query.atoms()[neighbor].atomic_number() == anum) {
                 continue;
             }
             degree += 1;
@@ -3571,11 +3387,7 @@ fn rdkit_query_template_degree_counts(
     counts
 }
 
-fn rdkit_check_stereo_chemistry(
-    mol: &Molecule,
-    template: &RdkitTemplateRuntimeModel,
-    atom_mapping: &[usize],
-) -> bool {
+fn rdkit_check_stereo_chemistry(mol: &Molecule, template: &RdkitTemplateRuntimeModel, atom_mapping: &[usize]) -> bool {
     // RDKit✔️❌: static bool checkStereoChemistry(const RDKit::ROMol &mol,
     // RDKit✔️❌:                                  const RDKit::ROMol &template_mol,
     // RDKit✔️❌:                                  RDKit::MatchVectType match) { ... }
@@ -3589,9 +3401,7 @@ fn rdkit_check_stereo_chemistry(
         .collect();
     let adjacency = crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
     for bond in mol.bonds() {
-        if bond.order() != BondOrder::Double
-            || matches!(bond.stereo(), BondStereo::Any | BondStereo::None)
-        {
+        if bond.order() != BondOrder::Double || matches!(bond.stereo(), BondStereo::Any | BondStereo::None) {
             continue;
         }
         let Some(stereo_atoms) = bond.stereo_atoms() else {
@@ -3710,8 +3520,8 @@ fn rdkit_num_bonds_plus_lone_pairs(
     formal_charge: i8,
     zero_or_outgoing_dative_bonds: usize,
 ) -> Option<i32> {
-    let deg = graph_degree as i32 + i32::from(explicit_hydrogens) + implicit_hydrogens
-        - zero_or_outgoing_dative_bonds as i32;
+    let deg =
+        graph_degree as i32 + i32::from(explicit_hydrogens) + implicit_hydrogens - zero_or_outgoing_dative_bonds as i32;
 
     if atomic_num <= 1 {
         return Some(deg);
@@ -3740,10 +3550,9 @@ fn compute_sub_angle(degree: usize, hybridization: RdkitHybridization) -> f64 {
             }
         }
         RdkitHybridization::Sp2 => 2.0 * PI / 3.0,
-        RdkitHybridization::S
-        | RdkitHybridization::Sp
-        | RdkitHybridization::Sp3d
-        | RdkitHybridization::Sp3d2 => 2.0 * PI / degree as f64,
+        RdkitHybridization::S | RdkitHybridization::Sp | RdkitHybridization::Sp3d | RdkitHybridization::Sp3d2 => {
+            2.0 * PI / degree as f64
+        }
     }
 }
 
@@ -3912,16 +3721,11 @@ fn rdkit_hybridizations_for_depict(
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
     let depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
-    let assignment =
-        crate::assign_valence(&depict_mol, crate::ValenceModel::RdkitLike).map_err(|error| {
-            Coordinate2DError::UnsupportedFeature(format!(
-                "RDKit hybridization valence assignment failed: {error}"
-            ))
-        })?;
+    let assignment = crate::assign_valence(&depict_mol, crate::ValenceModel::RdkitLike).map_err(|error| {
+        Coordinate2DError::UnsupportedFeature(format!("RDKit hybridization valence assignment failed: {error}"))
+    })?;
     let radicals = crate::assign_radicals(&depict_mol).map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit hybridization radical assignment failed: {error}"
-        ))
+        Coordinate2DError::UnsupportedFeature(format!("RDKit hybridization radical assignment failed: {error}"))
     })?;
 
     let mut out = Vec::with_capacity(atoms.len());
@@ -3931,13 +3735,10 @@ fn rdkit_hybridizations_for_depict(
             continue;
         }
 
-        let total_degree = degree[idx] as i32
-            + i32::from(atom.explicit_hydrogens())
-            + assignment.implicit_hydrogens[idx];
+        let total_degree =
+            degree[idx] as i32 + i32::from(atom.explicit_hydrogens()) + assignment.implicit_hydrogens[idx];
         match atom.chiral_tag() {
-            ChiralTag::Tetrahedral | ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-                if total_degree == 4 =>
-            {
+            ChiralTag::Tetrahedral | ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw if total_degree == 4 => {
                 out.push(RdkitHybridization::Sp3);
                 continue;
             }
@@ -3979,9 +3780,7 @@ fn rdkit_hybridizations_for_depict(
                 ))
             })?
         } else {
-            degree[idx] as i32
-                + atom.explicit_hydrogens() as i32
-                + assignment.implicit_hydrogens[idx]
+            degree[idx] as i32 + atom.explicit_hydrogens() as i32 + assignment.implicit_hydrogens[idx]
                 - zero_or_outgoing_dative_bonds as i32
         };
         // Fallback: if norbs is 0 or negative (lookup failure), use Unspecified
@@ -3990,9 +3789,9 @@ fn rdkit_hybridizations_for_depict(
             continue;
         }
 
-        let has_conjugated_bond = bonds.iter().any(|bond| {
-            (bond.begin().index() == idx || bond.end().index() == idx) && bond.is_conjugated()
-        });
+        let has_conjugated_bond = bonds
+            .iter()
+            .any(|bond| (bond.begin().index() == idx || bond.end().index() == idx) && bond.is_conjugated());
 
         out.push(match norbs {
             0 | 1 => RdkitHybridization::S,
@@ -4044,26 +3843,15 @@ fn rdkit_hybridizations_for_depict(
 // RDKit✔️✔️:                 [&res](const auto &elem) { res.push_back(elem.second); });
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn rdkit_rank_atoms_by_rank_into(
-    atom_slice: &[Atom],
-    order: &mut [usize],
-    degree: &[usize],
-    ascending: bool,
-) {
+fn rdkit_rank_atoms_by_rank_into(atom_slice: &[Atom], order: &mut [usize], degree: &[usize], ascending: bool) {
     let mol_atom_count = atom_slice.len() as u32;
     let mut rank_aid: Vec<(u32, usize)> = Vec::with_capacity(order.len());
     for &aid in order.iter() {
         let mut rank = aid as u32;
         let atom = &atom_slice[aid];
-        if let Some(cip_rank) = atom
-            .prop("_CIPRank")
-            .and_then(|value| value.parse::<u32>().ok())
-        {
+        if let Some(cip_rank) = atom.prop("_CIPRank").and_then(|value| value.parse::<u32>().ok()) {
             rank = cip_rank;
-        } else if let Some(chiral_rank) = atom
-            .prop("_chiralAtomRank")
-            .and_then(|value| value.parse::<u32>().ok())
-        {
+        } else if let Some(chiral_rank) = atom.prop("_chiralAtomRank").and_then(|value| value.parse::<u32>().ok()) {
             rank = mol_atom_count - chiral_rank;
         } else {
             rank += mol_atom_count * atom_depict_rank(atom.atomic_number(), degree[aid]) as u32;
@@ -4080,12 +3868,7 @@ fn rdkit_rank_atoms_by_rank_into(
     }
 }
 
-fn rdkit_rank_atoms_by_rank(
-    atom_slice: &[Atom],
-    order: &[usize],
-    degree: &[usize],
-    ascending: bool,
-) -> Vec<usize> {
+fn rdkit_rank_atoms_by_rank(atom_slice: &[Atom], order: &[usize], degree: &[usize], ascending: bool) -> Vec<usize> {
     let mut res = order.to_vec();
     rdkit_rank_atoms_by_rank_into(atom_slice, &mut res, degree, ascending);
     res
@@ -4177,11 +3960,7 @@ fn rdkit_set_nbr_order(
 // RDKit✔️✔️:     bids.push_back(bi);
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
-fn rdkit_get_nbr_atom_and_bond_ids(
-    aid: usize,
-    bonds: &[Bond],
-    adjacency: &[Vec<usize>],
-) -> (Vec<usize>, Vec<usize>) {
+fn rdkit_get_nbr_atom_and_bond_ids(aid: usize, bonds: &[Bond], adjacency: &[Vec<usize>]) -> (Vec<usize>, Vec<usize>) {
     let mut aids = Vec::new();
     let mut bids = Vec::new();
     for &nbr in &adjacency[aid] {
@@ -4239,10 +4018,7 @@ fn rdkit_find_bond_pairs_to_permute_deg4(
     assert_eq!(nbr_bids.len(), 4);
     assert_eq!(nbr_locs.len(), 4);
 
-    let nbr_pts: Vec<(f64, f64)> = nbr_locs
-        .iter()
-        .map(|&(x, y)| (x - center.0, y - center.1))
-        .collect();
+    let nbr_pts: Vec<(f64, f64)> = nbr_locs.iter().map(|&(x, y)| (x - center.0, y - center.1)).collect();
 
     let dp1 = nbr_pts[0].0 * nbr_pts[1].0 + nbr_pts[0].1 * nbr_pts[1].1;
     if dp1.abs() < 1.0e-3 {
@@ -4377,10 +4153,7 @@ fn rdkit_pick_first_ring_to_embed(degree: &[usize], fused_rings: &[Vec<usize>]) 
 // RDKit✔️✔️:   }
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn rdkit_find_core_rings(
-    fused_rings: &[Vec<usize>],
-    bonds: &[Bond],
-) -> (Vec<Vec<usize>>, Vec<usize>) {
+fn rdkit_find_core_rings(fused_rings: &[Vec<usize>], bonds: &[Bond]) -> (Vec<Vec<usize>>, Vec<usize>) {
     let mut removed_rings = vec![false; fused_rings.len()];
     let mut removed_a_ring;
     loop {
@@ -4397,10 +4170,7 @@ fn rdkit_find_core_rings(
                     continue;
                 }
                 for &rii in &fused_rings[curr_ring_id] {
-                    if fused_rings[other_ring_id].contains(&rii)
-                        && Some(rii) != aid1
-                        && Some(rii) != aid2
-                    {
+                    if fused_rings[other_ring_id].contains(&rii) && Some(rii) != aid1 && Some(rii) != aid2 {
                         n_intersecting_atoms += 1;
                         if aid1.is_none() {
                             aid1 = Some(rii);
@@ -4537,10 +4307,7 @@ fn rdkit_find_core_rings(
 // RDKit✔️✔️:   POSTCONDITION(res.size() > 0, "");
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn rdkit_find_next_ring_to_embed(
-    done_rings: &[usize],
-    fused_rings: &[Vec<usize>],
-) -> Option<(usize, Vec<usize>)> {
+fn rdkit_find_next_ring_to_embed(done_rings: &[usize], fused_rings: &[Vec<usize>]) -> Option<(usize, Vec<usize>)> {
     let mut not_done = Vec::new();
     for i in 0..fused_rings.len() {
         if !done_rings.contains(&i) {
@@ -4624,10 +4391,7 @@ fn rdkit_find_next_ring_to_embed(
 // RDKit✔️✔️:   }
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn rdkit_get_all_rotatable_bonds(
-    bonds: &[Bond],
-    is_ring_bond: impl Fn(usize) -> bool,
-) -> Vec<usize> {
+fn rdkit_get_all_rotatable_bonds(bonds: &[Bond], is_ring_bond: impl Fn(usize) -> bool) -> Vec<usize> {
     let mut res = Vec::new();
     for bond in bonds {
         let bid = bond.id().index();
@@ -4723,8 +4487,7 @@ fn rdkit_get_rotatable_bonds_between(
             }
             if let Some(bid) = bond_between_idx(bonds, pid, aid) {
                 let bond = &bonds[bid];
-                if matches!(bond.stereo(), BondStereo::None | BondStereo::Any) && !is_ring_bond(bid)
-                {
+                if matches!(bond.stereo(), BondStereo::None | BondStereo::Any) && !is_ring_bond(bid) {
                     res.push(bid);
                 }
             }
@@ -4736,12 +4499,7 @@ fn rdkit_get_rotatable_bonds_between(
 
 // RDKit✔️✔️: void _recurseAtomOneSide(unsigned int endAid, unsigned int begAid,
 // RDKit✔️✔️:                          const RDKit::ROMol *mol, RDKit::INT_VECT &flipAids) { ... }
-fn recurse_atom_one_side(
-    end_aid: usize,
-    beg_aid: usize,
-    adjacency: &[Vec<usize>],
-    flip_aids: &mut Vec<usize>,
-) {
+fn recurse_atom_one_side(end_aid: usize, beg_aid: usize, adjacency: &[Vec<usize>], flip_aids: &mut Vec<usize>) {
     flip_aids.push(end_aid);
     for &nbr in &adjacency[end_aid] {
         if nbr != beg_aid && !flip_aids.contains(&nbr) {
@@ -4788,13 +4546,7 @@ fn find_deg1_neighbor(adjacency: &[Vec<usize>], aid: usize) -> Option<usize> {
 
 // RDKit✔️✔️: unsigned int _findClosestNeighbor(const RDKit::ROMol *mol, const double *dmat,
 // RDKit✔️✔️:                                   unsigned int aid1, unsigned int aid2) { ... }
-fn find_closest_neighbor(
-    adjacency: &[Vec<usize>],
-    dmat: &[f64],
-    num_atoms: usize,
-    aid1: usize,
-    aid2: usize,
-) -> usize {
+fn find_closest_neighbor(adjacency: &[Vec<usize>], dmat: &[f64], num_atoms: usize, aid1: usize, aid2: usize) -> usize {
     let base = aid1 * num_atoms;
     let mut res = 0usize;
     let mut mdist = 1.0e8;
@@ -4808,11 +4560,7 @@ fn find_closest_neighbor(
     res
 }
 
-fn component_graph_distance_matrix(
-    num_atoms: usize,
-    comp: &[usize],
-    adjacency: &[Vec<usize>],
-) -> Vec<f64> {
+fn component_graph_distance_matrix(num_atoms: usize, comp: &[usize], adjacency: &[Vec<usize>]) -> Vec<f64> {
     let comp_set: BTreeSet<usize> = comp.iter().copied().collect();
     let mut out = vec![f64::INFINITY; num_atoms * num_atoms];
     for &start in comp {
@@ -4836,12 +4584,7 @@ fn component_graph_distance_matrix(
     out
 }
 
-fn shortest_path_in_component(
-    src: usize,
-    dst: usize,
-    comp: &[usize],
-    adjacency: &[Vec<usize>],
-) -> Option<Vec<usize>> {
+fn shortest_path_in_component(src: usize, dst: usize, comp: &[usize], adjacency: &[Vec<usize>]) -> Option<Vec<usize>> {
     let comp_set: BTreeSet<usize> = comp.iter().copied().collect();
     let mut q = VecDeque::<usize>::new();
     let mut prev = BTreeMap::<usize, usize>::new();
@@ -4874,12 +4617,7 @@ fn shortest_path_in_component(
     Some(path)
 }
 
-fn is_ring_bond_in_component(
-    bond_idx: usize,
-    bonds: &[Bond],
-    comp: &[usize],
-    adjacency: &[Vec<usize>],
-) -> bool {
+fn is_ring_bond_in_component(bond_idx: usize, bonds: &[Bond], comp: &[usize], adjacency: &[Vec<usize>]) -> bool {
     let comp_set: BTreeSet<usize> = comp.iter().copied().collect();
     let b = &bonds[bond_idx];
     let u = b.begin().index();
@@ -4955,10 +4693,7 @@ fn recurse_deg_two_ring_atoms_component(
     }
 }
 
-fn rdkit_query_contains_atomic_number(
-    query: &QueryNode<AtomQueryPredicate>,
-    atomic_number: u8,
-) -> bool {
+fn rdkit_query_contains_atomic_number(query: &QueryNode<AtomQueryPredicate>, atomic_number: u8) -> bool {
     match query {
         QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(n)) => *n == atomic_number,
         QueryNode::Predicate(_) => false,
@@ -5004,9 +4739,9 @@ fn rdkit_is_atom_terminal_rgroup_or_query_hydrogen(
 // RDKit❗✔️: }
 fn rdkit_has_terminal_rgroup_or_query_hydrogen(mol: &Molecule) -> bool {
     let adjacency = &mol.topology_block().adjacency;
-    mol.atoms().iter().any(|atom| {
-        rdkit_is_atom_terminal_rgroup_or_query_hydrogen(atom.id().index(), mol.atoms(), adjacency)
-    })
+    mol.atoms()
+        .iter()
+        .any(|atom| rdkit_is_atom_terminal_rgroup_or_query_hydrogen(atom.id().index(), mol.atoms(), adjacency))
 }
 
 // RDKit❗✔️: The `adjustQueryProperties(...)` prelude is ported only for the
@@ -5030,9 +4765,10 @@ fn rdkit_adjust_query_properties_for_depiction_template(mol: &mut Molecule) {
             begin_is_aromatic && end_is_aromatic
         };
         if replace {
-            bond.set_query(Some(QueryNode::predicate(
-                crate::BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Aromatic]),
-            )));
+            bond.set_query(Some(QueryNode::predicate(crate::BondQueryPredicate::OrderIn(vec![
+                BondOrder::Single,
+                BondOrder::Aromatic,
+            ]))));
         }
     }
 }
@@ -5098,9 +4834,7 @@ fn rdkit_prepare_template_for_rgroups(template_mol: &Molecule) -> Option<Molecul
         let end = bond.end().index();
         let begin_atom = &atoms[begin];
         let end_atom = &atoms[end];
-        if rdkit_is_atom_terminal_rgroup_or_query_hydrogen(begin, &atoms, &adjacency)
-            && end_atom.query().is_some()
-        {
+        if rdkit_is_atom_terminal_rgroup_or_query_hydrogen(begin, &atoms, &adjacency) && end_atom.query().is_some() {
             removed_idx_to_nbr_idx.insert(begin, end);
         } else if rdkit_is_atom_terminal_rgroup_or_query_hydrogen(end, &atoms, &adjacency)
             && begin_atom.query().is_some()
@@ -5175,11 +4909,7 @@ fn rdkit_prepare_template_for_rgroups(template_mol: &Molecule) -> Option<Molecul
 // RDKit❗✔️:     std::move(newMatch.begin(), newMatch.end(), match.begin() + matchSize);
 // RDKit❗✔️:   }
 // RDKit❗✔️: }
-fn rdkit_reduced_to_full_matches(
-    reduced_query: &Molecule,
-    mol_hs: &Molecule,
-    matches: &mut Vec<Vec<(usize, usize)>>,
-) {
+fn rdkit_reduced_to_full_matches(reduced_query: &Molecule, mol_hs: &Molecule, matches: &mut Vec<Vec<(usize, usize)>>) {
     let adjacency = &mol_hs.topology_block().adjacency;
     let mut mol_hs_matches = vec![false; mol_hs.num_atoms()];
     for match_vec in matches.iter_mut() {
@@ -5217,20 +4947,16 @@ fn rdkit_reduced_to_full_matches(
     }
 }
 
-fn rdkit_select_3d_conformer_index(
-    mol: &Molecule,
-    conf_id: isize,
-) -> Result<usize, Coordinate2DError> {
+fn rdkit_select_3d_conformer_index(mol: &Molecule, conf_id: isize) -> Result<usize, Coordinate2DError> {
     let conformers = mol.conformers_3d();
     if conformers.is_empty() {
         return Err(Coordinate2DError::InvalidInput(
             "constrained depiction requires an available 3D conformer",
         ));
     }
-    crate::chemistry::conformer_selection::resolve_3d_conformer_index(conformers, conf_id as i64)
-        .ok_or(Coordinate2DError::InvalidInput(
-            "constrained depiction conformer id is out of range",
-        ))
+    crate::chemistry::conformer_selection::resolve_3d_conformer_index(conformers, conf_id as i64).ok_or(
+        Coordinate2DError::InvalidInput("constrained depiction conformer id is out of range"),
+    )
 }
 
 // RDKit✔️✔️: bool isAtomTerminalRGroupOrQueryHydrogen(const Atom *atom) {
@@ -5287,9 +5013,8 @@ fn rdkit_get_most_substituted_core_match(
     matches
         .iter()
         .min_by(|left, right| {
-            rdkit_score_match_by_degree_of_core_substitution(mol, query, left).total_cmp(
-                &rdkit_score_match_by_degree_of_core_substitution(mol, query, right),
-            )
+            rdkit_score_match_by_degree_of_core_substitution(mol, query, left)
+                .total_cmp(&rdkit_score_match_by_degree_of_core_substitution(mol, query, right))
         })
         .cloned()
 }
@@ -5308,10 +5033,7 @@ fn rdkit_sort_matches_by_degree_of_core_substitution(
         })
         .collect::<Vec<_>>();
     indexed.sort_by(|left, right| left.0.total_cmp(&right.0));
-    indexed
-        .into_iter()
-        .map(|(_, match_vec)| match_vec)
-        .collect()
+    indexed.into_iter().map(|(_, match_vec)| match_vec).collect()
 }
 
 // RDKit❗✔️: void invertMolBlockWedgingInfo(ROMol &mol) {
@@ -5367,10 +5089,7 @@ fn rdkit_clear_molblock_wedging_info(mol: &mut Molecule) {
     }
 }
 
-fn rdkit_select_2d_conformer_index(
-    mol: &Molecule,
-    conf_id: isize,
-) -> Result<usize, Coordinate2DError> {
+fn rdkit_select_2d_conformer_index(mol: &Molecule, conf_id: isize) -> Result<usize, Coordinate2DError> {
     let conformers = mol.conformers_2d();
     if conformers.is_empty() {
         return Err(Coordinate2DError::InvalidInput(
@@ -5380,9 +5099,8 @@ fn rdkit_select_2d_conformer_index(
     if conf_id == -1 {
         return Ok(0);
     }
-    let requested = usize::try_from(conf_id).map_err(|_| {
-        Coordinate2DError::InvalidInput("constrained depiction conformer id must be >= -1")
-    })?;
+    let requested = usize::try_from(conf_id)
+        .map_err(|_| Coordinate2DError::InvalidInput("constrained depiction conformer id must be >= -1"))?;
     conformers
         .iter()
         .position(|conformer| conformer.id() == requested)
@@ -5408,10 +5126,7 @@ fn rdkit_select_2d_conformer_index(
 // RDKit✔️❌:   CHECK_INVARIANT(mol.getNumConformers() == 1, "");
 // RDKit✔️❌:   mol.getConformer().setId(0);
 // RDKit✔️❌: }
-fn rdkit_remove_all_2d_conformers_but_one(
-    mol: &mut Molecule,
-    conf_id: isize,
-) -> Result<(), Coordinate2DError> {
+fn rdkit_remove_all_2d_conformers_but_one(mol: &mut Molecule, conf_id: isize) -> Result<(), Coordinate2DError> {
     let keep_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
     let survivor = {
         let conformers = &mol.coordinate_block().conformers_2d;
@@ -5436,14 +5151,8 @@ fn rdkit_align_points(
     reflect: bool,
     max_iterations: usize,
 ) -> Result<(f64, [[f64; 4]; 4]), Coordinate2DError> {
-    crate::chemistry::numerics::alignment::align_points(
-        ref_points,
-        probe_points,
-        None,
-        reflect,
-        max_iterations,
-    )
-    .map_err(Coordinate2DError::InvalidInput)
+    crate::chemistry::numerics::alignment::align_points(ref_points, probe_points, None, reflect, max_iterations)
+        .map_err(Coordinate2DError::InvalidInput)
 }
 
 fn rdkit_apply_transform_to_2d_conformer(
@@ -5454,10 +5163,7 @@ fn rdkit_apply_transform_to_2d_conformer(
     let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
     let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
     for point in coords.iter_mut() {
-        let transformed = crate::chemistry::numerics::alignment::transform_point(
-            trans,
-            [point[0], point[1], 0.0],
-        );
+        let transformed = crate::chemistry::numerics::alignment::transform_point(trans, [point[0], point[1], 0.0]);
         point[0] = transformed[0];
         point[1] = transformed[1];
     }
@@ -5479,26 +5185,18 @@ fn rdkit_get_alignment_transform(
     let mut ref_points = Vec::with_capacity(atom_map.len());
     let mut probe_points = Vec::with_capacity(atom_map.len());
     for &(probe_atom_idx, reference_atom_idx) in atom_map {
-        let probe = probe_coords
-            .get(probe_atom_idx)
+        let probe = probe_coords.get(probe_atom_idx).ok_or(Coordinate2DError::InvalidInput(
+            "probe atom index in alignment atom map is out of range",
+        ))?;
+        let reference = reference_coords
+            .get(reference_atom_idx)
             .ok_or(Coordinate2DError::InvalidInput(
-                "probe atom index in alignment atom map is out of range",
+                "reference atom index in alignment atom map is out of range",
             ))?;
-        let reference =
-            reference_coords
-                .get(reference_atom_idx)
-                .ok_or(Coordinate2DError::InvalidInput(
-                    "reference atom index in alignment atom map is out of range",
-                ))?;
         probe_points.push([probe[0], probe[1], 0.0]);
         ref_points.push([reference[0], reference[1], 0.0]);
     }
-    let (ssr, trans) = rdkit_align_points(
-        &ref_points,
-        &probe_points,
-        false,
-        RDKIT_ALIGN_POINTS_MAX_ITERATIONS,
-    )?;
+    let (ssr, trans) = rdkit_align_points(&ref_points, &probe_points, false, RDKIT_ALIGN_POINTS_MAX_ITERATIONS)?;
     Ok((rdkit_sqrt(ssr / probe_points.len() as f64), trans))
 }
 
@@ -5514,13 +5212,8 @@ fn rdkit_get_best_alignment_transform(
     let mut best_trans = crate::chemistry::numerics::alignment::identity();
     let mut best_match = None;
     for match_vec in matches.iter().take(max_matches) {
-        let (rmsd, trans) = rdkit_get_alignment_transform(
-            probe_mol,
-            reference_mol,
-            probe_conf_id,
-            reference_conf_id,
-            match_vec,
-        )?;
+        let (rmsd, trans) =
+            rdkit_get_alignment_transform(probe_mol, reference_mol, probe_conf_id, reference_conf_id, match_vec)?;
         if rmsd < best_rmsd {
             best_rmsd = rmsd;
             best_trans = trans;
@@ -5534,10 +5227,7 @@ fn rdkit_get_best_alignment_transform(
         ))
 }
 
-fn rdkit_substruct_matches_unordered(
-    mol: &Molecule,
-    query: &crate::QueryGraph,
-) -> Vec<Vec<(usize, usize)>> {
+fn rdkit_substruct_matches_unordered(mol: &Molecule, query: &crate::QueryGraph) -> Vec<Vec<(usize, usize)>> {
     let params = crate::SubstructMatchParams {
         max_matches: 1000,
         uniquify: false,
@@ -5547,13 +5237,7 @@ fn rdkit_substruct_matches_unordered(
     };
     crate::get_substruct_matches_with_params(mol, query, &params)
         .into_iter()
-        .map(|match_result| {
-            match_result
-                .atom_mapping
-                .into_iter()
-                .enumerate()
-                .collect::<Vec<_>>()
-        })
+        .map(|match_result| match_result.atom_mapping.into_iter().enumerate().collect::<Vec<_>>())
         .collect()
 }
 
@@ -5561,24 +5245,19 @@ fn rdkit_add_hs_copy(mol: &Molecule) -> Result<Molecule, Coordinate2DError> {
     mol.clone().with_hydrogens().map_err(|error| match error {
         crate::OperationError::InvalidInput { .. }
         | crate::OperationError::Chemistry { .. }
-        | crate::OperationError::Unsupported { .. } => Coordinate2DError::UnsupportedFeature(
-            format!("RDKit addHs equivalent failed during constrained depiction: {error}"),
-        ),
-        crate::OperationError::UnsupportedFeature { source, .. } => {
-            Coordinate2DError::UnsupportedFeature(format!(
-                "RDKit addHs equivalent failed during constrained depiction: {source}"
-            ))
-        }
+        | crate::OperationError::Unsupported { .. } => Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit addHs equivalent failed during constrained depiction: {error}"
+        )),
+        crate::OperationError::UnsupportedFeature { source, .. } => Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit addHs equivalent failed during constrained depiction: {source}"
+        )),
         other => Coordinate2DError::UnsupportedFeature(format!(
             "RDKit addHs equivalent failed during constrained depiction: {other}"
         )),
     })
 }
 
-fn rdkit_append_2d_conformer(
-    mol: &mut Molecule,
-    coords: Vec<[f64; 2]>,
-) -> Result<usize, Coordinate2DError> {
+fn rdkit_append_2d_conformer(mol: &mut Molecule, coords: Vec<[f64; 2]>) -> Result<usize, Coordinate2DError> {
     if coords.len() != mol.num_atoms() {
         return Err(Coordinate2DError::InvalidInput(
             "2D conformer row count must match atom count",
@@ -5597,10 +5276,7 @@ fn rdkit_append_2d_conformer(
     Ok(next_id)
 }
 
-fn rdkit_set_single_2d_conformer(
-    mol: &mut Molecule,
-    coords: Vec<[f64; 2]>,
-) -> Result<usize, Coordinate2DError> {
+fn rdkit_set_single_2d_conformer(mol: &mut Molecule, coords: Vec<[f64; 2]>) -> Result<usize, Coordinate2DError> {
     if coords.len() != mol.num_atoms() {
         return Err(Coordinate2DError::InvalidInput(
             "2D conformer row count must match atom count",
@@ -5608,9 +5284,7 @@ fn rdkit_set_single_2d_conformer(
     }
     let coordinate_block = mol.coordinate_block_mut();
     coordinate_block.conformers_2d.clear();
-    coordinate_block
-        .conformers_2d
-        .push(crate::Conformer2D::new(0, coords));
+    coordinate_block.conformers_2d.push(crate::Conformer2D::new(0, coords));
     Ok(0)
 }
 
@@ -5702,26 +5376,15 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
 
     if params.align_only {
         if !has_existing_coords {
-            let _ = rdkit_compute_2d_coords_for_mol(
-                mol,
-                None,
-                false,
-                true,
-                params.force_rdkit,
-                params.use_ring_templates,
-            )?;
+            let _ =
+                rdkit_compute_2d_coords_for_mol(mol, None, false, true, params.force_rdkit, params.use_ring_templates)?;
         }
         let atom_map = ref_match_vect
             .iter()
             .map(|&(reference_atom_idx, mol_atom_idx)| (mol_atom_idx, reference_atom_idx))
             .collect::<Vec<_>>();
-        let (_, alignment_trans) = rdkit_get_alignment_transform(
-            mol,
-            reference,
-            params.existing_conf_id,
-            conf_id,
-            &atom_map,
-        )?;
+        let (_, alignment_trans) =
+            rdkit_get_alignment_transform(mol, reference, params.existing_conf_id, conf_id, &atom_map)?;
         trans = alignment_trans;
         rdkit_apply_transform_to_2d_conformer(mol, params.existing_conf_id, &trans)?;
         rdkit_remove_all_2d_conformers_but_one(mol, params.existing_conf_id)?;
@@ -5753,25 +5416,18 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
                     mol_matching_indices[mol_atom_idx] = true;
                 }
                 should_clear_wedging_info = mol.bonds().iter().any(|bond| {
-                    (bond.prop("_MolFileBondStereo").is_some()
-                        || bond.prop("_MolFileBondCfg").is_some())
-                        && (!mol_matching_indices[bond.begin().index()]
-                            || !mol_matching_indices[bond.end().index()])
+                    (bond.prop("_MolFileBondStereo").is_some() || bond.prop("_MolFileBondCfg").is_some())
+                        && (!mol_matching_indices[bond.begin().index()] || !mol_matching_indices[bond.end().index()])
                 });
             }
             if !should_clear_wedging_info {
                 let new_conf_index = rdkit_select_2d_conformer_index(mol, new_conf_id as isize)?;
                 let mol_pos = mol.conformers_2d()[new_conf_index].coordinates();
-                should_clear_wedging_info =
-                    ref_match_vect
-                        .iter()
-                        .any(|&(reference_atom_idx, mol_atom_idx)| {
-                            let dx =
-                                mol_pos[mol_atom_idx][0] - reference_coords[reference_atom_idx][0];
-                            let dy =
-                                mol_pos[mol_atom_idx][1] - reference_coords[reference_atom_idx][1];
-                            dx * dx + dy * dy > MSD_THRESHOLD
-                        });
+                should_clear_wedging_info = ref_match_vect.iter().any(|&(reference_atom_idx, mol_atom_idx)| {
+                    let dx = mol_pos[mol_atom_idx][0] - reference_coords[reference_atom_idx][0];
+                    let dy = mol_pos[mol_atom_idx][1] - reference_coords[reference_atom_idx][1];
+                    dx * dx + dy * dy > MSD_THRESHOLD
+                });
             }
             if !should_clear_wedging_info {
                 let identity_match = ref_match_vect
@@ -5823,13 +5479,7 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match_force_rdki
         force_rdkit,
         ..ConstrainedDepictionParams::default()
     };
-    generate_depiction_matching_2d_structure_with_ref_match(
-        mol,
-        reference,
-        ref_match_vect,
-        conf_id,
-        &params,
-    )
+    generate_depiction_matching_2d_structure_with_ref_match(mol, reference, ref_match_vect, conf_id, &params)
 }
 
 // RDKit✔️❌: RDKit::MatchVectType generateDepictionMatching2DStructure(
@@ -5862,40 +5512,28 @@ pub(crate) fn generate_depiction_matching_2d_structure(
         let mut query_adj_value = query.clone();
         reduced_query = rdkit_prepare_template_for_rgroups(&query_adj_value);
         prb_mol = mol_hs_value.clone();
-        ref_mol = reduced_query
-            .clone()
-            .unwrap_or_else(|| query_adj_value.clone());
+        ref_mol = reduced_query.clone().unwrap_or_else(|| query_adj_value.clone());
         mol_hs = Some(mol_hs_value);
         query_adj = Some(query_adj_value);
     }
 
-    let ref_query = QueryGraph::from_concrete_molecule(&ref_mol).map_err(|_| {
-        Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph")
-    })?;
-    let pattern_query = QueryGraph::from_concrete_molecule(query).map_err(|_| {
-        Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph")
-    })?;
+    let ref_query = QueryGraph::from_concrete_molecule(&ref_mol)
+        .map_err(|_| Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph"))?;
+    let pattern_query = QueryGraph::from_concrete_molecule(query)
+        .map_err(|_| Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph"))?;
 
     if let Some(reference_pattern) = reference_pattern {
         if p.allow_rgroups {
             let reference_hs_value = rdkit_add_hs_copy(reference)?;
             let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
-            pattern_to_ref_matches =
-                rdkit_substruct_matches_unordered(&reference_hs_value, &ref_query);
+            pattern_to_ref_matches = rdkit_substruct_matches_unordered(&reference_hs_value, &ref_query);
             if let Some(reduced_query) = reduced_query.as_ref() {
-                rdkit_reduced_to_full_matches(
-                    reduced_query,
-                    &reference_hs_value,
-                    &mut pattern_to_ref_matches,
-                );
+                rdkit_reduced_to_full_matches(reduced_query, &reference_hs_value, &mut pattern_to_ref_matches);
             }
             if !pattern_to_ref_matches.is_empty() {
-                pattern_to_ref_match = rdkit_get_most_substituted_core_match(
-                    &reference_hs_value,
-                    query_adj_ref,
-                    &pattern_to_ref_matches,
-                )
-                .unwrap_or_default();
+                pattern_to_ref_match =
+                    rdkit_get_most_substituted_core_match(&reference_hs_value, query_adj_ref, &pattern_to_ref_matches)
+                        .unwrap_or_default();
             }
             reference_hs = Some(reference_hs_value);
         } else if let Some(match_result) = crate::get_substruct_match(reference, &pattern_query) {
@@ -5936,11 +5574,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
                     );
                 }
                 let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
-                matches = rdkit_sort_matches_by_degree_of_core_substitution(
-                    &prb_mol,
-                    query_adj_ref,
-                    &matches,
-                );
+                matches = rdkit_sort_matches_by_degree_of_core_substitution(&prb_mol, query_adj_ref, &matches);
                 let mut max_matched_heavies = -1isize;
                 let mut max_pruned_match_size = -1isize;
                 let mut pruned_matches = Vec::new();
@@ -5990,28 +5624,15 @@ pub(crate) fn generate_depiction_matching_2d_structure(
                 }
             }
             if mol.conformers_2d().is_empty() {
-                let _ = rdkit_compute_2d_coords_for_mol(
-                    mol,
-                    None,
-                    false,
-                    true,
-                    p.force_rdkit,
-                    p.use_ring_templates,
-                )?;
+                let _ = rdkit_compute_2d_coords_for_mol(mol, None, false, true, p.force_rdkit, p.use_ring_templates)?;
                 if p.adjust_molblock_wedging {
                     rdkit_clear_molblock_wedging_info(mol);
                     p.adjust_molblock_wedging = false;
                 }
             }
             const MAX_MATCHES: usize = 1000;
-            let (trans, best_match) = rdkit_get_best_alignment_transform(
-                mol,
-                reference,
-                p.existing_conf_id,
-                conf_id,
-                &matches,
-                MAX_MATCHES,
-            )?;
+            let (trans, best_match) =
+                rdkit_get_best_alignment_transform(mol, reference, p.existing_conf_id, conf_id, &matches, MAX_MATCHES)?;
             match_vect = best_match
                 .into_iter()
                 .map(|(mol_idx, reference_idx)| (reference_idx, mol_idx))
@@ -6035,9 +5656,7 @@ pub(crate) fn generate_depiction_matching_2d_structure(
                 }
                 let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
                 let num_mol_atoms = mol.num_atoms();
-                if let Some(best_match) =
-                    rdkit_get_most_substituted_core_match(&prb_mol, query_adj_ref, &matches)
-                {
+                if let Some(best_match) = rdkit_get_most_substituted_core_match(&prb_mol, query_adj_ref, &matches) {
                     for (pattern_idx, mol_idx) in best_match {
                         if mol_idx < num_mol_atoms && pattern_to_ref_mapping[pattern_idx] != -1 {
                             match_vect.push((pattern_idx, mol_idx));
@@ -6052,26 +5671,13 @@ pub(crate) fn generate_depiction_matching_2d_structure(
             for pair in &mut match_vect {
                 pair.0 = pattern_to_ref_mapping[pair.0] as usize;
             }
-            generate_depiction_matching_2d_structure_with_ref_match(
-                mol,
-                reference,
-                &match_vect,
-                conf_id,
-                &p,
-            )?;
+            generate_depiction_matching_2d_structure_with_ref_match(mol, reference, &match_vect, conf_id, &p)?;
         }
     }
 
     if match_vect.is_empty() {
         if p.accept_failure {
-            let _ = rdkit_compute_2d_coords_for_mol(
-                mol,
-                None,
-                false,
-                true,
-                p.force_rdkit,
-                p.use_ring_templates,
-            )?;
+            let _ = rdkit_compute_2d_coords_for_mol(mol, None, false, true, p.force_rdkit, p.use_ring_templates)?;
             if p.adjust_molblock_wedging {
                 rdkit_clear_molblock_wedging_info(mol);
             }
@@ -6132,18 +5738,13 @@ pub(crate) fn generate_depiction_matching_3d_structure(
 
     let mut mol_to_ref = vec![-1isize; num_ats];
     if let Some(reference_pattern) = reference_pattern.filter(|pattern| pattern.num_atoms() > 0) {
-        let pattern_query =
-            QueryGraph::from_concrete_molecule(reference_pattern).map_err(|_| {
-                Coordinate2DError::InvalidInput(
-                    "reference pattern cannot be represented as a query graph",
-                )
-            })?;
+        let pattern_query = QueryGraph::from_concrete_molecule(reference_pattern)
+            .map_err(|_| Coordinate2DError::InvalidInput("reference pattern cannot be represented as a query graph"))?;
         let mol_match_vect = crate::get_substruct_match(mol, &pattern_query);
         let ref_match_vect = crate::get_substruct_match(reference, &pattern_query);
         let (Some(mol_match_vect), Some(ref_match_vect)) = (mol_match_vect, ref_match_vect) else {
             if accept_failure {
-                let _ =
-                    rdkit_compute_2d_coords_for_mol(mol, None, false, true, force_rdkit, false)?;
+                let _ = rdkit_compute_2d_coords_for_mol(mol, None, false, true, force_rdkit, false)?;
                 return Ok(());
             }
             return Err(Coordinate2DError::InvalidInput(
@@ -6244,20 +5845,17 @@ fn rdkit_compute_initial_efrags_strict(
     // BEGIN RDKIT CPP FUNCTION: computeInitialCoords ring finding (RDDepictor.cpp)
     // RDKit✔️✔️:   bool includeDativeBonds = true;
     // RDKit✔️✔️:   RDKit::MolOps::symmetrizeSSSR(mol, arings, includeDativeBonds);
-    let ring_info =
-        crate::rings::symmetrize_sssr_with_options(&stereo_mol, true, false).map_err(|error| {
-            Coordinate2DError::UnsupportedFeature(format!(
-                "RDKit symmetrizeSSSR equivalent failed during 2D coordinate generation: {error}"
-            ))
-        })?;
+    let ring_info = crate::rings::symmetrize_sssr_with_options(&stereo_mol, true, false).map_err(|error| {
+        Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit symmetrizeSSSR equivalent failed during 2D coordinate generation: {error}"
+        ))
+    })?;
     let arings: Vec<Vec<usize>> = ring_info
         .atom_rings()
         .iter()
         .map(|ring| ring.iter().map(|aid| aid.index()).collect())
         .collect();
-    let atom_ring_counts: Vec<usize> = (0..n)
-        .map(|aid| ring_info.num_atom_rings(AtomId::new(aid)))
-        .collect();
+    let atom_ring_counts: Vec<usize> = (0..n).map(|aid| ring_info.num_atom_rings(AtomId::new(aid))).collect();
     let ring_bond_ids: BTreeSet<usize> = ring_info
         .bond_rings()
         .iter()
@@ -6272,13 +5870,8 @@ fn rdkit_compute_initial_efrags_strict(
             .collect::<BTreeMap<usize, (f64, f64)>>()
     });
 
-    let pre_spec = coord_map_tuples
-        .as_ref()
-        .is_some_and(|coord_map| coord_map.len() > 1);
-    if let Some(coord_map) = coord_map_tuples
-        .as_ref()
-        .filter(|coord_map| coord_map.len() > 1)
-    {
+    let pre_spec = coord_map_tuples.as_ref().is_some_and(|coord_map| coord_map.len() > 1);
+    if let Some(coord_map) = coord_map_tuples.as_ref().filter(|coord_map| coord_map.len() > 1) {
         efrags.push(RdkitEmbeddedFrag::from_coord_map(
             coord_map,
             atoms,
@@ -6358,15 +5951,7 @@ fn rdkit_compute_initial_efrags_strict(
         let Some(idx) = mri else { break };
         efrags[idx].mark_done();
         let mut curr = std::mem::take(&mut efrags[idx]);
-        curr.expand_efrag(
-            &mut nratms,
-            &mut efrags,
-            atoms,
-            bonds,
-            &adjacency,
-            &degree,
-            cip_ranks,
-        );
+        curr.expand_efrag(&mut nratms, &mut efrags, atoms, bonds, &adjacency, &degree, cip_ranks);
         // RDKit✔️❌: std::list iterators remain valid across erases of other
         // RDKit✔️❌: fragments during expandEfrag(). The Vec-backed port keeps a
         // RDKit✔️❌: placeholder at the current slot and restores the expanded
@@ -6438,12 +6023,11 @@ fn debug_print_efrag_stage(label: &str, efrags: &[RdkitEmbeddedFrag]) {
 
 // ── Public API (staged entry point) ─────────────────────────────────────────
 
-fn require_default_compute_2d_coord_parameters(
-    params: &Compute2DCoordParameters<'_>,
-) -> Result<(), Coordinate2DError> {
+fn require_default_compute_2d_coord_parameters(params: &Compute2DCoordParameters<'_>) -> Result<(), Coordinate2DError> {
     if !params.clear_confs {
         return Err(Coordinate2DError::UnsupportedFeature(
-            "Compute2DCoordParameters.clear_confs=false is not yet ported in the active Rust compute2DCoords path".to_string(),
+            "Compute2DCoordParameters.clear_confs=false is not yet ported in the active Rust compute2DCoords path"
+                .to_string(),
         ));
     }
     Ok(())
@@ -6503,9 +6087,7 @@ fn rdkit_depict_has_stereo_bond_dirs(depict_mol: &Molecule) -> bool {
     })
 }
 
-fn rdkit_depict_has_potential_stereo_bonds(
-    depict_mol: &Molecule,
-) -> Result<bool, Coordinate2DError> {
+fn rdkit_depict_has_potential_stereo_bonds(depict_mol: &Molecule) -> Result<bool, Coordinate2DError> {
     for bond in depict_mol.bonds() {
         if bond.order() != BondOrder::Double {
             continue;
@@ -6525,8 +6107,7 @@ fn rdkit_depict_has_potential_stereo_bonds(
 
 fn rdkit_depict_needs_atom_chiral_code_ranks(depict_mol: &Molecule) -> bool {
     depict_mol.atoms().iter().any(|atom| {
-        !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
-            && atom.prop("_CIPCode").is_none()
+        !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other) && atom.prop("_CIPCode").is_none()
     })
 }
 
@@ -6537,9 +6118,7 @@ fn rdkit_depict_needs_bond_stereo_ranks(depict_mol: &Molecule) -> bool {
         .any(|bond| bond.order() == BondOrder::Double && bond.stereo() == BondStereo::None)
 }
 
-fn rdkit_depict_ordering_cip_ranks(
-    depict_mol: &mut Molecule,
-) -> Result<Vec<u32>, Coordinate2DError> {
+fn rdkit_depict_ordering_cip_ranks(depict_mol: &mut Molecule) -> Result<Vec<u32>, Coordinate2DError> {
     // BEGIN RDKIT CPP FUNCTION: MolOps::assignStereochemistry(mol, false)
     // RDKit✔️✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
     // RDKit✔️✔️:                            bool flagPossibleStereoCenters) {
@@ -6608,10 +6187,7 @@ fn rdkit_depict_ordering_cip_ranks(
     let existing_cip_ranks = depict_mol
         .atoms()
         .iter()
-        .map(|atom| {
-            atom.prop("_CIPRank")
-                .and_then(|value| value.parse::<u32>().ok())
-        })
+        .map(|atom| atom.prop("_CIPRank").and_then(|value| value.parse::<u32>().ok()))
         .collect::<Option<Vec<_>>>();
     // RDKit✔️✔️: if (!force && mol.hasProp(common_properties::_StereochemDone)) {
     // RDKit✔️✔️:   return;
@@ -6627,8 +6203,8 @@ fn rdkit_depict_ordering_cip_ranks(
         .bonds()
         .iter()
         .any(|bond| bond.order() == BondOrder::Double && bond.stereo() == BondStereo::None);
-    let runs_bond_stereo_assignment = rdkit_depict_has_stereo_bond_dirs(depict_mol)
-        || rdkit_depict_has_potential_stereo_bonds(depict_mol)?;
+    let runs_bond_stereo_assignment =
+        rdkit_depict_has_stereo_bond_dirs(depict_mol) || rdkit_depict_has_potential_stereo_bonds(depict_mol)?;
     let needs_bond_ranks = runs_bond_stereo_assignment && has_stereo_none_double;
     if needs_atom_ranks || needs_bond_ranks {
         let ranks = crate::stereo::assign_atom_cip_ranks_in_place(depict_mol).map_err(|error| {
@@ -6643,23 +6219,17 @@ fn rdkit_depict_ordering_cip_ranks(
 
 /// Compute RDKit-compatible 2D coordinates for a molecule using the currently
 /// ported default RDKit control path.
-fn compute_2d_coords_default_path(
-    atoms: &[Atom],
-    bonds: &[Bond],
-) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
+fn compute_2d_coords_default_path(atoms: &[Atom], bonds: &[Bond]) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
     let n = atoms.len();
     if n == 0 {
-        return Err(Coordinate2DError::InvalidInput(
-            "empty molecule has no 2D coordinates",
-        ));
+        return Err(Coordinate2DError::InvalidInput("empty molecule has no 2D coordinates"));
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
     let depict_atoms = depict_mol.atoms();
     let depict_bonds = depict_mol.bonds();
 
-    let mut efrags =
-        rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
+    let mut efrags = rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
     shift_coords(&mut efrags);
     Ok(copy_coordinate_from_efrags(n, &efrags))
 }
@@ -6667,10 +6237,7 @@ fn compute_2d_coords_default_path(
 /// Compute RDKit-compatible 2D coordinates for a molecule.
 ///
 /// This is the legacy narrow entry point used by current call sites.
-pub(crate) fn compute_2d_coords(
-    atoms: &[Atom],
-    bonds: &[Bond],
-) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
+pub(crate) fn compute_2d_coords(atoms: &[Atom], bonds: &[Bond]) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
     compute_2d_coords_with_params(atoms, bonds, &Compute2DCoordParameters::default())
 }
 
@@ -6683,16 +6250,13 @@ pub(crate) fn rdkit_initial_2d_scaffold_coords(
 ) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
     let n = atoms.len();
     if n == 0 {
-        return Err(Coordinate2DError::InvalidInput(
-            "empty molecule has no 2D coordinates",
-        ));
+        return Err(Coordinate2DError::InvalidInput("empty molecule has no 2D coordinates"));
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
     let depict_atoms = depict_mol.atoms();
     let depict_bonds = depict_mol.bonds();
-    let mut efrags =
-        rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
+    let mut efrags = rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
     shift_coords(&mut efrags);
     Ok(copy_coordinate_from_efrags(n, &efrags))
 }
@@ -6783,9 +6347,7 @@ fn compute_2d_coords_with_molecule_state(
     require_default_compute_2d_coord_parameters(params)?;
     let n = atoms.len();
     if n == 0 {
-        return Err(Coordinate2DError::InvalidInput(
-            "empty molecule has no 2D coordinates",
-        ));
+        return Err(Coordinate2DError::InvalidInput("empty molecule has no 2D coordinates"));
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     if stereochemistry_done {
@@ -6836,11 +6398,7 @@ fn compute_2d_coords_with_molecule_state(
         frag.remove_collisions_shorten_bonds(depict_atoms, depict_bonds, &comp, &adjacency);
     }
     debug_print_efrag_stage("post_cleanup", &efrags);
-    if params
-        .coord_map
-        .is_none_or(|coord_map| coord_map.is_empty())
-        && params.canon_orient
-    {
+    if params.coord_map.is_none_or(|coord_map| coord_map.is_empty()) && params.canon_orient {
         for frag in &mut efrags {
             frag.canonicalize_orientation();
         }
@@ -6851,10 +6409,7 @@ fn compute_2d_coords_with_molecule_state(
     let mut coords = copy_coordinate_from_efrags(n, &efrags);
     if let Some(coord_map) = params.coord_map.filter(|coord_map| coord_map.len() == 1) {
         let (&ref_idx, &ref_pos) = coord_map.iter().next().expect("single-entry coordMap");
-        let shift = [
-            ref_pos[0] - coords[ref_idx][0],
-            ref_pos[1] - coords[ref_idx][1],
-        ];
+        let shift = [ref_pos[0] - coords[ref_idx][0], ref_pos[1] - coords[ref_idx][1]];
         for coord in &mut coords {
             coord[0] += shift[0];
             coord[1] += shift[1];
@@ -6877,12 +6432,7 @@ pub(crate) fn compute_2d_coords_with_properties_and_params(
     properties: &crate::MoleculeProperties,
     params: &Compute2DCoordParameters<'_>,
 ) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
-    compute_2d_coords_with_molecule_state(
-        atoms,
-        bonds,
-        properties.prop("_StereochemDone").is_some(),
-        params,
-    )
+    compute_2d_coords_with_molecule_state(atoms, bonds, properties.prop("_StereochemDone").is_some(), params)
 }
 
 // BEGIN RDKIT CPP FUNCTION: compute2DCoordsMimicDistMat (RDDepictor.h / RDDepictor.cpp)
@@ -6927,9 +6477,7 @@ pub(crate) fn compute_2d_coords_mimic_distmat_with_params(
     }
     let n = atoms.len();
     if n == 0 {
-        return Err(Coordinate2DError::InvalidInput(
-            "empty molecule has no 2D coordinates",
-        ));
+        return Err(Coordinate2DError::InvalidInput("empty molecule has no 2D coordinates"));
     }
 
     let cip_ranks = vec![0u32; n];
@@ -7011,9 +6559,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
         assert_eq!(coords.len(), 2);
@@ -7032,12 +6578,8 @@ mod tests {
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
         let c3 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c2, c3, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c2, c3, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
         assert_eq!(coords.len(), 3);
@@ -7120,17 +6662,11 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
-        let from_params = compute_2d_coords_with_params(
-            mol.atoms(),
-            mol.bonds(),
-            &Compute2DCoordParameters::default(),
-        )
-        .unwrap();
+        let from_params =
+            compute_2d_coords_with_params(mol.atoms(), mol.bonds(), &Compute2DCoordParameters::default()).unwrap();
         let from_options = compute_2d_coords_with_options(
             mol.atoms(),
             mol.bonds(),
@@ -7154,9 +6690,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let err = compute_2d_coords_with_options(
@@ -7187,9 +6721,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let err = compute_2d_coords_mimic_distmat_with_params(
@@ -7219,9 +6751,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let baseline = compute_2d_coords_with_options(
@@ -7257,10 +6787,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(coords[0], [5.0, -2.0]);
-        let baseline_delta = [
-            baseline[1][0] - baseline[0][0],
-            baseline[1][1] - baseline[0][1],
-        ];
+        let baseline_delta = [baseline[1][0] - baseline[0][0], baseline[1][1] - baseline[0][1]];
         let shifted_delta = [coords[1][0] - coords[0][0], coords[1][1] - coords[0][1]];
         assert!((shifted_delta[0] - baseline_delta[0]).abs() < 1.0e-12);
         assert!((shifted_delta[1] - baseline_delta[1]).abs() < 1.0e-12);
@@ -7277,15 +6804,9 @@ mod tests {
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
         let a3 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a1, a3, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a1, a2, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a1, a3, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let coords_without = compute_2d_coords_with_options(
@@ -7303,20 +6824,9 @@ mod tests {
         )
         .unwrap();
 
-        let coords_with = compute_2d_coords_with_options(
-            mol.atoms(),
-            mol.bonds(),
-            None,
-            true,
-            true,
-            0,
-            0,
-            0,
-            false,
-            false,
-            false,
-        )
-        .unwrap();
+        let coords_with =
+            compute_2d_coords_with_options(mol.atoms(), mol.bonds(), None, true, true, 0, 0, 0, false, false, false)
+                .unwrap();
 
         assert_eq!(coords_with.len(), 4);
         assert!(
@@ -7337,12 +6847,8 @@ mod tests {
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
         let a3 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a2, a3, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a2, a3, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let mut coord_map = BTreeMap::new();
@@ -7373,9 +6879,7 @@ mod tests {
     #[test]
     fn compute2d_options_and_params_match_for_non_default_supported_flags() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -7416,9 +6920,7 @@ mod tests {
     #[test]
     fn compute2d_options_and_params_match_for_ring_template_flag_on_ring_system() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..6)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..6).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -7432,20 +6934,9 @@ mod tests {
             ..Compute2DCoordParameters::default()
         };
         let from_params = compute_2d_coords_with_params(mol.atoms(), mol.bonds(), &params).unwrap();
-        let from_options = compute_2d_coords_with_options(
-            mol.atoms(),
-            mol.bonds(),
-            None,
-            false,
-            true,
-            0,
-            0,
-            0,
-            false,
-            true,
-            true,
-        )
-        .unwrap();
+        let from_options =
+            compute_2d_coords_with_options(mol.atoms(), mol.bonds(), None, false, true, 0, 0, 0, false, true, true)
+                .unwrap();
 
         assert_eq!(from_options, from_params);
     }
@@ -7461,9 +6952,7 @@ mod tests {
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
         let a3 = builder.add_atom(AtomSpec::new(Element::C));
         for (a, b) in [(a0, a1), (a1, a2), (a2, a3)] {
-            builder
-                .add_bond(BondSpec::new(a, b, BondOrder::Single))
-                .unwrap();
+            builder.add_bond(BondSpec::new(a, b, BondOrder::Single)).unwrap();
         }
         let mol = builder.build().unwrap();
         let params = Compute2DCoordsMimicDistMatParameters {
@@ -7475,17 +6964,11 @@ mod tests {
             ..Compute2DCoordsMimicDistMatParameters::default()
         };
 
-        let without_ref =
-            compute_2d_coords_mimic_distmat_with_params(mol.atoms(), mol.bonds(), None, &params)
-                .unwrap();
+        let without_ref = compute_2d_coords_mimic_distmat_with_params(mol.atoms(), mol.bonds(), None, &params).unwrap();
         let negative_ref = vec![-1.0; mol.num_atoms() * (mol.num_atoms() - 1) / 2];
-        let with_negative = compute_2d_coords_mimic_distmat_with_params(
-            mol.atoms(),
-            mol.bonds(),
-            Some(&negative_ref),
-            &params,
-        )
-        .unwrap();
+        let with_negative =
+            compute_2d_coords_mimic_distmat_with_params(mol.atoms(), mol.bonds(), Some(&negative_ref), &params)
+                .unwrap();
 
         assert_eq!(without_ref, with_negative);
     }
@@ -7496,9 +6979,7 @@ mod tests {
         let _guard = PreferCoordGenGuard::capture();
         set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -7545,9 +7026,7 @@ mod tests {
         let _guard = PreferCoordGenGuard::capture();
         set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..5)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..5).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 4)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -7564,20 +7043,10 @@ mod tests {
             ..Compute2DCoordsMimicDistMatParameters::default()
         };
 
-        let coords1 = compute_2d_coords_mimic_distmat_with_params(
-            mol.atoms(),
-            mol.bonds(),
-            Some(&dmat),
-            &params,
-        )
-        .unwrap();
-        let coords2 = compute_2d_coords_mimic_distmat_with_params(
-            mol.atoms(),
-            mol.bonds(),
-            Some(&dmat),
-            &params,
-        )
-        .unwrap();
+        let coords1 =
+            compute_2d_coords_mimic_distmat_with_params(mol.atoms(), mol.bonds(), Some(&dmat), &params).unwrap();
+        let coords2 =
+            compute_2d_coords_mimic_distmat_with_params(mol.atoms(), mol.bonds(), Some(&dmat), &params).unwrap();
 
         assert_eq!(coords1, coords2);
     }
@@ -7598,18 +7067,12 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c1, c2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         set_prefer_coord_gen(true);
-        let err = compute_2d_coords_with_params(
-            mol.atoms(),
-            mol.bonds(),
-            &Compute2DCoordParameters::default(),
-        )
-        .unwrap_err();
+        let err =
+            compute_2d_coords_with_params(mol.atoms(), mol.bonds(), &Compute2DCoordParameters::default()).unwrap_err();
         match err {
             Coordinate2DError::UnsupportedFeature(message) => {
                 assert!(message.contains("CoordGen"));
@@ -7661,8 +7124,7 @@ mod tests {
     #[test]
     fn transform_points_applies_two_point_affine_mapping() {
         let mut points = BTreeMap::from([(0usize, (0.0, 0.0)), (1usize, (1.0, 0.0))]);
-        let trans =
-            transform2d_set_transform_two_point((2.0, 3.0), (2.0, 4.0), (0.0, 0.0), (1.0, 0.0));
+        let trans = transform2d_set_transform_two_point((2.0, 3.0), (2.0, 4.0), (0.0, 0.0), (1.0, 0.0));
         rdkit_transform_points(&mut points, trans);
         assert!((points[&0].0 - 2.0).abs() < 1e-8);
         assert!((points[&0].1 - 3.0).abs() < 1e-8);
@@ -7676,12 +7138,8 @@ mod tests {
         let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_CIPRank", "30"));
         let o = builder.add_atom(AtomSpec::new(Element::O).with_prop("_CIPRank", "10"));
         let n = builder.add_atom(AtomSpec::new(Element::N).with_prop("_CIPRank", "20"));
-        builder
-            .add_bond(BondSpec::new(c, o, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c, n, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c, o, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c, n, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![2usize, 1, 1];
         let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, true);
@@ -7693,9 +7151,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_chiralAtomRank", "0"));
         let h = builder.add_atom(AtomSpec::new(Element::H).with_prop("_chiralAtomRank", "1"));
-        builder
-            .add_bond(BondSpec::new(c, h, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c, h, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![1usize, 1];
         let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1], &degree, true);
@@ -7708,12 +7164,8 @@ mod tests {
         let c = builder.add_atom(AtomSpec::new(Element::C));
         let o = builder.add_atom(AtomSpec::new(Element::O));
         let h = builder.add_atom(AtomSpec::new(Element::H));
-        builder
-            .add_bond(BondSpec::new(c, o, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(c, h, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(c, o, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(c, h, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![2usize, 1, 1];
         let ascending = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, true);
@@ -7728,17 +7180,12 @@ mod tests {
         let center = builder.add_atom(AtomSpec::new(Element::C));
         let a = builder.add_atom(AtomSpec::new(Element::O));
         let b = builder.add_atom(AtomSpec::new(Element::N));
-        builder
-            .add_bond(BondSpec::new(center, a, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(center, b, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(center, a, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(center, b, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2], vec![0], vec![0]];
         let degree = vec![2usize, 1, 1];
-        let ordered =
-            rdkit_set_nbr_order(0, &[2, 1], mol.atoms(), mol.bonds(), &adjacency, &degree);
+        let ordered = rdkit_set_nbr_order(0, &[2, 1], mol.atoms(), mol.bonds(), &adjacency, &degree);
         assert_eq!(ordered, vec![2, 1]);
     }
 
@@ -7751,15 +7198,12 @@ mod tests {
         let c = builder.add_atom(AtomSpec::new(Element::F));
         let d = builder.add_atom(AtomSpec::new(Element::CL));
         for nbr in [a, b, c, d] {
-            builder
-                .add_bond(BondSpec::new(center, nbr, BondOrder::Single))
-                .unwrap();
+            builder.add_bond(BondSpec::new(center, nbr, BondOrder::Single)).unwrap();
         }
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2, 3, 4], vec![0], vec![0], vec![0], vec![0]];
         let degree = vec![4usize, 1, 1, 1, 1];
-        let ordered =
-            rdkit_set_nbr_order(0, &[1, 2, 3], mol.atoms(), mol.bonds(), &adjacency, &degree);
+        let ordered = rdkit_set_nbr_order(0, &[1, 2, 3], mol.atoms(), mol.bonds(), &adjacency, &degree);
         assert_eq!(ordered, vec![2, 3, 1]);
     }
 
@@ -7769,12 +7213,8 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::O));
         let a2 = builder.add_atom(AtomSpec::new(Element::N));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a0, a2, BondOrder::Double))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a0, a2, BondOrder::Double)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2], vec![0], vec![0]];
         let (aids, bids) = rdkit_get_nbr_atom_and_bond_ids(0, mol.bonds(), &adjacency);
@@ -7821,9 +7261,7 @@ mod tests {
     #[test]
     fn find_core_rings_iteratively_removes_singly_fused_side_rings_in_iteration_order() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..14)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..14).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [
             (0, 1),
             (1, 2),
@@ -7860,19 +7298,8 @@ mod tests {
     #[test]
     fn find_core_rings_stops_shared_atom_scan_after_first_two_hits() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..7)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
-        for (a, b) in [
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 4),
-            (4, 0),
-            (4, 5),
-            (5, 6),
-            (6, 2),
-        ] {
+        let atoms: Vec<_> = (0..7).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
+        for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 4), (4, 0), (4, 5), (5, 6), (6, 2)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
                 .unwrap();
@@ -7892,8 +7319,7 @@ mod tests {
             vec![2, 3, 6, 7, 8, 9],
             vec![1, 2, 3, 10, 11, 12],
         ];
-        let (next_id, common_atoms) =
-            rdkit_find_next_ring_to_embed(&done_rings, &fused_rings).unwrap();
+        let (next_id, common_atoms) = rdkit_find_next_ring_to_embed(&done_rings, &fused_rings).unwrap();
         assert_eq!(next_id, 1);
         assert_eq!(common_atoms, vec![2, 3]);
     }
@@ -7902,8 +7328,7 @@ mod tests {
     fn find_next_ring_rotates_common_atom_chain_to_ring_order_endpoints() {
         let done_rings = vec![0usize];
         let fused_rings = vec![vec![0, 1, 2, 3, 4, 5], vec![4, 3, 6, 7, 8, 5]];
-        let (next_id, common_atoms) =
-            rdkit_find_next_ring_to_embed(&done_rings, &fused_rings).unwrap();
+        let (next_id, common_atoms) = rdkit_find_next_ring_to_embed(&done_rings, &fused_rings).unwrap();
         assert_eq!(next_id, 1);
         assert_eq!(common_atoms, vec![5, 4, 3]);
     }
@@ -7911,9 +7336,7 @@ mod tests {
     #[test]
     fn get_all_rotatable_bonds_filters_out_ring_and_stereo_bonds() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..8)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..8).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (idx, (a, b)) in [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 6), (6, 7)]
             .into_iter()
             .enumerate()
@@ -7929,17 +7352,14 @@ mod tests {
         }
         let mol = builder.build().unwrap();
         let ring_bond_ids = BTreeSet::from([0usize, 1, 2]);
-        let rotatable =
-            rdkit_get_all_rotatable_bonds(mol.bonds(), |bid| ring_bond_ids.contains(&bid));
+        let rotatable = rdkit_get_all_rotatable_bonds(mol.bonds(), |bid| ring_bond_ids.contains(&bid));
         assert_eq!(rotatable, vec![3, 5, 6]);
     }
 
     #[test]
     fn get_rotatable_bonds_uses_shortest_path_without_endpoint_bonds() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..5)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..5).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 4)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -7947,34 +7367,21 @@ mod tests {
         }
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1], vec![0, 2], vec![1, 3], vec![2, 4], vec![3]];
-        let rotatable = rdkit_get_rotatable_bonds_between(
-            0,
-            4,
-            mol.num_atoms(),
-            mol.bonds(),
-            &adjacency,
-            |_| false,
-        );
+        let rotatable = rdkit_get_rotatable_bonds_between(0, 4, mol.num_atoms(), mol.bonds(), &adjacency, |_| false);
         assert_eq!(rotatable, vec![1, 2]);
     }
 
     #[test]
     fn has_terminal_rgroup_or_query_hydrogen_detects_terminal_dummy_and_atomic_number_query_h() {
         let mut builder = MoleculeBuilder::new();
-        let q = builder.add_atom(
-            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
-        );
+        let q = builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)));
         let dummy = builder.add_atom(AtomSpec::new(Element::from_atomic_number(0).unwrap()));
         let query_h = builder.add_atom(
             AtomSpec::new(Element::from_atomic_number(0).unwrap())
                 .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1))),
         );
-        builder
-            .add_bond(BondSpec::new(q, dummy, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(q, query_h, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(q, dummy, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(q, query_h, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         assert!(rdkit_has_terminal_rgroup_or_query_hydrogen(&mol));
     }
@@ -7982,9 +7389,8 @@ mod tests {
     #[test]
     fn prepare_template_for_rgroups_removes_terminal_dummy_and_records_former_indices() {
         let mut builder = MoleculeBuilder::new();
-        let query_center = builder.add_atom(
-            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
-        );
+        let query_center =
+            builder.add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::Any)));
         let dummy = builder.add_atom(AtomSpec::new(Element::from_atomic_number(0).unwrap()));
         builder
             .add_bond(BondSpec::new(query_center, dummy, BondOrder::Single))
@@ -7994,10 +7400,7 @@ mod tests {
         let reduced = rdkit_prepare_template_for_rgroups(&mol).unwrap();
         assert_eq!(reduced.num_atoms(), 1);
         assert_eq!(reduced.atoms()[0].prop(RDKIT_FORMER_IDX_PROP), Some("0"));
-        assert_eq!(
-            reduced.atoms()[0].prop(RDKIT_FORMER_NBR_INDICES_PROP),
-            Some("1")
-        );
+        assert_eq!(reduced.atoms()[0].prop(RDKIT_FORMER_NBR_INDICES_PROP), Some("1"));
     }
 
     #[test]
@@ -8024,17 +7427,15 @@ mod tests {
         let reduced = rdkit_prepare_template_for_rgroups(&mol).unwrap();
         assert_eq!(reduced.num_atoms(), 2);
         assert_eq!(reduced.atoms()[0].prop(RDKIT_FORMER_IDX_PROP), Some("0"));
-        assert_eq!(
-            reduced.atoms()[0].prop(RDKIT_FORMER_NBR_INDICES_PROP),
-            Some("1")
-        );
+        assert_eq!(reduced.atoms()[0].prop(RDKIT_FORMER_NBR_INDICES_PROP), Some("1"));
         assert_eq!(reduced.atoms()[1].prop(RDKIT_FORMER_IDX_PROP), Some("2"));
         let query = reduced.bonds()[0].query();
         assert_eq!(
             query,
-            Some(&QueryNode::predicate(crate::BondQueryPredicate::OrderIn(
-                vec![BondOrder::Single, BondOrder::Aromatic,]
-            )))
+            Some(&QueryNode::predicate(crate::BondQueryPredicate::OrderIn(vec![
+                BondOrder::Single,
+                BondOrder::Aromatic,
+            ])))
         );
     }
 
@@ -8062,15 +7463,9 @@ mod tests {
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::N));
         let m2 = mol_builder.add_atom(AtomSpec::new(Element::O));
         let m3 = mol_builder.add_atom(AtomSpec::new(Element::F));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(m0, m2, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(m0, m3, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m2, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m3, BondOrder::Single)).unwrap();
         let mol_hs = mol_builder.build().unwrap();
 
         let mut matches = vec![vec![(0usize, 0usize), (1usize, 1usize)]];
@@ -8106,10 +7501,7 @@ mod tests {
             [0.0, 0.0, -0.99, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        assert!(!rdkit_invert_wedging_if_mol_has_flipped(
-            &mut mol,
-            &not_flipped
-        ));
+        assert!(!rdkit_invert_wedging_if_mol_has_flipped(&mut mol, &not_flipped));
         assert_eq!(mol.bonds()[0].prop("_MolFileBondCfg"), Some("1"));
         assert_eq!(mol.bonds()[0].prop("_MolFileBondStereo"), Some("1"));
         assert_eq!(mol.bonds()[1].prop("_MolFileBondCfg"), Some("2"));
@@ -8160,25 +7552,16 @@ mod tests {
                 BondOrder::Single,
             ))
             .unwrap();
-        builder
-            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]])
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[0.0, 2.0], [1.0, 2.0]])
-            .unwrap();
+        builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
+        builder.add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]]).unwrap();
+        builder.add_2d_conformer(vec![[0.0, 2.0], [1.0, 2.0]]).unwrap();
         let mut mol = builder.build().unwrap();
 
         rdkit_remove_all_2d_conformers_but_one(&mut mol, 2).unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
-        assert_eq!(
-            mol.conformers_2d()[0].coordinates(),
-            &[[0.0, 2.0], [1.0, 2.0]]
-        );
+        assert_eq!(mol.conformers_2d()[0].coordinates(), &[[0.0, 2.0], [1.0, 2.0]]);
     }
 
     #[test]
@@ -8193,22 +7576,15 @@ mod tests {
                 BondOrder::Single,
             ))
             .unwrap();
-        builder
-            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]])
-            .unwrap();
+        builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
+        builder.add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]]).unwrap();
         let mut mol = builder.build().unwrap();
 
         rdkit_remove_all_2d_conformers_but_one(&mut mol, -1).unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
-        assert_eq!(
-            mol.conformers_2d()[0].coordinates(),
-            &[[0.0, 0.0], [1.0, 0.0]]
-        );
+        assert_eq!(mol.conformers_2d()[0].coordinates(), &[[0.0, 0.0], [1.0, 0.0]]);
     }
 
     #[test]
@@ -8216,26 +7592,16 @@ mod tests {
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
-        ref_builder
-            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
-            .unwrap();
-        ref_builder
-            .set_2d_coordinates(vec![[0.0, 0.0], [2.0, 0.0]])
-            .unwrap();
+        ref_builder.add_bond(BondSpec::new(r0, r1, BondOrder::Single)).unwrap();
+        ref_builder.set_2d_coordinates(vec![[0.0, 0.0], [2.0, 0.0]]).unwrap();
         let reference = ref_builder.build().unwrap();
 
         let mut mol_builder = MoleculeBuilder::new();
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .set_2d_coordinates(vec![[0.0, 0.0], [0.0, 2.0]])
-            .unwrap();
-        mol_builder
-            .add_2d_conformer(vec![[10.0, 10.0], [11.0, 10.0]])
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
+        mol_builder.set_2d_coordinates(vec![[0.0, 0.0], [0.0, 2.0]]).unwrap();
+        mol_builder.add_2d_conformer(vec![[10.0, 10.0], [11.0, 10.0]]).unwrap();
         let mut mol = mol_builder.build().unwrap();
 
         let params = ConstrainedDepictionParams {
@@ -8243,14 +7609,8 @@ mod tests {
             existing_conf_id: 0,
             ..ConstrainedDepictionParams::default()
         };
-        generate_depiction_matching_2d_structure_with_ref_match(
-            &mut mol,
-            &reference,
-            &[(0, 0), (1, 1)],
-            0,
-            &params,
-        )
-        .unwrap();
+        generate_depiction_matching_2d_structure_with_ref_match(&mut mol, &reference, &[(0, 0), (1, 1)], 0, &params)
+            .unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
@@ -8269,24 +7629,16 @@ mod tests {
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
-        ref_builder
-            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
-            .unwrap();
-        ref_builder
-            .set_2d_coordinates(vec![[1.0, 1.0], [3.0, 1.0]])
-            .unwrap();
+        ref_builder.add_bond(BondSpec::new(r0, r1, BondOrder::Single)).unwrap();
+        ref_builder.set_2d_coordinates(vec![[1.0, 1.0], [3.0, 1.0]]).unwrap();
         let reference = ref_builder.build().unwrap();
 
         let mut mol_builder = MoleculeBuilder::new();
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m2 = mol_builder.add_atom(AtomSpec::new(Element::O));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(m1, m2, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(m1, m2, BondOrder::Single)).unwrap();
         mol_builder
             .set_2d_coordinates(vec![[9.0, 9.0], [10.0, 9.0], [11.0, 9.0]])
             .unwrap();
@@ -8322,9 +7674,7 @@ mod tests {
         let mut mol_builder = MoleculeBuilder::new();
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::O));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::O));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
         let mut mol = mol_builder.build().unwrap();
 
         let match_vect = generate_depiction_matching_2d_structure(
@@ -8353,12 +7703,8 @@ mod tests {
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r2 = ref_builder.add_atom(AtomSpec::new(Element::O));
-        ref_builder
-            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
-            .unwrap();
-        ref_builder
-            .add_bond(BondSpec::new(r1, r2, BondOrder::Single))
-            .unwrap();
+        ref_builder.add_bond(BondSpec::new(r0, r1, BondOrder::Single)).unwrap();
+        ref_builder.add_bond(BondSpec::new(r1, r2, BondOrder::Single)).unwrap();
         ref_builder
             .set_2d_coordinates(vec![[0.0, 0.0], [1.5, 0.0], [3.0, 0.0]])
             .unwrap();
@@ -8376,12 +7722,8 @@ mod tests {
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m2 = mol_builder.add_atom(AtomSpec::new(Element::O));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(m1, m2, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(m1, m2, BondOrder::Single)).unwrap();
         let mut mol = mol_builder.build().unwrap();
 
         let match_vect = generate_depiction_matching_2d_structure(
@@ -8409,13 +7751,10 @@ mod tests {
         let mut mol_builder = MoleculeBuilder::new();
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
         let mut mol = mol_builder.build().unwrap();
 
-        generate_depiction_matching_3d_structure(&mut mol, &reference, -1, None, true, false)
-            .unwrap();
+        generate_depiction_matching_3d_structure(&mut mol, &reference, -1, None, true, false).unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].coordinates().len(), 2);
@@ -8429,9 +7768,7 @@ mod tests {
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
-        ref_builder
-            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
-            .unwrap();
+        ref_builder.add_bond(BondSpec::new(r0, r1, BondOrder::Single)).unwrap();
         ref_builder
             .add_3d_conformer(vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
             .unwrap();
@@ -8440,9 +7777,7 @@ mod tests {
         let mut mol_builder = MoleculeBuilder::new();
         let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
         let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
-        mol_builder
-            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(m0, m1, BondOrder::Single)).unwrap();
         let mut mol = mol_builder.build().unwrap();
 
         let expected = compute_2d_coords_mimic_distmat_with_params(
@@ -8462,8 +7797,7 @@ mod tests {
         )
         .unwrap();
 
-        generate_depiction_matching_3d_structure(&mut mol, &reference, 0, None, false, false)
-            .unwrap();
+        generate_depiction_matching_3d_structure(&mut mol, &reference, 0, None, false, false).unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].coordinates(), expected.as_slice());
@@ -8474,12 +7808,8 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[0.0, 0.0], [1.0, 0.1]])
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_2d_conformer(vec![[0.0, 0.0], [1.0, 0.1]]).unwrap();
         let mut mol = builder.build().unwrap();
 
         straighten_depiction(&mut mol, 0, true).unwrap();
@@ -8496,12 +7826,8 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[1.0, 1.0], [2.0, 1.0]])
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_2d_conformer(vec![[1.0, 1.0], [2.0, 1.0]]).unwrap();
         let mut mol = builder.build().unwrap();
 
         let scale = normalize_depiction(&mut mol, 0, 0, 1.0).unwrap();
@@ -8519,12 +7845,8 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_2d_conformer(vec![[0.0, 0.0], [2.0, 0.0]])
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_2d_conformer(vec![[0.0, 0.0], [2.0, 0.0]]).unwrap();
         let mut mol = builder.build().unwrap();
 
         normalize_depiction(&mut mol, 0, -1, 1.0).unwrap();
@@ -8542,12 +7864,8 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a1, a2, BondOrder::Single)).unwrap();
         builder
             .add_2d_conformer(vec![[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]])
             .unwrap();
@@ -8567,23 +7885,12 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::O));
         let a2 = builder.add_atom(AtomSpec::new(Element::H));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a0, a2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a0, a2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2], vec![0], vec![0]];
         let degree = vec![2usize, 1, 1];
-        let frag = RdkitEmbeddedFrag::from_single_atom(
-            0,
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let frag = RdkitEmbeddedFrag::from_single_atom(0, mol.atoms(), mol.bonds(), &adjacency, &degree, &[]);
         assert_eq!(frag.attach_pts.iter().copied().collect::<Vec<_>>(), vec![0]);
         assert_eq!(frag.eatoms[&0].pending, vec![1, 2]);
     }
@@ -8594,12 +7901,8 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::O));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a1, a2, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1], vec![0, 2], vec![1]];
         let degree = vec![1usize, 2, 1];
@@ -8648,9 +7951,7 @@ mod tests {
     #[test]
     fn compute_nbrs_and_attachment_points_set_angle_neighbors_and_find_neighbor() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (0, 2), (0, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -8661,11 +7962,7 @@ mod tests {
         let degree = vec![3usize, 1, 1, 1];
         let atom_ring_counts = vec![0usize; mol.num_atoms()];
         let mut frag = RdkitEmbeddedFrag::from_coord_map(
-            &BTreeMap::from([
-                (0usize, (0.0, 0.0)),
-                (1usize, (1.0, 0.0)),
-                (2usize, (0.0, 1.0)),
-            ]),
+            &BTreeMap::from([(0usize, (0.0, 0.0)), (1usize, (1.0, 0.0)), (2usize, (0.0, 1.0))]),
             mol.atoms(),
             mol.bonds(),
             &adjacency,
@@ -8695,17 +7992,11 @@ mod tests {
                     .with_stereo_atoms(a2, a3),
             )
             .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(a0, a2, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(a1, a3, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(a0, a2, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(a1, a3, BondOrder::Single)).unwrap();
         let mol = mol_builder.build().unwrap();
 
-        let template =
-            build_rdkit_template_runtime_model("[#6](/[F])=[#6](\\Cl) |(0,0,;1,0,;0,1,;1,1,)|")
-                .unwrap();
+        let template = build_rdkit_template_runtime_model("[#6](/[F])=[#6](\\Cl) |(0,0,;1,0,;0,1,;1,1,)|").unwrap();
         let template_mol = build_rdkit_template_query_molecule(&template).unwrap();
         let match_result = get_substruct_match(&mol, &template_mol).expect("template should match");
         assert!(rdkit_check_stereo_chemistry(
@@ -8729,20 +8020,13 @@ mod tests {
                     .with_stereo_atoms(a2, a3),
             )
             .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(a0, a2, BondOrder::Single))
-            .unwrap();
-        mol_builder
-            .add_bond(BondSpec::new(a1, a3, BondOrder::Single))
-            .unwrap();
+        mol_builder.add_bond(BondSpec::new(a0, a2, BondOrder::Single)).unwrap();
+        mol_builder.add_bond(BondSpec::new(a1, a3, BondOrder::Single)).unwrap();
         let mol = mol_builder.build().unwrap();
 
-        let template =
-            build_rdkit_template_runtime_model("[#6](/[F])=[#6](\\Cl) |(0,0,;1,0,;0,1,;1,1,)|")
-                .unwrap();
+        let template = build_rdkit_template_runtime_model("[#6](/[F])=[#6](\\Cl) |(0,0,;1,0,;0,1,;1,1,)|").unwrap();
         let template_mol = build_rdkit_template_query_molecule(&template).unwrap();
-        let match_result =
-            get_substruct_match(&mol, &template_mol).expect("template should graph-match");
+        let match_result = get_substruct_match(&mol, &template_mol).expect("template should graph-match");
         assert!(!rdkit_check_stereo_chemistry(
             &mol,
             &template,
@@ -8753,9 +8037,7 @@ mod tests {
     #[test]
     fn match_to_template_returns_false_when_size_bucket_is_missing() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..3)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..3).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 0)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -8790,9 +8072,7 @@ mod tests {
         let a3 = builder.add_atom(AtomSpec::new(Element::C));
         let a4 = builder.add_atom(AtomSpec::new(Element::F));
         let a5 = builder.add_atom(AtomSpec::new(Element::CL));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
         builder
             .add_bond(
                 BondSpec::new(a1, a2, BondOrder::Double)
@@ -8800,18 +8080,10 @@ mod tests {
                     .with_stereo_atoms(a0, a3),
             )
             .unwrap();
-        builder
-            .add_bond(BondSpec::new(a2, a3, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a3, a0, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a1, a4, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a2, a5, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a2, a3, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a3, a0, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a1, a4, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a2, a5, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
 
         let ring = vec![0usize, 1, 2, 3];
@@ -8925,9 +8197,7 @@ mod tests {
         let _guard = TemplateRegistrySnapshotGuard::capture();
 
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..6)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..6).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 0), (2, 4), (4, 5), (5, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -8936,13 +8206,7 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
         let adjacency: Vec<Vec<usize>> = (0..mol.num_atoms())
-            .map(|i| {
-                adjacency
-                    .neighbors_of(i)
-                    .iter()
-                    .map(|n| n.atom_index)
-                    .collect()
-            })
+            .map(|i| adjacency.neighbors_of(i).iter().map(|n| n.atom_index).collect())
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
         let atom_ring_counts = vec![1usize; mol.num_atoms()];
@@ -8993,16 +8257,7 @@ mod tests {
             builder.add_atom(AtomSpec::new(Element::C)),
             builder.add_atom(AtomSpec::new(Element::C)),
         ];
-        for (a, b) in [
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 6),
-            (6, 0),
-            (3, 4),
-            (4, 5),
-            (5, 6),
-        ] {
+        for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 6), (6, 0), (3, 4), (4, 5), (5, 6)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
                 .unwrap();
@@ -9010,13 +8265,7 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
         let adjacency: Vec<Vec<usize>> = (0..mol.num_atoms())
-            .map(|i| {
-                adjacency
-                    .neighbors_of(i)
-                    .iter()
-                    .map(|n| n.atom_index)
-                    .collect()
-            })
+            .map(|i| adjacency.neighbors_of(i).iter().map(|n| n.atom_index).collect())
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
         let atom_ring_counts = vec![1usize; mol.num_atoms()];
@@ -9035,12 +8284,8 @@ mod tests {
         )
         .expect("template embedding should succeed");
 
-        let template = rdkit_matching_templates(7)
-            .pop()
-            .expect("template bucket should exist");
-        let coords = template
-            .coords_2d
-            .expect("template should carry coordinates");
+        let template = rdkit_matching_templates(7).pop().expect("template bucket should exist");
+        let coords = template.coords_2d.expect("template should carry coordinates");
         let mut got_coords: Vec<(i64, i64)> = frag
             .eatoms
             .values()
@@ -9066,8 +8311,7 @@ mod tests {
     }
 
     #[test]
-    fn embed_fused_rings_core_template_fallback_populates_core_coords_before_side_ring_attachment()
-    {
+    fn embed_fused_rings_core_template_fallback_populates_core_coords_before_side_ring_attachment() {
         let _lock = template_registry_test_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -9075,13 +8319,7 @@ mod tests {
         let mol = Molecule::from_smiles("C1C2CC3C1CC1(C2)NC31").unwrap();
         let adjacency = crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
         let adjacency: Vec<Vec<usize>> = (0..mol.num_atoms())
-            .map(|i| {
-                adjacency
-                    .neighbors_of(i)
-                    .iter()
-                    .map(|n| n.atom_index)
-                    .collect()
-            })
+            .map(|i| adjacency.neighbors_of(i).iter().map(|n| n.atom_index).collect())
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
         let ring_info = crate::symmetrize_sssr(&mol).unwrap();
@@ -9105,8 +8343,7 @@ mod tests {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let core_mol =
-            build_rdkit_ring_system_molecule(mol.atoms(), mol.bonds(), &core_union).unwrap();
+        let core_mol = build_rdkit_ring_system_molecule(mol.atoms(), mol.bonds(), &core_union).unwrap();
         let template = build_rdkit_template_runtime_model(
             "C1C2CC3CC1CC3C2 |(-7.01,3.13,;-7.71,4.35,;-7.01,5.56,;-5.61,5.56,;-4.91,4.35,;-5.61,3.13,;-4.28,3.57,;-4.28,5.13,;-6.34,4.05,)|",
         )
@@ -9116,18 +8353,12 @@ mod tests {
             .expect("template registry lock poisoned")
             .templates = HashMap::from([(core_union.len(), vec![template.clone()])]);
         let template_mol = build_rdkit_template_query_molecule(&template).unwrap();
-        let template_concrete =
-            Molecule::from_smiles("C1C2CC3CC1CC3C2").expect("template concrete graph");
+        let template_concrete = Molecule::from_smiles("C1C2CC3CC1CC3C2").expect("template concrete graph");
         assert_eq!(core_ring_ids.len(), core_rings.len());
         assert_eq!(core_mol.num_bonds(), template_mol.num_bonds());
+        assert_eq!(crate::symmetrize_sssr(&core_mol).unwrap().num_rings(), core_rings.len());
         assert_eq!(
-            crate::symmetrize_sssr(&core_mol).unwrap().num_rings(),
-            core_rings.len()
-        );
-        assert_eq!(
-            crate::symmetrize_sssr(&template_concrete)
-                .unwrap()
-                .num_rings(),
+            crate::symmetrize_sssr(&template_concrete).unwrap().num_rings(),
             core_rings.len()
         );
         assert_eq!(
@@ -9172,9 +8403,7 @@ mod tests {
         let template = rdkit_matching_templates(core_union.len())
             .pop()
             .expect("template bucket should exist");
-        let coords = template
-            .coords_2d
-            .expect("template should carry coordinates");
+        let coords = template.coords_2d.expect("template should carry coordinates");
         let mut got_core_coords: Vec<(i64, i64)> = core_union
             .iter()
             .map(|aid| {
@@ -9350,21 +8579,12 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1], vec![0]];
         let degree = vec![1usize, 1];
 
-        let mut frag = RdkitEmbeddedFrag::from_single_atom(
-            0,
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let mut frag = RdkitEmbeddedFrag::from_single_atom(0, mol.atoms(), mol.bonds(), &adjacency, &degree, &[]);
         frag.add_atom_to_atom_with_no_ang(1, 0, mol.atoms(), mol.bonds(), &degree)
             .expect("first no-angle attachment should succeed");
 
@@ -9440,9 +8660,7 @@ mod tests {
     #[test]
     fn add_non_ring_atom_removes_pending_neighbor_and_updates_new_atom_pending() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..3)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..3).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         builder
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Single))
             .unwrap();
@@ -9453,14 +8671,7 @@ mod tests {
         let adjacency = vec![vec![1], vec![0, 2], vec![1]];
         let degree = vec![1usize, 2, 1];
 
-        let mut frag = RdkitEmbeddedFrag::from_single_atom(
-            1,
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let mut frag = RdkitEmbeddedFrag::from_single_atom(1, mol.atoms(), mol.bonds(), &adjacency, &degree, &[]);
         assert_eq!(frag.eatoms[&1].pending, vec![0, 2]);
         frag.add_non_ring_atom(0, 1, mol.atoms(), mol.bonds(), &adjacency, &degree, &[])
             .expect("non-ring attachment should succeed");
@@ -9473,9 +8684,7 @@ mod tests {
     #[test]
     fn expand_efrag_grows_single_atom_seed_across_pending_chain() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..3)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..3).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         builder
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Single))
             .unwrap();
@@ -9486,14 +8695,7 @@ mod tests {
         let adjacency = vec![vec![1], vec![0, 2], vec![1]];
         let degree = vec![1usize, 2, 1];
 
-        let mut frag = RdkitEmbeddedFrag::from_single_atom(
-            0,
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let mut frag = RdkitEmbeddedFrag::from_single_atom(0, mol.atoms(), mol.bonds(), &adjacency, &degree, &[]);
         let mut nratms = vec![1usize, 2];
         let mut efrags = Vec::<RdkitEmbeddedFrag>::new();
         frag.expand_efrag(
@@ -9521,9 +8723,7 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1], vec![0]];
 
@@ -9653,9 +8853,7 @@ mod tests {
     #[test]
     fn random_sample_flips_and_permutations_keeps_best_sample_when_flip_is_worse() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -9719,9 +8917,7 @@ mod tests {
         let a3 = builder.add_atom(AtomSpec::new(Element::CL));
         let a4 = builder.add_atom(AtomSpec::new(Element::CL));
         for nbr in [a1, a2, a3, a4] {
-            builder
-                .add_bond(BondSpec::new(center, nbr, BondOrder::Single))
-                .unwrap();
+            builder.add_bond(BondSpec::new(center, nbr, BondOrder::Single)).unwrap();
         }
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
@@ -9747,9 +8943,7 @@ mod tests {
         let n4 = builder.add_atom(AtomSpec::new(Element::I));
         let n5 = builder.add_atom(AtomSpec::new(Element::O));
         for nbr in [n1, n2, n3, n4, n5] {
-            builder
-                .add_bond(BondSpec::new(center, nbr, BondOrder::Single))
-                .unwrap();
+            builder.add_bond(BondSpec::new(center, nbr, BondOrder::Single)).unwrap();
         }
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
@@ -9807,35 +9001,24 @@ mod tests {
         let n5 = builder.add_atom(AtomSpec::new(Element::N));
         let n6 = builder.add_atom(AtomSpec::new(Element::O));
         for nbr in [n1, n2, n3, n4, n5, n6] {
-            builder
-                .add_bond(BondSpec::new(center, nbr, BondOrder::Single))
-                .unwrap();
+            builder.add_bond(BondSpec::new(center, nbr, BondOrder::Single)).unwrap();
         }
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
 
         assert!((coords[center.index()][0]).abs() < 1.0e-8);
         assert!((coords[center.index()][1]).abs() < 1.0e-8);
-        let axis_like = [
-            n1.index(),
-            n2.index(),
-            n3.index(),
-            n4.index(),
-            n5.index(),
-            n6.index(),
-        ]
-        .iter()
-        .filter(|&&idx| coords[idx][0].abs() < 1.0e-6 || coords[idx][1].abs() < 1.0e-6)
-        .count();
+        let axis_like = [n1.index(), n2.index(), n3.index(), n4.index(), n5.index(), n6.index()]
+            .iter()
+            .filter(|&&idx| coords[idx][0].abs() < 1.0e-6 || coords[idx][1].abs() < 1.0e-6)
+            .count();
         assert!(axis_like >= 2);
     }
 
     #[test]
     fn flip_about_bond_reflects_smaller_side_of_non_ring_bond() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         builder
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Single))
             .unwrap();
@@ -9924,9 +9107,7 @@ mod tests {
     #[test]
     fn remove_collisions_open_angles_rotates_degree_one_collision_pair() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..4)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
-            .collect();
+        let atoms: Vec<_> = (0..4).map(|_| builder.add_atom(AtomSpec::new(Element::C))).collect();
         for (a, b) in [(0, 1), (1, 2), (2, 3)] {
             builder
                 .add_bond(BondSpec::new(atoms[a], atoms[b], BondOrder::Single))
@@ -9971,9 +9152,7 @@ mod tests {
     #[test]
     fn remove_collisions_shorten_bonds_moves_terminal_atom_inward_on_open_path() {
         let mut builder = MoleculeBuilder::new();
-        let atoms: Vec<_> = (0..2)
-            .map(|_| builder.add_atom(AtomSpec::new(Element::O)))
-            .collect();
+        let atoms: Vec<_> = (0..2).map(|_| builder.add_atom(AtomSpec::new(Element::O))).collect();
         builder
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Single))
             .unwrap();
@@ -10089,10 +9268,7 @@ mod tests {
             },
         );
 
-        let coords = BTreeMap::from([
-            (0usize, other.eatoms[&0].loc),
-            (1usize, other.eatoms[&1].loc),
-        ]);
+        let coords = BTreeMap::from([(0usize, other.eatoms[&0].loc), (1usize, other.eatoms[&1].loc)]);
         let trans = master.compute_two_atom_trans(0, 1, &coords).unwrap();
         other.transform(trans);
         assert!((other.eatoms[&0].loc.0 - 0.0).abs() < 1e-8);
@@ -10103,11 +9279,7 @@ mod tests {
 
     #[test]
     fn canonicalize_component_centers_fragment_and_aligns_major_axis() {
-        let mut comp = vec![
-            (0usize, (1.0, 1.0)),
-            (1usize, (2.0, 2.0)),
-            (2usize, (3.0, 3.0)),
-        ];
+        let mut comp = vec![(0usize, (1.0, 1.0)), (1usize, (2.0, 2.0)), (2usize, (3.0, 3.0))];
         canonicalize_component(&mut comp);
         let sum_x: f64 = comp.iter().map(|(_, p)| p.0).sum();
         let sum_y: f64 = comp.iter().map(|(_, p)| p.1).sum();
@@ -10127,12 +9299,8 @@ mod tests {
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
         let a3 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
-            .unwrap();
-        builder
-            .add_bond(BondSpec::new(a2, a3, BondOrder::Single))
-            .unwrap();
+        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder.add_bond(BondSpec::new(a2, a3, BondOrder::Single)).unwrap();
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
 
@@ -10149,35 +9317,19 @@ mod tests {
         let first_y_extent = first_box.2 + first_box.3;
 
         if first_x_extent > first_y_extent {
-            let first_max_y = first
-                .iter()
-                .map(|(_, p)| p.1)
-                .fold(f64::NEG_INFINITY, f64::max);
-            let second_min_y = second
-                .iter()
-                .map(|(_, p)| p.1)
-                .fold(f64::INFINITY, f64::min);
+            let first_max_y = first.iter().map(|(_, p)| p.1).fold(f64::NEG_INFINITY, f64::max);
+            let second_min_y = second.iter().map(|(_, p)| p.1).fold(f64::INFINITY, f64::min);
             assert!((second_min_y - first_max_y - 1.0).abs() < 1e-8);
         } else {
-            let first_max_x = first
-                .iter()
-                .map(|(_, p)| p.0)
-                .fold(f64::NEG_INFINITY, f64::max);
-            let second_min_x = second
-                .iter()
-                .map(|(_, p)| p.0)
-                .fold(f64::INFINITY, f64::min);
+            let first_max_x = first.iter().map(|(_, p)| p.0).fold(f64::NEG_INFINITY, f64::max);
+            let second_min_x = second.iter().map(|(_, p)| p.0).fold(f64::INFINITY, f64::min);
             assert!((second_min_x - first_max_x - 1.0).abs() < 1e-8);
         }
     }
 
     #[test]
     fn component_box_rdkit_matches_embedded_frag_box_sign_convention() {
-        let comp = vec![
-            (0usize, (-2.0, 1.0)),
-            (1usize, (3.0, -4.0)),
-            (2usize, (1.0, 2.0)),
-        ];
+        let comp = vec![(0usize, (-2.0, 1.0)), (1usize, (3.0, -4.0)), (2usize, (1.0, 2.0))];
         assert_eq!(component_box_rdkit(&comp), (3.0, 2.0, 2.0, 4.0));
     }
 
@@ -10376,18 +9528,12 @@ mod tests {
         };
         let mut efrags = vec![
             RdkitEmbeddedFrag {
-                eatoms: BTreeMap::from([
-                    (0usize, mk_atom((0.0, 0.0))),
-                    (1usize, mk_atom((1.0, 0.0))),
-                ]),
+                eatoms: BTreeMap::from([(0usize, mk_atom((0.0, 0.0))), (1usize, mk_atom((1.0, 0.0)))]),
                 attach_pts: VecDeque::new(),
                 done: false,
             },
             RdkitEmbeddedFrag {
-                eatoms: BTreeMap::from([
-                    (2usize, mk_atom((0.0, 0.0))),
-                    (3usize, mk_atom((1.0, 0.0))),
-                ]),
+                eatoms: BTreeMap::from([(2usize, mk_atom((0.0, 0.0))), (3usize, mk_atom((1.0, 0.0)))]),
                 attach_pts: VecDeque::new(),
                 done: false,
             },
@@ -10453,25 +9599,15 @@ mod tests {
     #[test]
     fn compute_initial_coords_embeds_fused_and_cis_trans_seed_fragments_before_expansion() {
         let fused = Molecule::from_smiles("C1CCC2CCCCC2C1").unwrap();
-        let fused_efrags = rdkit_compute_initial_efrags_strict(
-            fused.atoms(),
-            fused.bonds(),
-            &vec![0; fused.num_atoms()],
-            None,
-            false,
-        )
-        .unwrap();
+        let fused_efrags =
+            rdkit_compute_initial_efrags_strict(fused.atoms(), fused.bonds(), &vec![0; fused.num_atoms()], None, false)
+                .unwrap();
         assert!(fused_efrags.iter().any(|frag| frag.size() >= 2));
 
         let cis = Molecule::from_smiles("F/C=C/F").unwrap();
-        let cis_efrags = rdkit_compute_initial_efrags_strict(
-            cis.atoms(),
-            cis.bonds(),
-            &vec![0; cis.num_atoms()],
-            None,
-            false,
-        )
-        .unwrap();
+        let cis_efrags =
+            rdkit_compute_initial_efrags_strict(cis.atoms(), cis.bonds(), &vec![0; cis.num_atoms()], None, false)
+                .unwrap();
         assert!(cis_efrags.iter().any(|frag| frag.size() >= 2));
     }
 
@@ -10492,10 +9628,7 @@ mod tests {
         };
         let efrags = vec![
             RdkitEmbeddedFrag {
-                eatoms: BTreeMap::from([
-                    (1usize, mk_atom((1.0, 2.0))),
-                    (3usize, mk_atom((3.0, 4.0))),
-                ]),
+                eatoms: BTreeMap::from([(1usize, mk_atom((1.0, 2.0))), (3usize, mk_atom((3.0, 4.0)))]),
                 attach_pts: VecDeque::new(),
                 done: false,
             },
@@ -10663,14 +9796,8 @@ mod tests {
     #[test]
     fn template_runtime_model_preserves_2d_coords_and_ring_counts() {
         let runtime = build_rdkit_template_runtime_model("C1CC1 |(0,0,;1,0,;0,1,)|").unwrap();
-        assert_eq!(
-            runtime.source_coordinate_dim,
-            Some(CoordinateDimension::TwoD)
-        );
-        assert_eq!(
-            runtime.coords_2d,
-            Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        );
+        assert_eq!(runtime.source_coordinate_dim, Some(CoordinateDimension::TwoD));
+        assert_eq!(runtime.coords_2d, Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]));
         assert!(runtime.conformer_3d.is_none());
         assert_eq!(runtime.fragment_count, 1);
         assert_eq!(runtime.bond_ring_counts, vec![1, 1, 1]);
@@ -10679,10 +9806,7 @@ mod tests {
     #[test]
     fn template_runtime_model_marks_nonzero_z_coords_as_3d() {
         let runtime = build_rdkit_template_runtime_model("C1CC1 |(0,0,1,;1,0,0,;0,1,0,)|").unwrap();
-        assert_eq!(
-            runtime.source_coordinate_dim,
-            Some(CoordinateDimension::ThreeD)
-        );
+        assert_eq!(runtime.source_coordinate_dim, Some(CoordinateDimension::ThreeD));
         assert!(runtime.coords_2d.is_none());
         assert_eq!(
             runtime.conformer_3d,
@@ -10772,11 +9896,8 @@ mod tests {
     #[test]
     fn template_loading_rejects_missing_file() {
         let mut templates = RdkitTemplateBuckets::new();
-        let err = load_rdkit_templates_from_path(
-            "/definitely/not/present/rdkit_templates.cxsmiles",
-            &mut templates,
-        )
-        .unwrap_err();
+        let err = load_rdkit_templates_from_path("/definitely/not/present/rdkit_templates.cxsmiles", &mut templates)
+            .unwrap_err();
         match err {
             Coordinate2DError::UnsupportedFeature(message) => {
                 assert_eq!(
@@ -10793,8 +9914,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         std::fs::write(file.path(), "C1CC\n").unwrap();
         let mut templates = RdkitTemplateBuckets::new();
-        let err = load_rdkit_templates_from_path(file.path().to_str().unwrap(), &mut templates)
-            .unwrap_err();
+        let err = load_rdkit_templates_from_path(file.path().to_str().unwrap(), &mut templates).unwrap_err();
         match err {
             Coordinate2DError::UnsupportedFeature(message) => {
                 assert_eq!(
@@ -10814,8 +9934,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         std::fs::write(file.path(), "CC |(0,0,;1,0,)|\n").unwrap();
         let mut templates = RdkitTemplateBuckets::new();
-        let err = load_rdkit_templates_from_path(file.path().to_str().unwrap(), &mut templates)
-            .unwrap_err();
+        let err = load_rdkit_templates_from_path(file.path().to_str().unwrap(), &mut templates).unwrap_err();
         match err {
             Coordinate2DError::UnsupportedFeature(message) => {
                 assert_eq!(message, "Template is not a ring system: CC |(0,0,;1,0,)|");
@@ -10836,14 +9955,8 @@ mod tests {
         load_rdkit_templates_from_path(file.path().to_str().unwrap(), &mut templates).unwrap();
         let bucket = templates.get(&3).unwrap();
         assert_eq!(bucket.len(), 2);
-        assert_eq!(
-            bucket[0].coords_2d,
-            Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        );
-        assert_eq!(
-            bucket[1].coords_2d,
-            Some(vec![[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]])
-        );
+        assert_eq!(bucket[0].coords_2d, Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]));
+        assert_eq!(bucket[1].coords_2d, Some(vec![[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]]));
     }
 
     struct TemplateRegistrySnapshotGuard {
@@ -10964,14 +10077,8 @@ mod tests {
 
         let bucket = rdkit_matching_templates(3);
         assert_eq!(bucket.len(), 2);
-        assert_eq!(
-            bucket[0].coords_2d,
-            Some(vec![[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]])
-        );
-        assert_eq!(
-            bucket[1].coords_2d,
-            Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        );
+        assert_eq!(bucket[0].coords_2d, Some(vec![[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]]));
+        assert_eq!(bucket[1].coords_2d, Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]));
     }
 
     #[test]
@@ -11070,9 +10177,7 @@ fn embed_square_planar(
             continue;
         }
         // Use ideal angle lookup
-        let angle = crate::stereo::get_ideal_angle_between_ligands_by_slice(
-            atom_idx, nbrs[0], nbr, atoms, bonds,
-        );
+        let angle = crate::stereo::get_ideal_angle_between_ligands_by_slice(atom_idx, nbrs[0], nbr, atoms, bonds);
         if (angle - 180.0).abs() < 0.1 {
             coord_map.insert(nbr, ideal_points[2]);
         } else {
@@ -11121,10 +10226,8 @@ fn embed_tbp(
     let mut coord_map = HashMap::new();
     coord_map.insert(atom_idx, (0.0, 0.0));
 
-    let axial1 =
-        crate::stereo::get_trigonal_bipyramidal_axial_atom_by_slice(atom_idx, 1, atoms, bonds);
-    let axial2 =
-        crate::stereo::get_trigonal_bipyramidal_axial_atom_by_slice(atom_idx, -1, atoms, bonds);
+    let axial1 = crate::stereo::get_trigonal_bipyramidal_axial_atom_by_slice(atom_idx, 1, atoms, bonds);
+    let axial2 = crate::stereo::get_trigonal_bipyramidal_axial_atom_by_slice(atom_idx, -1, atoms, bonds);
 
     if let Some(a1) = axial1 {
         coord_map.insert(a1, ideal_points[0]);
@@ -11184,9 +10287,8 @@ fn embed_octahedral(
     for i in 0..nbrs.len() {
         let mut all90 = true;
         for j in (i + 1)..nbrs.len() {
-            let angle = crate::stereo::get_ideal_angle_between_ligands_by_slice(
-                atom_idx, nbrs[i], nbrs[j], atoms, bonds,
-            );
+            let angle =
+                crate::stereo::get_ideal_angle_between_ligands_by_slice(atom_idx, nbrs[i], nbrs[j], atoms, bonds);
             if (angle - 180.0).abs() < 0.1 {
                 axial1 = Some(nbrs[i]);
                 axial2 = Some(nbrs[j]);
@@ -11220,16 +10322,14 @@ fn embed_octahedral(
         if ref_eq_atom1.is_none() {
             ref_eq_atom1 = Some(nbr);
             coord_map.insert(nbr, ideal_points[2]);
-            let across =
-                crate::stereo::get_chiral_across_atom_by_atom_by_slice(atom_idx, nbr, atoms, bonds);
+            let across = crate::stereo::get_chiral_across_atom_by_atom_by_slice(atom_idx, nbr, atoms, bonds);
             if let Some(aa) = across {
                 ref_eq_atom2 = Some(aa);
                 coord_map.insert(aa, ideal_points[4]);
             }
         } else if Some(nbr) != ref_eq_atom1 && Some(nbr) != ref_eq_atom2 {
             coord_map.insert(nbr, ideal_points[3]);
-            let across2 =
-                crate::stereo::get_chiral_across_atom_by_atom_by_slice(atom_idx, nbr, atoms, bonds);
+            let across2 = crate::stereo::get_chiral_across_atom_by_atom_by_slice(atom_idx, nbr, atoms, bonds);
             if let Some(aa) = across2 {
                 coord_map.insert(aa, ideal_points[5]);
             }
@@ -11511,10 +10611,7 @@ struct ThetaBin {
 // RDKit✔️❌:                                                double *eigenValues) { ... }
 // RDKit✔️❌: 2D planar adaptation of MolTransforms canonical transform for
 // RDKit✔️❌: depiction conformers stored as [x,y] rows.
-fn rdkit_compute_canonical_transform_for_2d_coords(
-    coords: &[[f64; 2]],
-    center: Option<[f64; 2]>,
-) -> [[f64; 4]; 4] {
+fn rdkit_compute_canonical_transform_for_2d_coords(coords: &[[f64; 2]], center: Option<[f64; 2]>) -> [[f64; 4]; 4] {
     let mut trans = crate::chemistry::numerics::alignment::identity();
     let origin = if let Some(center) = center {
         center
@@ -11555,8 +10652,7 @@ fn rdkit_compute_canonical_transform_for_2d_coords(
         trans[2][2] = 1.0;
     }
     let neg_origin = [-origin[0], -origin[1], 0.0];
-    let transformed_origin =
-        crate::chemistry::numerics::alignment::transform_point(&trans, neg_origin);
+    let transformed_origin = crate::chemistry::numerics::alignment::transform_point(&trans, neg_origin);
     crate::chemistry::numerics::alignment::set_translation(&mut trans, transformed_origin);
     trans
 }
@@ -11707,10 +10803,7 @@ pub(crate) fn normalize_depiction(
 
     let coords_snapshot = mol.conformers_2d()[conf_index].coordinates().to_vec();
     let mut canon_trans = if canonicalize != 0 {
-        Some(rdkit_compute_canonical_transform_for_2d_coords(
-            &coords_snapshot,
-            None,
-        ))
+        Some(rdkit_compute_canonical_transform_for_2d_coords(&coords_snapshot, None))
     } else {
         let mut trans = crate::chemistry::numerics::alignment::identity();
         let mut centroid = [0.0, 0.0];
@@ -11720,10 +10813,7 @@ pub(crate) fn normalize_depiction(
         }
         centroid[0] /= coords_snapshot.len() as f64;
         centroid[1] /= coords_snapshot.len() as f64;
-        crate::chemistry::numerics::alignment::set_translation(
-            &mut trans,
-            [-centroid[0], -centroid[1], 0.0],
-        );
+        crate::chemistry::numerics::alignment::set_translation(&mut trans, [-centroid[0], -centroid[1], 0.0]);
         Some(trans)
     };
     if canonicalize < 0 {
@@ -11750,19 +10840,14 @@ pub(crate) fn normalize_depiction(
             trans = crate::chemistry::numerics::alignment::mul(&trans, &canon_trans);
         }
         for point in coords.iter_mut() {
-            let transformed = crate::chemistry::numerics::alignment::transform_point(
-                &trans,
-                [point[0], point[1], 0.0],
-            );
+            let transformed = crate::chemistry::numerics::alignment::transform_point(&trans, [point[0], point[1], 0.0]);
             point[0] = transformed[0];
             point[1] = transformed[1];
         }
     } else if let Some(canon_trans) = canon_trans {
         for point in coords.iter_mut() {
-            let transformed = crate::chemistry::numerics::alignment::transform_point(
-                &canon_trans,
-                [point[0], point[1], 0.0],
-            );
+            let transformed =
+                crate::chemistry::numerics::alignment::transform_point(&canon_trans, [point[0], point[1], 0.0]);
             point[0] = transformed[0];
             point[1] = transformed[1];
         }

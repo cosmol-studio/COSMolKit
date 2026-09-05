@@ -36,11 +36,7 @@ pub struct SdfPropertyList {
 
 impl SdfPropertyList {
     #[must_use]
-    pub fn new(
-        target: SdfPropertyListTarget,
-        name: impl Into<String>,
-        values: Vec<Option<String>>,
-    ) -> Self {
+    pub fn new(target: SdfPropertyListTarget, name: impl Into<String>, values: Vec<Option<String>>) -> Self {
         Self {
             target,
             name: name.into(),
@@ -183,11 +179,7 @@ impl MoleculeProperties {
         }
     }
 
-    pub fn remap_topology(
-        &mut self,
-        atom_new_to_old: &[Option<AtomId>],
-        bond_new_to_old: &[Option<BondId>],
-    ) {
+    pub fn remap_topology(&mut self, atom_new_to_old: &[Option<AtomId>], bond_new_to_old: &[Option<BondId>]) {
         self.sdf_property_lists = self
             .sdf_property_lists
             .iter()
@@ -197,23 +189,15 @@ impl MoleculeProperties {
 }
 
 impl SdfPropertyList {
-    fn remapped_topology(
-        &self,
-        atom_new_to_old: &[Option<AtomId>],
-        bond_new_to_old: &[Option<BondId>],
-    ) -> Self {
+    fn remapped_topology(&self, atom_new_to_old: &[Option<AtomId>], bond_new_to_old: &[Option<BondId>]) -> Self {
         let values = match self.target {
             SdfPropertyListTarget::Atom => atom_new_to_old
                 .iter()
-                .map(|old_row| {
-                    old_row.and_then(|row| self.values.get(row.index()).cloned().flatten())
-                })
+                .map(|old_row| old_row.and_then(|row| self.values.get(row.index()).cloned().flatten()))
                 .collect(),
             SdfPropertyListTarget::Bond => bond_new_to_old
                 .iter()
-                .map(|old_row| {
-                    old_row.and_then(|row| self.values.get(row.index()).cloned().flatten())
-                })
+                .map(|old_row| old_row.and_then(|row| self.values.get(row.index()).cloned().flatten()))
                 .collect(),
         };
         Self {

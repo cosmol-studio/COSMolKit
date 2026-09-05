@@ -6,8 +6,8 @@
 
 pub use cosmolkit_model::AtomId;
 pub use cosmolkit_model::{
-    AtomPdbResidueInfo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element, ElementInfo,
-    ElementParseError, Hybridization,
+    AtomPdbResidueInfo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element, ElementInfo, ElementParseError,
+    Hybridization,
 };
 
 pub type AtomSpec = cosmolkit_model::AtomSpec<crate::QueryNode<crate::AtomQueryPredicate>>;

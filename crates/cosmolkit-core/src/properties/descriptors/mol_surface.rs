@@ -60,11 +60,7 @@ pub(super) fn assign_contributions_to_bins(
     Ok(result)
 }
 
-pub(super) fn calc_slogp_vsa(
-    molecule: &Molecule,
-    bins: Option<&[f64]>,
-    force: bool,
-) -> DescriptorResult<Vec<f64>> {
+pub(super) fn calc_slogp_vsa(molecule: &Molecule, bins: Option<&[f64]>, force: bool) -> DescriptorResult<Vec<f64>> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcSlogP_VSA
     // RDKit✔️✔️: std::vector<double> calcSlogP_VSA(const ROMol &mol, std::vector<double> *bins,
     // RDKit✔️✔️:                                   bool force) {
@@ -104,11 +100,7 @@ pub(super) fn calc_slogp_vsa(
     Ok(result)
 }
 
-pub(super) fn calc_smr_vsa(
-    molecule: &Molecule,
-    bins: Option<&[f64]>,
-    force: bool,
-) -> DescriptorResult<Vec<f64>> {
+pub(super) fn calc_smr_vsa(molecule: &Molecule, bins: Option<&[f64]>, force: bool) -> DescriptorResult<Vec<f64>> {
     // BEGIN RDKIT CPP FUNCTION: RDKit::Descriptors::calcSMR_VSA
     // RDKit✔️✔️: std::vector<double> calcSMR_VSA(const ROMol &mol, std::vector<double> *bins,
     // RDKit✔️✔️:                                 bool force) {
@@ -194,8 +186,7 @@ pub(super) fn get_labute_atom_contribs(
     for atom_index in 0..atom_count {
         // RDKit✔️✔️:     rads[i] = PeriodicTable::getTable()->getRb0(
         // RDKit✔️✔️:         mol.getAtomWithIdx(i)->getAtomicNum());
-        radii[atom_index] =
-            crate::chemistry::valence::rdkit_rb0(molecule.atoms()[atom_index].atomic_number());
+        radii[atom_index] = crate::chemistry::valence::rdkit_rb0(molecule.atoms()[atom_index].atomic_number());
         // RDKit✔️✔️:     Vi[i] = 0.0;
         contributions[atom_index] = 0.0;
         // RDKit✔️✔️:   }
@@ -239,11 +230,11 @@ pub(super) fn get_labute_atom_contribs(
             .max(bond_distance)
             .min(begin_radius + end_radius);
         // RDKit✔️✔️:     Vi[(*bondIt)->getBeginAtomIdx()] += Rj * Rj - (Ri - dij) * (Ri - dij) / dij;
-        contributions[bond.begin().index()] += end_radius * end_radius
-            - (begin_radius - distance) * (begin_radius - distance) / distance;
+        contributions[bond.begin().index()] +=
+            end_radius * end_radius - (begin_radius - distance) * (begin_radius - distance) / distance;
         // RDKit✔️✔️:     Vi[(*bondIt)->getEndAtomIdx()] += Ri * Ri - (Rj - dij) * (Rj - dij) / dij;
-        contributions[bond.end().index()] += begin_radius * begin_radius
-            - (end_radius - distance) * (end_radius - distance) / distance;
+        contributions[bond.end().index()] +=
+            begin_radius * begin_radius - (end_radius - distance) * (end_radius - distance) / distance;
         // RDKit✔️✔️:   }
     }
     // RDKit✔️✔️:   hContrib = 0.0;
@@ -264,11 +255,11 @@ pub(super) fn get_labute_atom_contribs(
                 .max(bond_distance)
                 .min(atom_radius + hydrogen_radius);
             // RDKit✔️✔️:       Vi[i] += Rj * Rj - (Ri - dij) * (Ri - dij) / dij;
-            contributions[atom_index] += hydrogen_radius * hydrogen_radius
-                - (atom_radius - distance) * (atom_radius - distance) / distance;
+            contributions[atom_index] +=
+                hydrogen_radius * hydrogen_radius - (atom_radius - distance) * (atom_radius - distance) / distance;
             // RDKit✔️✔️:       hContrib += Ri * Ri - (Rj - dij) * (Rj - dij) / dij;
-            hydrogen_contribution += atom_radius * atom_radius
-                - (hydrogen_radius - distance) * (hydrogen_radius - distance) / distance;
+            hydrogen_contribution +=
+                atom_radius * atom_radius - (hydrogen_radius - distance) * (hydrogen_radius - distance) / distance;
             // RDKit✔️✔️:     }
         }
         // RDKit✔️✔️:   }
@@ -292,9 +283,8 @@ pub(super) fn get_labute_atom_contribs(
         // RDKit✔️✔️:     double Rj = PeriodicTable::getTable()->getRb0(1);
         let hydrogen_radius = crate::chemistry::valence::rdkit_rb0(1);
         // RDKit✔️✔️:     hContrib = M_PI * Rj * (4. * Rj - hContrib);
-        hydrogen_contribution = std::f64::consts::PI
-            * hydrogen_radius
-            * (4.0 * hydrogen_radius - hydrogen_contribution);
+        hydrogen_contribution =
+            std::f64::consts::PI * hydrogen_radius * (4.0 * hydrogen_radius - hydrogen_contribution);
         // RDKit✔️✔️:     res += hContrib;
         asa += hydrogen_contribution;
         // RDKit✔️✔️:   }
@@ -372,8 +362,8 @@ pub(super) fn labute_helper(molecule: &Molecule, include_hydrogens: bool, force:
 #[cfg(test)]
 mod tests {
     use super::{
-        assign_contributions_to_bins, calc_labute_asa, calc_slogp_vsa, calc_smr_vsa,
-        get_labute_atom_contribs, labute_helper, slogp_vsa_bin, smr_vsa_bin,
+        assign_contributions_to_bins, calc_labute_asa, calc_slogp_vsa, calc_smr_vsa, get_labute_atom_contribs,
+        labute_helper, slogp_vsa_bin, smr_vsa_bin,
     };
     use crate::{Molecule, properties::descriptors::DescriptorError};
 
@@ -474,41 +464,20 @@ mod tests {
 
         let mut molecule = Molecule::from_smiles("CC").expect("Labute cache fixture");
         assert!(molecule.labute_descriptor_cache().is_none());
-        assert_eq!(
-            calc_labute_asa(&molecule, false, false).to_bits(),
-            WITHOUT_HYDROGENS
-        );
-        assert_eq!(
-            calc_labute_asa(&molecule, true, false).to_bits(),
-            WITHOUT_HYDROGENS
-        );
+        assert_eq!(calc_labute_asa(&molecule, false, false).to_bits(), WITHOUT_HYDROGENS);
+        assert_eq!(calc_labute_asa(&molecule, true, false).to_bits(), WITHOUT_HYDROGENS);
 
         let clone = molecule.clone();
-        assert_eq!(
-            calc_labute_asa(&clone, true, true).to_bits(),
-            WITH_HYDROGENS
-        );
-        assert_eq!(
-            calc_labute_asa(&molecule, true, false).to_bits(),
-            WITHOUT_HYDROGENS
-        );
+        assert_eq!(calc_labute_asa(&clone, true, true).to_bits(), WITH_HYDROGENS);
+        assert_eq!(calc_labute_asa(&molecule, true, false).to_bits(), WITHOUT_HYDROGENS);
 
-        assert_eq!(
-            calc_labute_asa(&molecule, true, true).to_bits(),
-            WITH_HYDROGENS
-        );
-        assert_eq!(
-            calc_labute_asa(&molecule, false, false).to_bits(),
-            WITH_HYDROGENS
-        );
+        assert_eq!(calc_labute_asa(&molecule, true, true).to_bits(), WITH_HYDROGENS);
+        assert_eq!(calc_labute_asa(&molecule, false, false).to_bits(), WITH_HYDROGENS);
 
         let topology = molecule.topology_block().clone();
         molecule.replace_topology_block(topology);
         assert!(molecule.labute_descriptor_cache().is_none());
-        assert_eq!(
-            calc_labute_asa(&molecule, false, false).to_bits(),
-            WITHOUT_HYDROGENS
-        );
+        assert_eq!(calc_labute_asa(&molecule, false, false).to_bits(), WITHOUT_HYDROGENS);
     }
 
     #[test]
@@ -530,11 +499,7 @@ mod tests {
             Ok(vec![6.0])
         );
         assert_eq!(
-            assign_contributions_to_bins(
-                &[1.0, 2.0, 4.0],
-                &[f64::NEG_INFINITY, f64::INFINITY, f64::NAN],
-                &[0.0],
-            ),
+            assign_contributions_to_bins(&[1.0, 2.0, 4.0], &[f64::NEG_INFINITY, f64::INFINITY, f64::NAN], &[0.0],),
             Ok(vec![1.0, 6.0])
         );
         assert_eq!(
@@ -546,8 +511,7 @@ mod tests {
             Ok(vec![1.0, 0.0, 6.0, 24.0])
         );
 
-        let ordered =
-            assign_contributions_to_bins(&[1.0e16, 1.0, -1.0e16], &[0.0, 0.0, 0.0], &[]).unwrap();
+        let ordered = assign_contributions_to_bins(&[1.0e16, 1.0, -1.0e16], &[0.0, 0.0, 0.0], &[]).unwrap();
         assert_eq!(ordered[0].to_bits(), 0.0_f64.to_bits());
 
         assert_eq!(
@@ -671,10 +635,7 @@ mod tests {
                 bits(&calc_slogp_vsa(&molecule, Some(bins), true).unwrap()),
                 expected_slogp
             );
-            assert_eq!(
-                bits(&calc_smr_vsa(&molecule, Some(bins), true).unwrap()),
-                expected_smr
-            );
+            assert_eq!(bits(&calc_smr_vsa(&molecule, Some(bins), true).unwrap()), expected_smr);
         }
     }
 

@@ -9,21 +9,16 @@ use crate::source::base::runichi2::{eprint_bytes, sdf_label_value, source_array_
 use crate::source::base::strutil::{Free_INChI, Free_INChI_Aux};
 use crate::source::base::util::inchi_free;
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, _IS_WARNING, AMBIGUOUS_STEREO_ATOM, AMBIGUOUS_STEREO_ATOM_ISO,
-    AMBIGUOUS_STEREO_BOND, AMBIGUOUS_STEREO_BOND_ISO, CANON_GLOBALS, COMP_ATOM_DATA, CT_OUT_OF_RAM,
-    CT_USER_QUIT_ERR, FILE, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOSTREAM, INCHI_MODE,
-    INCHI_NUM, INCHI_OUT_EMBED_REC, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_PLAIN_TEXT_COMMENTS,
-    INCHI_OUT_PRINT_OPTIONS, INCHI_OUT_TABBED_OUTPUT, INCHI_SORT, INChI, INChI_Stereo,
-    INP_ATOM_DATA, INPUT_PARMS, NORM_CANON_FLAGS, ORIG_ATOM_DATA, ORIG_STRUCT, OUT_TN, PINChI_Aux2,
-    PINChI2, STRUCT_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
-    SourceMutPointer, SourceVaList, TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_DISCONNECT_COORD_DONE,
+    _IS_ERROR, _IS_FATAL, _IS_WARNING, AMBIGUOUS_STEREO_ATOM, AMBIGUOUS_STEREO_ATOM_ISO, AMBIGUOUS_STEREO_BOND,
+    AMBIGUOUS_STEREO_BOND_ISO, CANON_GLOBALS, COMP_ATOM_DATA, CT_OUT_OF_RAM, CT_USER_QUIT_ERR, FILE, INCHI_BAS,
+    INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_EMBED_REC, INCHI_OUT_PLAIN_TEXT,
+    INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_PRINT_OPTIONS, INCHI_OUT_TABBED_OUTPUT, INCHI_SORT, INChI, INChI_Stereo,
+    INP_ATOM_DATA, INPUT_PARMS, NORM_CANON_FLAGS, ORIG_ATOM_DATA, ORIG_STRUCT, OUT_TN, PINChI_Aux2, PINChI2,
+    STRUCT_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_DISCONNECT_COORD_DONE,
 };
 
-fn sort_inchi_rows(
-    heap: &mut SourceHeap,
-    rows: &mut [INCHI_SORT],
-    tautomeric: bool,
-) -> Result<(), SourceHeapError> {
+fn sort_inchi_rows(heap: &mut SourceHeap, rows: &mut [INCHI_SORT], tautomeric: bool) -> Result<(), SourceHeapError> {
     let mut error = None;
     rows.sort_unstable_by(|left, right| {
         if error.is_some() {
@@ -111,8 +106,7 @@ pub(crate) fn bIsStructChiral(
             continue;
         }
         for component in 0..count.max(0) {
-            let component =
-                usize::try_from(component).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let component = usize::try_from(component).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let row = heap
                 .slice(inchi_components[domain].as_const())?
                 .get(component)
@@ -137,10 +131,7 @@ pub(crate) fn bIsStructChiral(
                         .slice(stereo_pointer.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if !stereo.t_parity.is_null()
-                        && stereo.nNumberOfStereoCenters > 0
-                        && stereo.nCompInv2Abs != 0
-                    {
+                    if !stereo.t_parity.is_null() && stereo.nNumberOfStereoCenters > 0 && stereo.nCompInv2Abs != 0 {
                         return Ok(1);
                     }
                 }
@@ -160,9 +151,7 @@ pub(crate) fn SortAndPrintINChI(
     input_parameters: &INPUT_PARMS,
     original_atom_data: SourceConstPointer<ORIG_ATOM_DATA>,
     _prepared_atom_data: SourceConstPointer<ORIG_ATOM_DATA>,
-    _composite_normalized_data: Option<
-        &mut [[COMP_ATOM_DATA; TAUT_NUM as usize + 1]; INCHI_NUM as usize],
-    >,
+    _composite_normalized_data: Option<&mut [[COMP_ATOM_DATA; TAUT_NUM as usize + 1]; INCHI_NUM as usize]>,
     original_structure: SourceConstPointer<ORIG_STRUCT>,
     component_counts: &[i32; INCHI_NUM as usize],
     non_tautomeric_counts: &[i32; INCHI_NUM as usize],
@@ -494,13 +483,11 @@ pub(crate) fn SortAndPrintINChI(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: SortAndPrintINChI
 
-    let disconnected_coordinates =
-        i32::from(taut_flags_done[0] & u64::from(TG_FLAG_DISCONNECT_COORD_DONE) != 0);
+    let disconnected_coordinates = i32::from(taut_flags_done[0] & u64::from(TG_FLAG_DISCONNECT_COORD_DONE) != 0);
     for representation in 0..INCHI_NUM as usize {
         for tautomer in 0..TAUT_NUM as usize {
             taut_flags[representation] |= normalization_flags.bTautFlags[representation][tautomer];
-            taut_flags_done[representation] |=
-                normalization_flags.bTautFlagsDone[representation][tautomer];
+            taut_flags_done[representation] |= normalization_flags.bTautFlagsDone[representation][tautomer];
         }
     }
 
@@ -508,8 +495,7 @@ pub(crate) fn SortAndPrintINChI(
     if max_components <= 0 {
         max_components = 1;
     }
-    let allocation_len =
-        usize::try_from(max_components).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let allocation_len = usize::try_from(max_components).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let mut sort_rows = [SourceMutPointer::<INCHI_SORT>::null(); 4];
     let mut allocation_failures = 0_i32;
     for representation in 0..INCHI_NUM as usize {
@@ -545,8 +531,7 @@ pub(crate) fn SortAndPrintINChI(
                 if component_count == 0 {
                     continue;
                 }
-                let count = usize::try_from(component_count)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = usize::try_from(component_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let source_inchi = heap
                     .slice(inchi_components[representation].as_const())?
                     .get(..count)
@@ -559,8 +544,7 @@ pub(crate) fn SortAndPrintINChI(
                     .to_vec();
 
                 for tautomer_order in 0..TAUT_NUM as usize {
-                    let row_pointer =
-                        sort_rows[representation * TAUT_NUM as usize + tautomer_order];
+                    let row_pointer = sort_rows[representation * TAUT_NUM as usize + tautomer_order];
                     let row = heap
                         .slice_mut(row_pointer)?
                         .get_mut(..count)
@@ -575,8 +559,7 @@ pub(crate) fn SortAndPrintINChI(
                 }
 
                 for tautomer_order in 0..TAUT_NUM as usize {
-                    let row_pointer =
-                        sort_rows[representation * TAUT_NUM as usize + tautomer_order];
+                    let row_pointer = sort_rows[representation * TAUT_NUM as usize + tautomer_order];
                     let mut row = heap
                         .slice(row_pointer.as_const())?
                         .get(..count)
@@ -598,8 +581,7 @@ pub(crate) fn SortAndPrintINChI(
                     }
                     let count = usize::try_from(component_count.min(max_components))
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    let mobile_pointer =
-                        sort_rows[representation * TAUT_NUM as usize + TAUT_YES as usize];
+                    let mobile_pointer = sort_rows[representation * TAUT_NUM as usize + TAUT_YES as usize];
                     let mobile_rows = heap
                         .slice(mobile_pointer.as_const())?
                         .get(..count)
@@ -616,8 +598,7 @@ pub(crate) fn SortAndPrintINChI(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .to_vec();
                     for component in 0..count {
-                        let swap_tautomer_slots = !mobile_rows[component].pINChI[TAUT_NON as usize]
-                            .is_null()
+                        let swap_tautomer_slots = !mobile_rows[component].pINChI[TAUT_NON as usize].is_null()
                             && mobile_rows[component].pINChI[TAUT_YES as usize].is_null();
                         for tautomer in 0..TAUT_NUM as usize {
                             let source_tautomer = if swap_tautomer_slots {
@@ -625,10 +606,8 @@ pub(crate) fn SortAndPrintINChI(
                             } else {
                                 tautomer
                             };
-                            reordered_inchi[component][tautomer] =
-                                mobile_rows[component].pINChI[source_tautomer];
-                            reordered_aux[component][tautomer] =
-                                mobile_rows[component].pINChI_Aux[source_tautomer];
+                            reordered_inchi[component][tautomer] = mobile_rows[component].pINChI[source_tautomer];
+                            reordered_aux[component][tautomer] = mobile_rows[component].pINChI_Aux[source_tautomer];
                         }
                     }
                     heap.slice_mut(inchi_components[representation])?
@@ -641,10 +620,8 @@ pub(crate) fn SortAndPrintINChI(
                         .clone_from_slice(&reordered_aux);
                 }
             } else {
-                let base_options =
-                    input_parameters.bINChIOutputOptions & !(INCHI_OUT_PRINT_OPTIONS as i32);
-                let embed_reconnected =
-                    input_parameters.bINChIOutputOptions & INCHI_OUT_EMBED_REC as i32;
+                let base_options = input_parameters.bINChIOutputOptions & !(INCHI_OUT_PRINT_OPTIONS as i32);
+                let embed_reconnected = input_parameters.bINChIOutputOptions & INCHI_OUT_EMBED_REC as i32;
                 sort_table = heap.allocate_model_storage(sort_rows.to_vec())?;
                 for pass in 1..=2 {
                     let current_option = if pass == 1 {
@@ -657,17 +634,10 @@ pub(crate) fn SortAndPrintINChI(
                     }
                     let mut current_options = base_options | current_option | embed_reconnected;
                     if pass == 2 {
-                        let format = heap.allocate_model_storage(
-                            b"\n==== %s ====\n\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect(),
-                        )?;
+                        let format = heap
+                            .allocate_model_storage(b"\n==== %s ====\n\0".iter().map(|byte| *byte as i8).collect())?;
                         let header = heap.allocate_model_storage(
-                            b"InChI ANNOTATED CONTENTS\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect(),
+                            b"InChI ANNOTATED CONTENTS\0".iter().map(|byte| *byte as i8).collect(),
                         )?;
                         let print_result = inchi_ios_print(
                             heap,
@@ -780,12 +750,7 @@ pub(crate) fn FreeAllINChIArrays(
 
     for representation in 0..INCHI_NUM as usize {
         let old_count = num_components[representation];
-        FreeINChIArrays(
-            heap,
-            p_inchi[representation],
-            p_inchi_aux[representation],
-            old_count,
-        )?;
+        FreeINChIArrays(heap, p_inchi[representation], p_inchi_aux[representation], old_count)?;
         num_components[representation] = 0;
         if old_count != 0 && !p_inchi[representation].is_null() {
             inchi_free(heap, p_inchi[representation])?;
@@ -932,8 +897,7 @@ pub(crate) fn GetProcessingWarningsOneInChI(
     let mut ambiguous_stereo_bonds = 0_i32;
     if !input_normalized_data.at.is_null() {
         let count = if p_inchi.nNumberOfAtoms > 0 {
-            usize::try_from(p_inchi.nNumberOfAtoms)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            usize::try_from(p_inchi.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         } else {
             0
         };
@@ -963,9 +927,7 @@ pub(crate) fn GetProcessingWarningsOneInChI(
             AddErrorMessage(Some(error_buffer), Some(&bonds))?;
         }
     }
-    Ok(i32::from(
-        ambiguous_stereo_atoms != 0 || ambiguous_stereo_bonds != 0,
-    ))
+    Ok(i32::from(ambiguous_stereo_atoms != 0 || ambiguous_stereo_bonds != 0))
 }
 
 #[allow(non_snake_case)]
@@ -1106,15 +1068,9 @@ pub(crate) fn TreatErrorsInCreateOneComponentINChI(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatErrorsInCreateOneComponentINChI
     if structure_data.nErrorCode != 0 {
         let error_message = ErrMsg(structure_data.nErrorCode);
-        let mut c_error_message = error_message
-            .bytes()
-            .map(|byte| byte as i8)
-            .collect::<Vec<_>>();
+        let mut c_error_message = error_message.bytes().map(|byte| byte as i8).collect::<Vec<_>>();
         c_error_message.push(0);
-        AddErrorMessage(
-            Some(&mut structure_data.pStrErrStruct),
-            Some(&c_error_message),
-        )?;
+        AddErrorMessage(Some(&mut structure_data.pStrErrStruct), Some(&c_error_message))?;
 
         let error_text = source_array_c_bytes(&structure_data.pStrErrStruct)?;
         let mut log = b"Error ".to_vec();
@@ -1130,13 +1086,12 @@ pub(crate) fn TreatErrorsInCreateOneComponentINChI(
         log.push(b'\n');
         eprint_bytes(heap, log_file, &log)?;
 
-        structure_data.nErrorType = if structure_data.nErrorCode == CT_OUT_OF_RAM
-            || structure_data.nErrorCode == CT_USER_QUIT_ERR
-        {
-            _IS_FATAL as i32
-        } else {
-            _IS_ERROR as i32
-        };
+        structure_data.nErrorType =
+            if structure_data.nErrorCode == CT_OUT_OF_RAM || structure_data.nErrorCode == CT_USER_QUIT_ERR {
+                _IS_FATAL as i32
+            } else {
+                _IS_ERROR as i32
+            };
     }
     Ok(structure_data.nErrorType)
 }
@@ -1337,8 +1292,8 @@ pub(crate) fn DisplayTheWholeStructure(
 mod tests {
     use super::*;
     use crate::source_types::{
-        _IS_WARNING, AMBIGUOUS_STEREO_ERROR, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING,
-        INCHI_OUT_NO_AUX_INFO, INChI_Aux, SourceFile, inp_ATOM,
+        _IS_WARNING, AMBIGUOUS_STEREO_ERROR, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, INCHI_OUT_NO_AUX_INFO,
+        INChI_Aux, SourceFile, inp_ATOM,
     };
 
     fn buffer(heap: &mut SourceHeap, size: usize) -> INCHI_IOS_STRING {
@@ -1361,10 +1316,7 @@ mod tests {
     fn text(heap: &SourceHeap, stream: &INCHI_IOSTREAM) -> String {
         let bytes = heap.slice(stream.s.pStr.as_const()).unwrap();
         let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-        bytes[..end]
-            .iter()
-            .map(|byte| *byte as u8 as char)
-            .collect()
+        bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
     }
 
     fn inchi(heap: &mut SourceHeap, charge: i32) -> SourceMutPointer<INChI> {
@@ -1389,12 +1341,8 @@ mod tests {
         let component_rows = heap
             .allocate_model_storage(vec![[left_fixed, left_mobile], [right_fixed, right_mobile]])
             .unwrap();
-        let aux_left = heap
-            .allocate_model_storage(vec![INChI_Aux::default()])
-            .unwrap();
-        let aux_right = heap
-            .allocate_model_storage(vec![INChI_Aux::default()])
-            .unwrap();
+        let aux_left = heap.allocate_model_storage(vec![INChI_Aux::default()]).unwrap();
+        let aux_right = heap.allocate_model_storage(vec![INChI_Aux::default()]).unwrap();
         let aux_rows = heap
             .allocate_model_storage(vec![
                 [aux_left, SourceMutPointer::null()],
@@ -1403,8 +1351,7 @@ mod tests {
             .unwrap();
         let mut output = stream(&mut heap);
         let mut log = stream(&mut heap);
-        let mut composite =
-            std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+        let mut composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         let mut taut_flags = [0, 0];
         let mut taut_flags_done = [TG_FLAG_DISCONNECT_COORD_DONE as u64, 0];
         let normalization = NORM_CANON_FLAGS {
@@ -1490,8 +1437,7 @@ mod tests {
         failing_heap.fail_after_allocations(0);
         let mut failing_output = INCHI_IOSTREAM::default();
         let mut failing_log = INCHI_IOSTREAM::default();
-        let mut failing_composite =
-            std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+        let mut failing_composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         assert_eq!(
             SortAndPrintINChI(
                 &mut failing_heap,
@@ -1525,13 +1471,11 @@ mod tests {
         let mut printing_output = stream(&mut printing_heap);
         let mut printing_log = stream(&mut printing_heap);
         let mut printing_buffer = buffer(&mut printing_heap, 4096);
-        let mut printing_composite =
-            std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
+        let mut printing_composite = std::array::from_fn(|_| std::array::from_fn(|_| COMP_ATOM_DATA::default()));
         let flags = printing_heap.allocate_model_storage(vec![0_i32]).unwrap();
-        let print_options = (INCHI_OUT_NO_AUX_INFO
-            | INCHI_OUT_PLAIN_TEXT
-            | INCHI_OUT_PLAIN_TEXT_COMMENTS
-            | INCHI_OUT_TABBED_OUTPUT) as i32;
+        let print_options =
+            (INCHI_OUT_NO_AUX_INFO | INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS | INCHI_OUT_TABBED_OUTPUT)
+                as i32;
         assert_eq!(
             SortAndPrintINChI(
                 &mut printing_heap,
@@ -1564,11 +1508,7 @@ mod tests {
         );
         assert_eq!(
             text(&printing_heap, &printing_output),
-            concat!(
-                "InChI=1//\n",
-                "\n==== InChI ANNOTATED CONTENTS ====\n",
-                "\nInChI=\n1\n"
-            )
+            concat!("InChI=1//\n", "\n==== InChI ANNOTATED CONTENTS ====\n", "\nInChI=\n1\n")
         );
         assert_eq!(text(&printing_heap, &printing_log), "");
     }
@@ -1577,12 +1517,7 @@ mod tests {
     fn source_port__runichi4__freeinchiarrays__line_1357() {
         let mut heap = SourceHeap::default();
         assert_eq!(
-            FreeINChIArrays(
-                &mut heap,
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                i32::MIN,
-            ),
+            FreeINChIArrays(&mut heap, SourceMutPointer::null(), SourceMutPointer::null(), i32::MIN,),
             Ok(())
         );
 
@@ -1616,10 +1551,7 @@ mod tests {
         let resulting_inchi = heap.slice(inchi_rows.as_const()).unwrap();
         assert!(resulting_inchi[0][TAUT_NON as usize].is_null());
         assert_eq!(resulting_inchi[0][TAUT_YES as usize], retained_inchi);
-        assert_eq!(
-            heap.slice(retained_inchi.as_const()).unwrap()[0].nRefCount,
-            0
-        );
+        assert_eq!(heap.slice(retained_inchi.as_const()).unwrap()[0].nRefCount, 0);
         let resulting_aux = heap.slice(aux_rows.as_const()).unwrap();
         assert!(resulting_aux[0][TAUT_NON as usize].is_null());
         assert_eq!(resulting_aux[0][TAUT_YES as usize], retained_aux);
@@ -1638,13 +1570,9 @@ mod tests {
     fn source_port__runichi4__freeallinchiarrays__line_1322() {
         let mut heap = SourceHeap::default();
         let inchi = heap.allocate(vec![INChI::default()]).unwrap();
-        let inchi_rows = heap
-            .allocate(vec![[inchi, SourceMutPointer::null()]])
-            .unwrap();
+        let inchi_rows = heap.allocate(vec![[inchi, SourceMutPointer::null()]]).unwrap();
         let aux = heap.allocate(vec![INChI_Aux::default()]).unwrap();
-        let aux_rows = heap
-            .allocate(vec![[aux, SourceMutPointer::null()]])
-            .unwrap();
+        let aux_rows = heap.allocate(vec![[aux, SourceMutPointer::null()]]).unwrap();
         let zero_inchi_rows = heap
             .allocate(vec![[SourceMutPointer::null(), SourceMutPointer::null()]])
             .unwrap();
@@ -1662,14 +1590,8 @@ mod tests {
         assert_eq!(top_aux[1], zero_aux_rows);
         assert!(heap.slice(zero_inchi_rows.as_const()).is_ok());
         assert!(heap.slice(zero_aux_rows.as_const()).is_ok());
-        assert_eq!(
-            heap.slice(inchi.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
-        assert_eq!(
-            heap.slice(aux.as_const()),
-            Err(SourceHeapError::MissingAllocation)
-        );
+        assert_eq!(heap.slice(inchi.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(heap.slice(aux.as_const()), Err(SourceHeapError::MissingAllocation));
 
         let negative_inchi = heap
             .allocate(vec![[SourceMutPointer::null(), SourceMutPointer::null()]])
@@ -1703,10 +1625,7 @@ mod tests {
     fn source_port__runichi4__getprocessingwarningsoneinchi__line_1574() {
         fn error_text(buffer: &[i8]) -> String {
             let end = buffer.iter().position(|byte| *byte == 0).unwrap();
-            buffer[..end]
-                .iter()
-                .map(|byte| *byte as u8 as char)
-                .collect()
+            buffer[..end].iter().map(|byte| *byte as u8 as char).collect()
         }
 
         fn run(
@@ -1734,10 +1653,7 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        assert_eq!(
-            run(&heap, SourceMutPointer::null(), 4, 0),
-            (0, String::new())
-        );
+        assert_eq!(run(&heap, SourceMutPointer::null(), 4, 0), (0, String::new()));
 
         let atoms = heap
             .allocate_model_storage(vec![
@@ -1770,10 +1686,7 @@ mod tests {
 
         assert_eq!(run(&heap, atoms, 0, 0), (0, String::new()));
         assert_eq!(run(&heap, atoms, -1, 0), (0, String::new()));
-        assert_eq!(
-            run(&heap, atoms, 1, 0),
-            (1, "Ambiguous stereo: center(s)".to_owned())
-        );
+        assert_eq!(run(&heap, atoms, 1, 0), (1, "Ambiguous stereo: center(s)".to_owned()));
         assert_eq!(
             run(&heap, atoms.offset(1).unwrap(), 1, 0),
             (1, "Ambiguous stereo: center(s)".to_owned())
@@ -1790,10 +1703,7 @@ mod tests {
             run(&heap, atoms, 5, 0),
             (1, "Ambiguous stereo: center(s); bond(s)".to_owned())
         );
-        assert_eq!(
-            run(&heap, atoms.offset(5).unwrap(), 1, 0),
-            (0, String::new())
-        );
+        assert_eq!(run(&heap, atoms.offset(5).unwrap(), 1, 0), (0, String::new()));
         assert_eq!(run(&heap, atoms, 5, 1), (1, String::new()));
         assert_eq!(run(&heap, atoms, 5, i32::MIN), (1, String::new()));
     }
@@ -1802,10 +1712,7 @@ mod tests {
     fn source_port__runichi4__getprocessingwarningsonecomponentinchi__line_1550() {
         fn error_text(buffer: &[i8]) -> String {
             let end = buffer.iter().position(|byte| *byte == 0).unwrap();
-            buffer[..end]
-                .iter()
-                .map(|byte| *byte as u8 as char)
-                .collect()
+            buffer[..end].iter().map(|byte| *byte as u8 as char).collect()
         }
 
         let mut heap = SourceHeap::default();
@@ -1874,13 +1781,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            GetProcessingWarningsOneComponentInChI(
-                &heap,
-                &[first, second],
-                &normalized,
-                &mut structure,
-                0,
-            ),
+            GetProcessingWarningsOneComponentInChI(&heap, &[first, second], &normalized, &mut structure, 0,),
             Ok(1)
         );
         assert_eq!(
@@ -1923,12 +1824,8 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let canonical_globals = heap
-            .allocate_model_storage(vec![CANON_GLOBALS::default()])
-            .unwrap();
-        let clock = heap
-            .allocate_model_storage(vec![INCHI_CLOCK::default()])
-            .unwrap();
+        let canonical_globals = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
+        let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
         let structure = heap
             .allocate_model_storage(vec![STRUCT_DATA {
                 bUserQuit: 17,
@@ -1942,12 +1839,8 @@ mod tests {
             }])
             .unwrap();
         let title = heap.allocate_model_storage(vec![b'X' as i8, 0]).unwrap();
-        let input_file = heap
-            .allocate_model_storage(vec![INCHI_IOSTREAM::default()])
-            .unwrap();
-        let log_file = heap
-            .allocate_model_storage(vec![INCHI_IOSTREAM::default()])
-            .unwrap();
+        let input_file = heap.allocate_model_storage(vec![INCHI_IOSTREAM::default()]).unwrap();
+        let log_file = heap.allocate_model_storage(vec![INCHI_IOSTREAM::default()]).unwrap();
         let original = heap
             .allocate_model_storage(vec![ORIG_ATOM_DATA {
                 num_inp_atoms: 31,
@@ -1974,10 +1867,7 @@ mod tests {
         );
         assert_eq!(heap.slice(structure.as_const()).unwrap()[0].bUserQuit, 17);
         assert_eq!(heap.slice(parameters.as_const()).unwrap()[0].bDisplay, 23);
-        assert_eq!(
-            heap.slice(original.as_const()).unwrap()[0].num_inp_atoms,
-            31
-        );
+        assert_eq!(heap.slice(original.as_const()).unwrap()[0].num_inp_atoms, 31);
         assert_eq!(heap.slice(title.as_const()).unwrap(), &[b'X' as i8, 0]);
     }
 
@@ -2023,9 +1913,8 @@ mod tests {
             nErrorCode: crate::source_types::CT_ATOMCOUNT_ERR,
             ..STRUCT_DATA::default()
         };
-        ordinary_structure.pStrErrStruct[..6].copy_from_slice(&[
-            b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0,
-        ]);
+        ordinary_structure.pStrErrStruct[..6]
+            .copy_from_slice(&[b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0]);
         assert_eq!(
             TreatErrorsInCreateOneComponentINChI(
                 &mut ordinary_heap,
@@ -2092,8 +1981,8 @@ mod tests {
             ..STRUCT_DATA::default()
         };
         duplicate_structure.pStrErrStruct[..11].copy_from_slice(&[
-            b'O' as i8, b'u' as i8, b't' as i8, b' ' as i8, b'o' as i8, b'f' as i8, b' ' as i8,
-            b'R' as i8, b'A' as i8, b'M' as i8, 0,
+            b'O' as i8, b'u' as i8, b't' as i8, b' ' as i8, b'o' as i8, b'f' as i8, b' ' as i8, b'R' as i8, b'A' as i8,
+            b'M' as i8, 0,
         ]);
         assert_eq!(
             TreatErrorsInCreateOneComponentINChI(
@@ -2126,8 +2015,7 @@ mod tests {
                 fPtrEnd: 10,
                 ..STRUCT_DATA::default()
             };
-            structure.pStrErrStruct[..5]
-                .copy_from_slice(&[b'c' as i8, b'a' as i8, b'r' as i8, b'e' as i8, 0]);
+            structure.pStrErrStruct[..5].copy_from_slice(&[b'c' as i8, b'a' as i8, b'r' as i8, b'e' as i8, 0]);
             structure
         }
 
@@ -2213,9 +2101,7 @@ mod tests {
                 ..SourceFile::default()
             }])
             .unwrap();
-        let problem_output = save_heap
-            .allocate_model_storage(vec![SourceFile::default()])
-            .unwrap();
+        let problem_output = save_heap.allocate_model_storage(vec![SourceFile::default()]).unwrap();
         let mut input_stream = INCHI_IOSTREAM {
             f: input_file,
             type_: INCHI_IOS_TYPE_FILE as i32,
@@ -2246,10 +2132,7 @@ mod tests {
             ),
             Ok(_IS_WARNING as i32)
         );
-        assert_eq!(
-            text(&save_heap, &save_log),
-            "Warning (care) structure #-17.\n"
-        );
+        assert_eq!(text(&save_heap, &save_log), "Warning (care) structure #-17.\n");
         assert_eq!(
             save_heap
                 .slice(problem_output.as_const())
@@ -2274,9 +2157,7 @@ mod tests {
                     ..SourceFile::default()
                 }])
                 .unwrap();
-            let output = heap
-                .allocate_model_storage(vec![SourceFile::default()])
-                .unwrap();
+            let output = heap.allocate_model_storage(vec![SourceFile::default()]).unwrap();
             let mut input_stream = INCHI_IOSTREAM {
                 f: input,
                 type_: INCHI_IOS_TYPE_FILE as i32,
@@ -2314,14 +2195,7 @@ mod tests {
                 ),
                 Ok(_IS_WARNING as i32)
             );
-            assert!(
-                heap.slice(output.as_const())
-                    .unwrap()
-                    .first()
-                    .unwrap()
-                    .bytes
-                    .is_empty()
-            );
+            assert!(heap.slice(output.as_const()).unwrap().first().unwrap().bytes.is_empty());
         }
     }
 
@@ -2411,11 +2285,7 @@ mod tests {
             .unwrap();
         let ordinary_components = component_array(&mut heap, SourceMutPointer::null(), ordinary);
         assert_eq!(
-            bIsStructChiral(
-                &heap,
-                [ordinary_components, SourceMutPointer::null()],
-                [1, 0],
-            ),
+            bIsStructChiral(&heap, [ordinary_components, SourceMutPointer::null()], [1, 0],),
             Ok(1)
         );
 
@@ -2431,11 +2301,7 @@ mod tests {
             .allocate_model_storage(vec![empty_component, [isotopic, SourceMutPointer::null()]])
             .unwrap();
         assert_eq!(
-            bIsStructChiral(
-                &heap,
-                [SourceMutPointer::null(), isotopic_components],
-                [0, 2],
-            ),
+            bIsStructChiral(&heap, [SourceMutPointer::null(), isotopic_components], [0, 2],),
             Ok(1)
         );
     }
